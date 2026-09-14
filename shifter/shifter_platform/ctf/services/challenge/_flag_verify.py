@@ -18,6 +18,7 @@ from uuid import UUID
 
 from ctf.exceptions import CTFValidationError
 from ctf.models import CTFChallenge, CTFFlag
+from ctf.services.challenge._receipt_context import accept_registered_evidence as _accept_registered_evidence
 
 if TYPE_CHECKING:
     from shared.receipt_validation import ReceiptSubmissionContext, ReceiptValidationContext, VerifiedReceiptEvidence
@@ -152,29 +153,49 @@ def _verify_programmable_flag(
     if validator_func is None:
         logger.error("Unknown validator %r for flag %s", validator_name, flag_obj.id)
     else:
-        context_capable = validator_supports_server_context(validator_name)
-        try:
-            if context_capable:
-                if sensitive_submission_collector is not None:
-                    sensitive_submission_collector()
-                receipt_context = _resolve_registered_receipt_context(server_context, config.get("receipt"))
-                if receipt_context is not None:
-                    contextual = cast(
-                        "Callable[[str, dict[str, Any], ReceiptValidationContext], object]", validator_func
-                    )
-                    is_valid = _accept_registered_evidence(
-                        contextual(submitted_flag, config.get("params", {}), receipt_context),
-                        receipt_context,
-                        evidence_collector,
-                    )
-            else:
-                legacy = cast("Callable[[str, dict[str, Any]], bool]", validator_func)
-                is_valid = legacy(submitted_flag, config.get("params", {}))
-        except Exception:
-            if context_capable:
-                logger.warning("Context-capable validator failed closed for flag %s", flag_obj.id)
-            else:
-                logger.exception("Validator %r failed for flag %s", validator_name, flag_obj.id)
+        is_valid = _invoke_programmable_validator(
+            flag_obj,
+            submitted_flag,
+            config,
+            validator_func,
+            context_capable=validator_supports_server_context(validator_name),
+            server_context=server_context,
+            evidence_collector=evidence_collector,
+            sensitive_submission_collector=sensitive_submission_collector,
+        )
+    return is_valid
+
+
+def _invoke_programmable_validator(
+    flag_obj: CTFFlag,
+    submitted_flag: str,
+    config: dict[str, Any],
+    validator_func: Callable[..., object],
+    *,
+    context_capable: bool,
+    server_context: ReceiptSubmissionContext | None,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
+    sensitive_submission_collector: Callable[[], None] | None,
+) -> bool:
+    """Invoke a registered programmable validator and fail closed."""
+    is_valid = False
+    try:
+        if context_capable:
+            if sensitive_submission_collector is not None:
+                sensitive_submission_collector()
+            receipt_context = _resolve_registered_receipt_context(server_context, config.get("receipt"))
+            if receipt_context is not None:
+                contextual = cast("Callable[[str, dict[str, Any], ReceiptValidationContext], object]", validator_func)
+                result = contextual(submitted_flag, config.get("params", {}), receipt_context)
+                is_valid = _accept_registered_evidence(result, receipt_context, evidence_collector)
+        else:
+            legacy = cast("Callable[[str, dict[str, Any]], bool]", validator_func)
+            is_valid = legacy(submitted_flag, config.get("params", {}))
+    except Exception:
+        if context_capable:
+            logger.warning("Context-capable validator failed closed for flag %s", flag_obj.id)
+        else:
+            logger.exception("Validator failed for flag %s", flag_obj.id)
     return is_valid
 
 
@@ -449,43 +470,9 @@ def _resolve_registered_receipt_context(
     selection: object,
 ) -> ReceiptValidationContext | None:
     """Resolve a closed receipt selection for an explicitly capable callback."""
-    receipt_context = None
-    from ctf.services.challenge._receipt_context import resolve_receipt_validation_context
-    from ctf.validators import normalize_http_validator_config
+    from ctf.services.challenge._receipt_context import resolve_registered_receipt_context
 
-    if server_context is not None:
-        try:
-            canonical = normalize_http_validator_config(selection, check_destination=False)
-            if canonical.get("protocol") == "receipt-v1":
-                receipt_context = resolve_receipt_validation_context(
-                    server_context,
-                    profile_id=canonical["profile_id"],
-                    objective_id=canonical["objective_id"],
-                )
-        except Exception:
-            logger.warning("Receipt context resolution failed closed")
-    return receipt_context
-
-
-def _accept_registered_evidence(
-    result: object,
-    context: ReceiptValidationContext,
-    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
-) -> bool:
-    """Accept only exact, unexpired evidence from a context-capable callback."""
-    from django.utils import timezone
-
-    from shared.receipt_validation import VerifiedReceiptEvidence
-
-    if (
-        not isinstance(result, VerifiedReceiptEvidence)
-        or result.context != context
-        or result.expires_at <= timezone.now()
-    ):
-        return False
-    if evidence_collector is not None:
-        evidence_collector(result)
-    return True
+    return resolve_registered_receipt_context(server_context, selection)
 
 
 def _validate_http_config(validator_config: dict[str, Any] | None) -> dict[str, Any]:

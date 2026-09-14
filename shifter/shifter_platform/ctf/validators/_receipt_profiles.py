@@ -146,9 +146,9 @@ def _require_identifier_tuple(
     maximum: int,
 ) -> None:
     """Require a bounded tuple of unique canonical identifiers."""
-    valid = isinstance(value, tuple) and bool(value) and len(value) <= maximum and len(set(value)) == len(value)
-    if not valid:
+    if not isinstance(value, tuple):
         raise ReceiptProfileError(f"{field_name} must contain 1-{maximum} unique identifiers")
-    assert isinstance(value, tuple)
+    if not value or len(value) > maximum or len(set(value)) != len(value):
+        raise ReceiptProfileError(f"{field_name} must contain 1-{maximum} unique identifiers")
     for item in value:
         _require_identifier(item_name, item)

@@ -297,7 +297,7 @@ def _parse_evidence(
     """Parse one exact response into immutable verified evidence."""
     try:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
-    except (TypeError, ValueError, UnicodeDecodeError):
+    except (TypeError, ValueError):
         return _INVALID_RESPONSE
     if value == {"valid": False}:
         return _REJECTED_RECEIPT
@@ -310,23 +310,23 @@ def _build_evidence(
     context: ReceiptValidationContext,
 ) -> VerifiedReceiptEvidence | object:
     """Build evidence from a structurally exact accepted-response object."""
-    if not _response_matches_contract(value, profile, context):
-        return _INVALID_RESPONSE
-    assert isinstance(value, dict)
-    receipt_id = value["receipt_id"]
-    issuer_id = value["issuer"]
-    expires_at = _parse_expiry(value["expires_at"], profile.max_receipt_ttl_seconds)
-    if not isinstance(receipt_id, str) or not isinstance(issuer_id, str) or expires_at is None:
-        return _INVALID_RESPONSE
-    try:
-        return VerifiedReceiptEvidence(
-            receipt_id=receipt_id,
-            issuer_id=issuer_id,
-            expires_at=expires_at,
-            context=context,
-        )
-    except ValueError:
-        return _INVALID_RESPONSE
+    evidence: VerifiedReceiptEvidence | object = _INVALID_RESPONSE
+    if _response_matches_contract(value, profile, context):
+        assert isinstance(value, dict)
+        receipt_id = value["receipt_id"]
+        issuer_id = value["issuer"]
+        expires_at = _parse_expiry(value["expires_at"], profile.max_receipt_ttl_seconds)
+        if isinstance(receipt_id, str) and isinstance(issuer_id, str) and expires_at is not None:
+            try:
+                evidence = VerifiedReceiptEvidence(
+                    receipt_id=receipt_id,
+                    issuer_id=issuer_id,
+                    expires_at=expires_at,
+                    context=context,
+                )
+            except ValueError:
+                evidence = _INVALID_RESPONSE
+    return evidence
 
 
 def _response_matches_contract(

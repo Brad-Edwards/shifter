@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import logging
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from ctf.exceptions import CTFValidationError
-from shared.receipt_validation import ReceiptSubmissionContext, ReceiptValidationContext
+from shared.receipt_validation import ReceiptSubmissionContext, ReceiptValidationContext, VerifiedReceiptEvidence
 
 _REGISTRATION_INACTIVE = "Receipt registration is no longer active"
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ctf.models import CTFFlag
@@ -78,6 +80,47 @@ def resolve_receipt_validation_context(
         registered_objectives=binding.objectives,
         objective_id=objective_id,
     )
+
+
+def resolve_registered_receipt_context(
+    server_context: ReceiptSubmissionContext | None,
+    selection: object,
+) -> ReceiptValidationContext | None:
+    """Resolve a closed receipt selection for an explicitly capable callback."""
+    from ctf.validators import normalize_http_validator_config
+
+    receipt_context = None
+    if server_context is not None:
+        try:
+            canonical = normalize_http_validator_config(selection, check_destination=False)
+            if canonical.get("protocol") == "receipt-v1":
+                receipt_context = resolve_receipt_validation_context(
+                    server_context,
+                    profile_id=canonical["profile_id"],
+                    objective_id=canonical["objective_id"],
+                )
+        except Exception:
+            logger.warning("Receipt context resolution failed closed")
+    return receipt_context
+
+
+def accept_registered_evidence(
+    result: object,
+    context: ReceiptValidationContext,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
+) -> bool:
+    """Accept only exact, unexpired evidence from a context-capable callback."""
+    from django.utils import timezone
+
+    if (
+        not isinstance(result, VerifiedReceiptEvidence)
+        or result.context != context
+        or result.expires_at <= timezone.now()
+    ):
+        return False
+    if evidence_collector is not None:
+        evidence_collector(result)
+    return True
 
 
 def revalidate_receipt_context(context: ReceiptValidationContext) -> None:
@@ -177,13 +220,15 @@ def _assert_unambiguous_objective_binding(
 
 def _receipt_selection(flag_type: str, validator_config: object) -> tuple[str, str] | None:
     """Return a context-capable flag's canonical profile/objective selection."""
-    if not isinstance(validator_config, dict):
-        return None
-    if flag_type == "http":
-        return _canonical_receipt_selection(validator_config)
-    if flag_type == "programmable":
-        return _programmable_receipt_selection(validator_config)
-    return _extension_receipt_selection(flag_type, validator_config)
+    selection = None
+    if isinstance(validator_config, dict):
+        if flag_type == "http":
+            selection = _canonical_receipt_selection(validator_config)
+        elif flag_type == "programmable":
+            selection = _programmable_receipt_selection(validator_config)
+        else:
+            selection = _extension_receipt_selection(flag_type, validator_config)
+    return selection
 
 
 def _matching_receipt_challenges(flags: Iterable[CTFFlag], profile_id: str, objective_id: str) -> set[UUID]:
