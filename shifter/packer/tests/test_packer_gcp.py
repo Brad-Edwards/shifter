@@ -240,7 +240,7 @@ class TestGcpPolarisVerifyStackWiring:
         # host-setup installs docker/sdk; verify-stack (fail-closed) runs next.
         assert "scripts/polaris/verify-stack.sh" in content
         assert content.index("host-setup.sh") < content.index("verify-stack.sh")
-        assert 'source      = "../files/polaris-splice-credential.py"' in content
+        assert 'source      = "../files/polaris_splice_credential.py"' in content
         assert 'destination = "/tmp/polaris-splice-credential.py"' in content
 
 

@@ -57,6 +57,7 @@ def run_polaris_splice_credential_operation(
 
 
 def _authored_instances(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Index authored range instances by UUID."""
     return {
         str(instance.get("uuid") or ""): instance
         for subnet in spec.get("subnets", [])
@@ -66,6 +67,7 @@ def _authored_instances(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _execution_input(entry: dict[str, Any], authored: dict[str, Any]) -> dict[str, Any]:
+    """Merge persisted provider state with authored execution metadata."""
     state = dict(entry.get("state") or {})
     provider = str(state.get("cloud_provider") or entry.get("cloud_provider") or "aws")
     metadata = (state.get("provider_metadata") or {}).get(provider, {})

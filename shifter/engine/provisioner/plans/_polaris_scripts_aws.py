@@ -97,7 +97,6 @@ _pin_endpoint_ip() {  # $1=FQDN  $2=.env var name
 _pin_endpoint_ip "bedrock-runtime.__AWS_REGION__.amazonaws.com" SHIFTER_BEDROCK_IP
 _pin_endpoint_ip "sts.__AWS_REGION__.amazonaws.com" SHIFTER_STS_IP
 """
-
 # Appended after a14-kali's environment in the compose override: Bedrock/
 # Claude env, the read-only /run/shifter-agent mount + profile.d shim, and
 # the extra_hosts entry for the VPC-endpoint IP the setup block publishes.

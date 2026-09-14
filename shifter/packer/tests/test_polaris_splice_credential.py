@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-HELPER = Path(__file__).parents[1] / "files" / "polaris-splice-credential.py"
+HELPER = Path(__file__).parents[1] / "files" / "polaris_splice_credential.py"
 
 
 def _load_helper():
@@ -180,7 +180,11 @@ def test_host_repair_stages_helper_checks_pair_and_never_restarts(helper, monkey
 
     helper.host_repair("a14-kali")
 
-    assert any(args[0] == "cp" and args[-1].startswith("a14-kali:/tmp/") for args in calls)
+    assert any(
+        args[0] == "cp" and args[-1].startswith("a14-kali:/usr/local/libexec/.polaris-splice-credential-")
+        for args in calls
+    )
+    assert all("a14-kali:/tmp/" not in item for args in calls for item in args)
     assert any(args[-2:] == [helper.CONTAINER_HELPER, "repair"] for args in calls)
     assert any("root@splice-relay" in args for args in calls)
     assert all("restart" not in args for args in calls)
@@ -222,6 +226,6 @@ def test_tracked_raes_helper_is_byte_identical() -> None:
         / "polaris"
         / "containers"
         / "boreas-kali"
-        / "polaris-splice-credential.py"
+        / "polaris_splice_credential.py"
     )
     assert mirror.read_bytes() == HELPER.read_bytes()

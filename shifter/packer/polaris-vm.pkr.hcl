@@ -103,7 +103,7 @@ build {
   sources = ["source.amazon-ebs.polaris-vm"]
 
   provisioner "file" {
-    source      = "files/polaris-splice-credential.py"
+    source      = "files/polaris_splice_credential.py"
     destination = "/tmp/polaris-splice-credential.py"
   }
 

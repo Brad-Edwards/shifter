@@ -592,7 +592,7 @@ class TestScenarioBakeScripts:
 
     def test_polaris_template_uploads_the_reviewed_splice_helper(self):
         content = (PACKER_DIR / "polaris-vm.pkr.hcl").read_text()
-        assert 'source      = "files/polaris-splice-credential.py"' in content
+        assert 'source      = "files/polaris_splice_credential.py"' in content
         assert 'destination = "/tmp/polaris-splice-credential.py"' in content
 
     @staticmethod

@@ -6,7 +6,7 @@ import base64
 from pathlib import Path
 
 _PACKAGED_HELPER = Path(__file__).resolve().parents[1] / "assets" / "polaris-splice-credential.py"
-_SOURCE_HELPER = Path(__file__).resolve().parents[3] / "packer" / "files" / "polaris-splice-credential.py"
+_SOURCE_HELPER = Path(__file__).resolve().parents[3] / "packer" / "files" / "polaris_splice_credential.py"
 
 
 def splice_credential_helper_b64() -> str:
