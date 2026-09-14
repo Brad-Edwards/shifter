@@ -66,6 +66,15 @@ ShutdownCheck = Callable[[], bool]
 Heartbeat = Callable[[], None]
 
 
+def _run_retention_maintenance() -> None:
+    """Run the bounded CTF retention sweeps once per scheduler cycle."""
+    from ctf.services.participant.accounts import purge_expired_participant_accounts
+    from ctf.services.public_registration import purge_expired_public_registration_requests
+
+    purge_expired_participant_accounts()
+    purge_expired_public_registration_requests()
+
+
 class Command(BaseCommand):
     """Poll and execute due CTF scheduled tasks."""
 
@@ -105,9 +114,7 @@ class Command(BaseCommand):
         while not self.shutdown:
             try:
                 self._recover_stale_tasks()
-                from ctf.services.participant.accounts import purge_expired_participant_accounts
-
-                purge_expired_participant_accounts()
+                _run_retention_maintenance()
                 self._process_due_tasks(batch_size)
             except Exception:
                 logger.exception("Error in CTF scheduler poll cycle")

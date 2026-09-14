@@ -38,6 +38,9 @@ import type {
   CtfParticipantListResponse,
   CtfParticipantPasswordRequest,
   CtfParticipantPasswordResult,
+  CtfPublicRegistrationDispositionAction,
+  CtfPublicRegistrationDispositionResult,
+  CtfPublicRegistrationRequestListResponse,
   CtfParticipantRangeActionResult,
   CtfPrerequisiteListResponse,
   CtfPrerequisiteWrite,
@@ -313,6 +316,34 @@ export function useCtfParticipants(eventId: string, enabled = true) {
     enabled: enabled && Boolean(eventId),
     queryFn: ({ signal }) =>
       apiFetch<CtfParticipantListResponse>(`${BASE}/events/${eventId}/participants/`, { signal }),
+  });
+}
+
+export function useCtfPublicRegistrationRequests(eventId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.registrationRequests(eventId),
+    enabled: enabled && Boolean(eventId),
+    queryFn: ({ signal }) =>
+      apiFetch<CtfPublicRegistrationRequestListResponse>(
+        `${BASE}/events/${eventId}/registration-requests/`,
+        { signal },
+      ),
+  });
+}
+
+export function useDispositionCtfPublicRegistrationRequest(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, action }: { requestId: string; action: CtfPublicRegistrationDispositionAction }) =>
+      apiFetch<CtfPublicRegistrationDispositionResult>(
+        `${BASE}/registration-requests/${requestId}/disposition/`,
+        { method: "POST", body: { action } },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.registrationRequests(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participants(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
+    },
   });
 }
 

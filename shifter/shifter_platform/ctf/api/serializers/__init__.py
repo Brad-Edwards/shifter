@@ -139,6 +139,12 @@ from ctf.api.serializers.participant import (
     UseHintResultSerializer,
     UsernameChangeRequestSerializer,
 )
+from ctf.api.serializers.public_registration import (
+    PublicRegistrationDispositionResultSerializer,
+    PublicRegistrationDispositionSerializer,
+    PublicRegistrationRequestListResponseSerializer,
+    PublicRegistrationRequestSerializer,
+)
 
 __all__ = [
     "AssignBracketRequestSerializer",
@@ -231,6 +237,10 @@ __all__ = [
     "PrerequisiteSerializer",
     "PrerequisiteWriteSerializer",
     "ProfileUpdateRequestSerializer",
+    "PublicRegistrationDispositionResultSerializer",
+    "PublicRegistrationDispositionSerializer",
+    "PublicRegistrationRequestListResponseSerializer",
+    "PublicRegistrationRequestSerializer",
     "PublicScoreboardResponseSerializer",
     "RangeAccessResponseSerializer",
     "RangeListItemSerializer",

@@ -16,6 +16,7 @@ from ctf.enums_recovery import (
     RecoveryStrategy,
     SpareRangeStatus,
 )
+from ctf.enums_registration import ParticipantRole, ParticipantStatus, PublicRegistrationDisposition
 
 
 class EventStatus(StrEnum):
@@ -49,60 +50,6 @@ class EventStatus(StrEnum):
     def choices(cls) -> list[tuple[str, str]]:
         """Return choices for Django model field."""
         return [(status.value, status.name.replace("_", " ").title()) for status in cls]
-
-
-class ParticipantStatus(StrEnum):
-    """CTF participant lifecycle status.
-
-    Organizer creation (single add, CSV import, generated seats) is immediate
-    seat provisioning: a participant is ``registered`` the moment it is created.
-    There is no invitation-acceptance workflow and no unregistered lifecycle
-    state.
-
-        registered -> active -> completed
-             |
-             v
-        disqualified / banned
-
-    ``disqualified`` (CTF-609) removes competitive standing but keeps
-    view access; ``banned`` (CTF-605) blocks all event access. Both are
-    reversible by the organizer and preserve submission history.
-    """
-
-    REGISTERED = "registered"
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    DISQUALIFIED = "disqualified"
-    BANNED = "banned"
-
-    def __str__(self) -> str:
-        """Return the string value for database storage."""
-        return self.value
-
-    @classmethod
-    def choices(cls) -> list[tuple[str, str]]:
-        """Return choices for Django model field."""
-        return [(status.value, status.name.replace("_", " ").title()) for status in cls]
-
-
-class ParticipantRole(StrEnum):
-    """Event-scoped participation role (CTF-604).
-
-    ``player`` competes normally; ``observer`` may watch the event
-    (scoreboard, content) but cannot submit flags and never ranks.
-    """
-
-    PLAYER = "player"
-    OBSERVER = "observer"
-
-    def __str__(self) -> str:
-        """Return the string value for database storage."""
-        return self.value
-
-    @classmethod
-    def choices(cls) -> list[tuple[str, str]]:
-        """Return choices for Django model field."""
-        return [(role.value, role.name.title()) for role in cls]
 
 
 class EventStaffRole(StrEnum):
@@ -484,6 +431,7 @@ __all__ = [
     "NotificationType",
     "ParticipantRole",
     "ParticipantStatus",
+    "PublicRegistrationDisposition",
     "RatingVisibility",
     "RecoveryFailureCategory",
     "RecoveryPhase",

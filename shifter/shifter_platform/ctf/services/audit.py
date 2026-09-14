@@ -88,6 +88,45 @@ def _entity_id_from_uuid(entity_uuid: UUID) -> int:
     return int.from_bytes(entity_uuid.bytes[:4], "big") % (2**31 - 1) or 1
 
 
+def audit_public_registration_publication(*, actor_id: int, event_id: UUID, enabled: bool) -> None:
+    """Strictly record an event's public-publication toggle without content or PII."""
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state={
+                "ctf_public_registration_publication": "enabled" if enabled else "disabled",
+                "event_id": str(event_id),
+            },
+            context="ctf_public_registration_publication",
+        ),
+        strict=True,
+    )
+
+
+def audit_public_registration_disposition(*, actor_id: int, event_id: UUID, request_id: UUID, disposition: str) -> None:
+    """Strictly record a registration-request disposition using identifiers only."""
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(request_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state={
+                "ctf_public_registration_disposition": disposition,
+                "event_id": str(event_id),
+                "request_id": str(request_id),
+            },
+            context="ctf_public_registration_disposition",
+        ),
+        strict=True,
+    )
+
+
 def audit_live_flag_repair(
     *,
     actor_id: int,

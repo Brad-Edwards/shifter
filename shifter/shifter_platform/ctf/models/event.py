@@ -19,7 +19,6 @@ from django.utils import timezone
 from ctf.enums import (
     EVENT_TERMINAL_STATUSES,
     AttemptLimitMode,
-    EventStaffRole,
     EventStatus,
     RatingVisibility,
     ScoreboardVisibility,
@@ -106,6 +105,10 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         blank=True,
         default="",
         help_text="Detailed event description (supports Markdown)",
+    )
+    public_registration_enabled = models.BooleanField(
+        default=False,
+        help_text="Whether the event's unauthenticated registration page is explicitly published",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -259,6 +262,12 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
             models.Index(fields=["status", "event_start"]),
             models.Index(fields=["created_by", "status"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(public_registration_enabled=False) | models.Q(workspace_id__isnull=False),
+                name="ctf_event_public_registration_scoped",
+            ),
+        ]
 
     # The workspace scope is the event's tenancy boundary (ADR-051): rebinding it
     # would silently move the event, its participants, and every scoped
@@ -276,6 +285,7 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         self._validate_registration_deadline(errors)
         self._validate_team_settings(errors)
         self._validate_scoreboard_freeze_time(errors)
+        self._validate_public_registration(errors)
         self.validate_immutable(errors)
         if errors:
             raise ValidationError(errors)
@@ -303,6 +313,13 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
             errors.setdefault("scoreboard_freeze_at", []).append("Scoreboard freeze time must be after event start.")
         if self.event_end and self.scoreboard_freeze_at >= self.event_end:
             errors.setdefault("scoreboard_freeze_at", []).append("Scoreboard freeze time must be before event end.")
+
+    def _validate_public_registration(self, errors: dict[str, list[str]]) -> None:
+        """Fail closed when publication is enabled without a tenant scope."""
+        if self.public_registration_enabled and self.workspace_id is None:
+            errors.setdefault("public_registration_enabled", []).append(
+                "Public registration requires an event workspace."
+            )
 
     @property
     def is_active(self) -> bool:
@@ -408,68 +425,6 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         from datetime import timedelta
 
         return self.event_start - timedelta(minutes=self.range_spinup_minutes)
-
-
-class CTFEventStaff(CTFBaseModel):
-    """A delegated staff assignment on one event (CTF-607, #1922).
-
-    Grants a second organizer-tier user a role-scoped slice of event
-    management: moderators handle participants and announcements, judges
-    handle submissions review and awards, and co-organizers hold every
-    operational capability the owner has (configuration, challenges,
-    participants, lifecycle, deletion, ...). The owning organizer
-    (``CTFEvent.created_by``) is the single canonical owner, always retains
-    every capability, and holds no staff row of their own. Authority-topology
-    operations (staff management and ownership transfer) are never delegated —
-    they remain owner-only.
-    """
-
-    event = models.ForeignKey(
-        CTFEvent,
-        on_delete=models.CASCADE,
-        related_name="staff",
-        help_text="Event this staff assignment is scoped to",
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="ctf_staff_roles",
-        help_text="Platform user holding the staff role",
-    )
-    role = models.CharField(
-        max_length=16,
-        choices=EventStaffRole.choices(),
-        help_text=(
-            "Delegated role: moderator (participants, announcements), judge "
-            "(submissions, awards), or co_organizer (all operational capabilities)"
-        ),
-    )
-
-    class Meta:
-        """Django model metadata."""
-
-        db_table = "ctf_event_staff"
-        ordering = ["created_at"]
-        verbose_name = "CTF Event Staff"
-        verbose_name_plural = "CTF Event Staff"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["event", "user"],
-                condition=models.Q(deleted_at__isnull=True),
-                name="unique_active_ctf_event_staff_user",
-            ),
-            # Authorization-data boundary: the persisted role must be one of the
-            # closed EventStaffRole values (#1922). Model choices / serializer /
-            # full_clean are useful layers but not the final gate.
-            models.CheckConstraint(
-                condition=models.Q(role__in=[role.value for role in EventStaffRole]),
-                name="ctf_event_staff_role_valid",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        """Return the assignment as user@event with role."""
-        return f"{self.user_id}@{self.event_id}: {self.role}"
 
 
 # Reserved event-page slug carrying the per-event participant briefing (#1854).
