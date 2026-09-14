@@ -141,7 +141,9 @@ def _validate_request(request: dict[str, Any]) -> tuple[UUID, UUID]:
 
 def _bounded_int(value: object, minimum: int, maximum: int) -> bool:
     """Accept a plain integer within the closed preparation budget."""
-    return type(value) is int and minimum <= value <= maximum
+    if not isinstance(value, int) or isinstance(value, bool):
+        return False
+    return minimum <= value <= maximum
 
 
 def _guest(request: dict[str, Any], name: str, size: int, labels: dict[str, str], startup: str) -> dict[str, Any]:

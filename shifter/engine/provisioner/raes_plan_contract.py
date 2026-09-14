@@ -222,20 +222,22 @@ def _constraint_permits_virtual_machine(constraint: Mapping[str, Any]) -> bool:
     domain = constraint["value_domain"]
     posture = constraint["posture"]
     if posture == "open":
-        return domain is None
-    if not isinstance(domain, dict):
-        return False
-    if posture == "exact":
-        return domain == {"kind": "exact", "value": "virtual-machine"}
-    values = domain.get("values")
-    return (
-        posture == "constrained"
-        and set(domain) == {"kind", "values"}
-        and domain.get("kind") == "enum"
-        and isinstance(values, list)
-        and all(isinstance(value, str) for value in values)
-        and "virtual-machine" in values
-    )
+        permitted = domain is None
+    elif not isinstance(domain, dict):
+        permitted = False
+    elif posture == "exact":
+        permitted = domain == {"kind": "exact", "value": "virtual-machine"}
+    else:
+        values = domain.get("values")
+        permitted = (
+            posture == "constrained"
+            and set(domain) == {"kind", "values"}
+            and domain.get("kind") == "enum"
+            and isinstance(values, list)
+            and all(isinstance(value, str) for value in values)
+            and "virtual-machine" in values
+        )
+    return permitted
 
 
 def _validate_operations(envelope: Mapping[str, Any]) -> None:
