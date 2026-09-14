@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from shared.capacity import CapacityAssessmentResult
+    from shared.receipt_validation import ReceiptVerifierBinding
     from shared.remote_access import OpenVpnProfile
 
 logger = logging.getLogger(__name__)
@@ -203,6 +204,46 @@ def cms_get_range_status(range_instance_id: int) -> str:
     import cms.services as cms_services
 
     return cms_services.get_range_status_by_id(range_instance_id)
+
+
+def cms_project_ctf_receipt_binding(
+    range_instance_id: int,
+    *,
+    owner_user_id: int,
+    event_id: UUID,
+    participant_id: UUID,
+    profile_id: str,
+    objective_id: str,
+) -> ReceiptVerifierBinding:
+    """Resolve the exact receipt registration through the public CMS boundary."""
+    import cms.services as cms_services
+
+    return cms_services.project_ctf_receipt_binding(
+        range_instance_id,
+        owner_user_id=owner_user_id,
+        event_id=event_id,
+        participant_id=participant_id,
+        profile_id=profile_id,
+        objective_id=objective_id,
+    )
+
+
+def cms_confirm_ctf_receipt_binding(
+    range_instance_id: int,
+    *,
+    owner_user_id: int,
+    objective_id: str,
+    expected: ReceiptVerifierBinding,
+) -> None:
+    """Confirm an exact binding under CMS/Engine locks before scoring."""
+    import cms.services as cms_services
+
+    cms_services.confirm_ctf_receipt_binding(
+        range_instance_id,
+        owner_user_id=owner_user_id,
+        objective_id=objective_id,
+        expected=expected,
+    )
 
 
 def cms_get_range_target_instances(user: User) -> list[dict[str, str]]:

@@ -66,21 +66,29 @@ def _flag_hash_for_payload(
     validator_config: dict[str, Any] | None,
 ) -> str:
     """Validate flag payload fields and return the value to store in flag_hash."""
-    if flag_type not in VALID_FLAG_TYPES:
+    from ctf.extensions import flag_validator_supports_server_context, get_flag_validator
+
+    custom_validator = get_flag_validator(flag_type)
+    if flag_type not in VALID_FLAG_TYPES and custom_validator is None:
         raise CTFValidationError(
             f"Invalid flag_type: {flag_type}",
             details={"flag_type": flag_type},
         )
 
     if flag_type in ("static", "regex"):
-        return _flag_hash_for_static_or_regex(flag_type, flag_data, case_sensitive=case_sensitive)
-
-    if flag_type == "programmable":
+        flag_hash = _flag_hash_for_static_or_regex(flag_type, flag_data, case_sensitive=case_sensitive)
+    elif flag_type == "programmable":
         _validate_programmable_config(validator_config)
-        return "programmable"
-
-    validate_http_flag_config(validator_config)
-    return "http"
+        flag_hash = "programmable"
+    elif flag_type == "http":
+        validate_http_flag_config(validator_config)
+        flag_hash = "http"
+    elif flag_validator_supports_server_context(flag_type):
+        validate_http_flag_config(validator_config)
+        flag_hash = "receipt-context"
+    else:
+        flag_hash = "extension"
+    return flag_hash
 
 
 def _reject_non_flag_live_edits(challenge: CTFChallenge, challenge_data: dict[str, Any]) -> None:

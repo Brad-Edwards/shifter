@@ -18921,7 +18921,8 @@
           "flag": {
             "type": "string",
             "writeOnly": true,
-            "nullable": true
+            "nullable": true,
+            "maxLength": 4096
           }
         }
       },

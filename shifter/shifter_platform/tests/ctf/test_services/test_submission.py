@@ -194,7 +194,9 @@ class TestExactFlagSubmissions:
 
     def test_submission_at_storage_limit_is_accepted(self, participant, challenge):
         """The service bound includes the model field's exact maximum."""
-        exact_limit_flag = "x" * 500
+        storage_limit = CTFSubmission._meta.get_field("submitted_flag").max_length
+        assert storage_limit == 4096
+        exact_limit_flag = "x" * storage_limit
         add_flag(
             challenge.id,
             {
@@ -219,8 +221,9 @@ class TestExactFlagSubmissions:
             validator_config={"url": "https://validator.example.test/verify"},
         )
 
+        storage_limit = CTFSubmission._meta.get_field("submitted_flag").max_length
         with pytest.raises(CTFValidationError, match="maximum length"):
-            submit_flag(participant.id, challenge.id, "x" * 501)
+            submit_flag(participant.id, challenge.id, "x" * (storage_limit + 1))
 
         mock_dns.assert_not_called()
         assert not CTFSubmission.objects.filter(participant=participant, challenge=challenge).exists()

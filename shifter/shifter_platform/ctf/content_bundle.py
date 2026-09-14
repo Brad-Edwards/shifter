@@ -182,7 +182,11 @@ def _parse_flag(value: object) -> BundleFlag:
             value=_require_string(flag.get("value"), "flag value", maximum=2048),
         )
 
-    _reject_unknown(flag, common | {"url", "method", "timeout", "headers"}, "flag")
+    _reject_unknown(
+        flag,
+        common | {"url", "method", "timeout", "headers", "protocol", "profile_id", "objective_id"},
+        "flag",
+    )
     from ctf.validators import HTTPValidatorConfigError, normalize_http_validator_config
 
     try:
