@@ -25,6 +25,7 @@ from collections.abc import Callable, Sequence
 from typing import cast
 
 from config import (
+    GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCERangeCellConfig,
     GCERangeImageProfile,
     gce_image_profile_fingerprint,
@@ -354,6 +355,8 @@ def _instance_plans_for_node(
     the channels bind to that instance without any fan-out choice.
     """
     profile = resolve_image(node)
+    if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
+        raise RaesGcePlanError("RAES GCE does not support preconfigured-machine-host participant readiness")
     os_type = node.os_family or "linux"
     plans: list[InstancePlan] = []
     for index in range(node.count):

@@ -56,6 +56,7 @@ from ._http import (
     _try_one_address,
     validate_http,
 )
+from ._http_config import HTTPValidatorConfigError, normalize_http_validator_config
 from ._registry import (
     _VALIDATORS,
     ValidatorFunc,
@@ -81,6 +82,7 @@ __all__ = (
     "MAX_HTTP_TIMEOUT",
     "_BLOCKED_HOSTNAMES",
     "_VALIDATORS",
+    "HTTPValidatorConfigError",
     "ValidatorFunc",
     "_BlockedDestinationError",
     "_PinnedHTTPSConnection",
@@ -103,6 +105,7 @@ __all__ = (
     "get_validator",
     "is_blocked_url",
     "list_validators",
+    "normalize_http_validator_config",
     "register_validator",
     "socket",
     "validate_http",
