@@ -492,9 +492,13 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
                 "-raes-domain-') == ''",
                 "-raes-domain-') != ''",
             ),
+            "secret_version_extraction": (
+                "resource.name.extract('/secrets/{secret_id}/versions/')",
+                "resource.name",
+            ),
             "legacy_participant_classes": (
-                "resource.name.endsWith('-participant-ssh')",
-                "resource.name.endsWith('-ssh')",
+                "${local.legacy_secret_version_id}.endsWith('-participant-ssh')",
+                "${local.legacy_secret_version_id}.endsWith('-ssh')",
             ),
             "dynamic_lifecycle_condition": (
                 "resource.name.startsWith('${local.canonical_secret_prefix}')",
@@ -525,7 +529,7 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
         closed = "((${local.legacy_raes_directory_name_condition}) &&"
         broken = LIVE_IAM_TF.read_text().replace(
             closed,
-            "(!(${local.legacy_raes_directory_name_condition}) &&",
+            "(!(${local.legacy_raes_directory_name_condition}) && true &&",
             1,
         )
         with tempfile.TemporaryDirectory() as tmp:

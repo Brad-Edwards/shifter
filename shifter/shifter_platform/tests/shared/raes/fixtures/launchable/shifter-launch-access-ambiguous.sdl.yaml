@@ -8,9 +8,10 @@ nodes:
   lan:
     type: Switch
   web:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: "alpine", version: "3.19"}
     resources: {ram: 512 mib, cpu: 1}
 
@@ -33,7 +34,7 @@ accounts:
   analyst:
     username: analyst
     node: web
-    auth_method: publickey
+    auth_method: key
 
 agents:
   analyst:
@@ -48,3 +49,10 @@ agents:
   observer:
     entity: analyst-team
     description: Participant offered no interactive access.
+
+realization:
+  constraints:
+    - field_pointer: /nodes/web
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

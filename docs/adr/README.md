@@ -15,6 +15,35 @@ Existing registry, guardrail and import checks validate structure; they do not
 prove the runtime guarantees. Mechanism implementation and real-boundary
 evidence are required before support is advertised.
 
+The [#1583 preparation preflight](../architecture/raes-in-tenant-artifact-preparation-preflight-1583.md)
+applies GEN-002 to ADR-034-R9 and the existing ingestion, authority and worker
+boundaries. Its enforcement/evidence matrix distinguishes registry validation
+from runtime proof and records the required local/CI routing. It introduces no
+new ADR or check. Runtime enforcement now includes exact-image Job admission,
+installed IAM/Kubernetes readback, separate worker identities, and fenced
+inventory admission. Their behavioral tests complement the repository guards;
+the `layer-imports` check scans the separately built preparation worker through
+separate candidate-selection and import-extraction helpers while preserving the
+ADR-031 shared-RAES-facade restriction. This keeps the worker check
+independently maintainable without changing its enforced boundary.
+the [operator procedure](../ops/artifact-preparation.md) and
+[qualification record](../../shifter/packer/preparation/QUALIFICATION.md) describe
+how the deployed boundaries are exercised.
+The documentation coverage manifest links the operator guide and technical
+design from the feature and platform indexes under GEN-001.
+
+The same qualification corrected ADR-008-R7's GCP dynamic-secret conditions.
+The closed roles contain only Secret Manager permissions; fully qualified
+secret-name prefixes constrain their resource access. The conditions omit the
+additional resource-type predicate that rejected real workload calls, and
+participant suffix checks extract the parent secret ID from version names.
+The Terraform guard still rejects expanded prefixes, workload-secret access,
+additional permissions and conditions exceeding Google's complexity limit.
+Live provisioner probes cover absent and present secrets, creation, version
+publication, readback, deletion and denied platform-secret access. Portal probes
+verify both latest and numbered participant versions while rejecting host and
+directory credentials.
+
 ## Runtime Enforcement
 
 ADR-062 records the [signed CTF receipt binding preflight for #1906](../architecture/ctf-signed-receipt-binding-preflight-1906.md).

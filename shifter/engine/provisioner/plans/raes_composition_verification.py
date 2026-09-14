@@ -67,7 +67,7 @@ def _linux_account(account: RaesPlanAccount) -> list[str]:
         lines.append(f"passwd -S {user} 2>/dev/null | awk '{{print $2}}' | grep -Eq '^(L|LK)$' || fail")
     elif account.auth_method == "password":
         lines.append(f"passwd -S {user} 2>/dev/null | awk '{{print $2}}' | grep -Eq '^(P|PS)$' || fail")
-    elif account.auth_method == "publickey":
+    elif account.auth_method == "key":
         lines.extend(
             [
                 f"account_home=$(getent passwd {user} | cut -d: -f6)",
@@ -151,7 +151,7 @@ foreach ($Account in @($Spec.accounts)) {
         })) { Fail }
     }
     if ($User.Enabled -ne (-not [bool]$Account.disabled)) { Fail }
-    if (-not $Account.disabled -and $Account.auth_method -eq 'publickey') {
+    if (-not $Account.disabled -and $Account.auth_method -eq 'key') {
         $KeyPath = "C:\Users\$Username\.ssh\authorized_keys"
         if (-not (Test-Path -LiteralPath $KeyPath -PathType Leaf)) { Fail }
         if ((Get-Item -LiteralPath $KeyPath).Length -le 0) { Fail }

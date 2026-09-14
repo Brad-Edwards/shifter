@@ -20,6 +20,13 @@ imagePullPolicy: Always
 
 portal:
   replicas: 2
+  # The deployed portal uses about 900 MiB before pack compilation. Reserve
+  # headroom for RAES loading and authenticated catalog/preparation requests.
+  resources:
+    requests:
+      memory: 1Gi
+    limits:
+      memory: 2Gi
 
 workers:
   cms:

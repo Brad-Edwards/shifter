@@ -22,6 +22,13 @@ from shared.enums import ResourceStatus
 from workspaces.services import WorkspaceOperation
 
 from ._common import _validate_caller_user
+from ._range_destroy_dispatch import (
+    engine_cancel_range_by_request as _engine_cancel_range_by_request_call,
+)
+from ._range_destroy_dispatch import (
+    engine_destroy_range_by_request as _engine_destroy_range_by_request_call,
+)
+from ._range_destroy_query import destroyable_instances as _destroyable_instances
 from ._range_workspace import authorize_range_workspace
 
 if TYPE_CHECKING:
@@ -32,22 +39,6 @@ logger = logging.getLogger(__name__)
 # Shared error message for "Range not found" so we don't duplicate the literal (python:S1192).
 _RANGE_NOT_FOUND_MSG = "Range not found"
 _MISSING_REQUEST_MSG = "Range has no associated request"
-
-
-def _engine_destroy_range_by_request_call(request_id: UUID) -> bool:
-    """Late-bound call so test patches of cms.services.engine_destroy_range_by_request apply."""
-    from cms import services as _cs
-
-    result: bool = _cs.engine_destroy_range_by_request(request_id)
-    return result
-
-
-def _engine_cancel_range_by_request_call(request_id: UUID) -> bool:
-    """Late-bound call so test patches of cms.services.engine_cancel_range_by_request apply."""
-    from cms import services as _cs
-
-    result: bool = _cs.engine_cancel_range_by_request(request_id)
-    return result
 
 
 _TransitionSpec = tuple[str, Callable[[UUID], bool], AuditAction, str, str, bool]
@@ -184,7 +175,7 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
     )
 
     try:
-        instance = RangeInstance.objects.get(pk=range_instance_pk)
+        instance = _destroyable_instances().get(pk=range_instance_pk)
     except RangeInstance.DoesNotExist:
         logger.warning(
             "destroy_range: range not found for user_id=%s, range_instance_pk=%s",
@@ -376,10 +367,14 @@ def destroy_range_by_request_id(user: User, request_id: str) -> None:
         request_id,
     )
 
-    instance = RangeInstance.objects.filter(
-        request__request_id=request_id,
-        user_id=user.id,
-    ).first()
+    instance = (
+        _destroyable_instances()
+        .filter(
+            request__request_id=request_id,
+            user_id=user.id,
+        )
+        .first()
+    )
 
     if not instance:
         logger.warning(

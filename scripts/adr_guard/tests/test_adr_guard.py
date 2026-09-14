@@ -919,6 +919,25 @@ class LayerImportTighteningTests(unittest.TestCase):
 
             self.assertEqual(violations, [])
 
+    def test_preparation_worker_cannot_import_raes_packages_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/packer/preparation/worker.py"
+            self._write_layer_repo(repo_root, rel, "from raes_contracts.json_ingress import parse\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-031-R1")
+
+    def test_preparation_worker_may_use_shared_raes_facade(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/packer/preparation/worker.py"
+            self._write_layer_repo(repo_root, rel, "from shared.raes.json_ingress import parse\n")
+
+            self.assertEqual(ADR_GUARD.check_layer_imports(repo_root, [rel]), [])
+
 
 class SymbolFacadeAllowlistTests(unittest.TestCase):
     """ADR-001-R4: mission_control -> engine.services is a per-symbol seam.

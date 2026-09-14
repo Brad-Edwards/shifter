@@ -89,6 +89,9 @@ class AuditEntityType(models.TextChoices):
     COMMUNICATION = "communication", "Communication"
     # Model-access sharing binding (PLAT-202, #2139).
     SHARING_BINDING = "sharing_binding", "Sharing Binding"
+    PREPARATION_ADAPTER = "preparation_adapter", "Preparation Adapter"
+    PREPARATION_GRANT = "preparation_grant", "Preparation Grant"
+    ARTIFACT_PREPARATION = "artifact_preparation", "Artifact Preparation"
 
 
 class AuditActorType(models.TextChoices):

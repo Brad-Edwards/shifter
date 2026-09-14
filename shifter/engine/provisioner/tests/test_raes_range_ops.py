@@ -23,6 +23,7 @@ from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import RaesOperationInput
 from shared.raes.participant_access import ParticipantAccessBinding
 
+import raes_gcp_network_allocation
 import raes_range_ops
 import range_placement
 from config import GCERangeCellConfig, GCERangeImageProfile
@@ -36,7 +37,8 @@ def _serialized_plan() -> dict:
     return {
         "kind": "raes_provisioning_plan",
         "contract_version": RAES_PROVISIONING_PLAN_CONTRACT_VERSION,
-        "raes_version": "2.0.0",
+        "raes_version": "3.5.0",
+        "operation_id": _OPERATION_ID,
         "resources": {
             "net.lan": {
                 "address": "net.lan",
@@ -54,6 +56,13 @@ def _serialized_plan() -> dict:
             },
         },
     }
+
+
+def _open_network_plan() -> dict:
+    plan = _serialized_plan()
+    plan["resources"].pop("net.lan")
+    plan["resources"]["node.web"]["payload"]["spec"]["infrastructure"] = {}
+    return plan
 
 
 _BINDING = DeliveryBinding(
@@ -89,13 +98,45 @@ def _projection(**overrides) -> RaesOperationInput:
 @pytest.fixture
 def patched(monkeypatch):
     calls = SimpleNamespace(
-        apply=MagicMock(return_value={"composition_verified_addresses": [], "instances": []}),
+        apply=MagicMock(
+            return_value={
+                "operating_systems": [
+                    {"instance_key": "node.web#0", "family": "linux", "distribution": "ubuntu", "version": "22.04"}
+                ],
+                "compute_substrates": [{"instance_key": "node.web#0", "value": "virtual-machine"}],
+                "composition_verified_addresses": [],
+                "instances": [],
+            }
+        ),
         destroy=MagicMock(),
         config=MagicMock(name="gce_config"),
         load_config=MagicMock(),
         append=MagicMock(),
         read_input=MagicMock(side_effect=lambda *a, **k: _run()),
         get_range_data=MagicMock(return_value={"subnet_index": 1, "placement_zone": ""}),
+        reserve_subnet=MagicMock(
+            return_value={
+                "subnets": [
+                    {
+                        "uuid": "backend.gce.network.default",
+                        "name": "backend-default",
+                        "cidr": "10.90.0.0/28",
+                    }
+                ]
+            }
+        ),
+        read_subnet=MagicMock(
+            return_value={
+                "subnets": [
+                    {
+                        "uuid": "backend.gce.network.default",
+                        "name": "backend-default",
+                        "cidr": "10.90.0.0/28",
+                    }
+                ]
+            }
+        ),
+        release_subnet=MagicMock(),
     )
     calls.load_config.return_value = calls.config
     monkeypatch.setattr(raes_range_ops, "get_raes_operation_input", calls.read_input)
@@ -106,6 +147,9 @@ def patched(monkeypatch):
     monkeypatch.setattr(raes_range_ops, "apply_raes_range_cell", calls.apply)
     monkeypatch.setattr(raes_range_ops, "destroy_raes_range_cell", calls.destroy)
     monkeypatch.setattr(raes_range_ops, "append_operation_step_result", calls.append)
+    monkeypatch.setattr(raes_gcp_network_allocation, "_reserve_range_subnet_cidrs", calls.reserve_subnet)
+    monkeypatch.setattr(raes_gcp_network_allocation, "_realized_range_spec_for_destroy", calls.read_subnet)
+    monkeypatch.setattr(raes_range_ops, "_release_subnet_allocations_best_effort", calls.release_subnet)
     return calls
 
 
@@ -150,9 +194,36 @@ class TestProvision:
             ResultStep.RAES_TERMINAL_READY,
         ]
 
+    def test_open_network_uses_shared_vpc_allocator_before_apply(self, patched):
+        patched.config.network_mode = "shared-vpc"
+        patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
+
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        patched.reserve_subnet.assert_called_once_with(
+            "req-1",
+            raes_gcp_network_allocation._OPEN_NETWORK_SPEC,
+            operation_id=_OPERATION_ID,
+        )
+        assert patched.apply.call_args.kwargs["options"].allocated_network_cidr == "10.90.0.0/28"
+
+    def test_failed_open_network_apply_retains_shared_vpc_allocation_for_cleanup(self, patched):
+        patched.config.network_mode = "shared-vpc"
+        patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
+        patched.apply.side_effect = RuntimeError("apply failed")
+
+        with pytest.raises(RuntimeError, match="apply failed"):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        patched.release_subnet.assert_not_called()
+
     def test_the_terminal_result_carries_the_realized_access_projection(self, patched):
         """One generation, one atomic apply: READY carries its own realized state."""
         patched.apply.return_value = {
+            "operating_systems": [
+                {"instance_key": "node.web#0", "family": "linux", "distribution": "ubuntu", "version": "22.04"}
+            ],
+            "compute_substrates": [{"instance_key": "node.web#0", "value": "virtual-machine"}],
             "composition_verified_addresses": [],
             "instances": [
                 {
@@ -189,6 +260,10 @@ class TestProvision:
     def test_members_carry_declared_sftp_root_directory(self, patched):
         """A realized instance's SFTP root reaches the member projection (#375)."""
         patched.apply.return_value = {
+            "operating_systems": [
+                {"instance_key": "node.web#0", "family": "linux", "distribution": "ubuntu", "version": "22.04"}
+            ],
+            "compute_substrates": [{"instance_key": "node.web#0", "value": "virtual-machine"}],
             "composition_verified_addresses": [],
             "instances": [
                 {
@@ -212,6 +287,10 @@ class TestProvision:
     def test_members_omit_sftp_root_directory_when_absent(self, patched):
         """No declared root emits no key rather than an empty guess (#375)."""
         patched.apply.return_value = {
+            "operating_systems": [
+                {"instance_key": "node.web#0", "family": "linux", "distribution": "ubuntu", "version": "22.04"}
+            ],
+            "compute_substrates": [{"instance_key": "node.web#0", "value": "virtual-machine"}],
             "composition_verified_addresses": [],
             "instances": [
                 {
@@ -234,6 +313,10 @@ class TestProvision:
     def test_members_never_carry_the_management_secret_reference(self, patched):
         """The provisioner-managed host key secret is not a participant credential."""
         patched.apply.return_value = {
+            "operating_systems": [
+                {"instance_key": "node.web#0", "family": "linux", "distribution": "ubuntu", "version": "22.04"}
+            ],
+            "compute_substrates": [{"instance_key": "node.web#0", "value": "virtual-machine"}],
             "composition_verified_addresses": [],
             "instances": [
                 {
@@ -437,6 +520,33 @@ class TestDestroy:
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
         assert _steps(patched) == [ResultStep.RAES_DESTROY_RUNNING, ResultStep.RAES_TERMINAL_DESTROYED]
 
+    def test_open_network_reuses_and_releases_shared_vpc_allocation(self, patched):
+        patched.config.network_mode = "shared-vpc"
+        patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
+
+        raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        patched.read_subnet.assert_called_once_with(
+            "req-1",
+            raes_gcp_network_allocation._OPEN_NETWORK_SPEC,
+            operation_id=_OPERATION_ID,
+        )
+        assert patched.destroy.call_args.args[3].allocated_network_cidr == "10.90.0.0/28"
+        patched.release_subnet.assert_called_once_with("req-1", operation_id=_OPERATION_ID)
+
+    def test_open_network_without_a_reservation_still_converges_destroy(self, patched):
+        patched.config.network_mode = "shared-vpc"
+        patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
+        patched.read_subnet.return_value = raes_gcp_network_allocation._OPEN_NETWORK_SPEC
+
+        raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        options = patched.destroy.call_args.args[3]
+        assert options.allocated_network_cidr is None
+        assert options.reconstruct_without_allocation is True
+        patched.release_subnet.assert_not_called()
+        assert _steps(patched)[-1] == ResultStep.RAES_TERMINAL_DESTROYED
+
     def test_forwards_the_parsed_plan(self, patched):
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
         request_id, range_id, raes_plan = patched.destroy.call_args.args[:3]
@@ -444,7 +554,7 @@ class TestDestroy:
         assert isinstance(raes_plan, RaesPlan)
         assert [n.address for n in raes_plan.nodes] == ["node.web"]
         patched.load_config.assert_called_once_with(backend="gce")
-        assert patched.destroy.call_args.kwargs["config"] is patched.config
+        assert patched.destroy.call_args.args[3].config is patched.config
 
     def test_failure_reports_a_closed_reason_code_and_reraises(self, patched):
         patched.destroy.side_effect = RuntimeError("kaboom")
@@ -578,7 +688,7 @@ class TestMultiRegionZonePoolPlacement:
 
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
 
-        bound = patched.destroy.call_args.kwargs["config"]
+        bound = patched.destroy.call_args.args[3].config
         assert (bound.zone, bound.region) == ("us-east4-a", "us-east4")
 
     def test_no_stored_placement_leaves_the_configured_scalar_zone(self, patched):

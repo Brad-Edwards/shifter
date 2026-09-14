@@ -13,6 +13,7 @@ we assert the core works standalone with arbitrary provider wiring.
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -66,6 +67,37 @@ def _runner(profile, batch_api: MagicMock, core_api: MagicMock) -> KubernetesTas
 
 class TestInjectedProfileDrivesJobShape:
     """The Job manifest reflects the injected profile, not any GCP constant."""
+
+    def test_private_task_profile_binds_pull_auth_resources_and_deadline(self):
+        batch_api = MagicMock()
+        batch_api.create_namespaced_job.return_value = SimpleNamespace(metadata=SimpleNamespace(name="bounded-task"))
+        core_api = MagicMock()
+        client = _make_fake_k8s_client()
+        client.V1ResourceRequirements = lambda **kwargs: SimpleNamespace(**kwargs)
+        client.V1LocalObjectReference = lambda **kwargs: SimpleNamespace(**kwargs)
+        profile = replace(
+            _profile(service_account="private-adapter"),
+            image_pull_secrets=("private-registry",),
+            resource_requests={"cpu": "500m", "memory": "512Mi"},
+            resource_limits={"cpu": "1", "memory": "1Gi", "ephemeral-storage": "2Gi"},
+            active_deadline_seconds=1800,
+        )
+        runner = KubernetesTaskRunner(profile)
+        runner._load_kubernetes_api = MagicMock(return_value=(batch_api, core_api, client, _ApiException))
+        runner.run_task(
+            task_definition="registry.example/private@sha256:" + "a" * 64,
+            cluster="private-tasks",
+            command=["00000000-0000-0000-0000-000000000001"],
+            container_name=_HARDENED_CONTAINER,
+        )
+        job = batch_api.create_namespaced_job.call_args.kwargs["body"]
+        pod = job.spec.template.spec
+        assert [ref.name for ref in pod.image_pull_secrets] == ["private-registry"]
+        assert pod.containers[0].resources.requests == profile.resource_requests
+        assert pod.containers[0].resources.limits == profile.resource_limits
+        assert job.spec.active_deadline_seconds == 1800
+        assert pod.service_account_name == "private-adapter"
+        assert pod.containers[0].security_context.read_only_root_filesystem
 
     def test_profile_values_applied_and_named_container_hardened(self) -> None:
         batch_api = MagicMock()

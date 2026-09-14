@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from shared.raes.artifact_binding import ArtifactBinding
-    from shared.raes.artifact_inventory import BackendArtifact
+    from shared.raes.artifact_inventory import ArtifactRequirements, ArtifactSupply, BackendArtifact
     from shared.raes.content_delivery import DeliveryBinding
     from shared.raes.participant_access import ParticipantAccessBinding
     from shared.range_instantiation_policy import BackendAdmission
@@ -130,6 +130,12 @@ class CmsRaesDispatchPort:
             capabilities=shifter_artifact_mechanism_capabilities(),
             backend=shifter_backend_apparatus(),
         )
+
+    def artifact_supply(self, requirements: ArtifactRequirements) -> ArtifactSupply:
+        """Give planning the same admitted backend inventory used to fence dispatch."""
+        from shared.raes.artifact_inventory import build_artifact_supply
+
+        return build_artifact_supply(requirements, self._backend_inventory())
 
     def _backend_inventory(self) -> tuple[BackendArtifact, ...]:
         """Return the selected backend's owned artifact inventory, or empty when it has none.

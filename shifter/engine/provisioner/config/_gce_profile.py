@@ -57,6 +57,8 @@ class GCERangeImageProfile:
     # means the image declared none; the connection layer then omits the SFTP
     # directory rather than guessing one from ``os_type``.
     sftp_root_directory: str = ""
+    # Set only by a verified artifact binding, never resolved from a source alias.
+    source_image_id: str = ""
 
 
 def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
@@ -68,6 +70,8 @@ def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
         # standard, Polaris, and pre-promoted-DC guest across the rollout.
         profile_fields.pop("participant_readiness_contract")
         profile_fields.pop("participant_readiness_manifest_sha256")
+    if not profile.source_image_id:
+        profile_fields.pop("source_image_id")
     canonical = json.dumps(profile_fields, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
 
