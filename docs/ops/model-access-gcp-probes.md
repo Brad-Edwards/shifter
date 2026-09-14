@@ -46,12 +46,14 @@ reviewed policy inventory, not credentials or raw provider responses.
 ## Private transport and source preservation
 
 Use the actual deployment project and region, never infer them from an
-account name. For the current dev target they are `prod-h5k4z5` and
-`us-central1`. Read-only cluster inspection:
+account name. Resolve the project from the deployment configuration (the
+`GCP_PROJECT_ID` for the target environment) and export it, e.g.
+`export GCP_PROJECT=<your-project>`; the region is `us-central1`. Read-only
+cluster inspection:
 
 ```bash
 gcloud container clusters describe shifter-gcp-dev-gke \
-  --project prod-h5k4z5 --region us-central1 \
+  --project "$GCP_PROJECT" --region us-central1 \
   --format='yaml(currentMasterVersion,network,subnetwork,networkConfig.datapathProvider,privateClusterConfig.enablePrivateNodes,workloadIdentityConfig.workloadPool)'
 kubectl -n shifter-platform get service model-broker -o yaml
 kubectl -n shifter-platform get networkpolicy -o yaml
