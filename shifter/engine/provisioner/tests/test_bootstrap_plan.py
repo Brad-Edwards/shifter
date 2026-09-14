@@ -620,9 +620,8 @@ class TestPolarisAwsAgentSecurity:
                 )
             assert result.returncode == 0, f"{name} failed bash -n: {result.stderr}"
 
-    def test_empty_provider_fragments_preserve_pre_slice5_compose(self):
-        """With every provider fragment empty, the shared template preserves
-        the original compose block and blank line before ``cd .../build``."""
+    def test_empty_provider_fragments_keep_base_compose_contract(self):
+        """Provider fragments do not own the shared splice entrypoint."""
         from orchestrators.setup_orchestrator import SetupOrchestrator
         from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
@@ -632,27 +631,26 @@ class TestPolarisAwsAgentSecurity:
             "aws_agent_setup_block": "",
             "aws_agent_compose_block": "",
             "gcp_agent_compose_block": "",
+            "splice_credential_helper_b64": "aGVscGVy",
         }
         rendered = SetupOrchestrator._render_script(POLARIS_RANGE_BOOTSTRAP_SCRIPT, context, "polaris_range_bootstrap")
 
-        assert _ORIGINAL_A14_KALI_COMPOSE_BLOCK in rendered
-        assert _ORIGINAL_PUBKEY_VALIDATION_TO_BUILD_CD in rendered
+        assert 'KALI_SPLICE_PRIVATE_KEY_B64: "$SPLICE_PRIVATE_KEY_B64"' in rendered
+        assert "/usr/local/libexec/polaris-splice-credential.py\n      - entrypoint" in rendered
         assert "/run/shifter-agent" not in rendered
         assert "credential_process" not in rendered
 
-    def test_bootstrap_explicitly_stages_splice_key_and_fails_closed(self):
-        """The provisioner must not depend on the baked a14/a9 entrypoints to
-        understand the splice key env vars. It generates the per-range keypair,
-        writes both halves into the recreated containers, and aborts if either
-        file is still missing."""
+    def test_bootstrap_uses_shared_splice_helper_and_fails_closed(self):
+        """Bootstrap stages one helper instead of duplicating A14 repair."""
         from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
-        assert "base64 -d | docker exec -i a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
-        assert "cat > /home/kali/.ssh/splice_relay" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
-        assert "Host splice-relay" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert '{{ splice_credential_helper_b64 }}" | base64 -d' in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "host-repair --container a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "entrypoint:" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "cat > /root/.ssh/authorized_keys" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "splice_staged=0" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "polaris bootstrap: splice key staging failed" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "cat > /home/kali/.ssh/splice_relay" not in POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
     def test_bootstrap_enforces_kali_sudo_and_xrdp_prerequisites(self):
         """Polaris users land in a14-kali, so the bootstrap owns the user-facing
@@ -699,10 +697,11 @@ class TestPolarisAwsAgentSecurity:
 
     # --- Fail-closed verification (AWS-only verify_step variant) ----------
 
-    def test_gcp_verify_script_is_byte_identical_to_pre_slice5(self):
+    def test_gcp_verify_script_uses_shared_splice_contract(self):
         from plans._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
-        assert VERIFY_POLARIS_BOOTSTRAP_SCRIPT == _ORIGINAL_VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        assert "polaris-splice-credential.py host-check --container a14-kali" in VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        assert "stat -c '%a' /home/kali/.ssh/splice_relay" not in VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
     def test_gcp_verify_step_uses_shared_script(self):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
@@ -726,7 +725,7 @@ class TestPolarisAwsAgentSecurity:
             "a14-kali is not running",
             "dc01.boreas.local resolved to",
             "authorized_keys is missing or empty",
-            "splice_relay private key missing",
+            "splice credential contract failed",
             "polaris-splice-watcher.service is not active",
         ]
         for marker in common_checks:

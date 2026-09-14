@@ -28,6 +28,15 @@ fi
 {{ aws_agent_setup_block }}
 cd /opt/polaris/scenario-dev/polaris/build
 
+# Install the exact reviewed helper carried by the provisioner image. The
+# Compose override mounts it read-only into a14-kali and makes it the entrypoint
+# wrapper, so every later recreation repairs the writable-layer projection.
+install -d -o root -g root -m 0755 /opt/polaris/libexec
+HELPER_TMP="$(mktemp /opt/polaris/libexec/.polaris-splice-credential.XXXXXX)"
+printf '%s' "{{ splice_credential_helper_b64 }}" | base64 -d > "$HELPER_TMP"
+chmod 0755 "$HELPER_TMP"
+mv "$HELPER_TMP" /opt/polaris/libexec/polaris-splice-credential.py
+
 # Per-range Ed25519 keypair for the A9 splice-relay credential gate
 # (#707). The private half is staged on a14-kali via the entrypoint
 # (`KALI_SPLICE_PRIVATE_KEY_B64`, base64 so the value stays single-line
@@ -58,6 +67,9 @@ services:
     environment:
       KALI_AUTHORIZED_KEY: "$KALI_PUBKEY"
       KALI_SPLICE_PRIVATE_KEY_B64: "$SPLICE_PRIVATE_KEY_B64"{{ aws_agent_compose_block }}{{ gcp_agent_compose_block }}
+    entrypoint:
+      - /usr/local/libexec/polaris-splice-credential.py
+      - entrypoint
   a9-splice:
     environment:
       A9_AUTHORIZED_KEY: "$SPLICE_PUBLIC_KEY"
@@ -272,35 +284,6 @@ if ! docker exec a14-kali grep -q '^ssl_protocols=TLSv1.2$' /etc/xrdp/xrdp.ini; 
 fi
 echo "polaris bootstrap: kali sudo and XRDP prerequisites enforced"
 
-# Stage the splice credential explicitly after the force-recreate. Newer
-# a14/a9 entrypoints consume the env vars above, but older baked Polaris images
-# may not; writing the files here keeps the provisioner bootstrap authoritative
-# for the participant-visible credential contract.
-docker exec a14-kali sh -c '
-mkdir -p /home/kali/.ssh
-chown kali:kali /home/kali/.ssh
-chmod 700 /home/kali/.ssh
-'
-printf '%s' "$SPLICE_PRIVATE_KEY_B64" | base64 -d | docker exec -i a14-kali sh -c '
-umask 077
-cat > /home/kali/.ssh/splice_relay
-chown kali:kali /home/kali/.ssh/splice_relay
-chmod 600 /home/kali/.ssh/splice_relay
-'
-docker exec a14-kali sh -c '
-touch /home/kali/.ssh/config
-if ! grep -q "^Host splice-relay$" /home/kali/.ssh/config; then
-cat >> /home/kali/.ssh/config <<'"'"'SSH_CONFIG_EOF'"'"'
-Host splice-relay
-  HostName a9-splice
-  User root
-  IdentityFile /home/kali/.ssh/splice_relay
-  StrictHostKeyChecking no
-  UserKnownHostsFile /dev/null
-SSH_CONFIG_EOF
-fi
-chown kali:kali /home/kali/.ssh/config
-chmod 600 /home/kali/.ssh/config'
 docker exec a9-splice sh -c '
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
@@ -309,6 +292,10 @@ printf '%s\n' "$SPLICE_PUBLIC_KEY" | docker exec -i a9-splice sh -c '
 cat > /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 '
+
+# Use the same helper that entrypoint and fleet repair use. It restores legacy
+# running containers without restarting them and fails closed on pair mismatch.
+/opt/polaris/libexec/polaris-splice-credential.py host-repair --container a14-kali
 
 # Verify the kali container actually has the per-instance pubkey written
 # (the a14 entrypoint reads $KALI_AUTHORIZED_KEY and writes the file).
