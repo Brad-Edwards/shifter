@@ -25,6 +25,7 @@ from ctf.services.public_registration import (
     submit_public_registration_request,
 )
 from shared.audit import get_client_ip
+from shared.log_sanitize import safe_log_value
 from shared.rate_limit import consume_fixed_window
 
 PUBLIC_RATE_WINDOW_SECONDS = 60 * 60
@@ -107,7 +108,7 @@ def _admission_rejection(request: HttpRequest, event_id: UUID) -> HttpResponse |
     try:
         admitted = _consume_public_budget(request, event_id)
     except Exception:
-        logger.exception("Public CTF registration limiter unavailable for event %s", event_id)
+        logger.exception("Public CTF registration limiter unavailable for event %s", safe_log_value(event_id))
         response = _fixed_response(_TEMPORARILY_UNAVAILABLE_MESSAGE, status=503)
     else:
         if not admitted:
@@ -154,10 +155,10 @@ def _submit_valid_registration(
     except PublicEventUnavailable:
         response = _fixed_response(_NOT_FOUND_MESSAGE, status=404)
     except PublicRegistrationQueueFull:
-        logger.warning("Public CTF registration queue full for event %s", event_id)
+        logger.warning("Public CTF registration queue full for event %s", safe_log_value(event_id))
         response = _fixed_response(_TEMPORARILY_UNAVAILABLE_MESSAGE, status=503)
     except (ValidationError, IntegrityError):
-        logger.exception("Public CTF registration persistence failed for event %s", event_id)
+        logger.exception("Public CTF registration persistence failed for event %s", safe_log_value(event_id))
         response = _fixed_response(_TEMPORARILY_UNAVAILABLE_MESSAGE, status=503)
     else:
         response = _render_public(request, projection, submitted=True)

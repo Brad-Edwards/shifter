@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
+from io import StringIO
 from unittest.mock import patch
+from uuid import UUID
 
 import pytest
 from django.core.cache import caches
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
@@ -222,6 +225,30 @@ def test_public_registration_charges_invalid_attempts_and_fails_closed_on_limite
         unavailable = Client().post(url, {"name": "Ada", "email": "ada@example.com"})
     assert unavailable.status_code == 503
     assert "redis unavailable" not in unavailable.content.decode()
+
+
+def test_public_registration_sanitizes_event_identifier_in_failure_logs(ctf_event, monkeypatch):
+    from ctf import public_views
+
+    monkeypatch.setattr(public_views, "_consume_public_budget", lambda *_args: (_ for _ in ()).throw(RuntimeError()))
+
+    class UnsafeEventID(UUID):
+        def __str__(self) -> str:
+            return f"{super().__str__()}\nforged-entry"
+
+    event_id = UnsafeEventID(str(ctf_event.pk))
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    public_views.logger.addHandler(handler)
+    try:
+        response = public_views._admission_rejection(RequestFactory().post("/"), event_id)
+    finally:
+        public_views.logger.removeHandler(handler)
+
+    assert response is not None
+    assert response.status_code == 503
+    assert f"{ctf_event.pk}\\nforged-entry" in stream.getvalue()
+    assert f"{ctf_event.pk}\nforged-entry" not in stream.getvalue()
 
 
 def test_public_registration_uses_exact_route_and_safe_methods(ctf_event):
