@@ -30,15 +30,26 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from shared.model_access import (
+    AuthorityInvalidation,
+    AuthorityState,
     BindingMatch,
     EffectivePolicy,
     ModelAccessCatalog,
+    ModelAccessRangePage,
+    ModelAccessRangeView,
     OwnedReference,
+    PublisherAuthorityEvidence,
+    SelectorAuthorityEvidence,
+    SelectorResolution,
+    SharingAuthorityEvidence,
     SharingBinding,
     SharingPool,
+    SpendingEligibilityEvidence,
+    SubjectAuthorizationEvidence,
     compile_effective_policy,
     compute_digest,
 )
@@ -50,6 +61,7 @@ from ._sharing_persistence import (
     MembershipEvidence,
     SharingError,
     _as_binding,
+    _as_evidence,
     _as_pool,
     _as_ref,
     _audit,
@@ -57,6 +69,9 @@ from ._sharing_persistence import (
     _match_for_subject,
     _require_facet_reference,
     _require_membership_evidence,
+    _require_projection_fences,
+    _require_publisher_authority,
+    _require_spending_eligibility,
     _resolve_catalog_profile,
     _seal_with_publisher,
     _upsert_pool,
@@ -68,14 +83,139 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MembershipEvidence",
+    "ModelAccessRangeView",
     "SharingError",
     "drain_sharing_binding",
     "get_or_create_allocation_group",
+    "invalidate_sharing_authority",
     "preview_effective_policy",
+    "project_selector_resolution",
+    "publish_authority_fence",
     "publish_membership_projection",
     "publish_sharing_binding",
+    "resolve_model_access_range_page",
+    "resolve_model_access_range_views",
     "validate_sharing_binding",
 ]
+
+
+def resolve_model_access_range_page(
+    *,
+    range_uuids: tuple[UUID, ...] | None = None,
+    request_uuids: tuple[UUID, ...] | None = None,
+    user_ids: tuple[int, ...] | None = None,
+    workspace_ids: tuple[int, ...] | None = None,
+    all_ranges: bool = False,
+    continuation: UUID | None = None,
+    page_size: int = 1000,
+) -> ModelAccessRangePage:
+    """Lock one bounded keyset page from an exact range-membership query.
+
+    Explicit identity queries are exact: an unknown or terminal range makes the
+    whole resolution fail closed. Automatic collections expose an assessment
+    count and continuation so deployment growth never turns into a hard result
+    ceiling. Collection queries may legitimately resolve to an empty set.
+    """
+    from engine.models import Range
+
+    modes = (range_uuids, request_uuids, user_ids, workspace_ids)
+    if sum(value is not None for value in modes) + int(all_ranges) != 1:
+        raise SharingError("sharing.range_resolution_shape")
+
+    explicit_values: tuple[object, ...] | None = None
+    filters: dict[str, object] = {}
+    if range_uuids is not None:
+        explicit_values = tuple(range_uuids)
+        filters["uuid__in"] = explicit_values
+    elif request_uuids is not None:
+        explicit_values = tuple(request_uuids)
+        filters["request__request_id__in"] = explicit_values
+    elif user_ids is not None:
+        filters["user_id__in"] = tuple(user_ids)
+    elif workspace_ids is not None:
+        filters["workspace_id__in"] = tuple(workspace_ids)
+
+    supplied = next((value for value in modes if value is not None), ())
+    if len(supplied) != len(set(supplied)):
+        raise SharingError("sharing.range_resolution_shape")
+    if explicit_values is not None and len(supplied) > 1000:
+        raise SharingError("sharing.range_resolution_shape")
+    if any(isinstance(value, bool) for value in supplied):
+        raise SharingError("sharing.range_resolution_shape")
+    if (
+        isinstance(page_size, bool)
+        or not isinstance(page_size, int)
+        or not 1 <= page_size <= 1000
+        or (continuation is not None and not isinstance(continuation, UUID))
+        or (explicit_values is not None and continuation is not None)
+        or (explicit_values is not None and page_size < len(explicit_values))
+    ):
+        raise SharingError("sharing.range_resolution_shape")
+
+    unavailable = (Range.Status.DESTROYING, Range.Status.DESTROYED, Range.Status.FAILED)
+    with transaction.atomic():
+        eligible = Range.objects.filter(**filters).exclude(status__in=unavailable)
+        assessment_count = eligible.count()
+        if continuation is not None:
+            eligible = eligible.filter(uuid__gt=continuation)
+        page_rows = tuple(
+            eligible.select_for_update(of=("self",)).select_related("request").order_by("uuid")[: page_size + 1]
+        )
+        if explicit_values is not None and assessment_count != len(explicit_values):
+            raise SharingError("sharing.range_membership_unavailable")
+        rows = page_rows[:page_size]
+        items = tuple(
+            ModelAccessRangeView(
+                range_ref=OwnedReference(owner="deployment", reference=f"range:{row.uuid}"),
+                authority_ref=OwnedReference(owner="engine", reference=f"range:{row.uuid}"),
+                range_uuid=row.uuid,
+                owner_user_id=row.user_id,
+                workspace_id=row.workspace_id,
+                request_uuid=row.request.request_id if row.request is not None else None,
+            )
+            for row in rows
+        )
+        return ModelAccessRangePage(
+            items=items,
+            assessment_count=assessment_count,
+            continuation=items[-1].range_uuid if len(page_rows) > page_size else None,
+        )
+
+
+def resolve_model_access_range_views(
+    *,
+    range_uuids: tuple[UUID, ...] | None = None,
+    request_uuids: tuple[UUID, ...] | None = None,
+    user_ids: tuple[int, ...] | None = None,
+    workspace_ids: tuple[int, ...] | None = None,
+    all_ranges: bool = False,
+) -> tuple[ModelAccessRangeView, ...]:
+    """Resolve a complete collection through stable bounded keyset pages."""
+    items: list[ModelAccessRangeView] = []
+    continuation = None
+    assessment_count = None
+    while True:
+        page = resolve_model_access_range_page(
+            range_uuids=range_uuids,
+            request_uuids=request_uuids,
+            user_ids=user_ids,
+            workspace_ids=workspace_ids,
+            all_ranges=all_ranges,
+            continuation=continuation,
+        )
+        if assessment_count is None:
+            assessment_count = page.assessment_count
+        elif page.assessment_count != assessment_count:
+            raise SharingError("sharing.range_membership_changed")
+        items.extend(page.items)
+        if page.continuation is None:
+            break
+        if continuation == page.continuation:
+            raise SharingError("sharing.range_membership_changed")
+        continuation = page.continuation
+    if len(items) != assessment_count:
+        raise SharingError("sharing.range_membership_changed")
+    return tuple(items)
 
 
 def validate_sharing_binding(
@@ -152,6 +292,19 @@ def publish_sharing_binding(
         projection = _require_membership_evidence(
             deployment_id, sealed.sharing_binding_id, selector_digest, sealed.membership_revision
         )
+        publisher_authorities = _require_publisher_authority(
+            deployment_id=deployment_id,
+            projection=projection,
+            binding=sealed,
+            publisher=publisher,
+            lock=False,
+        )
+        _require_spending_eligibility(
+            deployment_id=deployment_id,
+            projection=projection,
+            binding=sealed,
+            lock=False,
+        )
         frozen_members = _frozen_snapshot(projection, is_snapshot, empty_snapshot_ack)
 
         next_revision = current + 1
@@ -171,21 +324,23 @@ def publish_sharing_binding(
             effective_from=sealed.effective_from,
             effective_until=sealed.effective_until,
             observed_membership_revision=projection.membership_revision,
+            observed_assessment_count=projection.assessment_count,
+            observed_authority_revisions=projection.selector_authorities,
+            publisher_authority_revisions=[item.model_dump(mode="json") for item in publisher_authorities],
             publisher_owner=publisher.owner,
             publisher_reference=publisher.reference,
             empty_snapshot_ack=empty_snapshot_ack,
             state=_ACTIVE,
         )
-
-    _audit(
-        "sharing_publish",
-        entity_id=record.pk,
-        context=(
-            f"binding={sealed.sharing_binding_id} revision={next_revision} "
-            f"pool={sealed.sharing_pool_id} priority={sealed.priority} "
-            f"facets={','.join(facet.value for facet in sealed.facets)}"
-        ),
-    )
+        _audit(
+            "sharing_publish",
+            entity_id=record.pk,
+            context=(
+                f"binding={sealed.sharing_binding_id} revision={next_revision} "
+                f"pool={sealed.sharing_pool_id} priority={sealed.priority} "
+                f"facets={','.join(facet.value for facet in sealed.facets)}"
+            ),
+        )
     return revision
 
 
@@ -216,6 +371,24 @@ def drain_sharing_binding(
             raise SharingError("sharing.revision_conflict")
 
         prior = record.revisions.get(definition_revision=record.current_definition_revision)
+        projection = (
+            MembershipProjection.objects.select_for_update()
+            .filter(
+                deployment_id=deployment_id,
+                sharing_binding_id=sharing_binding_id,
+                selector_digest=prior.selector_digest,
+            )
+            .first()
+        )
+        if projection is None:
+            raise SharingError("sharing.publisher_authority_required")
+        binding = SharingBinding.model_validate(prior.definition)
+        publisher_authorities = _require_publisher_authority(
+            deployment_id=deployment_id,
+            projection=projection,
+            binding=binding,
+            publisher=publisher,
+        )
         next_revision = record.current_definition_revision + 1
         terminal = SharingBindingRevision.objects.create(
             binding=record,
@@ -232,6 +405,9 @@ def drain_sharing_binding(
             effective_from=prior.effective_from,
             effective_until=prior.effective_until,
             observed_membership_revision=prior.observed_membership_revision,
+            observed_assessment_count=prior.observed_assessment_count,
+            observed_authority_revisions=prior.observed_authority_revisions,
+            publisher_authority_revisions=[item.model_dump(mode="json") for item in publisher_authorities],
             publisher_owner=publisher.owner,
             publisher_reference=publisher.reference,
             empty_snapshot_ack=prior.empty_snapshot_ack,
@@ -248,19 +424,236 @@ def drain_sharing_binding(
         ):
             projection.fence_revision += 1
             projection.save(update_fields=["fence_revision", "updated_at"])
-
-    _audit("sharing_drain", entity_id=record.pk, context=f"binding={sharing_binding_id} revision={next_revision}")
+        _audit(
+            "sharing_drain",
+            entity_id=record.pk,
+            context=f"binding={sharing_binding_id} revision={next_revision}",
+        )
     return terminal
+
+
+def publish_authority_fence(
+    *,
+    deployment_id: UUID,
+    authority_ref: OwnedReference | dict,
+    authority_revision: int,
+    state: AuthorityState | str,
+):
+    """Publish one monotonic shared authority revision inside the caller transaction."""
+    from engine.models import SharingAuthorityFence
+
+    reference = _as_ref(authority_ref)
+    try:
+        resolved_state = state if isinstance(state, AuthorityState) else AuthorityState(state)
+    except ValueError as exc:
+        raise SharingError("sharing.invalid_authority_state") from exc
+    if isinstance(authority_revision, bool) or not isinstance(authority_revision, int) or authority_revision <= 0:
+        raise SharingError("sharing.invalid_authority_revision")
+
+    with transaction.atomic():
+        fence = (
+            SharingAuthorityFence.objects.select_for_update()
+            .filter(
+                deployment_id=deployment_id,
+                authority_owner=reference.owner,
+                authority_reference=reference.reference,
+            )
+            .first()
+        )
+        if fence is None:
+            return SharingAuthorityFence.objects.create(
+                deployment_id=deployment_id,
+                authority_owner=reference.owner,
+                authority_reference=reference.reference,
+                authority_revision=authority_revision,
+                state=resolved_state.value,
+            )
+        if authority_revision < fence.authority_revision:
+            raise SharingError("sharing.authority_revision_regressed")
+        if authority_revision == fence.authority_revision:
+            if fence.state != resolved_state.value:
+                raise SharingError("sharing.authority_revision_conflict")
+            return fence
+        fence.authority_revision = authority_revision
+        fence.state = resolved_state.value
+        fence.save(update_fields=["authority_revision", "state", "updated_at"])
+        return fence
+
+
+def invalidate_sharing_authority(command: AuthorityInvalidation | dict) -> int:
+    """Synchronously advance every matching owner fence before bounded fan-out.
+
+    A deployment-scoped command creates a missing fence so a mutation racing
+    first publication is deny-authoritative.  A deployment-agnostic identity or
+    workspace mutation advances every existing deployment row and creates
+    nothing when no live projection has ever referenced that owner fact.
+    """
+    from engine.models import SharingAuthorityFence
+
+    command = command if isinstance(command, AuthorityInvalidation) else AuthorityInvalidation.model_validate(command)
+    wanted = Q()
+    for reference in command.authority_refs:
+        wanted |= Q(
+            authority_owner=reference.owner,
+            authority_reference=reference.reference,
+        )
+
+    changed = 0
+    with transaction.atomic():
+        rows_query = SharingAuthorityFence.objects.select_for_update().filter(wanted)
+        if command.deployment_id is not None:
+            rows_query = rows_query.filter(deployment_id=command.deployment_id)
+        rows = list(rows_query.order_by("deployment_id", "authority_owner", "authority_reference"))
+        existing = {(row.deployment_id, row.authority_owner, row.authority_reference): row for row in rows}
+        for row in rows:
+            row.authority_revision += 1
+            row.state = command.state.value
+            row.save(update_fields=["authority_revision", "state", "updated_at"])
+            changed += 1
+
+        if command.deployment_id is not None:
+            for reference in command.authority_refs:
+                key = (command.deployment_id, reference.owner, reference.reference)
+                if key in existing:
+                    continue
+                SharingAuthorityFence.objects.create(
+                    deployment_id=command.deployment_id,
+                    authority_owner=reference.owner,
+                    authority_reference=reference.reference,
+                    authority_revision=1,
+                    state=command.state.value,
+                )
+                changed += 1
+    return changed
+
+
+def _refresh_authority_fences(
+    *, deployment_id: UUID, authority_refs: tuple[OwnedReference, ...]
+) -> dict[tuple[str, str], int]:
+    """Make freshly resolved owner facts allowed and return their checked revisions."""
+    from engine.models import SharingAuthorityFence
+
+    revisions: dict[tuple[str, str], int] = {}
+    for reference in sorted(authority_refs, key=lambda item: (item.owner, item.reference)):
+        key = (reference.owner, reference.reference)
+        if key in revisions:
+            continue
+        fence = (
+            SharingAuthorityFence.objects.select_for_update()
+            .filter(
+                deployment_id=deployment_id,
+                authority_owner=reference.owner,
+                authority_reference=reference.reference,
+            )
+            .first()
+        )
+        if fence is None:
+            fence = SharingAuthorityFence.objects.create(
+                deployment_id=deployment_id,
+                authority_owner=reference.owner,
+                authority_reference=reference.reference,
+                authority_revision=1,
+                state=AuthorityState.ALLOWED.value,
+            )
+        elif fence.state != AuthorityState.ALLOWED.value:
+            fence.authority_revision += 1
+            fence.state = AuthorityState.ALLOWED.value
+            fence.save(update_fields=["authority_revision", "state", "updated_at"])
+        revisions[key] = fence.authority_revision
+    return revisions
+
+
+def project_selector_resolution(
+    *,
+    deployment_id: UUID,
+    sharing_binding_id: str,
+    publisher_identity: OwnedReference | dict,
+    resolution: SelectorResolution | dict,
+    observed_at: datetime,
+    freshness_deadline: datetime,
+) -> MembershipProjection:
+    """Turn a locked owner resolution into the next Engine authority projection."""
+    from engine.models import MembershipProjection
+
+    publisher = _as_ref(publisher_identity)
+    resolution = (
+        resolution if isinstance(resolution, SelectorResolution) else SelectorResolution.model_validate(resolution)
+    )
+    all_refs = (
+        resolution.selector_authority_refs
+        + tuple(item.authority_ref for item in resolution.subject_authorities)
+        + tuple(item.authority_ref for item in resolution.publisher_requirements)
+        + tuple(item.authority_ref for item in resolution.spending_eligibilities)
+    )
+    with transaction.atomic():
+        current = (
+            MembershipProjection.objects.select_for_update()
+            .filter(
+                deployment_id=deployment_id,
+                sharing_binding_id=sharing_binding_id,
+                selector_digest=resolution.selector_digest,
+            )
+            .first()
+        )
+        revisions = _refresh_authority_fences(deployment_id=deployment_id, authority_refs=all_refs)
+        membership_revision = 1 if current is None else current.membership_revision + 1
+        evidence = SharingAuthorityEvidence(
+            contract_version="model-access-sharing-authority/v1",
+            deployment_id=deployment_id,
+            sharing_binding_id=sharing_binding_id,
+            selector_digest=resolution.selector_digest,
+            membership_revision=membership_revision,
+            assessment_count=resolution.assessment_count,
+            selector_authorities=tuple(
+                SelectorAuthorityEvidence(
+                    authority_ref=reference,
+                    authority_revision=revisions[(reference.owner, reference.reference)],
+                    state=AuthorityState.ALLOWED,
+                )
+                for reference in resolution.selector_authority_refs
+            ),
+            state=AuthorityState.ALLOWED,
+            member_refs=resolution.member_refs,
+            subject_authorizations=tuple(
+                SubjectAuthorizationEvidence(
+                    subject_ref=item.subject_ref,
+                    authority_ref=item.authority_ref,
+                    authority_revision=revisions[(item.authority_ref.owner, item.authority_ref.reference)],
+                    state=AuthorityState.ALLOWED,
+                )
+                for item in resolution.subject_authorities
+            ),
+            publisher_authorities=tuple(
+                PublisherAuthorityEvidence(
+                    publisher_ref=publisher,
+                    authority_ref=item.authority_ref,
+                    authority_revision=revisions[(item.authority_ref.owner, item.authority_ref.reference)],
+                    selector_digest=item.selector_digest,
+                    scope=item.scope,
+                    state=AuthorityState.ALLOWED,
+                )
+                for item in resolution.publisher_requirements
+            ),
+            spending_eligibilities=tuple(
+                SpendingEligibilityEvidence(
+                    authority_ref=item.authority_ref,
+                    eligibility_revision=revisions[(item.authority_ref.owner, item.authority_ref.reference)],
+                    basis=item.basis,
+                    state=AuthorityState.ALLOWED,
+                )
+                for item in resolution.spending_eligibilities
+            ),
+            observed_at=observed_at,
+            freshness_deadline=freshness_deadline,
+        )
+        return publish_membership_projection(evidence=evidence)
 
 
 def publish_membership_projection(
     *,
-    deployment_id: UUID,
-    sharing_binding_id: str,
-    selector_digest: str,
-    evidence: MembershipEvidence,
+    evidence: SharingAuthorityEvidence | dict,
 ) -> MembershipProjection:
-    """Write an authoritative membership projection (the seam #2140 publishes through).
+    """Write one canonical, monotonic membership and authority projection.
 
     Keyed by ``selector_digest`` so evidence for a new selector version is a
     distinct row and never clobbers the evidence the active definition resolves
@@ -268,28 +661,60 @@ def publish_membership_projection(
     """
     from engine.models import MembershipProjection
 
+    evidence = _as_evidence(evidence)
+    evidence_digest = compute_digest(evidence)
+    payload = evidence.model_dump(mode="json")
     with transaction.atomic():
-        projection, _created = MembershipProjection.objects.select_for_update().update_or_create(
-            deployment_id=deployment_id,
-            sharing_binding_id=sharing_binding_id,
-            selector_digest=selector_digest,
-            defaults={
-                "membership_revision": evidence.membership_revision,
-                "state": evidence.state,
-                "member_refs": list(evidence.member_refs),
-                "observed_at": evidence.observed_at,
-                "freshness_deadline": evidence.freshness_deadline,
-            },
+        projection = (
+            MembershipProjection.objects.select_for_update()
+            .filter(
+                deployment_id=evidence.deployment_id,
+                sharing_binding_id=evidence.sharing_binding_id,
+                selector_digest=evidence.selector_digest,
+            )
+            .first()
         )
+        _require_projection_fences(evidence)
+        if projection is not None and evidence.membership_revision < projection.membership_revision:
+            raise SharingError("sharing.membership_revision_regressed")
+        if projection is not None and evidence.membership_revision == projection.membership_revision:
+            if projection.evidence_digest != evidence_digest:
+                raise SharingError("sharing.membership_revision_conflict")
+            return projection
 
-    _audit(
-        "sharing_membership",
-        entity_id=projection.pk,
-        context=(
-            f"binding={sharing_binding_id} membership_revision={evidence.membership_revision} "
-            f"state={evidence.state} members={len(evidence.member_refs)}"
-        ),
-    )
+        values = {
+            "membership_revision": evidence.membership_revision,
+            "assessment_count": evidence.assessment_count,
+            "state": evidence.state.value,
+            "member_refs": payload["member_refs"],
+            "selector_authorities": payload["selector_authorities"],
+            "evidence_digest": evidence_digest,
+            "subject_authorizations": payload["subject_authorizations"],
+            "publisher_authorities": payload["publisher_authorities"],
+            "spending_eligibilities": payload["spending_eligibilities"],
+            "observed_at": evidence.observed_at,
+            "freshness_deadline": evidence.freshness_deadline,
+        }
+        if projection is None:
+            projection = MembershipProjection.objects.create(
+                deployment_id=evidence.deployment_id,
+                sharing_binding_id=evidence.sharing_binding_id,
+                selector_digest=evidence.selector_digest,
+                **values,
+            )
+        else:
+            for field_name, value in values.items():
+                setattr(projection, field_name, value)
+            projection.save(update_fields=[*values, "updated_at"])
+        _audit(
+            "sharing_membership",
+            entity_id=projection.pk,
+            context=(
+                f"binding={evidence.sharing_binding_id} membership_revision={evidence.membership_revision} "
+                f"state={evidence.state.value} assessed={evidence.assessment_count} "
+                f"members={len(evidence.member_refs)}"
+            ),
+        )
     return projection
 
 

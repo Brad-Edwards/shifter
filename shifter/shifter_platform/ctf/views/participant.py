@@ -6,7 +6,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from django.contrib.auth.decorators import login_required
-from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
@@ -16,11 +15,7 @@ if TYPE_CHECKING:
 
     from django.http import HttpRequest
 
-    from ctf.models import (
-        CTFEvent,
-        CTFParticipant,
-        CTFTeam,
-    )
+    from ctf.models import CTFParticipant
 
 from ctf.views import _access, _parsing
 from ctf.views._access import (
@@ -283,64 +278,6 @@ def participant_team(request: HttpRequest) -> HttpResponse:
     return render(request, "ctf/participant/team.html", context)
 
 
-def _join_team_and_recompute(participant: CTFParticipant, team: CTFTeam) -> None:
-    """Move a participant onto a team and refresh both teams' materialized scores.
-
-    Issue #850: membership changed, so the joined team and the team the
-    participant left (if any) both need their materialized leaderboard columns
-    recomputed.
-    """
-    from ctf.services.scoring import recompute_team_score
-
-    old_team_id = participant.team_id
-    participant.team = team
-    participant.save(update_fields=["team", "updated_at"])
-    recompute_team_score(team.id)
-    if old_team_id is not None and old_team_id != team.id:
-        recompute_team_score(old_team_id)
-
-
-def _validate_team_join(
-    participant: CTFParticipant, event: CTFEvent, invite_code: str
-) -> tuple[CTFTeam | None, str | None]:
-    """Pre-lock validation for a team join. Returns ``(team, error)``.
-
-    ``team`` is the resolved joinable team when validation passes, else None
-    with a controlled error message.
-    """
-    from ctf.models import CTFTeam
-
-    team: CTFTeam | None = None
-    error: str | None = None
-    if not invite_code:
-        error = "Invite code is required."
-    else:
-        team = CTFTeam.objects.filter(event=event, invite_code=invite_code).first()
-        if not team:
-            error = "Invalid invite code."
-        elif participant.team_id == team.id:
-            error = "You are already on this team."
-            team = None
-    return team, error
-
-
-def _commit_team_join(participant: CTFParticipant, team: CTFTeam) -> str | None:
-    """Capacity-guarded join under a row lock. Returns an error message or None.
-
-    Serializes concurrent joins so the capacity check and the membership write
-    cannot race past ``team_size_limit`` (#1140): lock the team row, re-check
-    ``is_full`` under the lock, then write.
-    """
-    from ctf.models import CTFTeam
-
-    with transaction.atomic():
-        locked_team = CTFTeam.objects.select_for_update().get(pk=team.pk)
-        if locked_team.is_full:
-            return "This team is full."
-        _join_team_and_recompute(participant, locked_team)
-    return None
-
-
 @login_required
 @ctf_participant_required
 @require_http_methods(["GET", "POST"])
@@ -359,13 +296,16 @@ def team_join(request: HttpRequest) -> HttpResponse:
     error = None
 
     if request.method == "POST":
+        from ctf.exceptions import CTFError
+        from ctf.services.team import join_team
+
         invite_code = request.POST.get("invite_code", "").strip()
-        team, error = _validate_team_join(participant, event, invite_code)
-        if team is not None:
-            error = _commit_team_join(participant, team)
-            if error is None:
-                logger.info("Participant %s joined team %s in event %s", participant.id, team.id, event.id)
-                return redirect("ctf:participant_team")
+        try:
+            join_team(participant.pk, invite_code)
+        except CTFError as exc:
+            error = exc.message
+        else:
+            return redirect("ctf:participant_team")
 
     context = {
         "participant": participant,

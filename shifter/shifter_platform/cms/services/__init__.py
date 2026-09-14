@@ -41,7 +41,10 @@ from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_
 from engine.services import get_openvpn_profile as engine_get_openvpn_profile
 from engine.services import get_range_pause_resume_capability as engine_get_range_pause_resume_capability
 from engine.services import has_openvpn_profile as engine_has_openvpn_profile
+from engine.services import invalidate_sharing_authority as engine_invalidate_sharing_authority
 from engine.services import pause_range as engine_pause_range
+from engine.services import project_selector_resolution as engine_project_selector_resolution
+from engine.services import publish_sharing_binding as engine_publish_sharing_binding
 from engine.services import (
     range_owner_reassignment_available_by_request as engine_range_owner_reassignment_available,
 )
@@ -52,6 +55,8 @@ from engine.services import (
 )
 from engine.services import release_capacity_reservations as engine_release_capacity_reservations
 from engine.services import release_range_capacity as engine_release_range_capacity
+from engine.services import resolve_model_access_range_page as engine_resolve_model_access_range_page
+from engine.services import resolve_model_access_range_views as engine_resolve_model_access_range_views
 from engine.services import resume_range as engine_resume_range
 from shared.audit import (
     AuditEvent,
@@ -73,6 +78,14 @@ from ._credentials import (
     delete_credential,
     get_credential,
     list_credentials,
+)
+from ._model_access_sharing import (
+    ModelAccessSelectorError,
+    find_model_access_selected_ranges,
+    resolve_model_access_range_instances,
+    resolve_model_access_range_views,
+    resolve_model_access_selected_ranges,
+    resolve_model_access_selector,
 )
 from ._ngfws import (
     create_ngfw,
@@ -174,6 +187,7 @@ __all__ = (
     "CtfOpenVpnProfileNotFound",
     "CtfOpenVpnProfileUnavailable",
     "EngineEventCapacitySignal",
+    "ModelAccessSelectorError",
     "NonUserWorkflow",
     "OffboardingAuditContext",
     "OpenVpnProfileConflict",
@@ -219,16 +233,22 @@ __all__ = (
     "engine_get_openvpn_profile",
     "engine_get_range_pause_resume_capability",
     "engine_has_openvpn_profile",
+    "engine_invalidate_sharing_authority",
     "engine_pause_range",
+    "engine_project_selector_resolution",
+    "engine_publish_sharing_binding",
     "engine_range_owner_reassignment_available",
     "engine_reassign_range_owner",
     "engine_rebind_range_workspace",
     "engine_record_capacity_declaration",
     "engine_release_capacity_reservations",
     "engine_release_range_capacity",
+    "engine_resolve_model_access_range_page",
+    "engine_resolve_model_access_range_views",
     "engine_resume_range",
     "expire_due_ranges",
     "extend_mission_control_range",
+    "find_model_access_selected_ranges",
     "find_range_instance_id_by_request",
     "get_active_range",
     "get_agent",
@@ -270,6 +290,10 @@ __all__ = (
     "reconcile_ctf_range_leases",
     "reconcile_warm_pool",
     "register_pack",
+    "resolve_model_access_range_instances",
+    "resolve_model_access_range_views",
+    "resolve_model_access_selected_ranges",
+    "resolve_model_access_selector",
     "resume_range",
     "resume_range_by_request_id",
     "transfer_user_ownership",

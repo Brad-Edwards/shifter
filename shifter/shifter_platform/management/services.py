@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -24,8 +24,10 @@ from shared.audit import (
 )
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.log_sanitize import safe_log_fingerprint, safe_log_value
+from shared.model_access import AuthorityInvalidation, AuthorityState, OwnedReference
+from shared.model_access.authority_port import invalidate_authority, suppress_authority_invalidation_signals
 
-from .models import ActivityLog, UserProfile
+from .models import ActivityLog, ModelAccessGroupEligibility, UserProfile
 
 # SonarCloud S1192: extracted duplicated string literals.
 USER_PK_REQUIRED_MSG = "user must have a primary key"
@@ -33,10 +35,208 @@ USER_PK_REQUIRED_MSG = "user must have a primary key"
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from django.contrib.auth.base_user import AbstractBaseUser
     from django.contrib.auth.models import AnonymousUser, User
     from django.db.models import QuerySet
 
 logger = logging.getLogger(__name__)
+
+
+def is_platform_operator(user: object | None) -> bool:
+    """Return the single active, non-temporary deployment-operator predicate.
+
+    Django staff/model permissions, groups, provider claims, tenancy roles, and
+    CTF delegation do not satisfy this global authority.
+    """
+    from shared.auth import is_temporary_ctf_account
+
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if not getattr(user, "is_active", False) or not getattr(user, "is_superuser", False):
+        return False
+    return not is_temporary_ctf_account(cast("AbstractBaseUser | AnonymousUser", user))
+
+
+class ModelAccessIdentityAuthorityError(Exception):
+    """Opaque identity-selector denial with a stable safe code."""
+
+    def __init__(self, code: str = "identity.model_access_denied") -> None:
+        self.code = code
+        super().__init__("Model-access identity authority denied")
+
+
+@dataclass(frozen=True, slots=True)
+class ModelAccessGroupScope:
+    """Canonical direct membership and explicit funded-eligibility projection."""
+
+    group_id: int
+    user_ids: tuple[int, ...]
+    eligibility_basis: str | None
+    eligibility_revision: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ModelAccessGroupEligibilityView:
+    """Revision-fenced result of an eligibility policy mutation."""
+
+    group_id: int
+    managed_membership: bool
+    spending_approved: bool
+    revision: int
+
+
+def _require_platform_operator(actor: object) -> None:
+    if not is_platform_operator(actor):
+        raise ModelAccessIdentityAuthorityError()
+
+
+def resolve_model_access_group(actor: object, group_id: int) -> ModelAccessGroupScope:
+    """Resolve one auth-group primary key to active direct members under lock."""
+    from django.contrib.auth.models import Group
+
+    _require_platform_operator(actor)
+    if isinstance(group_id, bool) or not isinstance(group_id, int) or group_id <= 0:
+        raise ModelAccessIdentityAuthorityError()
+    with transaction.atomic():
+        group = Group.objects.select_for_update().filter(pk=group_id).first()
+        if group is None:
+            raise ModelAccessIdentityAuthorityError()
+        user_ids = tuple(
+            group.user_set.filter(is_active=True, profile__deleted_at__isnull=True)
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
+        eligibility = ModelAccessGroupEligibility.objects.select_for_update().filter(group=group).first()
+        basis = None
+        if eligibility is not None and eligibility.managed_membership:
+            basis = "managed_membership"
+        elif eligibility is not None and eligibility.spending_approved:
+            basis = "approved_spending"
+        return ModelAccessGroupScope(
+            group_id=group.pk,
+            user_ids=user_ids,
+            eligibility_basis=basis,
+            eligibility_revision=eligibility.revision if eligibility is not None and basis is not None else None,
+        )
+
+
+def resolve_model_access_users(actor: object, user_ids: tuple[int, ...]) -> tuple[int, ...]:
+    """Lock active account identities authorized for a user selector.
+
+    A deployment operator may resolve arbitrary accounts. An ordinary actor may
+    resolve only their own account, which is the self-service publisher scope.
+    """
+    normalized = tuple(sorted(user_ids))
+    if (
+        not normalized
+        or len(normalized) > 1000
+        or len(normalized) != len(set(normalized))
+        or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in normalized)
+    ):
+        raise ModelAccessIdentityAuthorityError()
+    actor_id = getattr(actor, "pk", None)
+    if not is_platform_operator(actor) and (len(normalized) != 1 or normalized[0] != actor_id):
+        raise ModelAccessIdentityAuthorityError()
+
+    users = get_user_model().objects
+    with transaction.atomic():
+        resolved = tuple(
+            users.select_for_update(of=("self",))
+            .filter(pk__in=normalized, is_active=True, profile__deleted_at__isnull=True)
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
+        if resolved != normalized:
+            raise ModelAccessIdentityAuthorityError()
+        return resolved
+
+
+def set_model_access_group_eligibility(
+    actor: object,
+    group_id: int,
+    *,
+    managed_membership: bool,
+    spending_approved: bool,
+    expected_revision: int,
+) -> ModelAccessGroupEligibilityView:
+    """Set explicit group-funded eligibility under an optimistic revision fence."""
+    from django.contrib.auth.models import Group
+
+    _require_platform_operator(actor)
+    if (
+        isinstance(group_id, bool)
+        or not isinstance(group_id, int)
+        or group_id <= 0
+        or isinstance(expected_revision, bool)
+        or not isinstance(expected_revision, int)
+        or expected_revision < 0
+    ):
+        raise ModelAccessIdentityAuthorityError()
+    if not isinstance(managed_membership, bool) or not isinstance(spending_approved, bool):
+        raise ModelAccessIdentityAuthorityError()
+
+    with transaction.atomic():
+        group = Group.objects.select_for_update().filter(pk=group_id).first()
+        if group is None:
+            raise ModelAccessIdentityAuthorityError()
+        policy = ModelAccessGroupEligibility.objects.select_for_update().filter(group=group).first()
+        current = policy.revision if policy is not None else 0
+        if expected_revision != current:
+            raise ModelAccessIdentityAuthorityError("identity.group_eligibility_revision_conflict")
+        if policy is not None and (
+            policy.managed_membership,
+            policy.spending_approved,
+        ) == (managed_membership, spending_approved):
+            return ModelAccessGroupEligibilityView(
+                group_id=group.pk,
+                managed_membership=policy.managed_membership,
+                spending_approved=policy.spending_approved,
+                revision=policy.revision,
+            )
+
+        next_revision = current + 1
+        if policy is None:
+            policy = ModelAccessGroupEligibility.objects.create(
+                group=group,
+                managed_membership=managed_membership,
+                spending_approved=spending_approved,
+                revision=next_revision,
+            )
+        else:
+            policy.managed_membership = managed_membership
+            policy.spending_approved = spending_approved
+            policy.revision = next_revision
+            policy.save(update_fields=["managed_membership", "spending_approved", "revision", "updated_at"])
+        invalidate_authority(
+            AuthorityInvalidation(
+                deployment_id=None,
+                authority_refs=(OwnedReference(owner="management", reference=f"auth-group:{group.pk}"),),
+                state=AuthorityState.UNKNOWN,
+                reason="group-eligibility-changed",
+            )
+        )
+        audit_log(
+            AuditEvent(
+                entity_type=AuditEntityType.SHARING_BINDING,
+                entity_id=group.pk,
+                action=AuditAction.SHARING_MEMBERSHIP,
+                actor_type=AuditActorType.USER,
+                actor_id=getattr(actor, "pk", None),
+                new_state={
+                    "managed_membership": managed_membership,
+                    "spending_approved": spending_approved,
+                    "revision": next_revision,
+                },
+                context="model access group eligibility",
+            ),
+            strict=True,
+        )
+        return ModelAccessGroupEligibilityView(
+            group_id=group.pk,
+            managed_membership=managed_membership,
+            spending_approved=spending_approved,
+            revision=next_revision,
+        )
 
 
 def log_activity(action: str, user: User | None, **metadata: Any) -> None:
@@ -161,7 +361,20 @@ def mark_user_deleted(
             # session or re-login. Converge them here.
             if user.is_active:
                 user.is_active = False
-                user.save(update_fields=["is_active"])
+                with suppress_authority_invalidation_signals():
+                    user.save(update_fields=["is_active"])
+
+            invalidate_authority(
+                AuthorityInvalidation(
+                    deployment_id=None,
+                    authority_refs=(
+                        OwnedReference(owner="management", reference=f"operator:{user.pk}"),
+                        OwnedReference(owner="management", reference=f"user:{user.pk}"),
+                    ),
+                    state=AuthorityState.REVOKED,
+                    reason="user-deleted",
+                )
+            )
 
             # Audit log user deletion inside the atomic boundary.
             audit_log(

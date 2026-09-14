@@ -118,6 +118,9 @@ def _transfer_one_workspace(
         target.save(update_fields=["role", "updated_at"])
     source_membership.role = WorkspaceRole.ADMIN.value
     source_membership.save(update_fields=["role", "updated_at"])
+    from ._model_access import invalidate_workspace_model_access
+
+    invalidate_workspace_model_access(workspace, reason="workspace-owner-transferred")
     _write_audit(
         workspace,
         AuditAction.UPDATE,
