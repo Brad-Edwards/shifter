@@ -5362,6 +5362,66 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/registration-requests/": {
+      "get": {
+        "operationId": "ctf_events_registration_requests_retrieve",
+        "description": "Return the bounded pending queue for one authorized event.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicRegistrationRequestListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/results/export/": {
       "get": {
         "operationId": "ctf_events_results_export_retrieve",
@@ -9274,6 +9334,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/registration-requests/{request_id}/disposition/": {
+      "post": {
+        "operationId": "ctf_registration_requests_disposition_create",
+        "description": "Validate authority and apply exactly one terminal disposition.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicRegistrationDisposition"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicRegistrationDisposition"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicRegistrationDisposition"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicRegistrationDispositionResult"
                 }
               }
             },
@@ -15167,6 +15307,16 @@
             "type": "string",
             "readOnly": true
           },
+          "public_registration_enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "public_registration_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "readOnly": true
+          },
           "status": {
             "type": "string",
             "readOnly": true
@@ -15319,6 +15469,8 @@
           "max_participants",
           "name",
           "owner",
+          "public_registration_enabled",
+          "public_registration_url",
           "range_config",
           "range_spinup_minutes",
           "rating_visibility",
@@ -15627,6 +15779,9 @@
           },
           "description": {
             "type": "string"
+          },
+          "public_registration_enabled": {
+            "type": "boolean"
           },
           "event_start": {
             "type": "string",
@@ -18466,6 +18621,109 @@
           "role",
           "workspace_name",
           "workspace_uuid"
+        ]
+      },
+      "PublicRegistrationDisposition": {
+        "type": "object",
+        "description": "Closed organizer decision vocabulary.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/PublicRegistrationDispositionActionEnum"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "PublicRegistrationDispositionActionEnum": {
+        "enum": [
+          "approve",
+          "reject"
+        ],
+        "type": "string",
+        "description": "* `approve` - approve\n* `reject` - reject"
+      },
+      "PublicRegistrationDispositionResult": {
+        "type": "object",
+        "description": "Terminal disposition result.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "disposition": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "disposition",
+          "participant_id",
+          "request_id"
+        ]
+      },
+      "PublicRegistrationRequest": {
+        "type": "object",
+        "description": "One pending request visible only to an authorized event organizer.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "disposition": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "disposition",
+          "email",
+          "id",
+          "name"
+        ]
+      },
+      "PublicRegistrationRequestListResponse": {
+        "type": "object",
+        "description": "Paginated pending-request queue.",
+        "properties": {
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicRegistrationRequest"
+            },
+            "readOnly": true
+          },
+          "total": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "requests",
+          "total"
         ]
       },
       "PublicScoreboardResponse": {

@@ -102,6 +102,11 @@ source "amazon-ebs" "polaris-vm" {
 build {
   sources = ["source.amazon-ebs.polaris-vm"]
 
+  provisioner "file" {
+    source      = "files/polaris_splice_credential.py"
+    destination = "/tmp/polaris-splice-credential.py"
+  }
+
   // Faithful port of the retired range's user_data.sh.tpl: install docker /
   // compose / awscli, pull the private build tarball, write the range-0
   // docker-compose.override.yml (placeholder DC IP + throwaway key + generated

@@ -150,7 +150,23 @@ function EventOverview({ event }: Readonly<{ event: CtfEventDetail }>) {
           <Detail label="Max participants" value={event.max_participants ?? "Unlimited"} />
           <Detail label="Range spin-up" value={`${event.range_spinup_minutes} min`} />
           <Detail label="Scoreboard" value={event.scoreboard_visible ? "Visible" : "Hidden"} />
+          <Detail label="Public registration" value={event.public_registration_enabled ? "Published" : "Off"} />
         </dl>
+        {event.public_registration_enabled && event.public_registration_url ? (
+          <div className="mt-5 border-t border-border/60 pt-4">
+            <a
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              href={event.public_registration_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open public registration page
+            </a>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Anyone with this link can see the allowlisted event details and submit a request for organizer review.
+            </p>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
