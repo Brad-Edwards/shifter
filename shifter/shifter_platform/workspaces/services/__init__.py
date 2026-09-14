@@ -61,6 +61,12 @@ from ._memberships import (
     list_workspace_memberships,
     remove_workspace_member,
 )
+from ._model_access import (
+    ModelAccessOrganizationScope,
+    ModelAccessWorkspaceScope,
+    resolve_model_access_organization,
+    resolve_model_access_workspace,
+)
 from ._organization import (
     OrganizationAuditContext,
     OrganizationAuthorizationError,
@@ -100,6 +106,8 @@ __all__ = [
     "WORKSPACE_INVITATION_TOKEN_MAX_AGE_SECONDS",
     "ActorWorkspaceContext",
     "MembershipAuditContext",
+    "ModelAccessOrganizationScope",
+    "ModelAccessWorkspaceScope",
     "OrganizationAuditContext",
     "OrganizationAuthorizationError",
     "OrganizationProfile",
@@ -154,6 +162,8 @@ __all__ = [
     "resend_workspace_invitation",
     "reserve_workspace_concurrent_range",
     "resolve_administrable_organization",
+    "resolve_model_access_organization",
+    "resolve_model_access_workspace",
     "resolve_personal_workspace",
     "restore_workspace",
     "revoke_workspace_invitation",

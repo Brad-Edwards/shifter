@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from shared.capacity import CapacityAssessmentResult
+    from shared.model_access import AuthorityInvalidation, ModelAccessRangeInstanceView, ModelAccessRangeView
     from shared.receipt_validation import ReceiptVerifierBinding
     from shared.remote_access import OpenVpnProfile
 
@@ -197,6 +198,38 @@ def cms_find_range_instance_id(request_id) -> int | None:
     import cms.services as cms_services
 
     return cms_services.find_range_instance_id_by_request(request_id)
+
+
+def cms_resolve_model_access_range_instances(range_instance_ids: tuple[int, ...]) -> tuple[ModelAccessRangeView, ...]:
+    """Resolve CTF-owned CMS instance PKs to canonical Engine range subjects."""
+    import cms.services as cms_services
+
+    return cms_services.resolve_model_access_range_instances(range_instance_ids)
+
+
+def cms_find_model_access_selected_ranges(
+    range_uuids: tuple[UUID, ...],
+) -> tuple[ModelAccessRangeInstanceView, ...]:
+    """Find the CMS instance correlations that exist for Engine range UUIDs."""
+    import cms.services as cms_services
+
+    return cms_services.find_model_access_selected_ranges(range_uuids)
+
+
+def cms_resolve_model_access_selected_ranges(
+    range_uuids: tuple[UUID, ...],
+) -> tuple[ModelAccessRangeInstanceView, ...]:
+    """Correlate explicit Engine range UUIDs to CMS instance identities."""
+    import cms.services as cms_services
+
+    return cms_services.resolve_model_access_selected_ranges(range_uuids)
+
+
+def cms_invalidate_model_access_authority(command: AuthorityInvalidation) -> int:
+    """Advance Engine's synchronous authority fence through the CMS boundary."""
+    import cms.services as cms_services
+
+    return cms_services.engine_invalidate_sharing_authority(command)
 
 
 def cms_get_range_status(range_instance_id: int) -> str:

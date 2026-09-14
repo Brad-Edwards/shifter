@@ -57,6 +57,7 @@ from ._request import App, Instance, Instantiation, Request
 from ._sharing import (
     AllocationGroup,
     MembershipProjection,
+    SharingAuthorityFence,
     SharingBindingRecord,
     SharingBindingRevision,
     SharingPoolRecord,
@@ -97,6 +98,7 @@ __all__ = [
     "RangeEventOutbox",
     "ReceiptVerifierRegistration",
     "Request",
+    "SharingAuthorityFence",
     "SharingBindingRecord",
     "SharingBindingRevision",
     "SharingPoolRecord",

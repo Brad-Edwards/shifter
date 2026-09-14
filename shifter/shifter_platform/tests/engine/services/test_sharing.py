@@ -16,7 +16,13 @@ from uuid import UUID
 import pytest
 from django.utils import timezone
 
-from shared.model_access import compute_digest, seal_catalog, seal_sharing_binding
+from shared.model_access import (
+    PublisherAuthorityScope,
+    SharingAuthorityEvidence,
+    compute_digest,
+    seal_catalog,
+    seal_sharing_binding,
+)
 from shared.model_access.core_models import SelectorKind, SharingFacet
 from shared.model_access.sharing_models import SharingSelector
 
@@ -143,6 +149,7 @@ def _binding_dto(
     effective_from=_FROM,
     effective_until=_UNTIL,
     deployment_id=_DEPLOYMENT,
+    membership_revision=1,
 ):
     payload = {
         "contract_version": "model-access-sharing/v1",
@@ -150,7 +157,7 @@ def _binding_dto(
         "deployment_id": str(deployment_id),
         "selector": selector or {"kind": "all_ranges"},
         "membership_mode": mode,
-        "membership_revision": 1,
+        "membership_revision": membership_revision,
         "authorized_publisher_ref": {"owner": "attacker", "reference": "forged:publisher"},
         "profile_id": profile_id,
         "sharing_pool_id": pool_id,
@@ -167,7 +174,10 @@ def _services():
         SharingError,
         drain_sharing_binding,
         get_or_create_allocation_group,
+        invalidate_sharing_authority,
         preview_effective_policy,
+        project_selector_resolution,
+        publish_authority_fence,
         publish_membership_projection,
         publish_sharing_binding,
         validate_sharing_binding,
@@ -178,7 +188,10 @@ def _services():
         "drain": drain_sharing_binding,
         "alloc_group": get_or_create_allocation_group,
         "preview": preview_effective_policy,
+        "project_resolution": project_selector_resolution,
+        "fence": publish_authority_fence,
         "membership": publish_membership_projection,
+        "invalidate": invalidate_sharing_authority,
         "publish": publish_sharing_binding,
         "validate": validate_sharing_binding,
     }
@@ -193,19 +206,86 @@ def _membership(
     members=("range:r-1",),
     fresh=True,
     revision=1,
+    publisher_scope=PublisherAuthorityScope.DEPLOYMENT,
+    spending_eligibilities=(),
+    observed_at=None,
+    authority_revision=None,
+    publish_fences=True,
 ):
-    from engine.services import MembershipEvidence
-
-    now = timezone.now()
-    deadline = now + (timedelta(hours=1) if fresh else timedelta(hours=-1))
-    return svc["membership"](
-        deployment_id=deployment,
-        sharing_binding_id=binding_id,
-        selector_digest=selector_digest,
-        evidence=MembershipEvidence(
-            membership_revision=revision,
+    now = observed_at or timezone.now()
+    authority_revision = authority_revision or revision
+    deadline = now + (timedelta(hours=1) if fresh else timedelta(seconds=-30))
+    member_refs = tuple({"owner": "deployment", "reference": member} for member in members)
+    selector_authority_ref = {"owner": "engine", "reference": f"selector:{binding_id}"}
+    publisher_authority_ref = {"owner": "management", "reference": "operator:platform"}
+    if publish_fences:
+        svc["fence"](
+            deployment_id=deployment,
+            authority_ref=selector_authority_ref,
+            authority_revision=authority_revision,
             state="allowed",
-            member_refs=list(members),
+        )
+        svc["fence"](
+            deployment_id=deployment,
+            authority_ref=publisher_authority_ref,
+            authority_revision=authority_revision,
+            state="allowed",
+        )
+    subject_authorizations = []
+    for member_ref in member_refs:
+        authority_ref = {"owner": "cms", "reference": member_ref["reference"]}
+        if publish_fences:
+            svc["fence"](
+                deployment_id=deployment,
+                authority_ref=authority_ref,
+                authority_revision=authority_revision,
+                state="allowed",
+            )
+        subject_authorizations.append(
+            {
+                "subject_ref": member_ref,
+                "authority_ref": authority_ref,
+                "authority_revision": authority_revision,
+                "state": "allowed",
+            }
+        )
+    if publish_fences:
+        for eligibility in spending_eligibilities:
+            svc["fence"](
+                deployment_id=deployment,
+                authority_ref=eligibility["authority_ref"],
+                authority_revision=eligibility["eligibility_revision"],
+                state=eligibility["state"],
+            )
+    return svc["membership"](
+        evidence=SharingAuthorityEvidence(
+            contract_version="model-access-sharing-authority/v1",
+            deployment_id=deployment,
+            sharing_binding_id=binding_id,
+            selector_digest=selector_digest,
+            membership_revision=revision,
+            assessment_count=len(member_refs),
+            selector_authorities=(
+                {
+                    "authority_ref": selector_authority_ref,
+                    "authority_revision": authority_revision,
+                    "state": "allowed",
+                },
+            ),
+            state="allowed",
+            member_refs=member_refs,
+            subject_authorizations=tuple(subject_authorizations),
+            publisher_authorities=(
+                {
+                    "publisher_ref": _PUBLISHER,
+                    "authority_ref": publisher_authority_ref,
+                    "authority_revision": authority_revision,
+                    "selector_digest": selector_digest,
+                    "scope": publisher_scope,
+                    "state": "allowed",
+                },
+            ),
+            spending_eligibilities=spending_eligibilities,
             observed_at=now - timedelta(minutes=1),
             freshness_deadline=deadline,
         ),
@@ -225,13 +305,21 @@ def _publish(
     members=("range:r-1",),
 ):
     if membership:
-        _membership(
-            svc,
-            binding.sharing_binding_id,
-            deployment=deployment,
-            selector_digest=compute_digest(binding.selector),
-            members=members,
-        )
+        from engine.models import MembershipProjection
+
+        selector_digest = compute_digest(binding.selector)
+        if not MembershipProjection.objects.filter(
+            deployment_id=deployment,
+            sharing_binding_id=binding.sharing_binding_id,
+            selector_digest=selector_digest,
+        ).exists():
+            _membership(
+                svc,
+                binding.sharing_binding_id,
+                deployment=deployment,
+                selector_digest=selector_digest,
+                members=members,
+            )
     return svc["publish"](
         deployment_id=deployment,
         catalog=catalog,
@@ -260,6 +348,7 @@ def test_publish_persists_immutable_revision_with_pinned_catalog_and_publisher()
     assert revision.publisher_owner == "deployment"
     assert revision.publisher_reference == "operator:platform"
     assert revision.definition_digest.startswith("sha256:")
+    assert revision.observed_assessment_count == 1
     # The catalog digest and profile are pinned at publication.
     assert revision.catalog_digest == catalog.digest
     assert revision.resolved_profile["profile_id"] == "coding"
@@ -296,7 +385,7 @@ def test_publish_requires_fresh_revision_matched_membership_evidence():
     assert missing.value.code == "sharing.membership_evidence_required"
 
     # Stale evidence denies.
-    _membership(svc, "binding-a", fresh=False)
+    _membership(svc, "binding-a", fresh=False, revision=2)
     with pytest.raises(svc["SharingError"]) as stale:
         _publish(svc, catalog, binding, pool, membership=False)
     assert stale.value.code == "sharing.membership_evidence_required"
@@ -401,7 +490,7 @@ def test_preview_fails_closed_on_stale_membership():
     svc = _services()
     catalog = _catalog()
     _publish(svc, catalog, _binding_dto("binding-a"), _pool_dto("pool-a"))
-    _membership(svc, "binding-a", fresh=False)
+    _membership(svc, "binding-a", fresh=False, revision=2)
 
     policy = _preview(svc, catalog)
     assert policy.stale is True

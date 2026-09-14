@@ -37,6 +37,7 @@ from django.utils import timezone
 
 from ._base import CTFBaseModel, SoftDeleteManager
 from .challenge import CTFChallenge
+from .cohort import CTFCohort
 from .communication import (
     CommunicationCampaign,
     CommunicationIntent,
@@ -76,6 +77,7 @@ __all__ = [
     "CTFChallengePrerequisite",
     "CTFChallengeRating",
     "CTFChallengeTag",
+    "CTFCohort",
     "CTFContentHydrationReceipt",
     "CTFEmailTemplate",
     "CTFEvent",
