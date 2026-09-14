@@ -19,6 +19,8 @@ class _MissionControlLeasePolicyFields(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Keep shared policy fields abstract."""
+
         abstract = True
 
 
@@ -31,7 +33,9 @@ class MissionControlTenantLeasePolicyRevision(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Mission Control tenant lease policy revision"
+        """Configure the singleton tenant revision fence."""
+
+        verbose_name = "Mission Control tenant lease revision"
         constraints = [
             models.CheckConstraint(condition=models.Q(id=1), name="ck_mc_tenant_lease_rev_singleton"),
             models.CheckConstraint(condition=models.Q(revision__gt=0), name="ck_mc_tenant_lease_rev_positive"),
@@ -54,7 +58,9 @@ class MissionControlGroupLeasePolicyRevision(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Mission Control group lease policy revision"
+        """Configure one durable revision fence per group."""
+
+        verbose_name = "Mission Control group lease revision"
         constraints = [
             models.CheckConstraint(condition=models.Q(revision__gt=0), name="ck_mc_group_lease_rev_positive"),
         ]
@@ -69,6 +75,8 @@ class MissionControlTenantLeasePolicy(_MissionControlLeasePolicyFields):
     id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
 
     class Meta:
+        """Constrain the singleton tenant policy at the database boundary."""
+
         verbose_name = "Mission Control tenant lease policy"
         constraints = [
             models.CheckConstraint(condition=models.Q(id=1), name="ck_mc_tenant_lease_singleton"),
@@ -110,6 +118,8 @@ class MissionControlGroupLeasePolicy(_MissionControlLeasePolicyFields):
     )
 
     class Meta:
+        """Constrain each complete group policy at the database boundary."""
+
         verbose_name = "Mission Control group lease policy"
         constraints = [
             models.CheckConstraint(condition=models.Q(initial_days__gt=0), name="ck_mc_group_lease_initial_positive"),

@@ -70,7 +70,7 @@ class Migration(migrations.Migration):
                 ),
             ],
             options={
-                "verbose_name": "Mission Control tenant lease policy revision",
+                "verbose_name": "Mission Control tenant lease revision",
                 "constraints": [
                     models.CheckConstraint(condition=models.Q(("id", 1)), name="ck_mc_tenant_lease_rev_singleton"),
                     models.CheckConstraint(
@@ -96,7 +96,7 @@ class Migration(migrations.Migration):
                 ),
             ],
             options={
-                "verbose_name": "Mission Control group lease policy revision",
+                "verbose_name": "Mission Control group lease revision",
                 "constraints": [
                     models.CheckConstraint(
                         condition=models.Q(("revision__gt", 0)), name="ck_mc_group_lease_rev_positive"
@@ -120,13 +120,27 @@ class Migration(migrations.Migration):
                 "verbose_name": "Mission Control tenant lease policy",
                 "constraints": [
                     models.CheckConstraint(condition=models.Q(("id", 1)), name="ck_mc_tenant_lease_singleton"),
-                    models.CheckConstraint(condition=models.Q(("initial_days__gt", 0)), name="ck_mc_tenant_lease_initial_positive"),
-                    models.CheckConstraint(condition=models.Q(("extension_days__gt", 0)), name="ck_mc_tenant_lease_extension_positive"),
-                    models.CheckConstraint(condition=models.Q(("maximum_days__gt", 0)), name="ck_mc_tenant_lease_maximum_positive"),
-                    models.CheckConstraint(condition=models.Q(("revision__gt", 0)), name="ck_mc_tenant_lease_revision_positive"),
-                    models.CheckConstraint(condition=models.Q(("initial_days__lte", 36500)), name="ck_mc_tenant_lease_initial_limit"),
-                    models.CheckConstraint(condition=models.Q(("extension_days__lte", 36500)), name="ck_mc_tenant_lease_extension_limit"),
-                    models.CheckConstraint(condition=models.Q(("maximum_days__lte", 36500)), name="ck_mc_tenant_lease_maximum_limit"),
+                    models.CheckConstraint(
+                        condition=models.Q(("initial_days__gt", 0)), name="ck_mc_tenant_lease_initial_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("extension_days__gt", 0)), name="ck_mc_tenant_lease_extension_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("maximum_days__gt", 0)), name="ck_mc_tenant_lease_maximum_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("revision__gt", 0)), name="ck_mc_tenant_lease_revision_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("initial_days__lte", 36500)), name="ck_mc_tenant_lease_initial_limit"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("extension_days__lte", 36500)), name="ck_mc_tenant_lease_extension_limit"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("maximum_days__lte", 36500)), name="ck_mc_tenant_lease_maximum_limit"
+                    ),
                     models.CheckConstraint(
                         condition=models.Q(("initial_days__lte", models.F("maximum_days"))),
                         name="ck_mc_tenant_lease_initial_maximum",
@@ -157,13 +171,27 @@ class Migration(migrations.Migration):
             options={
                 "verbose_name": "Mission Control group lease policy",
                 "constraints": [
-                    models.CheckConstraint(condition=models.Q(("initial_days__gt", 0)), name="ck_mc_group_lease_initial_positive"),
-                    models.CheckConstraint(condition=models.Q(("extension_days__gt", 0)), name="ck_mc_group_lease_extension_positive"),
-                    models.CheckConstraint(condition=models.Q(("maximum_days__gt", 0)), name="ck_mc_group_lease_maximum_positive"),
-                    models.CheckConstraint(condition=models.Q(("revision__gt", 0)), name="ck_mc_group_lease_revision_positive"),
-                    models.CheckConstraint(condition=models.Q(("initial_days__lte", 36500)), name="ck_mc_group_lease_initial_limit"),
-                    models.CheckConstraint(condition=models.Q(("extension_days__lte", 36500)), name="ck_mc_group_lease_extension_limit"),
-                    models.CheckConstraint(condition=models.Q(("maximum_days__lte", 36500)), name="ck_mc_group_lease_maximum_limit"),
+                    models.CheckConstraint(
+                        condition=models.Q(("initial_days__gt", 0)), name="ck_mc_group_lease_initial_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("extension_days__gt", 0)), name="ck_mc_group_lease_extension_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("maximum_days__gt", 0)), name="ck_mc_group_lease_maximum_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("revision__gt", 0)), name="ck_mc_group_lease_revision_positive"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("initial_days__lte", 36500)), name="ck_mc_group_lease_initial_limit"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("extension_days__lte", 36500)), name="ck_mc_group_lease_extension_limit"
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("maximum_days__lte", 36500)), name="ck_mc_group_lease_maximum_limit"
+                    ),
                     models.CheckConstraint(
                         condition=models.Q(("initial_days__lte", models.F("maximum_days"))),
                         name="ck_mc_group_lease_initial_maximum",

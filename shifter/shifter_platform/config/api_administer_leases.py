@@ -95,11 +95,15 @@ class LeasePolicySerializer(serializers.Serializer):
 
 
 class LeasePolicyOverrideSerializer(serializers.Serializer):
+    """Serialize one complete runtime override and its revision."""
+
     policy = LeasePolicySerializer()
     revision = serializers.IntegerField(min_value=1)
 
 
 class LeasePolicyGroupSettingsSerializer(serializers.Serializer):
+    """Serialize one eligible group and its optional runtime override."""
+
     id = serializers.IntegerField(min_value=1)
     name = serializers.CharField()
     revision = serializers.IntegerField(min_value=0)
@@ -107,6 +111,8 @@ class LeasePolicyGroupSettingsSerializer(serializers.Serializer):
 
 
 class MissionControlLeasePolicySettingsSerializer(serializers.Serializer):
+    """Serialize the complete administrator settings projection."""
+
     baseline = LeasePolicySerializer()
     tenant_revision = serializers.IntegerField(min_value=0)
     tenant_override = LeasePolicyOverrideSerializer(allow_null=True)
@@ -137,6 +143,7 @@ class ResetLeasePolicySerializer(StrictObjectSerializer):
 
 
 def _policy(data: dict[str, Any]) -> MissionControlLeasePolicy:
+    """Build the canonical policy from validated command data."""
     return MissionControlLeasePolicy.model_validate(
         {
             "initial_days": data["initial_days"],
@@ -148,12 +155,14 @@ def _policy(data: dict[str, Any]) -> MissionControlLeasePolicy:
 
 
 def _override_payload(value: LeasePolicyOverride | None) -> dict[str, object] | None:
+    """Project an optional override into serializer-ready primitives."""
     if value is None:
         return None
     return {"policy": value.policy.model_dump(), "revision": value.revision}
 
 
 def _settings_payload(settings: MissionControlLeasePolicySettings) -> dict[str, object]:
+    """Project service settings into the explicit response contract."""
     return {
         "baseline": settings.baseline.model_dump(),
         "tenant_revision": settings.tenant_revision,
@@ -173,6 +182,7 @@ def _settings_payload(settings: MissionControlLeasePolicySettings) -> dict[str, 
 
 
 def _audit_context(request: Request) -> LeasePolicyAuditContext:
+    """Capture bounded trusted request attribution for strict audit."""
     actor_type, actor_id = get_actor_from_request(request)
     return LeasePolicyAuditContext(
         actor_type=actor_type,
@@ -184,6 +194,7 @@ def _audit_context(request: Request) -> LeasePolicyAuditContext:
 
 
 def _error_response(request: Request, exc: MissionControlLeasePolicyAdminError) -> Response:
+    """Map a classified service error to the shared safe envelope."""
     return api_error_response(
         code=exc.kind.value,
         message=_ERROR_MESSAGES[exc.kind],
@@ -193,6 +204,7 @@ def _error_response(request: Request, exc: MissionControlLeasePolicyAdminError) 
 
 
 def _current_response(request: Request) -> Response:
+    """Return the current settings projection after reauthorization."""
     try:
         settings = get_mission_control_lease_settings(request.user)
     except MissionControlLeasePolicyAdminError as exc:
@@ -201,6 +213,8 @@ def _current_response(request: Request) -> Response:
 
 
 class _LeasePolicyAdminView(APIView):
+    """Apply the shared authentication and staff-session policy."""
+
     authentication_classes = _ADMIN_AUTHENTICATION
     permission_classes = [IsStaffSession]
 

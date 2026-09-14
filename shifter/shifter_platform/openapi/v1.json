@@ -16012,6 +16012,7 @@
       },
       "LeasePolicyGroupSettings": {
         "type": "object",
+        "description": "Serialize one eligible group and its optional runtime override.",
         "properties": {
           "id": {
             "type": "integer",
@@ -16042,6 +16043,7 @@
       },
       "LeasePolicyOverride": {
         "type": "object",
+        "description": "Serialize one complete runtime override and its revision.",
         "properties": {
           "policy": {
             "$ref": "#/components/schemas/LeasePolicy"
@@ -16120,6 +16122,7 @@
       },
       "MissionControlLeasePolicySettings": {
         "type": "object",
+        "description": "Serialize the complete administrator settings projection.",
         "properties": {
           "baseline": {
             "$ref": "#/components/schemas/LeasePolicy"

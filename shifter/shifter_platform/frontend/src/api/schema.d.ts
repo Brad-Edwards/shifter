@@ -3846,12 +3846,14 @@ export interface components {
             maximum_days: number;
             extensions_enabled: boolean;
         };
+        /** @description Serialize one eligible group and its optional runtime override. */
         LeasePolicyGroupSettings: {
             id: number;
             name: string;
             revision: number;
             override: components["schemas"]["LeasePolicyOverride"] | null;
         };
+        /** @description Serialize one complete runtime override and its revision. */
         LeasePolicyOverride: {
             policy: components["schemas"]["LeasePolicy"];
             revision: number;
@@ -3897,6 +3899,7 @@ export interface components {
             readonly state: string;
             readonly is_refreshable: boolean;
         };
+        /** @description Serialize the complete administrator settings projection. */
         MissionControlLeasePolicySettings: {
             baseline: components["schemas"]["LeasePolicy"];
             tenant_revision: number;

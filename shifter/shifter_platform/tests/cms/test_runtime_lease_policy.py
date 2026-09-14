@@ -360,7 +360,7 @@ def test_strict_audit_failure_rolls_back_policy_write(admin, monkeypatch):
     def fail_audit(*_args, **_kwargs):
         raise RuntimeError("audit unavailable")
 
-    monkeypatch.setattr("cms.services._range_lease_policy.audit_log", fail_audit)
+    monkeypatch.setattr("cms.services._range_lease_policy_support.audit_log", fail_audit)
     with pytest.raises(RuntimeError, match="audit unavailable"):
         replace_tenant_lease_policy(admin, _policy(20, 10, 180), expected_revision=0, audit=_audit(admin.pk))
 
