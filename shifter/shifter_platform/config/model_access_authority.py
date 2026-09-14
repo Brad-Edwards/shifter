@@ -91,7 +91,11 @@ def _groups_changed(
     if not authority_invalidation_signals_suppressed():
         if action == "pre_clear":
             group_ids = (
-                {instance.pk} if reverse else set(instance.groups.values_list("pk", flat=True))  # type: ignore[attr-defined]
+                {instance.pk}
+                if reverse
+                else set(
+                    instance.groups.values_list("pk", flat=True)  # type: ignore[attr-defined]
+                )
             )
             if not reverse:
                 setattr(instance, _CLEARED_GROUPS, group_ids)
