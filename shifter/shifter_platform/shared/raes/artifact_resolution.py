@@ -9,7 +9,7 @@ bake for an ``exact`` requirement. ``absent`` (no requirement on the ``Source``)
 is not an artifact request and is reported as :attr:`ArtifactResolutionStatus.SKIPPED`.
 
 It CONSUMES the portable upstream contracts -- the compiled
-:class:`~raes._source.ArtifactRequirement`, the backend's declared
+:class:`~raes.artifact_requirements.ArtifactRequirement`, the backend's declared
 :class:`ArtifactMechanismCapability` set, an immutable
 :class:`ArtifactRequirementAvailability` snapshot of Shifter-owned facts (verified
 inventory, satisfied constraints, verified locked inputs), and the selected
@@ -35,12 +35,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-from raes._source import (
+from raes.artifact_requirements import (
     ArtifactMechanismProfile,
     ArtifactRequirement,
     ArtifactSatisfactionRoute,
-    ExplicitnessClass,
 )
+from raes.explicitness import ExplicitnessClass
 
 # ``raes_contracts.artifact_requirements`` raises a partially-initialized circular
 # ImportError when it is the first ``raes_contracts`` submodule imported. Importing
@@ -53,6 +53,9 @@ from raes_contracts.contracts import (
     ArtifactRequirementAvailability,
     ArtifactSatisfactionDisclosureModel,
 )
+
+from shared.operation_envelope import canonical_payload_digest
+from shared.raes.prepared_artifacts import VerifiedMaterialization
 
 __all__ = [
     "ArtifactResolution",
@@ -124,6 +127,7 @@ def resolve_artifact_requirement(
     capabilities: Sequence[ArtifactMechanismCapability],
     availability: ArtifactRequirementAvailability | None,
     backend: ApparatusIdentity,
+    prepared_materializations: Sequence[VerifiedMaterialization] = (),
 ) -> ArtifactResolution:
     """Resolve one artifact requirement against a selected backend.
 
@@ -155,9 +159,60 @@ def resolve_artifact_requirement(
         result = _resolve_exact(requirement, address, capabilities, facts, backend)
     elif posture is ExplicitnessClass.CONSTRAINED:
         result = _resolve_constrained(requirement, address, capabilities, facts, backend)
+        if result.status is not ArtifactResolutionStatus.SATISFIED:
+            prepared = _resolve_prepared(requirement, address, capabilities, backend, prepared_materializations)
+            if prepared is not None:
+                result = prepared
     else:
         result = _resolve_open(requirement, address, capabilities)
     return result
+
+
+def _resolve_prepared(
+    requirement: ArtifactRequirement,
+    address: str,
+    capabilities: Sequence[ArtifactMechanismCapability],
+    backend: ApparatusIdentity,
+    materializations: Sequence[VerifiedMaterialization],
+) -> ArtifactResolution | None:
+    """Select one completely verified output without combining partial evidence."""
+    digest = canonical_payload_digest(requirement.model_dump(mode="json"))
+    for facts in materializations:
+        if (
+            facts.requirement_digest != digest
+            or facts.specification not in requirement.materialization_specifications
+            or set(facts.satisfied_constraint_ids) != {item.constraint_id for item in requirement.constraints}
+            or set(facts.locked_input_ids) != {item.input_id for item in requirement.locked_inputs}
+        ):
+            continue
+        supported = [capability for capability in capabilities if capability.mechanism == facts.specification.profile]
+        selected = _select_route(requirement, supported)
+        if selected is None:
+            continue
+        mechanism, route = selected
+        if route.acquisition != "none" or route.timing != "backend-preparation":
+            continue
+        return ArtifactResolution(
+            requirement_id=requirement.requirement_id,
+            address=address,
+            status=ArtifactResolutionStatus.SATISFIED,
+            route=route,
+            disclosure=ArtifactSatisfactionDisclosureModel(
+                requirement_id=requirement.requirement_id,
+                artifact=facts.artifact,
+                mechanism=mechanism,
+                acquisition=route.acquisition,
+                timing=route.timing,
+                backend=backend,
+                materialization_specification_id=facts.specification.specification_id,
+                materialization_specification_digest=facts.specification.digest,
+                satisfied_constraint_ids=facts.satisfied_constraint_ids,
+                locked_input_ids=facts.locked_input_ids,
+                integrity_refs=[facts.integrity_ref],
+                provenance_refs=[facts.provenance_ref],
+            ),
+        )
+    return None
 
 
 def _resolve_exact(
@@ -289,6 +344,8 @@ def _resolve_open(
     if selection is None:
         return _fail(requirement, address, ArtifactResolutionFailure.UNSUPPORTED_OPEN_REALIZATION)
     _, route = selection
+    if route.timing != "realization":
+        return _fail(requirement, address, ArtifactResolutionFailure.UNSUPPORTED_OPEN_REALIZATION)
     return ArtifactResolution(
         requirement_id=requirement.requirement_id,
         address=address,
@@ -304,7 +361,7 @@ def _select_route(
     """Return the first (mechanism, route) the author permitted AND the backend declared.
 
     A route is usable only when the backend declares a capability that supports
-    this requirement's posture kind, whose mechanism matches an author-permitted
+    the source-artifact concern, whose mechanism matches an author-permitted
     route, and whose supported acquisition/timing combinations include that
     route's. The backend expresses support as mechanism-scoped
     ``ArtifactAcquisitionTimingModel`` entries (the mechanism is the capability's
@@ -312,7 +369,8 @@ def _select_route(
     matching bridges the two shapes. Deterministic: capabilities are scanned in
     declared order, permitted routes in author order.
     """
-    kind = requirement.explicitness.value
+    # Public capability kinds name compiled concerns, not explicitness postures.
+    kind = "source-artifact"
     for capability in capabilities:
         if kind not in capability.supported_requirement_kinds:
             continue

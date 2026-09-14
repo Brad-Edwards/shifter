@@ -340,6 +340,11 @@ modules:
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
+  - path: platform/terraform/gcp/modules/raes-package-storage
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
   - path: platform/terraform/gcp/modules/range/vpc
     owner: "@Brad-Edwards"
     contract: terraform_test

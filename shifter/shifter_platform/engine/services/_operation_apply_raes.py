@@ -304,8 +304,41 @@ def _apply_uncancelled_raes_result(
     return _apply_observation(row, step, payload, range_obj)
 
 
+def _validate_completion(row: OperationResultInbox, payload: dict[str, Any], range_obj: Range) -> None:
+    """Admit current evidence against the exact generation's immutable input."""
+    from engine.models import OperationInput
+    from shared.raes.completion import completed_snapshot, load_serialized_plan
+
+    try:
+        record = OperationInput.objects.filter(operation_id=row.operation_id, request_id=row.request_id).first()
+        if record is None:
+            config = range_obj.range_config
+            if isinstance(config, dict) and config.get("contract_version") == "raes-provisioning-plan-v2":
+                raise ValueError("missing immutable input")
+            # Historical result tests/records without the new transport.
+            return
+        immutable = record.envelope["payload"]
+        if row.operation == "activate":
+            immutable = immutable["raes_input"]
+        if (immutable["plan"].get("contract_version"), immutable["plan"].get("raes_version")) == (
+            "raes-provisioning-plan-v1",
+            "2.0.0",
+        ):
+            # In-flight old producer results retain their historical contract.
+            return
+        completed_snapshot(
+            load_serialized_plan(immutable["plan"]),
+            payload["completion"],
+            generation_id=str(row.operation_id),
+            serialized_plan=immutable["plan"],
+        )
+    except (KeyError, TypeError, ValueError):
+        raise RaesRealizedAccessError("realization completion evidence is missing or invalid") from None
+
+
 def _apply_terminal_ready(row: OperationResultInbox, payload: dict[str, Any], range_obj: Range) -> str:
     """Apply a RAES terminal-READY result, branching warm-prepare vs cold/activation."""
+    _validate_completion(row, payload, range_obj)
     pending = _pending_warm_generation(row, range_obj)
     if pending is not None:
         # Warm-prepare terminal: the infrastructure is realized, but the range

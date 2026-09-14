@@ -102,6 +102,9 @@ def _manifest_with_participant_runtime_claim(supported_contract_versions: frozen
     return BackendManifest(
         identity=real_manifest.identity,
         supported_contract_versions=supported_contract_versions,
+        realization_envelope=real_manifest.realization_envelope
+        if "realization-envelope-v1" in supported_contract_versions
+        else None,
         compatibility=real_manifest.compatibility,
         realization_support=real_manifest.realization_support,
         concept_bindings=real_manifest.concept_bindings,

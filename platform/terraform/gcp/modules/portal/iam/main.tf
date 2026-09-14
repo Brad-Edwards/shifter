@@ -21,23 +21,28 @@ locals {
   # IAM Conditions supports extract (not arbitrary contains/regex) on
   # resource.name. An empty range_scope excludes the legacy RAES directory
   # namespace, which must remain workload-only even for account-password. Keep
-  # this positive form: the complete binding is at Google's 12-logic-operator
-  # limit, so wrapping a non-empty test in ! would make the policy invalid.
+  # this positive form to remain within Google's condition complexity limit.
+  # Payload access is evaluated against a version resource, so suffix checks
+  # extract its parent secret ID before matching the participant audience.
   legacy_raes_directory_name_condition = "resource.name.extract('projects/${data.google_project.platform.number}/secrets/shifter-range-{range_scope}-raes-domain-') == ''"
+  legacy_secret_version_id             = "resource.name.extract('/secrets/{secret_id}/versions/')"
   legacy_participant_secret_condition = join(" || ", [
-    "(resource.name.startsWith('${local.legacy_secret_prefixes[0]}') && (resource.name.endsWith('-participant-ssh') || resource.name.endsWith('-rdp-password') || resource.name.endsWith('-profile') || ((${local.legacy_raes_directory_name_condition}) && (resource.name.endsWith('-account-password') || resource.name.endsWith('-account-publickey')))))",
-    "(resource.name.startsWith('${local.legacy_secret_prefixes[1]}') && (resource.name.endsWith('-ssh') || resource.name.endsWith('-rdp-password')))",
-    "(resource.name.startsWith('${local.legacy_secret_prefixes[2]}') && resource.name.endsWith('-ssh'))",
+    "(resource.name.startsWith('${local.legacy_secret_prefixes[0]}') && (${local.legacy_secret_version_id}.endsWith('-participant-ssh') || ${local.legacy_secret_version_id}.endsWith('-rdp-password') || ${local.legacy_secret_version_id}.endsWith('-profile') || ((${local.legacy_raes_directory_name_condition}) && (${local.legacy_secret_version_id}.endsWith('-account-password') || ${local.legacy_secret_version_id}.endsWith('-account-publickey')))))",
+    "(resource.name.startsWith('${local.legacy_secret_prefixes[1]}') && (${local.legacy_secret_version_id}.endsWith('-ssh') || ${local.legacy_secret_version_id}.endsWith('-rdp-password')))",
+    "(resource.name.startsWith('${local.legacy_secret_prefixes[2]}') && ${local.legacy_secret_version_id}.endsWith('-ssh'))",
   ])
+  # The closed roles below contain only Secret Manager permissions. Fully
+  # qualified secret-name prefixes scope both Secret and SecretVersion calls;
+  # do not add a resource.type predicate (live GKE authorization rejects it).
   dynamic_lifecycle_condition = local.dynamic_secret_project_is_dedicated ? (
-    "resource.type == 'secretmanager.googleapis.com/Secret' && resource.name.startsWith('${local.canonical_secret_prefix}')"
+    "resource.name.startsWith('${local.canonical_secret_prefix}')"
     ) : (
-    "resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_secret_name_condition})"
+    "(${local.legacy_secret_name_condition})"
   )
   portal_dynamic_read_condition = local.dynamic_secret_project_is_dedicated ? (
-    "resource.type == 'secretmanager.googleapis.com/Secret' && resource.name.startsWith('${local.canonical_participant_secret_prefix}')"
+    "resource.name.startsWith('${local.canonical_participant_secret_prefix}')"
     ) : (
-    "resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_participant_secret_condition})"
+    "(${local.legacy_participant_secret_condition})"
   )
 
   workload_service_accounts = toset([
@@ -339,7 +344,7 @@ resource "google_project_iam_member" "provisioner_legacy_dynamic_secret_lifecycl
   condition {
     title       = "legacy_dynamic_range_secrets"
     description = "Migration-only lifecycle for exact legacy range-secret namespaces."
-    expression  = "resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_secret_name_condition})"
+    expression  = "(${local.legacy_secret_name_condition})"
   }
 }
 
@@ -352,7 +357,7 @@ resource "google_project_iam_member" "portal_legacy_dynamic_secret_accessor" {
   condition {
     title       = "legacy_participant_dynamic_range_secrets"
     description = "Migration-only portal reads for participant-facing legacy credentials."
-    expression  = "resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_participant_secret_condition})"
+    expression  = "(${local.legacy_participant_secret_condition})"
   }
 }
 

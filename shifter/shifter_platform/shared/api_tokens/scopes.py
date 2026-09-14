@@ -36,6 +36,10 @@ CTF_PLAY_WRITE = "ctf:play:write"
 CTF_VPN_PROFILE_READ = "ctf:vpn-profile:read"
 CMS_AUTHORING_READ = "cms:authoring:read"
 CMS_AUTHORING_WRITE = "cms:authoring:write"
+CMS_PREPARATION_ADAPTERS_READ = "cms:preparation-adapters:read"
+CMS_PREPARATION_ADAPTERS_WRITE = "cms:preparation-adapters:write"
+CMS_PREPARATION_READ = "cms:preparation:read"
+CMS_PREPARATION_WRITE = "cms:preparation:write"
 
 # --- Workspace membership API (#1326) ----------------------------------------
 WORKSPACES_MEMBERSHIP_READ = "workspaces:membership:read"
@@ -58,6 +62,10 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         CTF_VPN_PROFILE_READ,
         CMS_AUTHORING_READ,
         CMS_AUTHORING_WRITE,
+        CMS_PREPARATION_ADAPTERS_READ,
+        CMS_PREPARATION_ADAPTERS_WRITE,
+        CMS_PREPARATION_READ,
+        CMS_PREPARATION_WRITE,
         WORKSPACES_MEMBERSHIP_READ,
         WORKSPACES_MEMBERSHIP_WRITE,
     }

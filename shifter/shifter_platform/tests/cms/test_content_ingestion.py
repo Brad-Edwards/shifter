@@ -314,3 +314,77 @@ def test_request_is_immutable():
     req = _request("packs/fixture")
     with pytest.raises(dataclasses.FrozenInstanceError):
         req.scenario_id = "mutated"  # type: ignore[misc]
+
+
+class TestPackRevisionAdmission:
+    """Explicit compare-and-swap upgrades preserve the immutable registration gate."""
+
+    @pytest.fixture
+    def original(self, staff_user):
+        request = _request("private/pack-v1", source_kind="object")
+        register_pack(user=staff_user, request=request)
+        row = RaesPackageSource.objects.get(scenario_id=FIXTURE_PACK_NAME)
+        row.conformance_status = "passed"
+        row.conformance_report_ref = "report://previous-version"
+        row.save()
+        return request
+
+    def test_explicit_new_revision_resets_conformance_and_audits_previous_identity(self, staff_user, original):
+        request = dataclasses.replace(
+            original,
+            package_ref="private/pack-v2",
+            package_version="0.2.0",
+            package_digest="sha256:" + "b" * 64,
+            expected_package_digest=original.package_digest,
+        )
+        result = register_pack(user=staff_user, request=request, idempotent=True)
+        row = RaesPackageSource.objects.get(scenario_id=FIXTURE_PACK_NAME)
+        assert result.created is False
+        assert row.package_digest == request.package_digest
+        assert row.conformance_status == "pending"
+        assert row.conformance_report_ref == ""
+        event = AuditLog.objects.get(entity_type=AuditEntityType.SCENARIO, action=AuditAction.UPDATE)
+        assert event.previous_state["package_digest"] == original.package_digest
+        assert event.new_state["package_digest"] == request.package_digest
+        row.conformance_status = "passed"
+        row.save()
+        register_pack(user=staff_user, request=request, idempotent=True)
+        row.refresh_from_db()
+        assert row.conformance_status == "passed", "an exact retry must not invalidate conformance"
+
+    @pytest.mark.parametrize("change", ["stale", "same-version", "missing"])
+    def test_revision_cannot_overwrite_unexpected_identity_or_relabel_a_version(self, staff_user, original, change):
+        request = dataclasses.replace(
+            original,
+            package_ref="private/pack-v2",
+            package_version="0.2.0",
+            package_digest="sha256:" + "b" * 64,
+            expected_package_digest=original.package_digest,
+        )
+        if change == "stale":
+            request = dataclasses.replace(request, expected_package_digest="sha256:" + "c" * 64)
+        elif change == "same-version":
+            request = dataclasses.replace(request, package_version=original.package_version)
+        else:
+            request = dataclasses.replace(request, expected_package_digest="")
+        with pytest.raises(CMSError):
+            register_pack(user=staff_user, request=request, idempotent=True)
+        assert RaesPackageSource.objects.get(scenario_id=FIXTURE_PACK_NAME).package_digest == original.package_digest
+
+    def test_failed_revision_audit_rolls_back_new_identity(self, staff_user, original, monkeypatch):
+        def fail(*args, **kwargs):
+            raise RuntimeError("audit unavailable")
+
+        request = dataclasses.replace(
+            original,
+            package_ref="private/pack-v2",
+            package_version="0.2.0",
+            package_digest="sha256:" + "b" * 64,
+            expected_package_digest=original.package_digest,
+        )
+        monkeypatch.setattr("cms.services._content_ingestion.audit_log", fail)
+        with pytest.raises(CMSError, match="audit failed"):
+            register_pack(user=staff_user, request=request, idempotent=True)
+        row = RaesPackageSource.objects.get(scenario_id=FIXTURE_PACK_NAME)
+        assert row.package_digest == original.package_digest
+        assert row.conformance_status == "passed"

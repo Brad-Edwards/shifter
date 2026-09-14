@@ -1848,6 +1848,8 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     firewall = object()
     address = object()
     instance = object()
+    disk = object()
+    image = object()
     global_operations = object()
     region_operations = object()
     zone_operations = object()
@@ -1858,6 +1860,8 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     compute_module.AddressesClient = mocker.Mock(return_value=address)
     compute_module.RoutersClient = mocker.Mock(return_value=router)
     compute_module.InstancesClient = mocker.Mock(return_value=instance)
+    compute_module.DisksClient = mocker.Mock(return_value=disk)
+    compute_module.ImagesClient = mocker.Mock(return_value=image)
     compute_module.GlobalOperationsClient = mocker.Mock(return_value=global_operations)
     compute_module.RegionOperationsClient = mocker.Mock(return_value=region_operations)
     compute_module.ZoneOperationsClient = mocker.Mock(return_value=zone_operations)
@@ -1877,6 +1881,8 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     assert clients.addresses is address
     assert clients.routers is router
     assert clients.instances is instance
+    assert clients.disks is disk
+    assert clients.images is image
     assert clients.global_operations is global_operations
     assert clients.region_operations is region_operations
     assert clients.zone_operations is zone_operations
