@@ -71,15 +71,18 @@ def _apply_destroy_to_range(
 ) -> bool:
     """Status-branch helper for ``destroy_range`` so the caller stays under the return-count cap."""
     if range_obj.status == ResourceStatus.DESTROYED:
+        _revoke_receipt_for_range_request(range_obj)
         logger.warning("destroy_range: range already destroyed range_id=%s", range_id)
         return False
     if range_obj.status == ResourceStatus.DESTROYING:
+        _revoke_receipt_for_range_request(range_obj)
         logger.info("destroy_range: range already destroying range_id=%s", range_id)
         return True
 
     previous_status = range_obj.status
     range_obj.status = ResourceStatus.DESTROYING.value
     range_obj.save(update_fields=["status"])
+    _revoke_receipt_for_range_request(range_obj)
     logger.info("destroy_range: set status to DESTROYING range_id=%s", range_id)
 
     try:
@@ -136,6 +139,10 @@ def cancel_range(range_ref: RangeRef) -> None:
             return
 
         if ResourceStatus(range_obj.status) not in CANCELLABLE_STATUSES:
+            if range_obj.status in {Range.Status.DESTROYING, Range.Status.DESTROYED, Range.Status.FAILED}:
+                from ._receipt import _revoke_receipt_verifier_for_range
+
+                _revoke_receipt_verifier_for_range(range_obj)
             logger.warning(
                 "cancel_range: range not cancellable range_id=%s status=%s",
                 range_id,
@@ -145,11 +152,24 @@ def cancel_range(range_ref: RangeRef) -> None:
 
         range_obj.status = Range.Status.DESTROYING
         range_obj.save(update_fields=["status"])
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(range_obj)
         # Record a durable interrupt against the current provision generation
         # (#277); the launcher worker stops the in-flight task and converges the
         # canonical destroy. No teardown is dispatched inline here.
         request_provision_interrupt(range_obj)
         logger.info("cancel_range: cancelled range_id=%s", range_id)
+
+
+def _revoke_receipt_for_range_request(range_obj: Range) -> None:
+    """Durably invalidate a receipt registration before teardown dispatch."""
+    request = range_obj.request
+    if request is None:
+        return
+    from ._receipt import revoke_receipt_verifier
+
+    revoke_receipt_verifier(request.request_id)
 
 
 def get_instance_ips_by_uuid(range_id: int) -> dict[str, str]:

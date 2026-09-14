@@ -37,6 +37,12 @@ from shared.operation_results import (
     step_follows,
 )
 
+from ._operation_apply_admission import (
+    applied_steps,
+    discriminator_mismatch,
+    has_conflicting_sibling,
+    has_earlier_pending_sibling,
+)
 from ._operation_apply_effects import (
     _audit,
     _enqueue_ngfw_status_event,
@@ -68,68 +74,6 @@ _RANGE_TERMINAL_STEPS = frozenset(
 # provisioner's ``should_pause_ngfw`` is a pre-cloud compatibility check; this
 # re-check under lock is the authorization.
 _NGFW_KEEP_ALIVE_STATUSES = (ResourceStatus.READY.value, ResourceStatus.RESUMING.value)
-
-
-def _discriminator_mismatch(row: OperationResultInbox, envelope: dict[str, Any]) -> str:
-    """Return a reason when a flattened inbox column disagrees with the envelope.
-
-    The flattened columns are what the applier queries and locks on, so a row
-    whose columns disagree with the signed-shape envelope is not merely redundant
-    — it is a row that would be applied under the wrong identity.
-    """
-    for field in ("operation_id", "request_id", "resource", "operation", "contract_version"):
-        if str(getattr(row, field)) != str(envelope[field]):
-            return f"inbox {field} does not match the envelope"
-    return ""
-
-
-def _has_conflicting_sibling(row: OperationResultInbox) -> bool:
-    """Return True when another row reports this step with a different payload.
-
-    Result identity embeds the digest, so an identical replay collapses onto one
-    row at insert time and a *conflicting* replay lands as a second row for the
-    same ``(operation_id, result_step)``. The provisioner cannot detect that (it
-    has no inbox read grant); the applier can and must.
-    """
-    from engine.models import OperationResultInbox as Inbox
-
-    digests = (
-        Inbox.objects.filter(operation_id=row.operation_id, result_step=row.result_step)
-        .values_list("payload_digest", flat=True)
-        .distinct()
-    )
-    return len(set(digests)) > 1
-
-
-def _applied_steps(row: OperationResultInbox) -> list[str]:
-    """Return the steps already applied for this operation generation."""
-    from engine.models import OperationResultDisposition
-    from engine.models import OperationResultInbox as Inbox
-
-    return list(
-        Inbox.objects.filter(
-            operation_id=row.operation_id,
-            disposition=OperationResultDisposition.APPLIED,
-        )
-        .exclude(result_step="")
-        .values_list("result_step", flat=True)
-    )
-
-
-def _has_earlier_pending_sibling(row: OperationResultInbox) -> bool:
-    """Return True when an earlier-created result of this generation is still pending."""
-    from engine.models import OperationResultDisposition
-    from engine.models import OperationResultInbox as Inbox
-
-    return (
-        Inbox.objects.filter(
-            operation_id=row.operation_id,
-            disposition=OperationResultDisposition.PENDING,
-            created_at__lt=row.created_at,
-        )
-        .exclude(pk=row.pk)
-        .exists()
-    )
 
 
 def _lock_range(operation_id: UUID | str) -> Range | None:
@@ -273,6 +217,10 @@ def _apply_range_terminal(range_obj: Range, payload: dict[str, Any], request_id:
     if new_status == ResourceStatus.PAUSED.value:
         extra["paused_at"] = timezone.now()
     previous = _save_status(range_obj, new_status, extra)
+    if new_status in {ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value}:
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(range_obj)
     _audit(AuditEntityType.RANGE, range_obj.id, new_status, request_id=request_id, previous={"status": previous})
     _enqueue_range_status_event(range_obj, new_status, "")
     return f"range -> {new_status}"
@@ -294,6 +242,9 @@ def _apply_failure(target: Range | Instance, payload: dict[str, Any], request_id
     target.save(update_fields=update_fields)
 
     if is_range:
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(cast("Range", target))
         _audit(
             AuditEntityType.RANGE,
             target.id,
@@ -404,7 +355,7 @@ def _admit(row: OperationResultInbox) -> tuple[ResultStep, dict[str, Any]]:
     except OperationEnvelopeError as exc:
         raise _Rejected(OperationResultDisposition.REJECTED_INVALID, str(exc)) from None
 
-    mismatch = _discriminator_mismatch(row, envelope)
+    mismatch = discriminator_mismatch(row, envelope)
     if mismatch:
         raise _Rejected(OperationResultDisposition.REJECTED_INVALID, mismatch)
 
@@ -445,7 +396,7 @@ def _lock_and_authorize(row: OperationResultInbox, step: ResultStep) -> Range | 
     if target is None:
         raise _Rejected(OperationResultDisposition.REJECTED_STALE, "operation generation is no longer current")
 
-    if _has_conflicting_sibling(row):
+    if has_conflicting_sibling(row):
         raise _Rejected(
             OperationResultDisposition.REJECTED_CONFLICT,
             "another result for this step carries a different payload",
@@ -454,10 +405,10 @@ def _lock_and_authorize(row: OperationResultInbox, step: ResultStep) -> Range | 
     # Do not advance past a still-pending earlier sibling. Claiming order is
     # created_at, but skip_locked lets a worker reach a later result first;
     # applying it would make the earlier step arrive "late" and be rejected.
-    if _has_earlier_pending_sibling(row):
+    if has_earlier_pending_sibling(row):
         return None
 
-    previous_step = latest_step(row.resource, row.operation, _applied_steps(row))
+    previous_step = latest_step(row.resource, row.operation, applied_steps(row))
     if not step_follows(row.resource, row.operation, previous=previous_step, step=step):
         raise _Rejected(OperationResultDisposition.REJECTED_ORDERING, f"step may not follow '{previous_step}'")
     return target

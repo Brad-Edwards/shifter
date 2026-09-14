@@ -21,6 +21,7 @@ Programmatic API access enables scripts, integrations, and automation workflows 
 
 ## Traceability
 
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_preparation_api.py` (Preparation session and scoped-token authentication with independent administrative authority)
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#677` (PLAT-102: API Token Authentication)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/api_tokens/models.py`
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/api_tokens/authentication.py`

@@ -29,7 +29,7 @@ GuestInstance = dict[str, object]
 _RAES_PASSWORD_LENGTHS = {"weak": 12, "medium": 18, "strong": 24}
 _RAES_ACCOUNT_SECRET_KINDS = {
     "password": "-".join(("account", "password")),
-    "publickey": "account-publickey",
+    "key": "account-publickey",
 }
 
 

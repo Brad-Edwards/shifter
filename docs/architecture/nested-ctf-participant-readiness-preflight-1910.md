@@ -179,10 +179,18 @@ grant to the pooled host identity is not an acceptable stopgap.
 
 ## Signed receipt validation
 
+The [#1906 binding preflight](ctf-signed-receipt-binding-preflight-1906.md)
+and ADR-062 specialize this section: they distinguish command generation from
+materialization and assignment identity, define signer/key enrollment, and require
+transactional freshness and durable one-shot replay evidence. The paragraphs
+below describe the existing transport and scoring incumbents, not sufficient
+generation/replay enforcement by themselves.
+
 A signed receipt remains submitted through the normal CTF flag path. Shifter
 does not parse its signature, duplicate proof-service cryptography, create a new
 flag type, or award points from a proof route. The external verifier owns
-signature and claim verification; `submit_flag` remains the sole score and
+signature and claim verification (an installed asymmetric adapter may instead
+verify using registered public keys); `submit_flag` remains the sole score and
 submission transaction.
 
 The existing HTTP validator wire contract sends only the submitted flag and
@@ -216,10 +224,12 @@ The proof callback is pure verification. A consuming or one-shot remote redeem
 performed before Shifter's database transaction would create an unrecoverable
 split-brain when the callback succeeds and the submission transaction fails.
 For a correctly subject-bound receipt, the existing participant row lock,
-already-solved check, and database uniqueness constraint award points exactly
-once under concurrency. A replay for the same participant/challenge is rejected
-by that transaction; replay by another participant or range is false because
-the verifier compares the server-supplied binding.
+already-solved check, and database uniqueness constraint are the scoring
+incumbents. They do not fence a verdict against concurrent lifecycle changes
+or preserve one-shot consumption after solve soft deletion. #1906 requires
+revalidation under the lifecycle/assignment fence and durable receipt consumption
+in that same transaction. Cross-participant/range rejection additionally requires
+the verifier to compare the server-supplied binding.
 
 Accept a callback only for HTTP 200 and the literal JSON Boolean `true` in the
 canonical verdict member. Do not use Python truthiness: strings such as
@@ -228,6 +238,10 @@ JSON, transport errors, or an unbound/expired receipt fail closed. The
 participant continues to receive the incumbent `correct`/incorrect result or
 canonical CTF service-error envelope; cryptographic claims, callback bodies,
 DNS answers, URLs, headers, and internal rejection reasons are not disclosed.
+The legacy HTTP response remains exactly `{"valid": true}` for success. Any
+receipt-specific verified identity/deadline evidence requires a separately
+versioned closed provider response, not extra fields silently accepted by the
+legacy parser.
 
 The current SSRF and TLS boundary remains intact. Never allow a private range
 CIDR merely because a proof page is participant-visible, and never install the

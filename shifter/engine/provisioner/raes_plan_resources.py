@@ -63,11 +63,18 @@ def _string(value: object, *, where: str) -> str:
 
 def _dependencies(entry: Mapping[str, Any]) -> tuple[str, ...]:
     """Return unique ordering dependencies from one serialized resource."""
+    refresh = entry.get("refresh_dependencies", [])
+    if not isinstance(refresh, list | tuple) or any(not isinstance(item, str) or not item for item in refresh):
+        raise RaesPlanError("resource refresh_dependencies must be an address list")
     raw = entry.get("ordering_dependencies")
     if raw is None:
+        if refresh:
+            raise RaesPlanError("resource refresh_dependencies require ordering dependencies")
         return ()
     if not isinstance(raw, list | tuple) or any(not isinstance(item, str) or not item for item in raw):
         raise RaesPlanError("resource ordering_dependencies must be a list of non-empty strings")
+    if not set(refresh) <= set(raw):
+        raise RaesPlanError("resource refresh_dependencies outside fresh-create ordering are unsupported")
     return tuple(dict.fromkeys(raw))
 
 
@@ -126,7 +133,9 @@ def _collect_resource(collection: ResourceCollection, entry: object) -> None:
 def collect_resources(resources: Mapping[str, Any]) -> ResourceCollection:
     """Validate all serialized resources and return categorized buckets."""
     collection = ResourceCollection()
-    for entry in resources.values():
+    for key, entry in resources.items():
+        if not isinstance(entry, Mapping) or key != entry.get("address"):
+            raise RaesPlanError("resource map key must match resource.address")
         _collect_resource(collection, entry)
     for alias, target in collection.dependency_aliases.items():
         if target not in collection.seen_addresses:
