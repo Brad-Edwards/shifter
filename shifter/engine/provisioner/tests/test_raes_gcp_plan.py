@@ -448,7 +448,12 @@ class TestParticipantAccess:
 
     def test_channels_and_usernames_land_on_the_declared_instance(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), (self._binding(),)
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            access_bindings=(self._binding(),),
         )
         instance = plan["instances"][0]
         assert instance["participant_access_channels"] == ["ssh"]
@@ -461,7 +466,10 @@ class TestParticipantAccess:
             _plan((_node(os_family="windows"),), (_network(),)),
             _resolver(),
             _config(),
-            (self._binding(channel="ssh", username="sshuser"), self._binding(channel="rdp", username="rdpuser")),
+            access_bindings=(
+                self._binding(channel="ssh", username="sshuser"),
+                self._binding(channel="rdp", username="rdpuser"),
+            ),
         )
         instance = plan["instances"][0]
         assert sorted(instance["participant_access_channels"]) == ["rdp", "ssh"]
@@ -471,7 +479,12 @@ class TestParticipantAccess:
         """Grouping is by target address: an undeclared node stays access-free."""
         nodes = (_node(address="node.a", name="web"), _node(address="node.b", name="db"))
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan(nodes, (_network(),)), _resolver(), _config(), (self._binding(target="node.a"),)
+            "req-1",
+            7,
+            _plan(nodes, (_network(),)),
+            _resolver(),
+            _config(),
+            access_bindings=(self._binding(target="node.a"),),
         )
         by_uuid = {instance["uuid"]: instance for instance in plan["instances"]}
         assert by_uuid["node.a#0"]["participant_access_channels"] == ["ssh"]
@@ -480,7 +493,12 @@ class TestParticipantAccess:
 
     def test_the_management_login_is_not_the_participant_login(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), (self._binding(),)
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            access_bindings=(self._binding(),),
         )
         instance = plan["instances"][0]
         assert instance["ssh_username"] == RESERVED_MANAGEMENT_LOGIN

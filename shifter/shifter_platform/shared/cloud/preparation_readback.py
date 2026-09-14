@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, Protocol
 from uuid import UUID
 
 from shared.artifact_preparation import BuildEvidence, InputEvidence, OutputEvidence, RawDiskObservation
 from shared.preparation_grant import PreparationGrantConfiguration
 
 
+class PreparationComputeReader(Protocol):
+    """Minimal bounded Compute read interface used by admission verification."""
+
+    def get(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]: ...
+
+
 class ComputeReader:
     """Only bounded GETs to the configured Compute API; never provider mutations."""
 
-    def __init__(self, project: str):
+    def __init__(self, project: str) -> None:
         from shared.cloud.gcp.base import import_google_module
 
         auth = import_google_module("google.auth")
@@ -22,7 +29,7 @@ class ComputeReader:
         self.session = transport.AuthorizedSession(credentials)
         self.project = project
 
-    def get(self, path: str, *, params: dict | None = None) -> dict[str, Any]:
+    def get(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Paths are constructed by the observer, never accepted from HTTP clients."""
         if (
             not path.startswith(f"projects/{self.project}/")
@@ -58,23 +65,38 @@ class ComputeReader:
 class GCEPreparationReadback:
     """Observe actual resources after worker quiescence and before the database fence."""
 
-    def __init__(self, grant: PreparationGrantConfiguration, reader=None):
+    def __init__(
+        self,
+        grant: PreparationGrantConfiguration,
+        reader: PreparationComputeReader | None = None,
+    ) -> None:
         self.grant = grant
         self.reader = reader or ComputeReader(grant.project_id)
         self.scope = f"projects/{grant.project_id}/zones/{grant.zone}"
 
-    def verify_cleanup(self, operation: UUID, attempts: list[UUID], *, retained_image: dict | None = None) -> None:
+    def verify_cleanup(
+        self,
+        operation: UUID,
+        attempts: list[UUID],
+        *,
+        retained_image: dict[str, Any] | None = None,
+    ) -> None:
         """Release capacity only after settled provider operations and actual absence."""
         if len(attempts) > 128:
             raise ValueError("preparation history exceeds its bound")
         names = tuple("prep-" + attempt.hex for attempt in attempts)
+        self._verify_settled_operations(names)
+        self._verify_cleanup_resources(operation, retained_image or {})
+
+    def _verify_settled_operations(self, names: tuple[str, ...]) -> None:
         for scope in (self.scope, f"projects/{self.grant.project_id}/global"):
             for item in self._items(f"{scope}/operations", {"filter": "status != DONE"}):
                 target = str(item.get("targetLink", ""))
                 name = target.rsplit("/", 1)[-1]
                 if item.get("status") != "DONE" and any(name == stem or name.startswith(stem + "-") for stem in names):
                     raise ValueError("preparation provider operations remain unsettled")
-        retained = retained_image or {}
+
+    def _verify_cleanup_resources(self, operation: UUID, retained: dict[str, Any]) -> None:
         found = False
         for scope in (
             f"{self.scope}/instances",
@@ -91,7 +113,7 @@ class GCEPreparationReadback:
         if retained and not found:
             raise ValueError("admitted image is missing after cleanup")
 
-    def _items(self, path: str, parameters: dict):
+    def _items(self, path: str, parameters: dict[str, Any]) -> Iterator[dict[str, Any]]:
         """Bound pages, records and continuation tokens without following URLs."""
         params = dict(parameters, maxResults=100)
         seen = set()
@@ -114,7 +136,7 @@ class GCEPreparationReadback:
             params["pageToken"] = token
         raise ValueError("preparation provider pagination exceeds its bound")
 
-    def verify_build(self, operation: UUID, attempt: UUID, evidence: dict) -> None:
+    def verify_build(self, operation: UUID, attempt: UUID, evidence: dict[str, Any]) -> None:
         """Require immutable image/disk/guest identities and actual stopped isolation."""
         built = BuildEvidence.model_validate(evidence)
         name = "prep-" + attempt.hex
@@ -135,14 +157,14 @@ class GCEPreparationReadback:
             raise ValueError("candidate provider lineage changed after the builder receipt")
         self._guest(guest, f"{self.scope}/disks/{name}", status="TERMINATED")
 
-    def verify_inputs(self, operation: UUID, attempt: UUID, evidence: dict) -> None:
+    def verify_inputs(self, operation: UUID, attempt: UUID, evidence: dict[str, Any]) -> None:
         """The initial contained profile has one independently attached fixed disk."""
         inputs = InputEvidence.model_validate(evidence)
         if len(inputs.observations) != 1:
             raise ValueError("unsupported contained input set")
         self._scan(operation, attempt, inputs.observations[0])
 
-    def verify_output(self, operation: UUID, attempt: UUID, evidence: dict) -> None:
+    def verify_output(self, operation: UUID, attempt: UUID, evidence: dict[str, Any]) -> None:
         """Recheck the independent disk scan and both fresh functional-probe guests."""
         observed = OutputEvidence.model_validate(evidence)
         self._scan(operation, attempt, observed)
@@ -174,33 +196,53 @@ class GCEPreparationReadback:
             raise ValueError("independent scanner or data disk lineage changed")
         self._guest(guest, scanner_path, status="TERMINATED", data_disk=data_path)
 
-    def _owned(self, path: str, operation: UUID, attempt: UUID) -> dict:
+    def _owned(self, path: str, operation: UUID, attempt: UUID) -> dict[str, Any]:
         value = self.reader.get(path)
         labels = value.get("labels", {})
         if labels.get("shifter-preparation") != operation.hex or labels.get("preparation-attempt") != attempt.hex:
             raise ValueError("preparation provider ownership changed")
         return value
 
-    def _guest(self, value: dict, disk: str, *, status: str, data_disk: str | None = None) -> None:
+    def _guest(
+        self,
+        value: dict[str, Any],
+        disk: str,
+        *,
+        status: str,
+        data_disk: str | None = None,
+    ) -> None:
         interfaces = value.get("networkInterfaces", [])
         disks = value.get("disks", [])
-        if (
-            value.get("status") != status
-            or value.get("serviceAccounts")
-            or len(interfaces) != 1
-            or interfaces[0].get("accessConfigs")
-            or interfaces[0].get("ipv6AccessConfigs")
-            or not _same_ref(interfaces[0].get("subnetwork"), self.grant.subnetwork)
-            or len(disks) != (2 if data_disk else 1)
-            or not disks[0].get("boot")
-            or not _same_ref(disks[0].get("source"), disk)
-        ):
+        if not _isolated_guest(value, interfaces, disks, status, disk, self.grant.subnetwork, bool(data_disk)):
             raise ValueError("preparation guest isolation or terminal state changed")
         if data_disk and (not _same_ref(disks[1].get("source"), data_disk) or disks[1].get("mode") != "READ_ONLY"):
             raise ValueError("preparation scanner attachment changed")
 
 
+def _isolated_guest(
+    value: dict[str, Any],
+    interfaces: list[dict[str, Any]],
+    disks: list[dict[str, Any]],
+    status: str,
+    disk: str,
+    subnetwork: str,
+    has_data_disk: bool,
+) -> bool:
+    return (
+        value.get("status") == status
+        and not value.get("serviceAccounts")
+        and len(interfaces) == 1
+        and not interfaces[0].get("accessConfigs")
+        and not interfaces[0].get("ipv6AccessConfigs")
+        and _same_ref(interfaces[0].get("subnetwork"), subnetwork)
+        and len(disks) == (2 if has_data_disk else 1)
+        and disks[0].get("boot") is True
+        and _same_ref(disks[0].get("source"), disk)
+    )
+
+
 def _same_ref(actual: object, expected: str) -> bool:
+    """Handle same ref."""
     if not isinstance(actual, str):
         return False
     for prefix in ("https://www.googleapis.com/compute/v1/", "https://compute.googleapis.com/compute/v1/"):

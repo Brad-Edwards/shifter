@@ -291,9 +291,13 @@ def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violat
                 )
             )
 
-    # Import-linter owns the platform package graph. The standalone preparation
-    # worker is built from a sibling package, so enforce the same ADR-031-R1
-    # boundary here instead of leaving its container outside the graph.
+    violations.extend(_preparation_worker_import_violations(repo_root, files))
+    return violations
+
+
+def _preparation_worker_import_violations(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Keep the separately built worker behind the shared RAES facade."""
+    violations: list[Violation] = []
     if files is None:
         packer_candidates = (repo_root / "shifter" / "packer" / "preparation").rglob("*.py")
     else:

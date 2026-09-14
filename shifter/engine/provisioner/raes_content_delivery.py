@@ -315,14 +315,7 @@ def _realize_service_on_instance(
     platform: str,
 ) -> None:
     """Install/locate, enable, start, and independently verify one service."""
-    package = feature.source_name or ""
-    version = feature.source_version
-    if (
-        not SAFE_SERVICE_IDENTITY.fullmatch(package)
-        or (version is not None and not SAFE_SERVICE_IDENTITY.fullmatch(version))
-        or feature.has_environment
-    ):
-        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+    package, version = _validated_service_feature(feature)
     execution = ops.execution_builder(output, os_type=platform, role="raes-node")
     try:
         if execution.wait_for_ready(timeout_seconds=_GUEST_READY_TIMEOUT_SECONDS) is False:
@@ -345,6 +338,18 @@ def _realize_service_on_instance(
             raise RaesContentDeliveryError("RAES feature service verification failed")
     finally:
         execution.close()
+
+
+def _validated_service_feature(feature: RaesPlanFeature) -> tuple[str, str | None]:
+    package = feature.source_name or ""
+    version = feature.source_version
+    if not SAFE_SERVICE_IDENTITY.fullmatch(package):
+        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+    if version is not None and not SAFE_SERVICE_IDENTITY.fullmatch(version):
+        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+    if feature.has_environment:
+        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+    return package, version
 
 
 def _deliver_to_node(

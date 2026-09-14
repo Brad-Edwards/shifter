@@ -15,12 +15,16 @@ consumption path stays below the ``shared.raes`` boundary.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from raes.artifact_requirements import ArtifactRequirement
 from raes.scenarios import Scenario, ScenarioError, load_scenario
+from raes_contracts.contracts import ArtifactRequirementAvailability
 
 from shared.log_sanitize import safe_log_value
+from shared.raes.artifact_inventory import ArtifactSupply
 from shared.raes.dispatch_port import ShifterProvisioningDispatchPort
 from shared.raes.participant_access import ParticipantAccessError, project_participant_access
 from shared.raes.runtime_target import NODE_RESOURCE_TYPE, create_shifter_backend_target
@@ -122,7 +126,10 @@ def launch_raes_package(
     scenario_path: Path,
     port: ShifterProvisioningDispatchPort,
     parameters: dict[str, object] | None = None,
-    artifact_supply_provider=None,
+    artifact_supply_provider: Callable[
+        [Mapping[str, ArtifactRequirement]], ArtifactSupply | Mapping[str, ArtifactRequirementAvailability]
+    ]
+    | None = None,
 ) -> ShifterLaunchResult:
     """Load, plan, and dispatch the RAES package at ``scenario_path``.
 

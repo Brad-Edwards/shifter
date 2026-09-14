@@ -92,6 +92,11 @@ def verify_sanitized_root(root: Path) -> None:
         raise ValueError("candidate retains cloud initialization material")
     if any(path.name.startswith("metadata-script") for path in _entries(candidate_path(root, "tmp"))):
         raise ValueError("candidate retains private metadata script material")
+    _verify_machine_identities(root)
+    _verify_ssh_identities(root)
+
+
+def _verify_machine_identities(root: Path) -> None:
     machine_id = candidate_path(root, "etc/machine-id")
     if machine_id.exists() and (not machine_id.is_file() or machine_id.stat().st_size):
         raise ValueError("candidate retains a machine identity")
@@ -101,6 +106,9 @@ def verify_sanitized_root(root: Path) -> None:
             raise ValueError("candidate D-Bus identity contains an unexpected link")
     elif dbus_id.exists() and (not dbus_id.is_file() or dbus_id.stat().st_size):
         raise ValueError("candidate retains a D-Bus machine identity")
+
+
+def _verify_ssh_identities(root: Path) -> None:
     keys = _entries(candidate_path(root, "etc/ssh"))
     if any(key.name.startswith("ssh_host_") for key in keys):
         raise ValueError("candidate retains an SSH host identity")

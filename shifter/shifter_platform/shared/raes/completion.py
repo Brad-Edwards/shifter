@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import TypeAdapter
 from raes_contracts.bounded_domains import scalar_in_domain
 from raes_contracts.contracts import RealizationEnvelopeIdentityModel
-from raes_contracts.planning import ProvisioningPlan, RuntimeDomain
+from raes_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 from raes_contracts.realization_envelope import (
     BackendRealizationEnvelopeModel,
     realization_envelope_digest,
@@ -20,6 +20,55 @@ from raes_contracts.vocabulary import ObservationStrength, RealizationVerificati
 from raes_processor.planner import realization_authority_disclosure
 
 from shared.raes.completion_evidence import plan_digest, validate_completion_evidence
+
+
+def _authoritative_completion_plan(
+    plan: ProvisioningPlan,
+    serialized_plan: Mapping[str, Any] | None,
+    value: Mapping[str, Any],
+    generation_id: str | None,
+) -> ProvisioningPlan:
+    if serialized_plan is None:
+        raise ValueError("completion requires the immutable serialized plan")
+    authoritative_plan = load_serialized_plan(serialized_plan)
+    if plan != authoritative_plan:
+        raise ValueError("completion plan does not match the immutable serialized plan")
+    if value["generation_id"] != (generation_id or authoritative_plan.operation_id):
+        raise ValueError("completion belongs to another execution generation")
+    if value["operation_id"] != authoritative_plan.operation_id or value["plan_digest"] != plan_digest(serialized_plan):
+        raise ValueError("completion belongs to another plan or operation")
+    return authoritative_plan
+
+
+def _selected_carrier(plan: ProvisioningPlan, serialized_plan: Mapping[str, Any]) -> BackendRealizationEnvelopeModel:
+    try:
+        carrier = BackendRealizationEnvelopeModel.model_validate(serialized_plan.get("backend_realization_envelope"))
+    except Exception as exc:
+        raise ValueError("completion has no valid selected realization configuration") from exc
+    if realization_envelope_digest(carrier) != carrier.digest or plan.realization_envelope != carrier.identity:
+        raise ValueError("completion uses an unqualified realization configuration")
+    return carrier
+
+
+def _verified_resources(plan: ProvisioningPlan, value: Mapping[str, Any]) -> dict[str, PlannedResource]:
+    resources = {
+        address: resource
+        for address, resource in plan.resources.items()
+        if resource.domain is RuntimeDomain.PROVISIONING
+    }
+    proved = {row["address"]: row for row in value["resources"]}
+    required = {
+        address: resource
+        for address, resource in resources.items()
+        if resource.resource_type != "domain-controller-placement"
+    }
+    if set(proved) != set(required):
+        raise ValueError("completion resource coverage is incomplete")
+    for address, resource in required.items():
+        expected_status = "provisioned" if resource.resource_type in {"node", "network"} else "verified"
+        if proved[address]["resource_type"] != resource.resource_type or proved[address]["status"] != expected_status:
+            raise ValueError("completion resource verification is invalid")
+    return resources
 
 
 def load_serialized_plan(value: Mapping[str, Any]) -> ProvisioningPlan:
@@ -57,41 +106,11 @@ def completed_snapshot(
     from shared.raes.manifest import create_shifter_backend_manifest
 
     value = validate_completion_evidence(dict(evidence))
-    if serialized_plan is None:
-        raise ValueError("completion requires the immutable serialized plan")
-    authoritative_plan = load_serialized_plan(serialized_plan)
-    if plan != authoritative_plan:
-        raise ValueError("completion plan does not match the immutable serialized plan")
-    plan = authoritative_plan
-    if value["generation_id"] != (generation_id or plan.operation_id):
-        raise ValueError("completion belongs to another execution generation")
-    if value["operation_id"] != plan.operation_id or value["plan_digest"] != plan_digest(serialized_plan):
-        raise ValueError("completion belongs to another plan or operation")
-    raw_carrier = serialized_plan.get("backend_realization_envelope")
-    try:
-        carrier = BackendRealizationEnvelopeModel.model_validate(raw_carrier)
-    except Exception as exc:
-        raise ValueError("completion has no valid selected realization configuration") from exc
-    if realization_envelope_digest(carrier) != carrier.digest or plan.realization_envelope != carrier.identity:
-        raise ValueError("completion uses an unqualified realization configuration")
+    plan = _authoritative_completion_plan(plan, serialized_plan, value, generation_id)
+    assert serialized_plan is not None
+    carrier = _selected_carrier(plan, serialized_plan)
     manifest = create_shifter_backend_manifest(realization_envelope=carrier)
-    resources = {
-        address: resource
-        for address, resource in plan.resources.items()
-        if resource.domain is RuntimeDomain.PROVISIONING
-    }
-    proved = {row["address"]: row for row in value["resources"]}
-    required = {
-        address: resource
-        for address, resource in resources.items()
-        if resource.resource_type != "domain-controller-placement"
-    }
-    if set(proved) != set(required):
-        raise ValueError("completion resource coverage is incomplete")
-    for address, resource in required.items():
-        expected_status = "provisioned" if resource.resource_type in {"node", "network"} else "verified"
-        if proved[address]["resource_type"] != resource.resource_type or proved[address]["status"] != expected_status:
-            raise ValueError("completion resource verification is invalid")
+    resources = _verified_resources(plan, value)
     nodes = {address: resource for address, resource in resources.items() if resource.resource_type == "node"}
     observations = _node_observations(plan, nodes, value, carrier.identity)
     snapshot = deepcopy(baseline) if baseline is not None else RuntimeSnapshot()
@@ -118,33 +137,22 @@ def completed_snapshot(
     return snapshot
 
 
-def _node_observations(plan, nodes, value, identity):
+def _node_observations(
+    plan: ProvisioningPlan,
+    nodes: Mapping[str, PlannedResource],
+    value: Mapping[str, list[dict[str, Any]]],
+    identity: RealizationEnvelopeIdentityModel,
+) -> list[RealizationObservationDisclosure]:
+    """Handle node observations."""
     counts = {address: resource.payload.get("count") for address, resource in nodes.items()}
     counts = {address: 1 if count is None else count for address, count in counts.items()}
     if any(type(count) is not int or not 1 <= count <= 512 for count in counts.values()):
         raise ValueError("invalid completed instance count")
     expected = {f"{address}#{index}" for address, count in counts.items() for index in range(count)}
-    os_rows = {row["instance_key"]: row for row in value["operating_systems"]}
-    substrates = {row["instance_key"]: row["value"] for row in value["compute_substrates"]}
-    if (
-        set(os_rows) != expected
-        or set(substrates) != expected
-        or any(item != "virtual-machine" for item in substrates.values())
-    ):
-        raise ValueError("completion guest or substrate coverage is invalid")
-    result = []
+    os_rows, _substrates = _verified_guest_rows(value, expected)
+    result: list[RealizationObservationDisclosure] = []
     for address in nodes:
-        identities = {
-            (
-                os_rows[f"{address}#{index}"]["family"],
-                os_rows[f"{address}#{index}"]["distribution"],
-                os_rows[f"{address}#{index}"]["version"],
-            )
-            for index in range(counts[address])
-        }
-        if len(identities) != 1:
-            raise ValueError("replicas do not share one observed OS identity")
-        operating_system = ObservedOperatingSystemIdentity(*next(iter(identities)))
+        operating_system = _observed_operating_system(address, counts[address], os_rows)
         fields = {
             entry.requirement_kind: entry.field_path for entry in plan.realization_authority if entry.address == address
         }
@@ -187,3 +195,33 @@ def _node_observations(plan, nodes, value, identity):
                 )
             )
     return result
+
+
+def _verified_guest_rows(
+    value: Mapping[str, list[dict[str, Any]]], expected: set[str]
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    os_rows = {row["instance_key"]: row for row in value["operating_systems"]}
+    substrates = {row["instance_key"]: row["value"] for row in value["compute_substrates"]}
+    if (
+        set(os_rows) != expected
+        or set(substrates) != expected
+        or any(value != "virtual-machine" for value in substrates.values())
+    ):
+        raise ValueError("completion guest or substrate coverage is invalid")
+    return os_rows, substrates
+
+
+def _observed_operating_system(
+    address: str, count: int, os_rows: Mapping[str, Mapping[str, Any]]
+) -> ObservedOperatingSystemIdentity:
+    identities = {
+        (
+            os_rows[f"{address}#{index}"]["family"],
+            os_rows[f"{address}#{index}"]["distribution"],
+            os_rows[f"{address}#{index}"]["version"],
+        )
+        for index in range(count)
+    }
+    if len(identities) != 1:
+        raise ValueError("replicas do not share one observed OS identity")
+    return ObservedOperatingSystemIdentity(*next(iter(identities)))

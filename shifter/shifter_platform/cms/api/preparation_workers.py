@@ -17,6 +17,8 @@ from cms.api.preparation_adapters import preparation_error
 from engine.services import read_preparation_worker_input, record_preparation_worker_result
 from shared.exceptions import ValidationError
 
+_AUTHENTICATION_FAILED = "Preparation worker authentication failed"
+
 
 @dataclass(frozen=True)
 class PreparationWorkerPrincipal:
@@ -39,16 +41,16 @@ class PreparationWorkerAuthentication(BaseAuthentication):
     def authenticate(self, request: Request) -> tuple[PreparationWorkerPrincipal, PreparationWorkerCredential]:
         header = get_authorization_header(request)
         if len(header) > 300:
-            raise AuthenticationFailed("Preparation worker authentication failed")
+            raise AuthenticationFailed(_AUTHENTICATION_FAILED)
         parts = header.split()
         if len(parts) != 2 or parts[0].lower() != b"bearer":
-            raise AuthenticationFailed("Preparation worker authentication failed")
+            raise AuthenticationFailed(_AUTHENTICATION_FAILED)
         try:
             token = parts[1].decode("ascii")
             operation_id = request.parser_context["kwargs"]["operation_id"]
             read_preparation_worker_input(operation_id, token)
         except (UnicodeError, ValidationError) as exc:
-            raise AuthenticationFailed("Preparation worker authentication failed") from exc
+            raise AuthenticationFailed(_AUTHENTICATION_FAILED) from exc
         return PreparationWorkerPrincipal(operation_id), PreparationWorkerCredential(token)
 
     def authenticate_header(self, request: Request) -> str:

@@ -59,14 +59,10 @@ from raes_composition_verification import (
     assert_composition_is_verifiable,
     verify_bootstrap_composition,
 )
-from raes_content_delivery import (
-    RaesContentDeliveryOps,
-    assert_content_delivery_bindings_complete,
-    realize_raes_content_delivery,
-)
+from raes_content_delivery import assert_content_delivery_bindings_complete, realize_raes_content_delivery
 from raes_gcp_composition import node_bootstrap_script
 from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
-from raes_gcp_plan import RaesGcePlanError, build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanError, RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_operating_system import observe_operating_systems, validate_operating_systems
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
@@ -386,14 +382,14 @@ def _cleanup_failed_apply(
         request_uuid,
         range_id,
         raes_plan,
-        runtime.config,
-        runtime.clients,
-        runtime.secret_ops,
         RaesGceDestroyOptions(
+            config=runtime.config,
+            clients=runtime.clients,
+            secret_ops=runtime.secret_ops,
             account_secret_ops=runtime.account_secret_ops,
             directory_secret_ops=runtime.directory_secret_ops,
+            allocated_network_cidr=runtime.allocated_network_cidr,
         ),
-        allocated_network_cidr=runtime.allocated_network_cidr,
     )
 
 
@@ -437,10 +433,12 @@ def apply_raes_range_cell(
         range_id,
         raes_plan,
         resolve_image,
-        runtime.config,
-        realized_access,
-        GceEgressPolicy(mode=egress_mode),
-        runtime.allocated_network_cidr,
+        RaesGcePlanOptions(
+            config=runtime.config,
+            access_bindings=realized_access,
+            egress_policy=GceEgressPolicy(mode=egress_mode),
+            allocated_network_cidr=runtime.allocated_network_cidr,
+        ),
     )
     try:
         instance_outputs = _provision_raes_resources(
@@ -479,58 +477,9 @@ def realize_access_on_existing_cell(
     access_bindings: list[dict[str, Any]] | None = None,
     delivery_bindings: list[dict[str, Any]] | None = None,
 ) -> ResourceDict:
-    """Rotate credentials and realize participant access on an already-realized cell (#28).
+    """Rotate credentials and return fresh observations for an existing cell."""
+    from raes_gcp_activation_apply import realize_existing_cell
 
-    Warm activation reuses the exact apply realization path -- ``_ensure_raes_instance``
-    is idempotent, so re-running :func:`_provision_raes_resources` against an
-    already-realized range cell recreates no infrastructure; it re-establishes the
-    guest account credentials (freshly, after the caller has scrubbed the pre-claim
-    secrets) and publishes the claimant's participant access. Authored content and
-    content installation is not re-run: only its independent readback runs.
-    Directory access is reconciled and verified through the existing idempotent
-    path so the handover does not claim unverified domain accounts.
-
-    Returns fresh resource, guest OS, and provider observations for this activation.
-    """
-    resolved_options = options or RaesGceApplyOptions()
-    runtime = _apply_runtime(resolved_options)
-    realized_access = join_participant_access(access_bindings or (), raes_plan)
-    _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
-    assert_composition_is_verifiable(raes_plan)
-    plan = build_raes_range_cell_plan(
-        request_uuid,
-        range_id,
-        raes_plan,
-        resolve_image,
-        runtime.config,
-        realized_access,
-        GceEgressPolicy(mode=resolved_options.egress_mode),
-        runtime.allocated_network_cidr,
+    return realize_existing_cell(
+        request_uuid, range_id, raes_plan, resolve_image, options, access_bindings, delivery_bindings
     )
-    outputs = _provision_raes_resources(
-        plan,
-        runtime,
-        _bootstrap_by_node(raes_plan),
-        _accounts_by_node(raes_plan),
-        _access_by_node(realized_access),
-    )
-    verified = set(_realize_directory(plan, raes_plan, outputs, runtime))
-    realize_raes_content_delivery(
-        raes_plan=raes_plan,
-        instance_outputs=outputs,
-        delivery_bindings=delivery_bindings,
-        ops=RaesContentDeliveryOps(verify_only=True),
-    )
-    verified.update(item.address for item in raes_plan.content if item.source_name)
-    verified.update(feature.address for feature in raes_plan.features)
-    verified.update(runtime.composition_verifier(raes_plan, outputs))
-    operating_systems = runtime.operating_system_observer(raes_plan, outputs)
-    validate_operating_systems(raes_plan, operating_systems)
-    compute_substrates = runtime.substrate_observer(plan, runtime.clients)
-    snapshot_resources(raes_plan, verified)
-    return {
-        "instances": outputs,
-        "composition_verified_addresses": sorted(verified),
-        "operating_systems": operating_systems,
-        "compute_substrates": compute_substrates,
-    }

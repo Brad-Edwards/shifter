@@ -918,7 +918,12 @@ class TestServiceFirewallLifecycle:
 
         clients = _clients(exists=True)
         secret_ops, _ = _secret_ops()
-        destroy_raes_range_cell("req-1", 7, _plan_with_service(), _config(), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1",
+            7,
+            _plan_with_service(),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+        )
         deleted = {call.kwargs.get("firewall") for call in clients.firewalls.delete.call_args_list}
         assert service_names[0] in deleted
 
@@ -927,7 +932,9 @@ class TestDestroy:
     def test_deletes_instances_addresses_firewalls_subnets_network_and_secrets(self):
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
-        destroy_raes_range_cell("req-1", 7, _plan(), _config(), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops)
+        )
 
         assert clients.instances.delete.call_count == 2
         assert clients.addresses.delete.call_count == 2
@@ -942,7 +949,12 @@ class TestDestroy:
     def test_shared_vpc_destroy_keeps_network(self):
         clients = _clients(exists=True)
         secret_ops, _ = _secret_ops()
-        destroy_raes_range_cell("req-1", 7, _plan(), _config("shared-vpc"), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1",
+            7,
+            _plan(),
+            RaesGceDestroyOptions(config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops),
+        )
         assert not clients.networks.delete.called
 
     def test_deletes_every_per_instance_authored_account_secret(self):
@@ -955,10 +967,12 @@ class TestDestroy:
             "req-1",
             7,
             _plan_with_accounts(account),
-            _config(),
-            clients,
-            ssh_ops,
-            RaesGceDestroyOptions(account_secret_ops=account_ops),
+            RaesGceDestroyOptions(
+                config=_config(),
+                clients=clients,
+                secret_ops=ssh_ops,
+                account_secret_ops=account_ops,
+            ),
         )
 
         assert account_mocks.delete.call_count == 2
@@ -976,7 +990,12 @@ class TestDestroy:
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
 
-        destroy_raes_range_cell("req-1", 7, _plan_with_content(content), _config(), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+        )
 
         assert clients.instances.delete.call_count == 1
         assert secret_mocks.delete_ssh.call_count == 1

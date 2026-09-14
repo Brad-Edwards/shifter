@@ -3,10 +3,34 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Protocol, cast
+
+from gcp_range_cell_clients import GCEClients
+from gcp_range_cell_types import InstancePlan, RangeCellPlan
 
 
-def verify_prepared_source(plan, instance, clients):
+class _AttachedDisk(Protocol):
+    boot: bool
+    source: str
+
+
+class _GuestInstance(Protocol):
+    name: str
+    id: object
+    machine_type: str
+    disks: list[_AttachedDisk]
+
+
+class _Image(Protocol):
+    id: object
+    status: str
+
+
+class _Disk(Protocol):
+    source_image_id: object
+
+
+def verify_prepared_source(plan: RangeCellPlan, instance: InstancePlan, clients: GCEClients) -> None:
     """Reject a recreated image name before installing any range credentials."""
     profile = instance["profile"]
     if not profile.source_image_id:
@@ -15,17 +39,20 @@ def verify_prepared_source(plan, instance, clients):
     name = profile.source_image.removeprefix(prefix)
     if not profile.source_image.startswith(prefix) or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", name):
         raise ValueError("prepared source is outside the range project")
-    image = clients.images.get(project=plan["project_id"], image=name)
+    if clients.images is None:
+        raise ValueError("prepared source observation is unavailable")
+    image = cast(_Image, clients.images.get(project=plan["project_id"], image=name))
     if str(image.id) != profile.source_image_id or image.status != "READY":
         raise ValueError("prepared source identity is unavailable")
 
 
-def observe_gce_substrates(plan: dict[str, Any], clients: Any) -> list[dict[str, str]]:
+def observe_gce_substrates(plan: RangeCellPlan, clients: GCEClients) -> list[dict[str, str]]:
     """Read each created instance through the authenticated provider client."""
     observations = []
     for instance in plan["instances"]:
-        actual = clients.instances.get(
-            project=plan["project_id"], zone=plan["zone"], instance=instance["resource_name"]
+        actual = cast(
+            _GuestInstance,
+            clients.instances.get(project=plan["project_id"], zone=plan["zone"], instance=instance["resource_name"]),
         )
         if actual is None or actual.name != instance["resource_name"] or not actual.id or not actual.machine_type:
             raise ValueError("compute-substrate observation is unavailable or invalid")
@@ -36,7 +63,7 @@ def observe_gce_substrates(plan: dict[str, Any], clients: Any) -> list[dict[str,
     return observations
 
 
-def _verify_boot_image(plan, guest, clients, expected):
+def _verify_boot_image(plan: RangeCellPlan, guest: _GuestInstance, clients: GCEClients, expected: str) -> None:
     """An image name can be recreated; its actual boot disk must retain the admitted ID."""
     boot = [disk for disk in guest.disks if disk.boot]
     if len(boot) != 1:
@@ -50,6 +77,8 @@ def _verify_boot_image(plan, guest, clients, expected):
     name = source.removeprefix(prefix)
     if not source.startswith(prefix) or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", name):
         raise ValueError("prepared image boot disk is outside the range scope")
-    disk = clients.disks.get(project=plan["project_id"], zone=plan["zone"], disk=name)
+    if clients.disks is None:
+        raise ValueError("prepared image boot disk observation is unavailable")
+    disk = cast(_Disk, clients.disks.get(project=plan["project_id"], zone=plan["zone"], disk=name))
     if str(disk.source_image_id) != expected:
         raise ValueError("prepared image provider identity changed")

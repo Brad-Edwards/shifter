@@ -16,9 +16,9 @@ from raes_plan import RaesPlan, RaesPlanNetwork
 
 _DEFAULT_NETWORK_ADDRESS = "backend.gce.network.default"
 _DEFAULT_NETWORK_NAME = "backend-default"
-_PRIVATE_POOL = ipaddress.IPv4Network("172.16.0.0/12")
+_PRIVATE_POOL = ipaddress.IPv4Network("172.16.0.0/12")  # NOSONAR -- RFC 1918 allocation pool.
 _DEFAULT_PREFIX = 28
-_TEARDOWN_ONLY_NETWORK_CIDR = "198.18.0.0/16"
+_TEARDOWN_ONLY_NETWORK_CIDR = "198.18.0.0/16"  # NOSONAR -- RFC 2544 teardown placeholder.
 
 
 class RaesGceAdapterError(ValueError):
@@ -77,6 +77,7 @@ def _default_network_cidr(
     *,
     reconstruct_for_teardown: bool,
 ) -> str:
+    """Handle default network cidr."""
     if allocated_network_cidr is not None:
         candidate = _ipv4_subnet(allocated_network_cidr, source="allocated GCE network")
         _require_non_overlapping(candidate, plan, config)
@@ -102,17 +103,20 @@ def _require_non_overlapping(
     plan: RaesPlan,
     config: GCERangeCellConfig,
 ) -> None:
+    """Handle require non overlapping."""
     if any(candidate.overlaps(other) for other in _occupied_networks(plan, config)):
         raise RaesGceAdapterError("allocated GCE adapter subnet overlaps an existing range or portal network")
 
 
 def _occupied_networks(plan: RaesPlan, config: GCERangeCellConfig) -> tuple[ipaddress.IPv4Network, ...]:
+    """Handle occupied networks."""
     values = [network.cidr for network in plan.networks if network.cidr]
     values.extend(config.portal_network_cidrs)
     return tuple(_ipv4_subnet(value, source="existing GCE network") for value in values)
 
 
 def _ipv4_subnet(value: str, *, source: str) -> ipaddress.IPv4Network:
+    """Handle ipv4 subnet."""
     try:
         network = ipaddress.ip_network(value)
     except ValueError as exc:

@@ -152,27 +152,37 @@ def select_preparation(
     """
     if requirement is None or requirement.explicitness is not ExplicitnessClass.CONSTRAINED:
         raise PreparationContractError("This requirement does not permit artifact preparation")
-    installed = next(
-        (item for item in adapter.specifications if item.reference.specification_id == specification_id), None
-    )
-    if installed is None or installed.reference not in requirement.materialization_specifications:
-        raise PreparationContractError("No exact installed materialization specification matches")
+    installed = _installed_specification(requirement, adapter, specification_id)
     declared = {item.input_id: item for item in requirement.locked_inputs}
     implemented = {item.input_id: item for item in installed.locked_inputs}
     if declared != implemented:
         raise PreparationContractError("The complete fixed input identities do not match")
     if any(item.kind not in installed.constraint_kinds for item in requirement.constraints):
         raise PreparationContractError("The adapter cannot verify every authored constraint")
+    route = _permitted_preparation_route(requirement, installed.reference.profile)
+    return PreparationSelection(installed.reference, route, tuple(installed.locked_inputs))
+
+
+def _installed_specification(
+    requirement: ArtifactRequirement, adapter: AdapterManifest, specification_id: str
+) -> AdapterSpecification:
+    installed = next(
+        (item for item in adapter.specifications if item.reference.specification_id == specification_id), None
+    )
+    if installed is None or installed.reference not in requirement.materialization_specifications:
+        raise PreparationContractError("No exact installed materialization specification matches")
+    return installed
+
+
+def _permitted_preparation_route(requirement: ArtifactRequirement, profile: str) -> ArtifactSatisfactionRoute:
     route = next(
         (
             item
             for item in requirement.permitted_routes
-            if item.mechanism == installed.reference.profile
-            and item.acquisition == "none"
-            and item.timing == "backend-preparation"
+            if item.mechanism == profile and item.acquisition == "none" and item.timing == "backend-preparation"
         ),
         None,
     )
     if route is None:
         raise PreparationContractError("The author did not permit this preparation route")
-    return PreparationSelection(installed.reference, route, tuple(installed.locked_inputs))
+    return route

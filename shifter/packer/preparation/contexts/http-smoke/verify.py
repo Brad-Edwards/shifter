@@ -46,7 +46,9 @@ def verify_root(root: Path, context: Path) -> dict[str, str]:
     resolved = os_release.resolve(strict=True)
     if not resolved.is_relative_to(root) or resolved.stat().st_size > 65536:
         raise ValueError("candidate operating system identity is unavailable")
-    values = dict(line.split("=", 1) for line in resolved.read_text().splitlines() if "=" in line)
+    values = dict(  # NOSONAR -- Ruff C416 requires the direct constructor here.
+        line.split("=", 1) for line in resolved.read_text().splitlines() if "=" in line
+    )
     identity = (values.get("ID", "").strip('"'), values.get("VERSION_ID", "").strip('"'))
     if identity != ("ubuntu", "22.04"):
         raise ValueError("candidate operating system is outside the specimen profile")

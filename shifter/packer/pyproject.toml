@@ -41,3 +41,11 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 pythonpath = [".", "../shifter_platform"]
+
+[tool.coverage.run]
+source = ["preparation"]
+omit = ["tests/*", "*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true

@@ -41,6 +41,42 @@ _ARCHIVE_NAME = "package-archive"
 _EXTRACT_DIRNAME = "pack"
 
 
+def _download_archive(storage: ObjectStorage, bucket: str, key: str, staging: Path, max_archive_bytes: int) -> Path:
+    from shared.cloud.exceptions import CloudStorageError, ObjectPreconditionError
+
+    try:
+        identity = storage.head_object(bucket, key)
+    except CloudStorageError as exc:
+        raise RaesPackageError(f"object package could not be located: {safe_log_value(exc)}") from exc
+    declared_size = int(identity.get("content_length", 0) or 0)
+    if declared_size > max_archive_bytes:
+        raise RaesPackageError("object package archive exceeds the configured size bound")
+    archive_path = staging / _ARCHIVE_NAME
+    try:
+        storage.download_object(
+            bucket,
+            key,
+            str(archive_path),
+            max_bytes=max_archive_bytes,
+            expected_identity=identity,
+        )
+    except ObjectPreconditionError as exc:
+        raise RaesPackageError("object package changed during retrieval") from exc
+    except CloudStorageError as exc:
+        raise RaesPackageError(f"object package could not be retrieved: {safe_log_value(exc)}") from exc
+    return archive_path
+
+
+def _staged_pack_root(staging: Path, extract_dir: Path, expected_pack_name: str) -> Path:
+    if not expected_pack_name or not (extract_dir / "pack.yaml").is_file():
+        return _single_pack_root(extract_dir)
+    named_parent = staging / "named"
+    named_parent.mkdir()
+    pack_root = named_parent / expected_pack_name
+    extract_dir.rename(pack_root)
+    return pack_root
+
+
 @contextmanager
 def stage_object_pack(
     *,
@@ -80,8 +116,6 @@ def stage_object_pack(
         RaesPackageError: on missing config, over-size, retrieval failure, an
             unsafe archive, or a malformed pack shape.
     """
-    from shared.cloud.exceptions import CloudStorageError, ObjectPreconditionError
-
     if not bucket or not bucket.strip() or not key or not key.strip():
         raise RaesPackageError("object package storage location is not configured")
     if expected_pack_name and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", expected_pack_name):
@@ -89,28 +123,7 @@ def stage_object_pack(
 
     staging = Path(tempfile.mkdtemp(prefix="raes-object-pack-"))
     try:
-        try:
-            identity = storage.head_object(bucket, key)
-        except CloudStorageError as exc:
-            raise RaesPackageError(f"object package could not be located: {safe_log_value(exc)}") from exc
-        declared_size = int(identity.get("content_length", 0) or 0)
-        if declared_size > max_archive_bytes:
-            raise RaesPackageError("object package archive exceeds the configured size bound")
-
-        archive_path = staging / _ARCHIVE_NAME
-        try:
-            storage.download_object(
-                bucket,
-                key,
-                str(archive_path),
-                max_bytes=max_archive_bytes,
-                expected_identity=identity,
-            )
-        except ObjectPreconditionError as exc:
-            raise RaesPackageError("object package changed during retrieval") from exc
-        except CloudStorageError as exc:
-            raise RaesPackageError(f"object package could not be retrieved: {safe_log_value(exc)}") from exc
-
+        archive_path = _download_archive(storage, bucket, key, staging, max_archive_bytes)
         extract_dir = staging / _EXTRACT_DIRNAME
         extract_dir.mkdir()
         _safe_extract(
@@ -119,18 +132,10 @@ def stage_object_pack(
             max_uncompressed_bytes=max_uncompressed_bytes,
             max_entries=max_entries,
         )
-        if expected_pack_name and (extract_dir / "pack.yaml").is_file():
-            # Released env-packs exports contain pack-relative files without a
-            # wrapper directory. Name the staging root from the registration,
-            # never from unvalidated YAML or the object key. Callers then apply
-            # the ordinary name/inventory/digest checks to every extracted byte.
-            named_parent = staging / "named"
-            named_parent.mkdir()
-            pack_root = named_parent / expected_pack_name
-            extract_dir.rename(pack_root)
-            yield pack_root
-        else:
-            yield _single_pack_root(extract_dir)
+        # Released env-packs exports contain pack-relative files without a
+        # wrapper directory. Name the staging root from the registration,
+        # never from unvalidated YAML or the object key.
+        yield _staged_pack_root(staging, extract_dir, expected_pack_name)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 

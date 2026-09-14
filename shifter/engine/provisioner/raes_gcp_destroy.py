@@ -41,8 +41,13 @@ __all__ = ["RaesGceDestroyOptions", "destroy_raes_range_cell"]
 class RaesGceDestroyOptions:
     """Optional account and directory cleanup bindings for RAES teardown."""
 
+    config: GCERangeCellConfig | None = None
+    clients: GCEClients | None = None
+    secret_ops: RaesGceSecretOps | None = None
     account_secret_ops: RaesAccountCredentialOps | None = None
     directory_secret_ops: RaesDirectorySecretOps | None = None
+    allocated_network_cidr: str | None = None
+    reconstruct_without_allocation: bool = False
 
 
 @dataclass(frozen=True)
@@ -62,16 +67,13 @@ def _default_destroy_profile(_node: RaesPlanNode) -> GCERangeImageProfile:
 
 
 def _destroy_runtime(
-    config: GCERangeCellConfig | None,
-    clients: GCEClients | None,
-    secret_ops: RaesGceSecretOps | None,
     options: RaesGceDestroyOptions,
 ) -> _RaesGceDestroyRuntime:
     """Resolve optional teardown bindings exactly once."""
     return _RaesGceDestroyRuntime(
-        config=config or load_gce_range_cell_config(),
-        clients=clients or _build_clients(),
-        secret_ops=secret_ops or _default_secret_ops(),
+        config=options.config or load_gce_range_cell_config(),
+        clients=options.clients or _build_clients(),
+        secret_ops=options.secret_ops or _default_secret_ops(),
         account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
     )
@@ -81,24 +83,19 @@ def destroy_raes_range_cell(
     request_uuid: str,
     range_id: int,
     raes_plan: RaesPlan,
-    config: GCERangeCellConfig | None = None,
-    clients: GCEClients | None = None,
-    secret_ops: RaesGceSecretOps | None = None,
     options: RaesGceDestroyOptions | None = None,
-    *,
-    allocated_network_cidr: str | None = None,
-    reconstruct_without_allocation: bool = False,
 ) -> None:
     """Destroy every GCE resource owned by one RAES range cell."""
-    runtime = _destroy_runtime(config, clients, secret_ops, options or RaesGceDestroyOptions())
+    resolved_options = options or RaesGceDestroyOptions()
+    runtime = _destroy_runtime(resolved_options)
     plan = build_raes_range_cell_plan(
         request_uuid,
         range_id,
         raes_plan,
         _default_destroy_profile,
         runtime.config,
-        allocated_network_cidr=allocated_network_cidr,
-        reconstruct_for_teardown=reconstruct_without_allocation,
+        allocated_network_cidr=resolved_options.allocated_network_cidr,
+        reconstruct_for_teardown=resolved_options.reconstruct_without_allocation,
     )
     _destroy_instances(plan, raes_plan, runtime)
     delete_raes_directory_secrets(plan["range_id"], raes_plan, runtime.directory_secret_ops)

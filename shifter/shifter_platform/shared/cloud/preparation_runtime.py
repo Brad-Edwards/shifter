@@ -31,7 +31,7 @@ class PreparationTask:
         return f"{self.grant.namespace}/{build_idempotent_job_name(CONTAINER, self.identity)}"
 
     @property
-    def expected_identity(self) -> dict:
+    def expected_identity(self) -> dict[str, object]:
         """Interruption verifies every field before deleting the Job and its pods."""
         return {
             "task_identity": self.identity,
@@ -92,7 +92,7 @@ def preparation_task(
             run_as_uid=1000,
             run_as_gid=1000,
             writable_mounts=(
-                ("tmp", "/tmp", "Memory", "64Mi"),  # noqa: S108  # nosec B108
+                ("tmp", "/tmp", "Memory", "64Mi"),  # noqa: S108  # nosec B108  # NOSONAR
             ),
         ),
         image_pull_secrets=tuple(grant.image_pull_secrets),

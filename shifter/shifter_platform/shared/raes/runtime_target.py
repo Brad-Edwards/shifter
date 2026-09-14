@@ -35,6 +35,7 @@ from pydantic import BaseModel
 from raes_backend_protocols.capabilities import BackendManifest, ProvisionerCapabilities
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
+from raes_contracts.realization_envelope import BackendRealizationEnvelopeModel
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from raes_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
@@ -51,7 +52,7 @@ from shared.raes._runtime_target_envelope import (
 )
 from shared.raes.composition_envelope import account_operation_diagnostics, feature_operation_diagnostics
 from shared.raes.contracts import RAES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
-from shared.raes.dispatch_port import ShifterProvisioningDispatchPort
+from shared.raes.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.raes.domain_topology import (
     backend_effect_domain_topology_diagnostics,
     sanitized_domain_topology_diagnostics,
@@ -148,19 +149,22 @@ def serialize_provisioning_plan(
     return json.loads(json.dumps(envelope, allow_nan=False))
 
 
-def _plan_json(value: object) -> Any:
+def _plan_json(value: object) -> object:
     """Serialize public contract objects without inventing string fallbacks."""
+    result: object
     if isinstance(value, BaseModel):
-        return value.model_dump(mode="json")
-    if is_dataclass(value) and not isinstance(value, type):
-        return _plan_json(asdict(value))
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, dict):
-        return {key: _plan_json(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_plan_json(item) for item in value]
-    return value
+        result = value.model_dump(mode="json")
+    elif is_dataclass(value) and not isinstance(value, type):
+        result = _plan_json(asdict(value))
+    elif isinstance(value, Enum):
+        result = value.value
+    elif isinstance(value, dict):
+        result = {key: _plan_json(item) for key, item in value.items()}
+    elif isinstance(value, tuple | list):
+        result = [_plan_json(item) for item in value]
+    else:
+        result = value
+    return result
 
 
 # --- interpret (validate the plan, then serialize it) ---
@@ -269,7 +273,12 @@ def _serialized_for_apply(
 class ShifterProvisioner:
     """Provisioner protocol implementation for Shifter's provisioning-only backend."""
 
-    def __init__(self, port: ShifterProvisioningDispatchPort, *, realization_envelope=None) -> None:
+    def __init__(
+        self,
+        port: ShifterProvisioningDispatchPort,
+        *,
+        realization_envelope: BackendRealizationEnvelopeModel | None = None,
+    ) -> None:
         self._port = port
         self._realization_envelope = realization_envelope
         self._participant_access: tuple[ParticipantAccessBinding, ...] = ()
@@ -296,8 +305,6 @@ class ShifterProvisioner:
 
     def apply(self, plan: ProvisioningPlan, snapshot: RuntimeSnapshot) -> ApplyResult:
         """Return realization success only for independently verified completion."""
-        from shared.raes.completion import completed_snapshot
-
         if isinstance(plan, ProvisioningPlan):
             plan = replace(plan, operation_id=plan.operation_id or str(uuid4()))
         serialized, diagnostics = _serialized_for_apply(
@@ -317,24 +324,7 @@ class ShifterProvisioner:
             )
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, failure])
 
-        if not result.accepted or result.completion is None:
-            pending = _diagnostic(
-                "shifter-provisioner.completion-unavailable", "plan", "dispatch acceptance is not completed realization"
-            )
-            return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, pending])
-        try:
-            observed = completed_snapshot(
-                plan,
-                result.completion,
-                baseline=snapshot,
-                serialized_plan=serialized,
-            )
-        except ValueError:
-            invalid = _diagnostic("shifter-provisioner.invalid-completion", "plan", "realization evidence is invalid")
-            return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, invalid])
-        return ApplyResult(
-            success=True, snapshot=observed, diagnostics=diagnostics, changed_addresses=list(plan.resources)
-        )
+        return _completed_apply_result(plan, snapshot, serialized, diagnostics, result)
 
     def enqueue(self, plan: ProvisioningPlan) -> ShifterEnqueueResult:
         """Validate and queue a native launch without claiming an observed state."""
@@ -360,6 +350,28 @@ class ShifterEnqueueResult:
     status: str
     addresses: tuple[str, ...]
     diagnostics: tuple[Diagnostic, ...]
+
+
+def _completed_apply_result(
+    plan: ProvisioningPlan,
+    snapshot: RuntimeSnapshot,
+    serialized: Mapping[str, Any],
+    diagnostics: list[Diagnostic],
+    result: ShifterDispatchResult,
+) -> ApplyResult:
+    from shared.raes.completion import completed_snapshot
+
+    if not result.accepted or result.completion is None:
+        pending = _diagnostic(
+            "shifter-provisioner.completion-unavailable", "plan", "dispatch acceptance is not completed realization"
+        )
+        return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, pending])
+    try:
+        observed = completed_snapshot(plan, result.completion, baseline=snapshot, serialized_plan=serialized)
+    except ValueError:
+        invalid = _diagnostic("shifter-provisioner.invalid-completion", "plan", "realization evidence is invalid")
+        return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, invalid])
+    return ApplyResult(success=True, snapshot=observed, diagnostics=diagnostics, changed_addresses=list(plan.resources))
 
 
 def create_shifter_backend_components(

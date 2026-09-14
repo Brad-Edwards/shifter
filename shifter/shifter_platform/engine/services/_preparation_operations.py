@@ -116,7 +116,7 @@ def request_artifact_preparation(
         return _view(row)
 
 
-def _has_admitted_availability(package):
+def _has_admitted_availability(package: PreparationPackage) -> bool:
     """Use the ordinary launch resolver; an inventory miss never starts work here."""
     from shared.raes.artifact_inventory import build_artifact_supply
     from shared.raes.artifact_resolution import ArtifactResolutionStatus, resolve_artifact_requirement
@@ -261,13 +261,16 @@ def _audit_operation(
     """Successful mutation and bounded audit commit together, or both roll back."""
     attribution = audit or RequestAudit()
     default_actor = AuditActorType.USER if user is not None else AuditActorType.SYSTEM
+    actor_id = attribution.actor_id
+    if attribution.actor_type is None and user is not None:
+        actor_id = user.id
     audit_log(
         AuditEvent(
             entity_type=AuditEntityType.ARTIFACT_PREPARATION,
             entity_id=0,
             action=action,
             actor_type=attribution.actor_type or default_actor,
-            actor_id=attribution.actor_id if attribution.actor_type else (user.id if user is not None else None),
+            actor_id=actor_id,
             request_id=attribution.request_id or str(row.id),
             source_ip=attribution.source_ip,
             user_agent=attribution.user_agent,

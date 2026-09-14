@@ -128,17 +128,22 @@ def verify_input_observations(
     if not expected or len(expected) != len(bindings) or len(actual) != len(observed) or set(expected) != set(actual):
         raise ValueError("independent input observations do not cover the exact fixed input set")
     for identity, binding in expected.items():
-        receipt = actual[identity]
-        if (
-            receipt.image_ref != binding.image_ref
-            or receipt.image_id != binding.image_id
-            or receipt.raw_disk_digest != binding.lock.artifact.digest
-            or receipt.size_bytes != binding.size_bytes
-        ):
-            raise ValueError("independent input measurement does not match the locked source")
-        if binding.digest not in trusted_bindings.get(binding.lock.trust_policy_ref, []):
-            raise ValueError("the operator has not admitted this complete input under its trust policy")
+        _verify_input_observation(binding, actual[identity], trusted_bindings)
     return sorted(expected)
+
+
+def _verify_input_observation(
+    binding: BoundInput, receipt: InputObservation, trusted_bindings: dict[str, list[str]]
+) -> None:
+    if (
+        receipt.image_ref != binding.image_ref
+        or receipt.image_id != binding.image_id
+        or receipt.raw_disk_digest != binding.lock.artifact.digest
+        or receipt.size_bytes != binding.size_bytes
+    ):
+        raise ValueError("independent input measurement does not match the locked source")
+    if binding.digest not in trusted_bindings.get(binding.lock.trust_policy_ref, []):
+        raise ValueError("the operator has not admitted this complete input under its trust policy")
 
 
 def require_input_trust(

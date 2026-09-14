@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from shared.operation_results import MAX_DIAGNOSTIC_CHARS, ResultStep
@@ -52,18 +51,24 @@ from provisioner_db_operation_input import (
     get_raes_operation_input,
 )
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
-from raes_gcp_adapter import requires_allocated_gce_network
-from raes_gcp_apply import RaesGceApplyOptions, apply_raes_range_cell, destroy_raes_range_cell
-from raes_plan import RaesPlan, RaesPlanNode, parse_plan
+from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
+from raes_gcp_network_allocation import (
+    GceNetworkAllocation,
+    RaesRealizationError,
+)
+from raes_gcp_network_allocation import (
+    allocated_open_network_for_destroy as _allocated_open_network_for_destroy,
+)
+from raes_gcp_network_allocation import (
+    allocated_open_network_for_provision as _allocated_open_network_for_provision,
+)
+from raes_plan import RaesPlanNode, parse_plan
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
-from range_subnet_allocation import (
-    _realized_range_spec_for_destroy,
-    _release_subnet_allocations_best_effort,
-    _reserve_range_subnet_cidrs,
-)
+from range_subnet_allocation import _release_subnet_allocations_best_effort
 
 logger = logging.getLogger(__name__)
+_GceNetworkAllocation = GceNetworkAllocation
 
 #: Registry provider key for the GCE realization backend (engine_raes_image_mapping).
 _GCE_REGISTRY_PROVIDER = "gce"
@@ -83,84 +88,10 @@ _INVALID_STATE_REASON_CODE = "invalid_state"
 _TIMEOUT_REASON_CODE = "cloud_timeout"
 
 _RESOURCE = "raes-range"
-_OPEN_NETWORK_SPEC = {
-    "subnets": [{"uuid": "backend.gce.network.default", "name": "backend-default"}],
-}
 
 
 class RaesGenerationError(RuntimeError):
     """An RAES operation was invoked without its canonical operation generation."""
-
-
-class RaesRealizationError(ValueError):
-    """A realization failure whose message this module authored.
-
-    Subclasses ``ValueError`` so existing handlers keep their behaviour, while
-    giving :func:`_classify_failure` a type it can trust to carry safe text.
-    """
-
-
-@dataclass(frozen=True)
-class _GceNetworkAllocation:
-    """The closed shared-VPC allocation state used by every GCE lifecycle."""
-
-    required: bool
-    cidr: str | None = None
-
-    def require_available(self) -> str | None:
-        """Return the allocation, failing when this lifecycle needs a missing one."""
-        if self.required and self.cidr is None:
-            raise RaesRealizationError("GCE adapter subnet allocation is unavailable")
-        return self.cidr
-
-
-def _allocated_cidr(realized: dict[str, Any]) -> str:
-    """Return the one subnet selected for the GCE open-network adapter."""
-    subnets = realized.get("subnets")
-    if not isinstance(subnets, list) or len(subnets) != 1:
-        raise RaesRealizationError("GCE adapter subnet allocation is invalid")
-    cidr = subnets[0].get("cidr") if isinstance(subnets[0], dict) else None
-    if not isinstance(cidr, str) or not cidr:
-        raise RaesRealizationError("GCE adapter subnet allocation is unavailable")
-    return cidr
-
-
-def _allocated_open_network_for_provision(
-    request_id: str,
-    operation_id: str,
-    raes_plan: RaesPlan,
-    config: GCERangeCellConfig,
-) -> _GceNetworkAllocation:
-    """Reserve a shared-VPC subnet for network intent left open by RAE."""
-    if not requires_allocated_gce_network(raes_plan, config):
-        return _GceNetworkAllocation(required=False)
-    realized = _reserve_range_subnet_cidrs(
-        request_id,
-        _OPEN_NETWORK_SPEC,
-        operation_id=operation_id,
-    )
-    return _GceNetworkAllocation(required=True, cidr=_allocated_cidr(realized))
-
-
-def _allocated_open_network_for_destroy(
-    request_id: str,
-    operation_id: str,
-    raes_plan: RaesPlan,
-    config: GCERangeCellConfig,
-) -> _GceNetworkAllocation:
-    """Read the adapter's reserved subnet for reconstructive teardown."""
-    if not requires_allocated_gce_network(raes_plan, config):
-        return _GceNetworkAllocation(required=False)
-    realized = _realized_range_spec_for_destroy(
-        request_id,
-        _OPEN_NETWORK_SPEC,
-        operation_id=operation_id,
-    )
-    try:
-        cidr = _allocated_cidr(realized)
-    except RaesRealizationError:
-        cidr = None
-    return _GceNetworkAllocation(required=True, cidr=cidr)
 
 
 def _binding_error(message: str, code: str) -> CloudError:
@@ -513,9 +444,11 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
             request_id,
             range_id,
             raes_plan,
-            config=config,
-            allocated_network_cidr=network_allocation.cidr,
-            reconstruct_without_allocation=network_allocation.required and network_allocation.cidr is None,
+            RaesGceDestroyOptions(
+                config=config,
+                allocated_network_cidr=network_allocation.cidr,
+                reconstruct_without_allocation=network_allocation.required and network_allocation.cidr is None,
+            ),
         )
     except Exception as exc:
         reason_code, diagnostic = _classify_failure(exc, "raes range destroy")

@@ -66,44 +66,9 @@ class PreparationGrantConfiguration(BaseModel):
     @model_validator(mode="after")
     def validate_authority(self) -> PreparationGrantConfiguration:
         """Reject shared identities, foreign networks and credential-bearing URLs."""
-        accounts = (self.builder_service_account, self.verifier_service_account, self.cleanup_service_account)
-        if len(set(accounts)) != 3 or any(not value.startswith("preparation-") for value in accounts):
-            raise ValueError("preparation worker identities must be separate dedicated service accounts")
-        region = self.zone.rsplit("-", 1)[0]
-        prefix = f"projects/{self.project_id}/regions/{region}/subnetworks/"
-        if not self.subnetwork.startswith(prefix) or not self.subnetwork.removeprefix(prefix):
-            raise ValueError("preparation subnetwork must be in the granted project and region")
-        name = self.subnetwork.removeprefix(prefix)
-        if "/" in name or "?" in name or "#" in name:
-            raise ValueError("preparation subnetwork must be a concrete resource")
-        endpoint = urlsplit(self.worker_endpoint)
-        try:
-            endpoint_port = endpoint.port
-        except ValueError as exc:
-            raise ValueError("preparation worker endpoint has an invalid port") from exc
-        if (
-            endpoint.scheme != "https"
-            or not endpoint.hostname
-            or endpoint_port not in {None, 443}
-            or endpoint.username is not None
-            or endpoint.password is not None
-            or endpoint.query
-            or endpoint.fragment
-            or endpoint.path != "/api/v1/cms/artifact-preparation/workers/"
-        ):
-            raise ValueError("preparation worker endpoint must be the tenant HTTPS worker boundary")
-        for values in (
-            self.image_pull_secrets,
-            self.registry_prefixes,
-            self.approved_verifier_images,
-            self.approved_worker_images,
-            self.permissions,
-        ):
-            if len(values) != len(set(values)):
-                raise ValueError("preparation grant entries must be unique")
-        executables = self.approved_verifier_images + self.approved_worker_images + [self.cleanup_image]
-        if any(not self.permits_image(image) for image in executables):
-            raise ValueError("approved executables must use a granted private registry")
+        _validate_accounts_and_network(self)
+        _validate_worker_endpoint(self.worker_endpoint)
+        _validate_grant_collections(self)
         return self
 
     def permits_image(self, image: str) -> bool:
@@ -121,3 +86,50 @@ class PreparationGrantConfiguration(BaseModel):
         return canonical_payload_digest(
             {"backend": self.backend, "project_id": self.project_id, "zone": self.zone, "namespace": self.namespace}
         )
+
+
+def _validate_accounts_and_network(grant: PreparationGrantConfiguration) -> None:
+    accounts = (grant.builder_service_account, grant.verifier_service_account, grant.cleanup_service_account)
+    if len(set(accounts)) != 3 or any(not value.startswith("preparation-") for value in accounts):
+        raise ValueError("preparation worker identities must be separate dedicated service accounts")
+    region = grant.zone.rsplit("-", 1)[0]
+    prefix = f"projects/{grant.project_id}/regions/{region}/subnetworks/"
+    if not grant.subnetwork.startswith(prefix) or not grant.subnetwork.removeprefix(prefix):
+        raise ValueError("preparation subnetwork must be in the granted project and region")
+    name = grant.subnetwork.removeprefix(prefix)
+    if "/" in name or "?" in name or "#" in name:
+        raise ValueError("preparation subnetwork must be a concrete resource")
+
+
+def _validate_worker_endpoint(worker_endpoint: str) -> None:
+    endpoint = urlsplit(worker_endpoint)
+    try:
+        endpoint_port = endpoint.port
+    except ValueError as exc:
+        raise ValueError("preparation worker endpoint has an invalid port") from exc
+    if (
+        endpoint.scheme != "https"
+        or not endpoint.hostname
+        or endpoint_port not in {None, 443}
+        or endpoint.username is not None
+        or endpoint.password is not None
+        or endpoint.query
+        or endpoint.fragment
+        or endpoint.path != "/api/v1/cms/artifact-preparation/workers/"
+    ):
+        raise ValueError("preparation worker endpoint must be the tenant HTTPS worker boundary")
+
+
+def _validate_grant_collections(grant: PreparationGrantConfiguration) -> None:
+    for values in (
+        grant.image_pull_secrets,
+        grant.registry_prefixes,
+        grant.approved_verifier_images,
+        grant.approved_worker_images,
+        grant.permissions,
+    ):
+        if len(values) != len(set(values)):
+            raise ValueError("preparation grant entries must be unique")
+    executables = grant.approved_verifier_images + grant.approved_worker_images + [grant.cleanup_image]
+    if any(not grant.permits_image(image) for image in executables):
+        raise ValueError("approved executables must use a granted private registry")

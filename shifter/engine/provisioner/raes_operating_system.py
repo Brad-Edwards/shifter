@@ -29,10 +29,12 @@ _LINUX_DISTRIBUTIONS = {
 
 
 def _fail() -> ValueError:
+    """Handle fail."""
     return ValueError("operating-system observation is unavailable or invalid")
 
 
 def _version(value: object) -> str:
+    """Handle version."""
     if not isinstance(value, str) or not 1 <= len(value) <= 128 or value != value.strip():
         raise _fail()
     if any(ord(character) < 32 or ord(character) > 126 for character in value):
@@ -41,6 +43,16 @@ def _version(value: object) -> str:
 
 
 def _linux_identity(output: str) -> dict[str, str]:
+    """Handle linux identity."""
+    values = _linux_release_values(output)
+    distribution = _LINUX_DISTRIBUTIONS.get(values.get("ID", ""))
+    if distribution is None:
+        raise _fail()
+    version = _linux_release_version(distribution, values)
+    return {"family": "linux", "distribution": distribution, "version": version}
+
+
+def _linux_release_values(output: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in output.splitlines():
         key, separator, value = line.partition("=")
@@ -52,9 +64,10 @@ def _linux_identity(output: str) -> dict[str, str]:
         if len(parts) != 1:
             raise _fail()
         values[key] = parts[0]
-    distribution = _LINUX_DISTRIBUTIONS.get(values.get("ID", ""))
-    if distribution is None:
-        raise _fail()
+    return values
+
+
+def _linux_release_version(distribution: str, values: dict[str, str]) -> str:
     version = values.get("VERSION_ID")
     # This namespaced distribution declares its rolling channel explicitly;
     # do not infer it from a downloaded image name or numeric release label.
@@ -63,14 +76,15 @@ def _linux_identity(output: str) -> dict[str, str]:
     if distribution == "x-shifter:alpine":
         # Shifter's Alpine vocabulary names the major.minor release family.
         # A guest patch level belongs to that family, never to another minor.
-        match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:\.(0|[1-9][0-9]*))?", _version(version))
+        match = re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?", _version(version))
         if match is None:
             raise _fail()
         version = f"{match[1]}.{match[2]}"
-    return {"family": "linux", "distribution": distribution, "version": _version(version)}
+    return _version(version)
 
 
 def _windows_identity(output: str) -> dict[str, str]:
+    """Handle windows identity."""
     payload = json.loads(output)
     if not isinstance(payload, dict) or set(payload) != {"family", "product_type", "version", "caption"}:
         raise _fail()
@@ -96,6 +110,7 @@ def _windows_identity(output: str) -> dict[str, str]:
 
 
 def _observe(output: dict[str, Any], family: str, execution_builder: Callable[..., Any]) -> dict[str, str]:
+    """Handle observe."""
     if family not in {"linux", "windows"}:
         raise _fail()
     execution = execution_builder(output, os_type=family, role="raes-node")
@@ -151,26 +166,33 @@ def validate_operating_systems(plan: RaesPlan, observations: object) -> None:
     expected = {f"{node.address}#{index}": node for node in plan.nodes for index in range(node.count)}
     seen: set[str] = set()
     for observation in observations:
-        if not isinstance(observation, dict) or set(observation) != {
-            "instance_key",
-            "family",
-            "distribution",
-            "version",
-        }:
+        key = _validate_operating_system(observation, expected)
+        if key in seen:
             raise _fail()
-        if not all(isinstance(value, str) for value in observation.values()):
-            raise _fail()
-        key = observation["instance_key"]
-        if key not in expected or key in seen:
-            raise _fail()
-        node = expected[key]
-        if node.os_family and observation["family"] != node.os_family:
-            raise _fail()
-        if node.os_distribution is not None and observation["distribution"] != node.os_distribution:
-            raise _fail()
-        if node.os_version is not None and observation["version"] != node.os_version:
-            raise _fail()
-        _version(observation["version"])
         seen.add(key)
     if seen != set(expected):
         raise _fail()
+
+
+def _validate_operating_system(observation: object, expected: dict[str, Any]) -> str:
+    if not isinstance(observation, dict) or set(observation) != {
+        "instance_key",
+        "family",
+        "distribution",
+        "version",
+    }:
+        raise _fail()
+    if not all(isinstance(value, str) for value in observation.values()):
+        raise _fail()
+    key = observation["instance_key"]
+    if key not in expected:
+        raise _fail()
+    node = expected[key]
+    if node.os_family and observation["family"] != node.os_family:
+        raise _fail()
+    if node.os_distribution is not None and observation["distribution"] != node.os_distribution:
+        raise _fail()
+    if node.os_version is not None and observation["version"] != node.os_version:
+        raise _fail()
+    _version(observation["version"])
+    return key

@@ -137,9 +137,7 @@ def register_pack(
         raise CMSError("Invalid expected package digest")
     existing = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
     if existing is not None:
-        if request.expected_package_digest:
-            return _replace_existing(user, request, request_id=request_id, idempotent=idempotent)
-        return _reuse_existing(existing, request, idempotent=idempotent)
+        return _existing_registration(existing, user, request, request_id=request_id, idempotent=idempotent)
     _bind_scenario_id_to_pack_identity(request)
 
     try:
@@ -188,6 +186,19 @@ def register_pack(
         conformance_status=row.conformance_status,
         created=True,
     )
+
+
+def _existing_registration(
+    existing: RaesPackageSource,
+    user: User,
+    request: PackRegistrationRequest,
+    *,
+    request_id: str,
+    idempotent: bool,
+) -> RegisteredPack:
+    if request.expected_package_digest:
+        return _replace_existing(user, request, request_id=request_id, idempotent=idempotent)
+    return _reuse_existing(existing, request, idempotent=idempotent)
 
 
 _IDENTITY_FIELDS = (

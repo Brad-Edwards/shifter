@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess  # nosec B404
+import subprocess  # nosec B404  # NOSONAR -- Bandit requires its suppression inline.
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
+
+import requests
 
 from preparation.compute import ComputeClient
 from preparation.context import load_context
@@ -21,13 +24,11 @@ class GcloudSession:
     through ComputeClient's ADC path instead of this operator-only transport.
     """
 
-    def __init__(self, account: str):
-        import requests
-
+    def __init__(self, account: str) -> None:
         self.account = account
         self.session = requests.Session()
 
-    def request(self, method: str, url: str, **kwargs):
+    def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         result = subprocess.run(  # noqa: S603  # nosec B603 B607
             ["gcloud", "auth", "print-access-token", f"--account={self.account}", "--quiet"],  # noqa: S607
             capture_output=True,
@@ -41,6 +42,7 @@ class GcloudSession:
 
 
 def main() -> None:
+    """Handle main."""
     parser = argparse.ArgumentParser(description=__doc__)
     for name in (
         "account",
@@ -64,7 +66,10 @@ def main() -> None:
     )
     args = parser.parse_args()
     context = load_context(args.context_root, args.specification_id, args.context_digest)
-    output = Path(args.record)
+    requested_output = Path(args.record)
+    if requested_output.parent != Path() or requested_output.name in {"", ".", ".."}:
+        raise ValueError("record must be a new filename in the current directory")
+    output = Path.cwd() / requested_output.name
     # A qualification never overwrites an earlier receipt or private source file.
     with output.open("x", encoding="utf-8") as stream:
         operation_id = str(uuid4())
@@ -81,7 +86,8 @@ def main() -> None:
             "max_duration_seconds": 1200,
         }
 
-        def record(phase: str, evidence: dict) -> None:
+        def record(phase: str, evidence: dict[str, Any]) -> None:
+            """Handle record."""
             value = {"operation_id": operation_id, "phase": phase, "at": datetime.now(UTC).isoformat(), **evidence}
             stream.write(json.dumps(value, sort_keys=True) + "\n")
             stream.flush()

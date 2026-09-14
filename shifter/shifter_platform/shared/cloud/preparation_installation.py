@@ -5,13 +5,15 @@ resources and the separately provisioned cloud IAM before activating a grant.
 Private adapter/image changes are runtime installations, not platform releases.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from shared.artifact_preparation import ImageRef
 from shared.operation_envelope import canonical_payload_digest
 from shared.preparation_grant import DNSLabel, ImageDigest, PreparationGrantConfiguration
+
+_NAMESPACE_LABEL = "kubernetes.io/metadata.name"
 
 CONTROLLER = "preparation-controller"
 SECRET_ENV = (
@@ -40,7 +42,7 @@ class PreparationInstallation(BaseModel):
     controller_secret_ids: dict[str, Annotated[str, Field(pattern=r"^[a-zA-Z0-9_-]{1,255}$")]]
 
     @model_validator(mode="after")
-    def validate_identities(self):
+    def validate_identities(self) -> Self:
         import re
         from ipaddress import IPv4Network
 
@@ -65,16 +67,24 @@ class PreparationInstallation(BaseModel):
         return self
 
     @property
-    def digest(self):
+    def digest(self) -> str:
         return canonical_payload_digest(self.model_dump(mode="json"))
 
     @property
-    def controller_name(self):
+    def controller_name(self) -> str:
         """A new installation cannot retarget an older controller or its cleanup."""
         return "preparation-controller-" + self.grant.scope_digest[-12:]
 
 
-def _resource(kind, name, namespace=None, *, api="v1", **fields):
+def _resource(
+    kind: str,
+    name: str,
+    namespace: str | None = None,
+    *,
+    api: str = "v1",
+    **fields: object,
+) -> dict[str, Any]:
+    """Handle resource."""
     metadata = {"name": name, "labels": {"app.kubernetes.io/part-of": "shifter"}}
     if namespace:
         metadata["namespace"] = namespace
@@ -90,7 +100,7 @@ def render_preparation_installation(configuration: PreparationInstallation) -> l
     namespace = _resource("Namespace", grant.namespace)
     namespace["metadata"]["labels"].update(
         {
-            "kubernetes.io/metadata.name": grant.namespace,
+            _NAMESPACE_LABEL: grant.namespace,
             "pod-security.kubernetes.io/enforce": "restricted",
             "pod-security.kubernetes.io/enforce-version": "v1.31",
         }
@@ -163,9 +173,7 @@ def render_preparation_installation(configuration: PreparationInstallation) -> l
                 spec={
                     "policyName": grant.namespace,
                     "validationActions": ["Deny"],
-                    "matchResources": {
-                        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": grant.namespace}}
-                    },
+                    "matchResources": {"namespaceSelector": {"matchLabels": {_NAMESPACE_LABEL: grant.namespace}}},
                 },
             ),
             _controller(configuration),
@@ -175,7 +183,8 @@ def render_preparation_installation(configuration: PreparationInstallation) -> l
     return resources
 
 
-def _controller(configuration):
+def _controller(configuration: PreparationInstallation) -> dict[str, Any]:
+    """Handle controller."""
     labels = {
         "app.kubernetes.io/part-of": "shifter",
         "app.kubernetes.io/component": CONTROLLER,
@@ -233,7 +242,7 @@ def _controller(configuration):
                             ],
                             "securityContext": security,
                             "volumeMounts": [
-                                {"name": "tmp", "mountPath": "/tmp"}  # noqa: S108  # nosec B108
+                                {"name": "tmp", "mountPath": "/tmp"}  # noqa: S108  # nosec B108  # NOSONAR
                             ],
                             "resources": {
                                 "requests": {"cpu": "100m", "memory": "512Mi"},
@@ -260,11 +269,12 @@ def _controller(configuration):
     )
 
 
-def _network_policies(configuration):
+def _network_policies(configuration: PreparationInstallation) -> list[dict[str, Any]]:
+    """Handle network policies."""
     dns = {
         "to": [
             {
-                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+                "namespaceSelector": {"matchLabels": {_NAMESPACE_LABEL: "kube-system"}},
                 "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}},
             }
         ],
@@ -272,7 +282,11 @@ def _network_policies(configuration):
     }
     metadata = [
         {"to": [{"ipBlock": {"cidr": cidr}}], "ports": [{"protocol": "TCP", "port": port}]}
-        for cidr, port in (("169.254.169.254/32", 80), ("169.254.169.252/32", 988))
+        # GKE metadata-server link-local endpoints required for Workload Identity.
+        for cidr, port in (
+            ("169.254.169.254/32", 80),  # NOSONAR
+            ("169.254.169.252/32", 988),  # NOSONAR
+        )
     ]
     worker = _resource(
         "NetworkPolicy",
@@ -291,7 +305,14 @@ def _network_policies(configuration):
                         {
                             "ipBlock": {
                                 "cidr": "0.0.0.0/0",
-                                "except": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"],
+                                # Deny RFC 1918 and link-local destinations while allowing
+                                # the public package/image endpoints selected by the grant.
+                                "except": [
+                                    "10.0.0.0/8",  # NOSONAR
+                                    "172.16.0.0/12",  # NOSONAR
+                                    "192.168.0.0/16",  # NOSONAR
+                                    "169.254.0.0/16",  # NOSONAR
+                                ],
                             }
                         }
                     ],

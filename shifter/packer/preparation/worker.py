@@ -30,7 +30,11 @@ _FAILURES = {
 _MAX_PROFILE_CONTEXT_BYTES = 96 * 1024
 
 
-def execute_attempt(envelope: dict, root: Path, cloud: Callable[[PreparationGrantConfiguration], Any]) -> dict:
+def execute_attempt(
+    envelope: dict[str, Any],
+    root: Path,
+    cloud: Callable[[PreparationGrantConfiguration], Any],
+) -> dict[str, Any]:
     """Validate immutable inputs before obtaining cloud credentials; return a closed receipt."""
     payload = envelope["input"]
     phase = payload["phase"]
@@ -77,7 +81,13 @@ def execute_attempt(envelope: dict, root: Path, cloud: Callable[[PreparationGran
     return PreparationWorkerResult.model_validate(result).model_dump(mode="json")
 
 
-def _execute_work(envelope: dict, root: Path, grant: PreparationGrantConfiguration, cloud: Callable) -> dict:
+def _execute_work(
+    envelope: dict[str, Any],
+    root: Path,
+    grant: PreparationGrantConfiguration,
+    cloud: Callable[..., Any],
+) -> dict[str, Any]:
+    """Handle execute work."""
     payload = envelope["input"]
     adapter = AdapterManifest.model_validate(payload["adapter"])
     package = PreparationPackage.model_validate(payload["package"])
@@ -128,6 +138,7 @@ def _execute_work(envelope: dict, root: Path, grant: PreparationGrantConfigurati
     measured = scan_image(api, {**candidate, **scanner}, context, verify_output=True)
 
     def probe(host: str, nonce: str) -> bool:
+        """Handle probe."""
         probe_request = {**request, "image_ref": grant.scanner_image, "image_id": grant.scanner_image_id}
         return probe_from_guest(api, probe_request, context["verify_boot.py"], host, nonce)
 

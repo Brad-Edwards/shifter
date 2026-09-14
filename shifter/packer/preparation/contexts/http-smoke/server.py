@@ -6,7 +6,6 @@ import argparse
 import json
 import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -33,13 +32,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bind", default="0.0.0.0")  # noqa: S104  # nosec B104
     parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--ready-file", type=Path)
     args = parser.parse_args()
     server = HTTPServer((args.bind, args.port), Handler)
     server.timeout = 10
-    if args.ready_file:
-        args.ready_file.write_text(str(server.server_port))
-    server.serve_forever()
+    print(server.server_port, flush=True)  # noqa: T201 -- bounded readiness signal.
+    # This deliberately qualifies a contained HTTP-only specimen. The isolated
+    # guest carries only a fresh nonce and has no route to tenant workloads.
+    server.serve_forever()  # NOSONAR
 
 
 if __name__ == "__main__":

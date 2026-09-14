@@ -52,25 +52,25 @@ def validate_completion_evidence(value: object) -> dict[str, Any]:
         "compute_substrates": MAX_COMPLETION_INSTANCES,
     }
     for field, keys in shapes.items():
-        rows = value[field]
-        if not isinstance(rows, list) or len(rows) > limits[field]:
-            raise ValueError("invalid RAES completion evidence collection")
-        identities = set()
-        for row in rows:
-            if not isinstance(row, dict) or set(row) != keys:
-                raise ValueError("invalid RAES completion evidence row")
-            if any(
-                not isinstance(item, str) or not item or len(item) > value_limits[field][key]
-                for key, item in row.items()
-            ):
-                raise ValueError("invalid RAES completion evidence value")
-            identity = row.get("instance_key", row.get("address"))
-            if identity in identities:
-                raise ValueError("duplicate RAES completion evidence identity")
-            identities.add(identity)
+        _validate_evidence_rows(value[field], keys, limits[field], value_limits[field])
     if len(json.dumps(value, allow_nan=False).encode()) > _MAX_BYTES:
         raise ValueError("RAES completion evidence exceeds its size bound")
     return value
+
+
+def _validate_evidence_rows(rows: object, keys: set[str], limit: int, value_limits: Mapping[str, int]) -> None:
+    if not isinstance(rows, list) or len(rows) > limit:
+        raise ValueError("invalid RAES completion evidence collection")
+    identities = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != keys:
+            raise ValueError("invalid RAES completion evidence row")
+        if any(not isinstance(item, str) or not item or len(item) > value_limits[key] for key, item in row.items()):
+            raise ValueError("invalid RAES completion evidence value")
+        identity = row.get("instance_key", row.get("address"))
+        if identity in identities:
+            raise ValueError("duplicate RAES completion evidence identity")
+        identities.add(identity)
 
 
 def build_completion_evidence(

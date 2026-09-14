@@ -9,11 +9,17 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid5
 
-from preparation.gce_build import _guest, _same_ref, _validate_request
+from preparation.gce_build import ComputeAPI, _guest, _same_ref, _validate_request
 from preparation.guest_runtime import STARTUP
 
 
-def scan_image(api: Any, request: dict[str, Any], context: dict[str, bytes], *, verify_output: bool) -> dict[str, Any]:
+def scan_image(
+    api: ComputeAPI,
+    request: dict[str, Any],
+    context: dict[str, bytes],
+    *,
+    verify_output: bool,
+) -> dict[str, Any]:
     """Read candidate bytes using a distinct, pinned, credentialless scanner VM."""
     raw = dict(request)
     scanner_ref = raw.pop("scanner_image")
@@ -73,7 +79,8 @@ def scan_image(api: Any, request: dict[str, Any], context: dict[str, bytes], *, 
     return {**observation, "image_ref": raw["image_ref"], "image_id": raw["image_id"], "disk_id": str(data["id"])}
 
 
-def _pinned_image(api: Any, reference: str, identity: str, max_disk_gb: int) -> dict[str, Any]:
+def _pinned_image(api: ComputeAPI, reference: str, identity: str, max_disk_gb: int) -> dict[str, Any]:
+    """Handle pinned image."""
     image = api.get(reference)
     if (
         image.get("status") != "READY"
@@ -85,6 +92,7 @@ def _pinned_image(api: Any, reference: str, identity: str, max_disk_gb: int) -> 
 
 
 def _verify_scanner(instance: dict[str, Any], network: str, boot: str, data: str) -> None:
+    """Handle verify scanner."""
     interfaces = instance.get("networkInterfaces", [])
     disks = instance.get("disks", [])
     if (

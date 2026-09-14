@@ -7,7 +7,7 @@ recheck its operation, grant and attempt fences before storing them in inventory
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,12 +53,12 @@ def admit_materialization_facts(
     operation_input_digest: str,
     package: PreparationPackage,
     adapter: AdapterManifest,
-    grant: dict,
-    inputs: dict,
-    build: dict,
-    output: dict,
+    **documents: dict[str, Any],
 ) -> VerifiedMaterialization:
     """Validate measured claims for the controller's fenced inventory transaction."""
+    if set(documents) != {"grant", "inputs", "build", "output"}:
+        raise ValueError("materialization admission requires the complete evidence document set")
+    grant, inputs, build, output = (documents[key] for key in ("grant", "inputs", "build", "output"))
     configuration = PreparationGrantConfiguration.model_validate(grant)
     selected = select_preparation(package.requirement, adapter, package.specification_id)
     require_input_trust(package.input_bindings, package.requirement.locked_inputs, configuration.trusted_input_bindings)

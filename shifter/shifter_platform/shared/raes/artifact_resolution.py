@@ -168,7 +168,13 @@ def resolve_artifact_requirement(
     return result
 
 
-def _resolve_prepared(requirement, address, capabilities, backend, materializations):
+def _resolve_prepared(
+    requirement: ArtifactRequirement,
+    address: str,
+    capabilities: Sequence[ArtifactMechanismCapability],
+    backend: ApparatusIdentity,
+    materializations: Sequence[VerifiedMaterialization],
+) -> ArtifactResolution | None:
     """Select one completely verified output without combining partial evidence."""
     digest = canonical_payload_digest(requirement.model_dump(mode="json"))
     for facts in materializations:

@@ -311,7 +311,8 @@ def _validate_completion(row: OperationResultInbox, payload: dict[str, Any], ran
             config = range_obj.range_config
             if isinstance(config, dict) and config.get("contract_version") == "raes-provisioning-plan-v2":
                 raise ValueError("missing immutable input")
-            return  # Historical result tests/records without the new transport.
+            # Historical result tests/records without the new transport.
+            return
         immutable = record.envelope["payload"]
         if row.operation == "activate":
             immutable = immutable["raes_input"]
@@ -319,7 +320,8 @@ def _validate_completion(row: OperationResultInbox, payload: dict[str, Any], ran
             "raes-provisioning-plan-v1",
             "2.0.0",
         ):
-            return  # In-flight old producer results retain their historical contract.
+            # In-flight old producer results retain their historical contract.
+            return
         completed_snapshot(
             load_serialized_plan(immutable["plan"]),
             payload["completion"],

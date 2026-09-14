@@ -7,11 +7,11 @@ from collections.abc import Callable
 from typing import Any
 from uuid import uuid5
 
-from preparation.gce_build import _guest, _validate_request, _verify_guest_isolation
+from preparation.gce_build import ComputeAPI, _guest, _validate_request, _verify_guest_isolation
 from preparation.gce_verify import _pinned_image
 
 
-def verify_boot(api: Any, request: dict[str, Any], probe: Callable[[str, str], bool]) -> dict[str, bool]:
+def verify_boot(api: ComputeAPI, request: dict[str, Any], probe: Callable[[str, str], bool]) -> dict[str, bool]:
     """A running VM is insufficient: the independently installed probe must pass."""
     operation_id, attempt_id = _validate_request(request)
     image = _pinned_image(api, request["image_ref"], request["image_id"], request["max_disk_gb"])

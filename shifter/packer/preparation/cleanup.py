@@ -3,9 +3,11 @@
 from typing import Any
 from uuid import UUID
 
+from preparation.gce_build import ComputeAPI
+
 
 def cleanup_operation(
-    api: Any, operation_id: UUID, attempts: list[UUID], *, retained_image: dict[str, str] | None = None
+    api: ComputeAPI, operation_id: UUID, attempts: list[UUID], *, retained_image: dict[str, str] | None = None
 ) -> dict[str, list[str]]:
     """Delete VMs before their disks; release capacity only after empty readback.
 
@@ -27,7 +29,8 @@ def cleanup_operation(
     ):
         raise ValueError("invalid retained image identity")
 
-    def disposable(scope: str, resource: dict) -> bool:
+    def disposable(scope: str, resource: dict[str, Any]) -> bool:
+        """Handle disposable."""
         reference = f"{scope}/{resource['name']}"
         if reference != retained.get("image_ref"):
             return True

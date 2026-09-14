@@ -1,5 +1,11 @@
 """Cloud-operator grant activation after actual installation readback, never pack input."""
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
@@ -12,8 +18,19 @@ from shared.exceptions import ValidationError
 
 from ._preparation_adapters import require_preparation_permission
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
-def activate_preparation_grant(user, payload, *, cloud_reader=None, kubernetes_reader=None):
+    from engine.models import PreparationGrant
+
+
+def activate_preparation_grant(
+    user: User,
+    payload: object,
+    *,
+    cloud_reader: Callable[[str], dict[str, Any] | None] | None = None,
+    kubernetes_reader: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+) -> UUID:
     """CLI-only operator path; cloud observations occur outside the database transaction.
 
     The application identity cannot grant itself IAM. The installing process must
@@ -71,7 +88,7 @@ def activate_preparation_grant(user, payload, *, cloud_reader=None, kubernetes_r
         return row.id
 
 
-def revoke_preparation_grant(user, identity):
+def revoke_preparation_grant(user: User, identity: UUID) -> None:
     """Revoke new execution and admission, preserving pinned cleanup and evidence."""
     from engine.models import PreparationGrant, PreparationScopeLock
 
@@ -87,7 +104,8 @@ def revoke_preparation_grant(user, identity):
         _audit_grant(user, row)
 
 
-def _audit_grant(user, row, *, previous_digest=""):
+def _audit_grant(user: User, row: PreparationGrant, *, previous_digest: str = "") -> None:
+    """Handle audit grant."""
     audit_log(
         AuditEvent(
             entity_type=AuditEntityType.PREPARATION_GRANT,

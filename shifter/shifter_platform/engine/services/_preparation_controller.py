@@ -1,9 +1,13 @@
 """Leased preparation reconciliation: cloud I/O outside fenced domain transactions."""
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import timedelta
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 from django.db import transaction
 from django.db.models import Q
@@ -11,10 +15,12 @@ from django.utils import timezone
 
 from shared.audit import AuditAction
 from shared.cloud import get_preparation_readback, get_preparation_task
+from shared.cloud.preparation_runtime import PreparationTask
 from shared.cloud.types import TaskInterruptDisposition
 from shared.exceptions import ValidationError
 from shared.operation_envelope import canonical_payload_digest
 from shared.preparation_grant import PreparationGrantConfiguration
+from shared.raes.prepared_artifacts import VerifiedMaterialization
 
 from ._preparation_admission import save_admission, validated_result, verified_facts
 from ._preparation_operations import _audit_operation, new_preparation_attempt
@@ -23,9 +29,12 @@ from ._preparation_worker import _current_attempt, attempt_token
 _LEASE_SECONDS = 300
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from engine.models import PreparationAttempt, PreparationOperation
+
 
 @contextmanager
-def _locked(operation_id):
+def _locked(operation_id: UUID) -> Iterator[PreparationOperation]:
     """Same lock order as admission and grant/adapter administration."""
     from engine.models import PreparationAdapter, PreparationGrant, PreparationOperation, PreparationScopeLock
 
@@ -37,7 +46,7 @@ def _locked(operation_id):
         yield PreparationOperation.objects.select_for_update().get(pk=operation_id)
 
 
-def reconcile_preparations(*, limit=20, scope_digest=None):
+def reconcile_preparations(*, limit: int = 20, scope_digest: str | None = None) -> int:
     """Bounded durable scan; no message delivery is necessary for eventual recovery."""
     from engine.models import PreparationOperation
 
@@ -57,30 +66,11 @@ def reconcile_preparations(*, limit=20, scope_digest=None):
     return len(identities)
 
 
-def reconcile_preparation(operation_id):
+def reconcile_preparation(operation_id: UUID) -> None:
     """One recoverable dispatch/application step with a current-attempt lease."""
     from engine.models import PreparationAttempt
 
-    with _locked(operation_id) as operation:
-        if operation.current_attempt_id is None:
-            needs_cleanup = operation.cleanup_pending
-            attempt = None
-        else:
-            needs_cleanup = False
-            attempt = PreparationAttempt.objects.select_for_update().get(pk=operation.current_attempt_id)
-            now = timezone.now()
-            if attempt.lease_expires_at and attempt.lease_expires_at > now:
-                return
-            if attempt.next_dispatch_at > now:
-                return
-            try:
-                _current_attempt(attempt)
-            except (ValueError, ValidationError):
-                _fail(operation, "authorization-revoked")
-                return
-            attempt.lease_id = uuid4()
-            attempt.lease_expires_at = now + timedelta(seconds=_LEASE_SECONDS)
-            attempt.save(update_fields=["lease_id", "lease_expires_at"])
+    needs_cleanup, attempt = _lease_attempt(operation_id)
     if needs_cleanup:
         _start_cleanup(operation_id)
         return
@@ -105,7 +95,34 @@ def reconcile_preparation(operation_id):
         )
 
 
-def _finish_result(attempt):
+def _lease_attempt(operation_id: UUID) -> tuple[bool, PreparationAttempt | None]:
+    from engine.models import PreparationAttempt
+
+    with _locked(operation_id) as operation:
+        if operation.current_attempt_id is None:
+            return operation.cleanup_pending, None
+        attempt = PreparationAttempt.objects.select_for_update().get(pk=operation.current_attempt_id)
+        return False, _acquire_attempt_lease(operation, attempt)
+
+
+def _acquire_attempt_lease(operation: PreparationOperation, attempt: PreparationAttempt) -> PreparationAttempt | None:
+    """Acquire an eligible attempt lease while its operation lock is held."""
+    now = timezone.now()
+    if (attempt.lease_expires_at and attempt.lease_expires_at > now) or attempt.next_dispatch_at > now:
+        return None
+    try:
+        _current_attempt(attempt)
+    except (ValueError, ValidationError):
+        _fail(operation, "authorization-revoked")
+        return None
+    attempt.lease_id = uuid4()
+    attempt.lease_expires_at = now + timedelta(seconds=_LEASE_SECONDS)
+    attempt.save(update_fields=["lease_id", "lease_expires_at"])
+    return attempt
+
+
+def _finish_result(attempt: PreparationAttempt) -> None:
+    """Handle finish result."""
     facts, failure = None, ""
     if attempt.expires_at <= timezone.now() and attempt.result is None:
         failure = "deadline-exceeded"
@@ -121,7 +138,8 @@ def _finish_result(attempt):
     _apply(attempt, facts, failure)
 
 
-def _dispatch(attempt, task):
+def _dispatch(attempt: PreparationAttempt, task: PreparationTask) -> None:
+    """Handle dispatch."""
     reference = task.dispatch(attempt_token(attempt))
     if not reference:
         return
@@ -137,14 +155,16 @@ def _dispatch(attempt, task):
             operation.save(update_fields=["state", "updated_at"])
 
 
-def _grant(attempt):
+def _grant(attempt: PreparationAttempt) -> PreparationGrantConfiguration:
+    """Handle grant."""
     grant = PreparationGrantConfiguration.model_validate(attempt.input["grant"])
     if grant.digest != attempt.input["grant_digest"]:
         raise ValueError("pinned preparation grant changed")
     return grant
 
 
-def _task(attempt):
+def _task(attempt: PreparationAttempt) -> PreparationTask:
+    """Handle task."""
     grant = _grant(attempt)
     if attempt.phase == "cleanup":
         image = grant.cleanup_image
@@ -153,7 +173,8 @@ def _task(attempt):
     return get_preparation_task(grant, attempt.phase, image, attempt.operation_id, attempt.id)
 
 
-def _fenced(operation, snapshot):
+def _fenced(operation: PreparationOperation, snapshot: PreparationAttempt) -> PreparationAttempt | None:
+    """Handle fenced."""
     from engine.models import PreparationAttempt
 
     current = PreparationAttempt.objects.select_for_update().get(pk=snapshot.id)
@@ -174,7 +195,8 @@ def _fenced(operation, snapshot):
     return current
 
 
-def _apply(snapshot, facts, failure):
+def _apply(snapshot: PreparationAttempt, facts: VerifiedMaterialization | None, failure: str) -> None:
+    """Handle apply."""
     with _locked(snapshot.operation_id) as operation:
         current = _fenced(operation, snapshot)
         if current is None:
@@ -203,6 +225,8 @@ def _apply(snapshot, facts, failure):
             )
             operation.state = "verifying"
         elif current.phase == "verify-output":
+            if facts is None:
+                raise ValueError("verified preparation omitted materialization facts")
             save_admission(operation, facts)
             operation.state = "available"
             operation.current_attempt_id = None
@@ -214,7 +238,8 @@ def _apply(snapshot, facts, failure):
         _audit_operation(operation, AuditAction.UPDATE)
 
 
-def _fail(operation, code):
+def _fail(operation: PreparationOperation, code: str) -> None:
+    """Handle fail."""
     operation.state = "failed"
     operation.failure_code = code
     operation.current_attempt_id = None
@@ -223,7 +248,7 @@ def _fail(operation, code):
     _audit_operation(operation, AuditAction.UPDATE)
 
 
-def _start_cleanup(operation_id):
+def _start_cleanup(operation_id: UUID) -> None:
     """Fence all old worker identities before dispatching the operator cleanup image."""
     from engine.models import PreparationAttempt, PreparationOperation, PreparedArtifactAdmission
 
@@ -241,7 +266,7 @@ def _start_cleanup(operation_id):
     with _locked(operation_id) as current:
         if current.current_attempt_id is not None or not current.cleanup_pending:
             return
-        evidence = {"attempts": [str(attempt.id) for attempt in attempts]}
+        evidence: dict[str, Any] = {"attempts": [str(attempt.id) for attempt in attempts]}
         admission = PreparedArtifactAdmission.objects.filter(operation=current).first()
         if admission:
             if canonical_payload_digest(admission.facts) != admission.facts_digest:

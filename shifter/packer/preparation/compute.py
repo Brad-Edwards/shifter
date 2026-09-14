@@ -11,7 +11,8 @@ import base64
 import json
 import re
 import time
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, Protocol
 from uuid import UUID, uuid5
 
 from preparation.scan_guest import FAILURE_CODES
@@ -20,6 +21,22 @@ _BASE = "https://compute.googleapis.com/compute/v1/"
 _PROJECT = r"[a-z][a-z0-9-]{4,61}[a-z0-9]"
 _RESOURCE = r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}"
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_INVALID_SCANNER_RECEIPT = "invalid preparation scanner receipt"
+
+
+class ProviderResponse(Protocol):
+    """Bounded response surface consumed by the Compute client."""
+
+    status_code: int
+
+    def iter_content(self, chunk_size: int) -> Iterator[bytes]: ...
+    def close(self) -> None: ...
+
+
+class ProviderSession(Protocol):
+    """Minimal authorized HTTP session needed by the Compute client."""
+
+    def request(self, method: str, url: str, **kwargs: Any) -> ProviderResponse: ...
 
 
 class ProviderRequestError(RuntimeError):
@@ -38,8 +55,15 @@ def reference_matches(observed: object, expected: str) -> bool:
 class ComputeClient:
     """A single worker deadline bounds every provider request and poll."""
 
-    def __init__(self, project: str, zone: str, duration: int, *, session: Any = None):
-        if not re.fullmatch(_PROJECT, project) or not re.fullmatch(r"[a-z]+-[a-z]+[0-9]-[a-z]", zone):
+    def __init__(
+        self,
+        project: str,
+        zone: str,
+        duration: int,
+        *,
+        session: ProviderSession | None = None,
+    ) -> None:
+        if not re.fullmatch(_PROJECT, project) or not re.fullmatch(r"[a-z]+-[a-z]+\d-[a-z]", zone):
             raise ValueError("invalid preparation cloud scope")
         if type(duration) is not int or not 1 <= duration <= 7200:
             raise ValueError("invalid preparation worker duration")
@@ -99,7 +123,7 @@ class ComputeClient:
                 if _attempt_target(operation.get("targetLink"), scope, stems):
                     self._wait_operation(scope, operation, allow_failure=True)
 
-    def _list_items(self, path: str, query: dict[str, Any]):
+    def _list_items(self, path: str, query: dict[str, Any]) -> Iterator[dict[str, Any]]:
         """Bound every page and reject repeated continuation tokens."""
         params = dict(query, maxResults=100)
         seen_pages = set()
@@ -183,14 +207,14 @@ class ComputeClient:
         payload = self._wait_receipt(instance_path, f"SHIFTER_PREPARATION_OBSERVATION:{nonce}:")
         try:
             observation = json.loads(base64.b64decode(payload, validate=True))
-        except (ValueError, UnicodeError) as exc:
-            raise ValueError("invalid preparation scanner receipt") from exc
+        except ValueError as exc:
+            raise ValueError(_INVALID_SCANNER_RECEIPT) from exc
         if not isinstance(observation, dict):
-            raise ValueError("invalid preparation scanner receipt")
+            raise ValueError(_INVALID_SCANNER_RECEIPT)
         if "failure_code" in observation:
             code = observation["failure_code"]
             if set(observation) != {"failure_code"} or not isinstance(code, str) or code not in FAILURE_CODES:
-                raise ValueError("invalid preparation scanner receipt")
+                raise ValueError(_INVALID_SCANNER_RECEIPT)
             raise RuntimeError(f"preparation scanner failed: {code}")
         return observation
 
@@ -216,24 +240,12 @@ class ComputeClient:
             text = serial.get("contents", "")
             if not isinstance(text, str):
                 raise ValueError("invalid preparation guest receipt")
-            lines = (tail + text).split("\n")
-            tail = lines.pop()
-            if len(tail) > 96 * 1024:
-                raise ValueError("preparation guest receipt exceeds its bound")
-            for line in lines:
-                if line.startswith(prefix):
-                    value = line[len(prefix) :].rstrip("\r")
-                    if len(value) > 96 * 1024 or (receipt is not None and receipt != value):
-                        raise ValueError("preparation guest receipts conflict or exceed their bound")
-                    receipt = value
+            receipt, tail = _read_receipt_lines(tail + text, prefix, receipt)
             offset = int(serial.get("next", offset))
             instance = self.get(instance_path)
-            if not stopped and receipt is not None and instance.get("status") == "RUNNING":
-                return receipt
-            if instance.get("status") == "TERMINATED":
-                if receipt is None:
-                    raise RuntimeError("preparation guest did not complete its work")
-                return receipt
+            completed = _completed_receipt(instance.get("status"), receipt, stopped=stopped)
+            if completed is not None:
+                return completed
             self._pause()
 
     def _wait_operation(self, scope: str, operation: dict[str, Any], *, allow_failure: bool = False) -> None:
@@ -313,15 +325,16 @@ class ComputeClient:
         labels = desired.get("labels")
         if not labels or existing.get("labels") != labels or existing.get("name") != desired.get("name"):
             return False
+        matches = False
         if "sourceDisk" in desired:
-            return reference_matches(existing.get("sourceDisk"), desired["sourceDisk"])
-        if "sourceImage" in desired:
-            return reference_matches(existing.get("sourceImage"), desired["sourceImage"]) and str(
+            matches = reference_matches(existing.get("sourceDisk"), desired["sourceDisk"])
+        elif "sourceImage" in desired:
+            matches = reference_matches(existing.get("sourceImage"), desired["sourceImage"]) and str(
                 existing.get("sizeGb")
             ) == str(desired.get("sizeGb"))
-        if "disks" in desired:
-            return _same_guest(existing, desired)
-        return False
+        elif "disks" in desired:
+            matches = _same_guest(existing, desired)
+        return matches
 
 
 def _attempt_target(target: object, scope: str, stems: tuple[str, ...]) -> bool:
@@ -337,6 +350,31 @@ def _attempt_target(target: object, scope: str, stems: tuple[str, ...]) -> bool:
                 name == stem or name.startswith(stem + "-") for stem in stems
             )
     return False
+
+
+def _read_receipt_lines(text: str, prefix: str, receipt: str | None) -> tuple[str | None, str]:
+    lines = text.split("\n")
+    tail = lines.pop()
+    if len(tail) > 96 * 1024:
+        raise ValueError("preparation guest receipt exceeds its bound")
+    for line in lines:
+        if not line.startswith(prefix):
+            continue
+        value = line[len(prefix) :].rstrip("\r")
+        if len(value) > 96 * 1024 or (receipt is not None and receipt != value):
+            raise ValueError("preparation guest receipts conflict or exceed their bound")
+        receipt = value
+    return receipt, tail
+
+
+def _completed_receipt(status: object, receipt: str | None, *, stopped: bool) -> str | None:
+    if not stopped and receipt is not None and status == "RUNNING":
+        return receipt
+    if status != "TERMINATED":
+        return None
+    if receipt is None:
+        raise RuntimeError("preparation guest did not complete its work")
+    return receipt
 
 
 def _same_guest(existing: dict[str, Any], desired: dict[str, Any]) -> bool:
@@ -359,6 +397,16 @@ def _same_guest(existing: dict[str, Any], desired: dict[str, Any]) -> bool:
 
 
 def _same_guest_disks(observed: list[dict[str, Any]], desired: dict[str, Any]) -> bool:
+    """Handle same guest disks."""
+    wanted = _expected_guest_disks(observed, desired)
+    if wanted is None:
+        return False
+    scope = desired["machineType"].split("/machineTypes/", 1)[0]
+    return all(_same_guest_disk(actual, expected, scope) for actual, expected in zip(observed, wanted, strict=True))
+
+
+def _expected_guest_disks(observed: list[dict[str, Any]], desired: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Return the normalized desired disk list when its scan attachment is owned."""
     wanted = desired["disks"]
     scope = desired["machineType"].split("/machineTypes/", 1)[0]
     attempt = desired.get("labels", {}).get("preparation-attempt", "")
@@ -376,23 +424,26 @@ def _same_guest_disks(observed: list[dict[str, Any]], desired: dict[str, Any]) -
             "deviceName": "shifter-candidate",
         }
         if not _same_attachment(observed[1], candidate):
-            return False
+            return None
         wanted = [*wanted, candidate]
     if len(observed) != len(wanted):
-        return False
-    for actual, expected in zip(observed, wanted, strict=True):
-        source = expected.get("source") or f"{scope}/disks/{expected['initializeParams']['diskName']}"
-        if (
-            not reference_matches(actual.get("source"), source)
-            or actual.get("boot", False) != expected.get("boot", False)
-            or actual.get("autoDelete") != expected.get("autoDelete")
-            or actual.get("mode", "READ_WRITE") != expected.get("mode", "READ_WRITE")
-        ):
-            return False
-    return True
+        return None
+    return wanted
+
+
+def _same_guest_disk(actual: dict[str, Any], expected: dict[str, Any], scope: str) -> bool:
+    """Compare one observed guest disk with its normalized desired attachment."""
+    source = expected.get("source") or f"{scope}/disks/{expected['initializeParams']['diskName']}"
+    return (
+        reference_matches(actual.get("source"), source)
+        and actual.get("boot", False) == expected.get("boot", False)
+        and actual.get("autoDelete") == expected.get("autoDelete")
+        and actual.get("mode", "READ_WRITE") == expected.get("mode", "READ_WRITE")
+    )
 
 
 def _same_attachment(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
+    """Handle same attachment."""
     return reference_matches(actual.get("source"), expected["source"]) and all(
         actual.get(key) == expected[key] for key in ("boot", "autoDelete", "mode", "deviceName")
     )

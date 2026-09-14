@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 def _path(root: Path, relative: str) -> Path:
+    """Handle path."""
     current = root
     parts = Path(relative).parts
     for part in parts[:-1]:
@@ -17,6 +18,7 @@ def _path(root: Path, relative: str) -> Path:
 
 
 def _remove(path: Path) -> None:
+    """Handle remove."""
     if path.is_symlink() or path.is_file():
         path.unlink()
     elif path.exists():
@@ -24,6 +26,7 @@ def _remove(path: Path) -> None:
 
 
 def _directory(root: Path, relative: str) -> Path:
+    """Handle directory."""
     path = _path(root, relative)
     if path.is_symlink():
         raise ValueError("guest sanitization directory contains a link")

@@ -40,6 +40,7 @@ from shared.raes.artifact_resolution import (
 from shared.raes.prepared_artifacts import VerifiedMaterialization
 
 __all__ = [
+    "ArtifactRequirements",
     "ArtifactSatisfactionError",
     "BackendArtifact",
     "build_artifact_availability",
@@ -47,6 +48,10 @@ __all__ = [
 ]
 
 _NODE_RESOURCE_TYPE = "node"
+
+# Public type for callers outside ``shared.raes``. It keeps the upstream RAES
+# requirement class behind the repository's shared contract boundary.
+ArtifactRequirements = Mapping[str, ArtifactRequirement]
 
 
 class ArtifactSatisfactionError(Exception):
@@ -91,9 +96,16 @@ class ArtifactSupply:
     materializations: tuple[VerifiedMaterialization, ...]
 
 
-def build_artifact_supply(requirements, inventory, *, capabilities=()) -> ArtifactSupply:
+def build_artifact_supply(
+    requirements: Mapping[str, ArtifactRequirement | None],
+    inventory: Sequence[BackendArtifact],
+    *,
+    capabilities: Iterable[ArtifactMechanismCapability] = (),
+) -> ArtifactSupply:
     """Join qualified facts to their exact inventory image and portable identity."""
-    qualified = tuple(item.materialization for item in inventory if _qualified(item))
+    qualified = tuple(
+        item.materialization for item in inventory if item.materialization is not None and _qualified(item)
+    )
     declared = list(capabilities)
     for facts in qualified:
         capability = ArtifactMechanismCapability(
@@ -107,6 +119,7 @@ def build_artifact_supply(requirements, inventory, *, capabilities=()) -> Artifa
 
 
 def _qualified(item: BackendArtifact) -> bool:
+    """Handle qualified."""
     facts = item.materialization
     return facts is not None and (
         item.artifact_id,

@@ -1,7 +1,9 @@
 """Activate a verified post-setup installation, or revoke its application authority."""
 
 import json
+from argparse import ArgumentParser
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from django.contrib.auth import get_user_model
@@ -12,9 +14,11 @@ from shared.exceptions import ValidationError
 
 
 class Command(BaseCommand):
+    """Provide Command."""
+
     help = "Verify deployed preparation IAM/Kubernetes resources and activate their immutable grant."
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--actor", required=True, help="Application operator username with manage_preparation_grants"
         )
@@ -22,8 +26,10 @@ class Command(BaseCommand):
         operation.add_argument("--configuration", type=Path)
         operation.add_argument("--revoke", type=UUID)
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         user = get_user_model().objects.filter(username=options["actor"]).first()
+        if user is None:
+            raise CommandError("Preparation grant installation failed")
         try:
             if options["revoke"]:
                 revoke_preparation_grant(user, options["revoke"])

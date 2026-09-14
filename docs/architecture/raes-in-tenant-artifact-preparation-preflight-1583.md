@@ -2,21 +2,18 @@
 
 Issue: GitHub #1583, "In-tenant artifact preparation (optional BigRAE backend capability)."
 
-Status: pre-implementation architecture guidance. This note does not add a
-materializer, worker, API, persistence model, backend-manifest capability, or
-provisioning behavior. The supplied GEN-002 requirement governs executable
-architecture enforcement; #1583 supplies the capability scope. ADR-053/034
-govern ownership and ingestion; ADR-054/046 govern deployment and internal
-authority. The existing ADRs, including ADR-034-R9, suffice.
+Status: implementation architecture and validation record. The supplied
+GEN-002 requirement governs executable architecture enforcement; #1583 supplies
+the capability scope. ADR-053/034 govern ownership and ingestion; ADR-054/046
+govern deployment and internal authority. The existing ADRs, including
+ADR-034-R9, suffice.
 
-Review baseline, 2026-09-13: this working tree already contains a dependency
-upgrade to `raes==3.5.0` / `raes-env-packs==5.2.0`, compatibility repairs, and a
-[design draft](raes-in-tenant-artifact-preparation-design-1583.md), alongside
-preparation code in progress. This preflight does not certify those changes or
-owner agreement. The issue's delivery sequence
-still requires compatibility validation and owner review/agreement on the
-corrected design before capability implementation. Design/upgrade delivery does
-not close #1583. No implementation sequence is prescribed here.
+Implementation baseline, 2026-09-14: the dependency upgrade to `raes==3.5.0` /
+`raes-env-packs==5.2.0` and its compatibility repairs precede the reviewed
+[design](raes-in-tenant-artifact-preparation-design-1583.md). The implementation
+follows the accepted authority direction: the RAE runtime controls the backend;
+the GCE adapter materializes open portable intent and reports observations back
+through the runtime contract.
 
 Shifter maintains the adapters, declared profiles, concrete build material and
 scenario-specific preparation code needed by this repository. Upstream supplies
@@ -54,6 +51,12 @@ when test skipping is exercised. Record any deferred enforcement as a narrowly
 scoped, owned, dated exception in `docs/adr/exceptions.yaml`, never a new skip
 switch, growing baseline, or silent advisory gate. This preflight adds no check
 or exception and does not claim deployed-cloud evidence.
+
+The preparation worker is owned Python in `shifter/packer`, so `_quality.yml`
+publishes its package-configured coverage artifact and the Sonar job consumes it.
+Sonar source exclusions also exclude tests from bug and smell analysis while
+coverage continues to use the test-produced report. This keeps the 80% changed
+code gate tied to production paths and makes a missing packer report fail loudly.
 
 ## Boundary
 

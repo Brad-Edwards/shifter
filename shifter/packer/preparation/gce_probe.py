@@ -7,12 +7,12 @@ import ipaddress
 from typing import Any
 from uuid import UUID, uuid5
 
-from preparation.gce_build import _guest, _validate_request, _verify_guest_isolation
+from preparation.gce_build import ComputeAPI, _guest, _validate_request, _verify_guest_isolation
 from preparation.gce_verify import _pinned_image
 from preparation.guest_runtime import STARTUP
 
 
-def probe_from_guest(api: Any, request: dict[str, Any], probe: bytes, host: str, nonce: str) -> bool:
+def probe_from_guest(api: ComputeAPI, request: dict[str, Any], probe: bytes, host: str, nonce: str) -> bool:
     """Reach a private candidate without platform peering or public ingress.
 
     The caller supplies the approved scanner identity and independently verified
@@ -54,6 +54,7 @@ def probe_from_guest(api: Any, request: dict[str, Any], probe: bytes, host: str,
 
 
 def _startup(probe: bytes, host: str, nonce: str, attempt_id: str) -> str:
+    """Handle startup."""
     encoded = base64.b64encode(probe).decode()
     return (
         STARTUP

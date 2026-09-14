@@ -35,6 +35,7 @@ from shared.cloud.exceptions import CloudProviderNotImplementedError
 PROVISIONER_CONTAINER_NAME = "pulumi-provisioner"
 
 if TYPE_CHECKING:
+    from shared.cloud.preparation_readback import GCEPreparationReadback
     from shared.cloud.preparation_runtime import PreparationTask
     from shared.cloud.types import (
         CapacityInventory,
@@ -111,7 +112,7 @@ def get_preparation_task(
     return preparation_task(grant, phase, image, operation_id, attempt_id)
 
 
-def get_preparation_readback(grant: PreparationGrantConfiguration):
+def get_preparation_readback(grant: PreparationGrantConfiguration) -> GCEPreparationReadback:
     """Return the independent observer only within the configured tenant scope."""
     provider = _require_capability(BackendCapability.TASK_RUNNER)
     if provider != "gcp":

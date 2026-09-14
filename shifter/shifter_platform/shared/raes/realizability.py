@@ -50,6 +50,8 @@ if TYPE_CHECKING:
     from raes_contracts.diagnostics import Diagnostic
     from raes_processor.models.runtime_model import ExecutionPlan
 
+    from shared.raes.prepared_artifacts import VerifiedMaterialization
+
     #: Injected by the catalog layer to supply backend-owned inventory availability
     #: for a scenario's authored requirements (keeps the registry read out of shared).
     ArtifactAvailabilityProvider = Callable[
@@ -227,7 +229,7 @@ def resolve_artifact_gaps(
     capabilities: Sequence[ArtifactMechanismCapability],
     availability_by_address: Mapping[str, ArtifactRequirementAvailability],
     backend: ApparatusIdentity,
-    prepared_materializations=(),
+    prepared_materializations: Sequence[VerifiedMaterialization] = (),
 ) -> tuple[RealizabilityGap, ...]:
     """Project per-requirement artifact resolution into ordered realizability gaps.
 
@@ -321,7 +323,11 @@ def worst_outcome(outcomes: Iterable[RealizabilityOutcome]) -> RealizabilityOutc
     return RealizabilityOutcome.REALIZABLE
 
 
-def _plan(scenario: object, parameters: Mapping[str, object] | None, artifact_supply_provider=None) -> ExecutionPlan:
+def _plan(
+    scenario: object,
+    parameters: Mapping[str, object] | None,
+    artifact_supply_provider: ArtifactAvailabilityProvider | None = None,
+) -> ExecutionPlan:
     """Compile and plan ``scenario`` against the Shifter backend without applying."""
     from shared.raes.artifact_planning import plan_with_artifact_supply
 

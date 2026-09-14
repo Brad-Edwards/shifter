@@ -243,10 +243,11 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=shifter/packer \
   --scanner-image 'projects/<publisher>/global/images/<concrete-scanner>' \
   --scanner-image-id '<immutable-scanner-id>' \
   --context-digest '<verified-contained-context-digest>' \
-  --record '<new-private-receipt-file>'
+  --record '<new-private-receipt-filename>'
 ```
 
-The runner records actual input measurements, candidate lineage, independent
+The receipt filename is created exclusively in the current directory; paths and
+existing files are rejected. The runner records actual input measurements, candidate lineage, independent
 output measurements, a functional boot result and cleanup. It never overwrites
 an earlier receipt. The final cleanup removes every resource bearing this
 operation's ownership label, including the unadmitted candidate image, and

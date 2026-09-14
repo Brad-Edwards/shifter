@@ -1,5 +1,8 @@
 """Explicitly run contract conformance for an immutable registered pack."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from django.db import transaction
@@ -9,8 +12,13 @@ from shared.auth import validate_cms_authoring_user
 from shared.exceptions import ValidationError
 from shared.raes.pack_conformance import validate_pack_contract
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
-def validate_registered_pack_conformance(*, user, scenario_id, expected_package_digest):
+    from cms.models import RaesPackageSource
+
+
+def validate_registered_pack_conformance(*, user: User, scenario_id: str, expected_package_digest: str) -> str:
     """Verify current private bytes, compile through the actual backend, then CAS.
 
     Callers supply identity and request validation; they cannot supply a result
@@ -65,7 +73,8 @@ def validate_registered_pack_conformance(*, user, scenario_id, expected_package_
     return "passed"
 
 
-def _identity(source):
+def _identity(source: RaesPackageSource) -> tuple[str, ...]:
+    """Handle identity."""
     return tuple(
         getattr(source, key)
         for key in (

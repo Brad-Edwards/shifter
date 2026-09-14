@@ -5,10 +5,12 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
-import subprocess  # nosec B404
+import subprocess  # nosec B404  # NOSONAR -- Bandit requires its suppression inline.
 import sys
 import tempfile
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 from uuid import UUID
 
 DEVICE = Path("/dev/disk/by-id/google-shifter-candidate")
@@ -32,7 +34,7 @@ FAILURE_MESSAGES = {
 FAILURE_CODES = frozenset((*FAILURE_MESSAGES.values(), "scanner_failed"))
 
 
-def _raw_disk_module():
+def _raw_disk_module() -> ModuleType:
     """Load the verifier's contained helper under Python isolated mode."""
     spec = importlib.util.spec_from_file_location("trusted_raw_disk", Path(__file__).with_name("raw_disk.py"))
     module = importlib.util.module_from_spec(spec)
@@ -80,7 +82,7 @@ def _root_partition() -> str:
     return str(path)
 
 
-def inspect_output(raw_disk) -> dict[str, str]:
+def inspect_output(raw_disk: ModuleType) -> dict[str, str]:
     """Execute only the independently staged verifier against a non-executable mount."""
     ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     partition = _root_partition()
@@ -117,7 +119,7 @@ def inspect_output(raw_disk) -> dict[str, str]:
         _run_output(["/usr/bin/umount", str(ROOT)])
 
 
-def scan_observation(*, verify_output: bool) -> dict:
+def scan_observation(*, verify_output: bool) -> dict[str, Any]:
     """Return either complete evidence or one closed, non-sensitive failure code."""
     try:
         raw_disk = _raw_disk_module()
@@ -138,7 +140,9 @@ def main() -> None:
     encoded = base64.b64encode(json.dumps(observation, sort_keys=True).encode()).decode()
     with Path("/dev/ttyS0").open("w") as console:
         console.write(f"SHIFTER_PREPARATION_OBSERVATION:{nonce}:{encoded}\n")
-    subprocess.run(["/sbin/poweroff"], check=True)  # nosec B603
+    subprocess.run(  # nosec B603  # NOSONAR -- fixed executable and arguments.
+        ["/sbin/poweroff"], check=True
+    )
 
 
 if __name__ == "__main__":

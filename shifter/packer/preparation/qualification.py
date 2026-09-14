@@ -31,6 +31,7 @@ def qualify(
     attempts: list[UUID] = []
 
     def attempt(kind: str, **overrides: Any) -> dict[str, Any]:
+        """Handle attempt."""
         identity = uuid4()
         attempts.append(identity)
         record("attempt", {"attempt_id": str(identity), "kind": kind})
@@ -53,6 +54,7 @@ def qualify(
         probe_request = dict(boot_request, image_ref=scanner_ref, image_id=scanner_id)
 
         def probe(host: str, nonce: str) -> bool:
+            """Handle probe."""
             return probe_from_guest(client(), probe_request, context["verify_boot.py"], host, nonce)
 
         record("boot", verify_boot(client(), boot_request, probe))

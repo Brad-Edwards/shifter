@@ -24,9 +24,18 @@ _IMAGE = re.compile(rf"^projects/{_PROJECT}/global/images/[a-z][a-z0-9-]{{0,62}}
 class ComputeAPI(Protocol):
     """The small GCE surface used by this contained profile."""
 
+    project: str
+    zone: str
+
     def get(self, path: str) -> dict[str, Any]: ...
     def create(self, path: str, body: dict[str, Any], request_id: str) -> None: ...
+    def list_owned(self, path: str, operation_id: UUID) -> list[dict[str, Any]]: ...
+    def delete_owned(self, path: str, resource_id: str, operation_id: UUID) -> None: ...
+    def wait_for_attempt_operations(self, attempts: list[UUID]) -> None: ...
     def wait_for_build(self, instance_path: str, nonce: str) -> None: ...
+    def wait_for_ready(self, instance_path: str, nonce: str) -> None: ...
+    def wait_for_observation(self, instance_path: str, nonce: str) -> dict[str, Any]: ...
+    def attach_readonly(self, path: str, disk: str, request_id: str) -> None: ...
     def clear_metadata(self, path: str) -> None: ...
 
 
@@ -110,15 +119,13 @@ def _validate_request(request: dict[str, Any]) -> tuple[UUID, UUID]:
     }
     if set(request) != required:
         raise ValueError("invalid contained build request")
-    if not re.fullmatch(_PROJECT, request["project_id"]) or not re.fullmatch(
-        r"[a-z]+-[a-z]+[0-9]-[a-z]", request["zone"]
-    ):
+    if not re.fullmatch(_PROJECT, request["project_id"]) or not re.fullmatch(r"[a-z]+-[a-z]+\d-[a-z]", request["zone"]):
         raise ValueError("invalid build scope")
     region = request["zone"].rsplit("-", 1)[0]
     network = rf"projects/{request['project_id']}/regions/{region}/subnetworks/[a-z][a-z0-9-]{{0,62}}"
     if not re.fullmatch(network, request["subnetwork"]) or not _IMAGE.fullmatch(request["image_ref"]):
         raise ValueError("invalid pinned input or network")
-    if not re.fullmatch(r"[1-9][0-9]{0,19}", request["image_id"]):
+    if not re.fullmatch(r"[1-9]\d{0,19}", request["image_id"]):
         raise ValueError("invalid pinned image identity")
     if type(request["max_disk_gb"]) is not int or not 1 <= request["max_disk_gb"] <= 200:
         raise ValueError("invalid build budget")

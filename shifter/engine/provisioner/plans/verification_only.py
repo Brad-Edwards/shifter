@@ -8,6 +8,8 @@ from .base import SetupPlan, SetupStep
 
 @dataclass(frozen=True)
 class VerificationOnlyPlan:
+    """Provide VerificationOnlyPlan."""
+
     source: SetupPlan
 
     @property

@@ -18,7 +18,7 @@ from shared.operation_envelope import canonical_payload_digest
 from ._preparation_adapters import _validate_grant, require_preparation_permission, validate_pinned_adapter
 
 if TYPE_CHECKING:
-    from engine.models import PreparationAttempt
+    from engine.models import PreparationAttempt, PreparationOperation
 
 _DENIED = "The preparation worker grant is unavailable"
 
@@ -79,18 +79,19 @@ def _current_attempt(attempt: PreparationAttempt) -> None:
     if attempt.phase == "cleanup":
         if not operation.cleanup_pending:
             raise ValidationError(_DENIED)
-    elif operation.state in {"cancelled", "failed", "available"} or not operation.adapter.grant.active:
-        raise ValidationError(_DENIED)
     else:
-        require_preparation_permission(operation.requested_by, "prepare_artifacts")
-        adapter = operation.adapter
-        manifest = validate_pinned_adapter(adapter)
-        configuration = _validate_grant(adapter.grant, manifest)
-        if (
-            operation.input["grant_digest"] != configuration.digest
-            or operation.input["manifest_digest"] != manifest.digest
-        ):
-            raise ValidationError(_DENIED)
+        _validate_active_authority(operation)
+
+
+def _validate_active_authority(operation: PreparationOperation) -> None:
+    if operation.state in {"cancelled", "failed", "available"} or not operation.adapter.grant.active:
+        raise ValidationError(_DENIED)
+    require_preparation_permission(operation.requested_by, "prepare_artifacts")
+    adapter = operation.adapter
+    manifest = validate_pinned_adapter(adapter)
+    configuration = _validate_grant(adapter.grant, manifest)
+    if operation.input["grant_digest"] != configuration.digest or operation.input["manifest_digest"] != manifest.digest:
+        raise ValidationError(_DENIED)
 
 
 def read_preparation_worker_input(operation_id: UUID, token: str) -> dict[str, Any]:

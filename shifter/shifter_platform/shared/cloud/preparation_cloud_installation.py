@@ -6,7 +6,11 @@ IAM constrains resource access; approved immutable executables enforce recipes,
 VM sizes and operation labels which Compute IAM cannot express as conditions.
 """
 
+from typing import Any
+
 from shared.cloud.preparation_installation import PreparationInstallation
+
+_SERVICE_ACCOUNT_REFERENCE = "${google_service_account."
 
 READ_PERMISSIONS = [
     "compute.instances.get",
@@ -41,11 +45,13 @@ PERMISSIONS = {
 }
 
 
-def role_name(configuration, key):
+def role_name(configuration: PreparationInstallation, key: str) -> str:
+    """Handle role name."""
     return f"projects/{configuration.grant.project_id}/roles/shifterPrep{configuration.grant.scope_digest[-12:]}_{key}"
 
 
-def owned_condition(configuration):
+def owned_condition(configuration: PreparationInstallation) -> dict[str, str]:
+    """Handle owned condition."""
     grant = configuration.grant
     stems = [f"projects/{grant.project_id}/zones/{grant.zone}/{kind}/prep-" for kind in ("instances", "disks")]
     stems.append(f"projects/{grant.project_id}/global/images/prep-")
@@ -55,16 +61,19 @@ def owned_condition(configuration):
     }
 
 
-def workload_member(configuration, role):
+def workload_member(configuration: PreparationInstallation, role: str) -> str:
+    """Handle workload member."""
     grant = configuration.grant
     namespace = configuration.platform_namespace if role == "controller" else grant.namespace
     account = configuration.controller_name if role == "controller" else getattr(grant, role + "_service_account")
     return f"serviceAccount:{grant.project_id}.svc.id.goog[{namespace}/{account}]"
 
 
-def cloud_bindings(configuration):
+def cloud_bindings(
+    configuration: PreparationInstallation,
+) -> dict[str, tuple[str, str, dict[str, str] | None]]:
     """The same exact role/condition contract drives rendering and cloud readback."""
-    bindings = {}
+    bindings: dict[str, tuple[str, str, dict[str, str] | None]] = {}
     for actor in configuration.service_accounts:
         bindings[actor + "_read"] = (actor, "read", None)
         if actor != "controller":
@@ -85,12 +94,12 @@ def cloud_bindings(configuration):
     return bindings
 
 
-def render_preparation_terraform(configuration: PreparationInstallation) -> dict:
+def render_preparation_terraform(configuration: PreparationInstallation) -> dict[str, Any]:
     """Produce a native .tf.json root; Terraform owns apply, state, drift and teardown."""
     grant = configuration.grant
     region = grant.zone.rsplit("-", 1)[0]
     network_name = grant.subnetwork.rsplit("/", 1)[1]
-    resources: dict[str, dict] = {
+    resources: dict[str, dict[str, Any]] = {
         "google_service_account": {
             role: {
                 "project": grant.project_id,
@@ -101,7 +110,7 @@ def render_preparation_terraform(configuration: PreparationInstallation) -> dict
         },
         "google_service_account_iam_binding": {
             role: {
-                "service_account_id": "${google_service_account." + role + ".name}",
+                "service_account_id": _SERVICE_ACCOUNT_REFERENCE + role + ".name}",
                 "role": "roles/iam.workloadIdentityUser",
                 "members": [workload_member(configuration, role)],
             }
@@ -154,7 +163,7 @@ def render_preparation_terraform(configuration: PreparationInstallation) -> dict
                 "region": region,
                 "subnetwork": "${google_compute_subnetwork.preparation.name}",
                 "role": "${google_project_iam_custom_role.subnet_use.name}",
-                "member": "${google_service_account." + role + ".member}",
+                "member": _SERVICE_ACCOUNT_REFERENCE + role + ".member}",
             }
             for role in ("builder", "verifier")
         },
@@ -169,10 +178,10 @@ def render_preparation_terraform(configuration: PreparationInstallation) -> dict
         },
     }
     for name, (actor, key, condition) in cloud_bindings(configuration).items():
-        binding: dict = {
+        binding: dict[str, Any] = {
             "project": grant.project_id,
             "role": "${google_project_iam_custom_role." + key + ".name}",
-            "member": "${google_service_account." + actor + ".member}",
+            "member": _SERVICE_ACCOUNT_REFERENCE + actor + ".member}",
         }
         if condition:
             binding["condition"] = [condition]

@@ -168,24 +168,28 @@ def list_backend_artifacts(*, provider: str) -> list[BackendArtifact]:
 
     rows = list_raes_image_mappings(provider=provider, include_disabled=False)
     prepared = prepared_inventory_facts([row.id for row in rows])
-    return [
-        BackendArtifact(
-            artifact_id=row.artifact_id,
-            version=row.artifact_version,
-            digest=row.artifact_digest,
-            media_type=row.media_type,
-            integrity_ref=row.integrity_ref,
-            provenance_ref=row.provenance_ref,
-            image_ref=row.image_ref,
-            machine_type=row.machine_type,
-            disk_size_gb=row.disk_size_gb,
-            disk_type=row.disk_type,
-            materialization=prepared.get(row.id),
-            image_id=prepared[row.id].image_id if prepared.get(row.id) is not None else "",
+    result: list[BackendArtifact] = []
+    for row in rows:
+        facts = prepared.get(row.id)
+        if not row.artifact_digest or (row.id in prepared and not mapping_matches_admission(row, facts)):
+            continue
+        result.append(
+            BackendArtifact(
+                artifact_id=row.artifact_id,
+                version=row.artifact_version,
+                digest=row.artifact_digest,
+                media_type=row.media_type,
+                integrity_ref=row.integrity_ref,
+                provenance_ref=row.provenance_ref,
+                image_ref=row.image_ref,
+                machine_type=row.machine_type,
+                disk_size_gb=row.disk_size_gb,
+                disk_type=row.disk_type,
+                materialization=facts,
+                image_id=facts.image_id if facts is not None else "",
+            )
         )
-        for row in rows
-        if row.artifact_digest and (row.id not in prepared or mapping_matches_admission(row, prepared[row.id]))
-    ]
+    return result
 
 
 def disable_raes_image_mapping(

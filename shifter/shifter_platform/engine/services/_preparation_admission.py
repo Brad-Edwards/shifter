@@ -1,16 +1,25 @@
 """Controller-owned phase evidence and atomic prepared inventory admission."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from shared.artifact_preparation import PreparationWorkerResult
+from shared.cloud.preparation_readback import GCEPreparationReadback
 from shared.operation_envelope import canonical_payload_digest
 from shared.raes.preparation_contract import AdapterManifest, PreparationPackage
 from shared.raes.preparation_inputs import verify_input_observations
-from shared.raes.prepared_artifacts import admit_materialization_facts
+from shared.raes.prepared_artifacts import VerifiedMaterialization, admit_materialization_facts
+
+if TYPE_CHECKING:
+    from engine.models import PreparationAttempt, PreparationOperation
 
 
-def validated_result(attempt):
+def validated_result(attempt: PreparationAttempt) -> PreparationWorkerResult:
     """Stored receipts remain bound to their full immutable attempt identity."""
+    if not isinstance(attempt.result, dict):
+        raise ValueError("preparation receipt is unavailable")
     result = PreparationWorkerResult.model_validate(attempt.result)
     if (
         result.operation_id != attempt.operation_id
@@ -23,7 +32,10 @@ def validated_result(attempt):
     return result
 
 
-def verified_facts(attempt, observer):
+def verified_facts(
+    attempt: PreparationAttempt,
+    observer: GCEPreparationReadback,
+) -> VerifiedMaterialization | None:
     """Observe each ancestor's provider facts outside the inventory transaction."""
     result = validated_result(attempt)
     if result.status != "succeeded":
@@ -68,7 +80,8 @@ def verified_facts(attempt, observer):
     return None
 
 
-def _ancestor(attempt, key, phase, evidence_key):
+def _ancestor(attempt: PreparationAttempt, key: str, phase: str, evidence_key: str) -> None:
+    """Handle ancestor."""
     from engine.models import PreparationAttempt
 
     ancestor = PreparationAttempt.objects.get(pk=attempt.input["evidence"][key], operation_id=attempt.operation_id)
@@ -84,7 +97,7 @@ def _ancestor(attempt, key, phase, evidence_key):
         raise ValueError("preparation evidence ancestry changed")
 
 
-def save_admission(operation, facts):
+def save_admission(operation: PreparationOperation, facts: VerifiedMaterialization) -> None:
     """Caller holds scope/grant/adapter/operation/attempt fences in one transaction."""
     from engine.models import PreparedArtifactAdmission, RaesImageMapping
 

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
+from shared.preparation_grant import PreparationGrantConfiguration
 from shared.raes.json_ingress import parse_bounded_json_object
 
 from preparation.compute import ComputeClient
@@ -17,14 +19,33 @@ _LIMIT = 262144
 _PATH = "/api/v1/cms/artifact-preparation/workers/"
 
 
+class HTTPSession(Protocol):
+    """Minimal requests-compatible session used by the bounded worker client."""
+
+    trust_env: bool
+
+    def request(self, method: str, url: str, **kwargs: object) -> requests.Response: ...
+
+
 class WorkerClient:
     """One tenant endpoint; no redirects, ambient proxies or unbounded response bodies."""
 
-    def __init__(self, endpoint: str, operation_id: UUID, token: str, session=None):
+    def __init__(
+        self,
+        endpoint: str,
+        operation_id: UUID,
+        token: str,
+        session: HTTPSession | None = None,
+    ) -> None:
         url = urlsplit(endpoint)
+        try:
+            port = url.port
+        except ValueError as exc:
+            raise ValueError("invalid preparation worker endpoint") from exc
         if (
             url.scheme != "https"
             or not url.hostname
+            or port not in {None, 443}
             or url.username is not None
             or url.password is not None
             or url.query
@@ -39,16 +60,16 @@ class WorkerClient:
         self.session = session or requests.Session()
         self.session.trust_env = False
 
-    def read(self) -> dict:
+    def read(self) -> dict[str, Any]:
         """Fetch only the authenticated immutable attempt envelope."""
         return self._request("GET", expected_status=200)
 
-    def submit(self, result: dict) -> None:
+    def submit(self, result: dict[str, Any]) -> None:
         """Acknowledge durable receipt only; domain admission belongs to the controller."""
         if self._request("POST", expected_status=202, json=result) != {"status": "received"}:
             raise ValueError("preparation result receipt was not acknowledged")
 
-    def _request(self, method: str, *, expected_status: int, **kwargs) -> dict:
+    def _request(self, method: str, *, expected_status: int, **kwargs: Any) -> dict[str, Any]:
         response = self.session.request(
             method,
             self.url,
@@ -78,10 +99,16 @@ def main() -> None:
     token = os.environ.pop("PREPARATION_TOKEN")
     client = WorkerClient(os.environ["PREPARATION_ENDPOINT"], operation_id, token)
     envelope = client.read()
-    if UUID(envelope["attempt_id"]) != attempt_id or UUID(envelope["input"]["operation_id"]) != operation_id:
+    received_attempt_id = UUID(str(envelope.get("attempt_id", "")))
+    input_payload = envelope.get("input")
+    if not isinstance(input_payload, dict):
+        raise ValueError("preparation input does not match the dispatched attempt")
+    received_operation_id = UUID(str(input_payload.get("operation_id", "")))
+    if (received_attempt_id, received_operation_id) != (attempt_id, operation_id):
         raise ValueError("preparation input does not match the dispatched attempt")
 
-    def cloud(grant):
+    def cloud(grant: PreparationGrantConfiguration) -> ComputeClient:
+        """Handle cloud."""
         return ComputeClient(grant.project_id, grant.zone, grant.max_duration_seconds)
 
     result = execute_attempt(envelope, Path(__file__).parent, cloud)

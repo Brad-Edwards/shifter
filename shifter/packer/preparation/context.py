@@ -65,19 +65,21 @@ def _read_tree(directory: Path) -> dict[str, bytes]:
             if (Path(current) / name).is_symlink():
                 raise ContextError("installed context contains a link")
         for name in names:
-            path = Path(current) / name
-            info = path.lstat()
-            if not stat.S_ISREG(info.st_mode):
-                raise ContextError("installed context contains a non-regular file")
-            if info.st_size > MAX_CONTEXT_BYTES - total:
-                raise ContextError("installed context exceeds the byte limit")
-            # O_NOFOLLOW defends the final component too. Read-only image
-            # admission protects ancestor components from concurrent mutation.
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-            with os.fdopen(descriptor, "rb") as stream:
-                data = stream.read(MAX_CONTEXT_BYTES - total + 1)
+            path, data = _read_context_file(Path(current) / name, MAX_CONTEXT_BYTES - total)
             total += len(data)
             if total > MAX_CONTEXT_BYTES:
                 raise ContextError("installed context exceeds the byte limit")
             files[path.relative_to(directory).as_posix()] = data
     return files
+
+
+def _read_context_file(path: Path, remaining: int) -> tuple[Path, bytes]:
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise ContextError("installed context contains a non-regular file")
+    if info.st_size > remaining:
+        raise ContextError("installed context exceeds the byte limit")
+    # O_NOFOLLOW defends the final component; image admission protects ancestors.
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        return path, stream.read(remaining + 1)

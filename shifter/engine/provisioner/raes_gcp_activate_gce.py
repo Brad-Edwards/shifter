@@ -16,6 +16,7 @@ from uuid import UUID
 
 from shared.warm_pool.activation_input import ActivationInput
 
+from config import GCERangeCellConfig
 from raes_gcp_activate import ActivationResult
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 class GceActivationOps:
     """Production activation ops for the GCE range-cell backend."""
 
-    config: object | None = None
+    config: GCERangeCellConfig | None = None
     allocated_network_cidr: str | None = None
 
     @staticmethod

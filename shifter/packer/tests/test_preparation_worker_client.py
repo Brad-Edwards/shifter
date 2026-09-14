@@ -28,7 +28,14 @@ class Session:
 
 
 @pytest.mark.parametrize(
-    "endpoint", ["http://tenant.example/", "https://user:pass@tenant.example/", "https://tenant.example/?token=bad"]
+    "endpoint",
+    [
+        "http://tenant.example/",
+        "https://user:pass@tenant.example/",
+        "https://tenant.example/?token=bad",
+        "https://tenant.example:8443/api/v1/cms/artifact-preparation/workers/",
+        "https://tenant.example:bad/api/v1/cms/artifact-preparation/workers/",
+    ],
 )
 def test_noncanonical_endpoint_is_rejected_before_sending_a_credential(endpoint):
     with pytest.raises(ValueError):

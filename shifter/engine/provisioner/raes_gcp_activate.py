@@ -32,6 +32,8 @@ from uuid import UUID
 
 from shared.warm_pool.activation_input import ActivationInput
 
+from config import GCERangeCellConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,7 +99,9 @@ def activate_raes_range_cell(
     return result
 
 
-def default_activation_ops(*, config=None, allocated_network_cidr: str | None = None) -> ActivationOps:
+def default_activation_ops(
+    *, config: GCERangeCellConfig | None = None, allocated_network_cidr: str | None = None
+) -> ActivationOps:
     """Return the production :class:`ActivationOps` wired to real GCE primitives."""
     from raes_gcp_activate_gce import GceActivationOps
 

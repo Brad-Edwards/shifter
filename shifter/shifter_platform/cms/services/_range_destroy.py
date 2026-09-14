@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from django.db.models import Q
 from django.utils import timezone
 
 from cms.exceptions import CMSError
@@ -23,6 +22,13 @@ from shared.enums import ResourceStatus
 from workspaces.services import WorkspaceOperation
 
 from ._common import _validate_caller_user
+from ._range_destroy_dispatch import (
+    engine_cancel_range_by_request as _engine_cancel_range_by_request_call,
+)
+from ._range_destroy_dispatch import (
+    engine_destroy_range_by_request as _engine_destroy_range_by_request_call,
+)
+from ._range_destroy_query import destroyable_instances as _destroyable_instances
 from ._range_workspace import authorize_range_workspace
 
 if TYPE_CHECKING:
@@ -33,32 +39,6 @@ logger = logging.getLogger(__name__)
 # Shared error message for "Range not found" so we don't duplicate the literal (python:S1192).
 _RANGE_NOT_FOUND_MSG = "Range not found"
 _MISSING_REQUEST_MSG = "Range has no associated request"
-
-
-def _destroyable_instances():
-    """Failure hides a range from active views without proving resource cleanup.
-
-    Owners must still be able to request teardown after a failed launch or
-    cleanup. Other soft-deleted history remains outside this user entrypoint.
-    Ownership and current workspace authorization are checked by each caller.
-    """
-    return RangeInstance.all_objects.filter(Q(deleted_at__isnull=True) | Q(status=ResourceStatus.FAILED.value))
-
-
-def _engine_destroy_range_by_request_call(request_id: UUID) -> bool:
-    """Late-bound call so test patches of cms.services.engine_destroy_range_by_request apply."""
-    from cms import services as _cs
-
-    result: bool = _cs.engine_destroy_range_by_request(request_id)
-    return result
-
-
-def _engine_cancel_range_by_request_call(request_id: UUID) -> bool:
-    """Late-bound call so test patches of cms.services.engine_cancel_range_by_request apply."""
-    from cms import services as _cs
-
-    result: bool = _cs.engine_cancel_range_by_request(request_id)
-    return result
 
 
 _TransitionSpec = tuple[str, Callable[[UUID], bool], AuditAction, str, str, bool]

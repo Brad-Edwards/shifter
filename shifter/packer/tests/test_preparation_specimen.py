@@ -84,17 +84,18 @@ def test_service_answers_a_fresh_boot_probe(tmp_path):
             "127.0.0.1",
             "--port",
             "0",
-            "--ready-file",
-            str(tmp_path / "port"),
         ],
-        stdout=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        text=True,
         stderr=subprocess.DEVNULL,
     )
     try:
+        assert server.stdout is not None
         deadline = time.monotonic() + 5
-        while not (tmp_path / "port").exists() and time.monotonic() < deadline:
-            time.sleep(0.02)
-        port = int((tmp_path / "port").read_text())
+        port_line = ""
+        while not port_line and time.monotonic() < deadline:
+            port_line = server.stdout.readline().strip()
+        port = int(port_line)
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
         connection.request("GET", "/health/qualification-nonce")
         response = connection.getresponse()

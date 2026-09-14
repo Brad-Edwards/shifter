@@ -52,6 +52,7 @@ from raes_contracts.apparatus import (
     RealizationSupportDeclaration,
 )
 from raes_contracts.contracts import ArtifactAcquisitionTimingModel, ArtifactMechanismCapability
+from raes_contracts.realization_envelope import BackendRealizationEnvelopeModel
 from raes_contracts.vocabulary import ObservationStrength, RealizationSupportMode, RealizationVerificationScope
 
 from shared.raes.contracts import (
@@ -140,7 +141,9 @@ def _current_backend_version() -> str:
         return "0.0.0+unknown"
 
 
-def create_shifter_backend_manifest(*, realization_envelope=None, **_config: Any) -> BackendManifest:
+def create_shifter_backend_manifest(
+    *, realization_envelope: BackendRealizationEnvelopeModel | None = None, **_config: Any
+) -> BackendManifest:
     """Return Shifter's ``provisioning-only`` RAES backend manifest.
 
     The generic published manifest declares exactly the ``provisioning-only``
