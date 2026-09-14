@@ -18,6 +18,9 @@ _IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _SECRET_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,499}$")
 _MAX_OBJECTIVES = 64
 _MAX_PUBLIC_KEY_LENGTH = 8192
+_KEY_MODE_ERROR = "key_mode must be a ReceiptKeyMode"
+_RESET_GENERATION_ERROR = "reset_generation must be a non-negative integer"
+_PUBLIC_KEY_ERROR = "public_verification_key must be bounded public material"
 
 
 class ReceiptContractError(ValueError):
@@ -53,21 +56,15 @@ class ReceiptRegistrationDemand:
 
     def __post_init__(self) -> None:
         """Reject ambiguous, mutable, or secret-shape-invalid demands."""
-        for field_name in ("deployment_id", "profile_id", "provider_contract", "issuer_id"):
-            _validate_identifier(field_name, getattr(self, field_name))
-        _validate_uuid("ctf_event_id", self.ctf_event_id)
-        _validate_uuid("ctf_participant_id", self.ctf_participant_id)
+        _validate_identifiers(self, ("deployment_id", "profile_id", "provider_contract", "issuer_id"))
+        _validate_uuids(self, ("ctf_event_id", "ctf_participant_id"))
         _validate_objectives(self.objectives)
-        _validate_identifier("provider_range_namespace", self.provider_range_namespace)
-        _validate_identifier("provider_participant_namespace", self.provider_participant_namespace)
-        if not isinstance(self.key_mode, ReceiptKeyMode):
-            raise ReceiptContractError("key_mode must be a ReceiptKeyMode")
-        _validate_identifier("algorithm_id", self.algorithm_id)
-        _validate_identifier("key_id", self.key_id)
-        if isinstance(self.reset_generation, bool) or not isinstance(self.reset_generation, int):
-            raise ReceiptContractError("reset_generation must be a non-negative integer")
-        if self.reset_generation < 0:
-            raise ReceiptContractError("reset_generation must be a non-negative integer")
+        _validate_identifiers(
+            self,
+            ("provider_range_namespace", "provider_participant_namespace", "algorithm_id", "key_id"),
+        )
+        _validate_key_mode(self.key_mode)
+        _validate_reset_generation(self.reset_generation)
         _validate_key_material(self)
 
 
@@ -95,33 +92,26 @@ class ReceiptVerifierBinding:
 
     def __post_init__(self) -> None:
         """Reject a malformed or secret-bearing downstream projection."""
-        for field_name in ("registration_revision", "materialization_id", "assignment_epoch"):
-            _validate_uuid(field_name, getattr(self, field_name))
-        for field_name in ("deployment_id", "profile_id", "provider_contract", "issuer_id"):
-            _validate_identifier(field_name, getattr(self, field_name))
-        _validate_uuid("ctf_event_id", self.ctf_event_id)
-        _validate_uuid("ctf_participant_id", self.ctf_participant_id)
+        _validate_uuids(
+            self,
+            ("registration_revision", "materialization_id", "assignment_epoch", "ctf_event_id", "ctf_participant_id"),
+        )
+        _validate_identifiers(
+            self,
+            (
+                "deployment_id",
+                "profile_id",
+                "provider_contract",
+                "issuer_id",
+                "provider_range_namespace",
+                "provider_participant_namespace",
+                "algorithm_id",
+                "key_id",
+            ),
+        )
         _validate_objectives(self.objectives)
-        _validate_identifier("provider_range_namespace", self.provider_range_namespace)
-        _validate_identifier("provider_participant_namespace", self.provider_participant_namespace)
-        if not isinstance(self.key_mode, ReceiptKeyMode):
-            raise ReceiptContractError("key_mode must be a ReceiptKeyMode")
-        _validate_identifier("algorithm_id", self.algorithm_id)
-        _validate_identifier("key_id", self.key_id)
-        if (
-            not isinstance(self.public_verification_key, str)
-            or len(self.public_verification_key) > _MAX_PUBLIC_KEY_LENGTH
-            or "\x00" in self.public_verification_key
-        ):
-            raise ReceiptContractError("public_verification_key must be bounded public material")
-        if self.key_mode is ReceiptKeyMode.REMOTE_SYMMETRIC and self.public_verification_key:
-            raise ReceiptContractError("remote_symmetric binding cannot expose verification material")
-        if self.key_mode is ReceiptKeyMode.ASYMMETRIC_PUBLIC and not self.public_verification_key:
-            raise ReceiptContractError("asymmetric_public binding requires verification material")
-        if isinstance(self.reset_generation, bool) or not isinstance(self.reset_generation, int):
-            raise ReceiptContractError("reset_generation must be a non-negative integer")
-        if self.reset_generation < 0:
-            raise ReceiptContractError("reset_generation must be a non-negative integer")
+        _validate_public_projection(self.key_mode, self.public_verification_key, subject="binding")
+        _validate_reset_generation(self.reset_generation)
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,8 +125,7 @@ class ReceiptSubmissionContext:
     owner_user_id: int
 
     def __post_init__(self) -> None:
-        for field_name in ("event_id", "participant_id", "challenge_id"):
-            _validate_uuid(field_name, getattr(self, field_name))
+        _validate_uuids(self, ("event_id", "participant_id", "challenge_id"))
         if self.range_instance_id is not None and (
             isinstance(self.range_instance_id, bool)
             or not isinstance(self.range_instance_id, int)
@@ -173,41 +162,34 @@ class ReceiptValidationContext:
     objective_id: str
 
     def __post_init__(self) -> None:
-        for field_name in ("deployment_id", "profile_id", "provider_contract", "issuer_id", "objective_id"):
-            _validate_identifier(field_name, getattr(self, field_name))
-        for field_name in (
-            "event_id",
-            "participant_id",
-            "challenge_id",
-            "materialization_id",
-            "assignment_epoch",
-            "registration_revision",
-        ):
-            _validate_uuid(field_name, getattr(self, field_name))
-        if isinstance(self.range_instance_id, bool) or not isinstance(self.range_instance_id, int):
-            raise ReceiptContractError("range_instance_id must be a positive integer")
-        if self.range_instance_id <= 0:
-            raise ReceiptContractError("range_instance_id must be a positive integer")
-        _validate_identifier("provider_range_namespace", self.provider_range_namespace)
-        _validate_identifier("provider_participant_namespace", self.provider_participant_namespace)
-        if not isinstance(self.key_mode, ReceiptKeyMode):
-            raise ReceiptContractError("key_mode must be a ReceiptKeyMode")
-        _validate_identifier("algorithm_id", self.algorithm_id)
-        _validate_identifier("key_id", self.key_id)
-        if (
-            not isinstance(self.public_verification_key, str)
-            or len(self.public_verification_key) > _MAX_PUBLIC_KEY_LENGTH
-            or "\x00" in self.public_verification_key
-        ):
-            raise ReceiptContractError("public_verification_key must be bounded public material")
-        if self.key_mode is ReceiptKeyMode.REMOTE_SYMMETRIC and self.public_verification_key:
-            raise ReceiptContractError("remote_symmetric context cannot expose verification material")
-        if self.key_mode is ReceiptKeyMode.ASYMMETRIC_PUBLIC and not self.public_verification_key:
-            raise ReceiptContractError("asymmetric_public context requires verification material")
-        if isinstance(self.reset_generation, bool) or not isinstance(self.reset_generation, int):
-            raise ReceiptContractError("reset_generation must be a non-negative integer")
-        if self.reset_generation < 0:
-            raise ReceiptContractError("reset_generation must be a non-negative integer")
+        _validate_identifiers(
+            self,
+            (
+                "deployment_id",
+                "profile_id",
+                "provider_contract",
+                "issuer_id",
+                "objective_id",
+                "provider_range_namespace",
+                "provider_participant_namespace",
+                "algorithm_id",
+                "key_id",
+            ),
+        )
+        _validate_uuids(
+            self,
+            (
+                "event_id",
+                "participant_id",
+                "challenge_id",
+                "materialization_id",
+                "assignment_epoch",
+                "registration_revision",
+            ),
+        )
+        _validate_positive_integer("range_instance_id", self.range_instance_id)
+        _validate_public_projection(self.key_mode, self.public_verification_key, subject="context")
+        _validate_reset_generation(self.reset_generation)
         _validate_objectives(self.registered_objectives)
         if self.objective_id not in self.registered_objectives:
             raise ReceiptContractError("objective_id must belong to the registered objectives")
@@ -240,16 +222,19 @@ class VerifiedReceiptEvidence:
 
 
 def _validate_identifier(field_name: str, value: object) -> None:
+    """Require one canonical bounded identifier."""
     if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
         raise ReceiptContractError(f"{field_name} is not a canonical identifier")
 
 
 def _validate_uuid(field_name: str, value: object) -> None:
+    """Require one UUID value."""
     if not isinstance(value, UUID):
         raise ReceiptContractError(f"{field_name} must be a UUID")
 
 
 def _validate_objectives(objectives: object) -> None:
+    """Require a bounded tuple of unique canonical objective identifiers."""
     if not isinstance(objectives, tuple) or not 1 <= len(objectives) <= _MAX_OBJECTIVES:
         raise ReceiptContractError(f"objectives must be a tuple containing 1-{_MAX_OBJECTIVES} identifiers")
     if len(set(objectives)) != len(objectives):
@@ -259,6 +244,7 @@ def _validate_objectives(objectives: object) -> None:
 
 
 def _validate_key_material(demand: ReceiptRegistrationDemand) -> None:
+    """Require exactly the key material allowed by the demand's key mode."""
     secret_ref = demand.secret_version_ref
     public_key = demand.public_verification_key
     if not isinstance(secret_ref, str) or not isinstance(public_key, str):
@@ -269,3 +255,44 @@ def _validate_key_material(demand: ReceiptRegistrationDemand) -> None:
         return
     if secret_ref or not public_key or len(public_key) > _MAX_PUBLIC_KEY_LENGTH or "\x00" in public_key:
         raise ReceiptContractError("asymmetric_public requires only a bounded public verification key")
+
+
+def _validate_identifiers(value: object, field_names: tuple[str, ...]) -> None:
+    """Validate named identifier attributes on a contract object."""
+    for field_name in field_names:
+        _validate_identifier(field_name, getattr(value, field_name))
+
+
+def _validate_uuids(value: object, field_names: tuple[str, ...]) -> None:
+    """Validate named UUID attributes on a contract object."""
+    for field_name in field_names:
+        _validate_uuid(field_name, getattr(value, field_name))
+
+
+def _validate_key_mode(value: object) -> None:
+    """Require a member of the closed receipt key-mode enum."""
+    if not isinstance(value, ReceiptKeyMode):
+        raise ReceiptContractError(_KEY_MODE_ERROR)
+
+
+def _validate_reset_generation(value: object) -> None:
+    """Require a non-negative integer generation, excluding booleans."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ReceiptContractError(_RESET_GENERATION_ERROR)
+
+
+def _validate_positive_integer(field_name: str, value: object) -> None:
+    """Require a positive integer value, excluding booleans."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ReceiptContractError(f"{field_name} must be a positive integer")
+
+
+def _validate_public_projection(key_mode: object, public_key: object, *, subject: str) -> None:
+    """Reject malformed or secret-bearing downstream verification material."""
+    _validate_key_mode(key_mode)
+    if not isinstance(public_key, str) or len(public_key) > _MAX_PUBLIC_KEY_LENGTH or "\x00" in public_key:
+        raise ReceiptContractError(_PUBLIC_KEY_ERROR)
+    if key_mode is ReceiptKeyMode.REMOTE_SYMMETRIC and public_key:
+        raise ReceiptContractError(f"remote_symmetric {subject} cannot expose verification material")
+    if key_mode is ReceiptKeyMode.ASYMMETRIC_PUBLIC and not public_key:
+        raise ReceiptContractError(f"asymmetric_public {subject} requires verification material")

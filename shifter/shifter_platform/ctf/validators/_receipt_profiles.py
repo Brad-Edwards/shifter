@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 from shared.receipt_validation import ReceiptKeyMode
 
@@ -37,36 +37,15 @@ class ReceiptVerifierProfile:
     max_receipt_ttl_seconds: int = 900
 
     def __post_init__(self) -> None:
+        """Validate the closed profile before it enters the registry."""
         for name in ("profile_id", "deployment_id", "provider_contract", "issuer_id"):
             _require_identifier(name, getattr(self, name))
         _require_endpoint(self.endpoint_url)
         _require_audience(self.audience)
         _require_secret_ref(self.service_auth_secret_ref)
-        if (
-            not isinstance(self.allowed_key_modes, tuple)
-            or not self.allowed_key_modes
-            or len(set(self.allowed_key_modes)) != len(self.allowed_key_modes)
-            or any(not isinstance(mode, ReceiptKeyMode) for mode in self.allowed_key_modes)
-        ):
-            raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
-        if (
-            not isinstance(self.allowed_algorithms, tuple)
-            or not self.allowed_algorithms
-            or len(self.allowed_algorithms) > 16
-            or len(set(self.allowed_algorithms)) != len(self.allowed_algorithms)
-        ):
-            raise ReceiptProfileError("allowed_algorithms must contain 1-16 unique identifiers")
-        for algorithm in self.allowed_algorithms:
-            _require_identifier("algorithm", algorithm)
-        if (
-            not isinstance(self.permitted_objectives, tuple)
-            or not self.permitted_objectives
-            or len(self.permitted_objectives) > 64
-            or len(set(self.permitted_objectives)) != len(self.permitted_objectives)
-        ):
-            raise ReceiptProfileError("permitted_objectives must contain 1-64 unique identifiers")
-        for objective in self.permitted_objectives:
-            _require_identifier("objective", objective)
+        _require_key_modes(self.allowed_key_modes)
+        _require_identifier_tuple("allowed_algorithms", self.allowed_algorithms, item_name="algorithm", maximum=16)
+        _require_identifier_tuple("permitted_objectives", self.permitted_objectives, item_name="objective", maximum=64)
         _require_bound("total_timeout_seconds", self.total_timeout_seconds, 1, 30)
         _require_bound("max_addresses", self.max_addresses, 1, 8)
         _require_bound("max_request_bytes", self.max_request_bytes, 1024, 16384)
@@ -90,11 +69,13 @@ def get_receipt_profile(profile_id: str) -> ReceiptVerifierProfile | None:
 
 
 def _require_identifier(name: str, value: object) -> None:
+    """Require one canonical deployment identifier."""
     if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
         raise ReceiptProfileError(f"{name} is not a canonical identifier")
 
 
 def _require_endpoint(value: object) -> None:
+    """Require an HTTPS endpoint without ambient request components."""
     if not isinstance(value, str) or not value or len(value) > 2048:
         raise ReceiptProfileError("endpoint_url is invalid")
     try:
@@ -102,34 +83,21 @@ def _require_endpoint(value: object) -> None:
         port = parsed.port
     except (TypeError, ValueError) as exc:
         raise ReceiptProfileError("endpoint_url is invalid") from exc
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-        or port not in (None, 443)
-    ):
+    if _unsafe_url_components(parsed) or port not in (None, 443):
         raise ReceiptProfileError("endpoint_url must be an HTTPS endpoint without credentials, query, or fragment")
 
 
 def _require_audience(value: object) -> None:
+    """Require a bounded HTTPS service identity."""
     if not isinstance(value, str) or not value or len(value) > 512:
         raise ReceiptProfileError("audience is invalid")
     parsed = urlparse(value)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.query
-        or parsed.fragment
-    ):
+    if _unsafe_url_components(parsed):
         raise ReceiptProfileError("audience must be an HTTPS service identity")
 
 
 def _require_secret_ref(value: object) -> None:
+    """Require a bounded provider-owned secret reference."""
     if (
         not isinstance(value, str)
         or not value
@@ -140,6 +108,47 @@ def _require_secret_ref(value: object) -> None:
         raise ReceiptProfileError("service_auth_secret_ref must be a bounded provider reference")
 
 
+def _unsafe_url_components(parsed: ParseResult) -> bool:
+    """Return whether a parsed URL violates the closed HTTPS identity shape."""
+    return bool(
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    )
+
+
 def _require_bound(name: str, value: object, minimum: int, maximum: int) -> None:
+    """Require an integer profile bound inside an inclusive range."""
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise ReceiptProfileError(f"{name} must be between {minimum} and {maximum}")
+
+
+def _require_key_modes(value: object) -> None:
+    """Require a non-empty tuple of unique closed key modes."""
+    valid = (
+        isinstance(value, tuple)
+        and bool(value)
+        and len(set(value)) == len(value)
+        and all(isinstance(mode, ReceiptKeyMode) for mode in value)
+    )
+    if not valid:
+        raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
+
+
+def _require_identifier_tuple(
+    field_name: str,
+    value: object,
+    *,
+    item_name: str,
+    maximum: int,
+) -> None:
+    """Require a bounded tuple of unique canonical identifiers."""
+    valid = isinstance(value, tuple) and bool(value) and len(value) <= maximum and len(set(value)) == len(value)
+    if not valid:
+        raise ReceiptProfileError(f"{field_name} must contain 1-{maximum} unique identifiers")
+    assert isinstance(value, tuple)
+    for item in value:
+        _require_identifier(item_name, item)

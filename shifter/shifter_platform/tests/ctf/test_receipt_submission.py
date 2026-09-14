@@ -268,13 +268,14 @@ def test_scoring_rollback_leaves_verified_receipt_retryable(organizer_user, part
     participant, instance, _range, demand, binding = _participant_with_range(event, participant_user)
     context = _context(participant, instance, demand, binding, challenge)
 
-    with (
-        pytest.raises(RuntimeError, match="later transaction work failed"),
-        transaction.atomic(),
-        receipt_wire(_valid_response(context, receipt_id="penr1:retry-after-rollback")),
-    ):
-        submit_flag(participant.pk, challenge.pk, "PENR1.first-attempt")
-        raise RuntimeError("later transaction work failed")
+    def submit_then_abort() -> None:
+        with transaction.atomic():
+            submit_flag(participant.pk, challenge.pk, "PENR1.first-attempt")
+            raise RuntimeError("later transaction work failed")
+
+    response = _valid_response(context, receipt_id="penr1:retry-after-rollback")
+    with receipt_wire(response), pytest.raises(RuntimeError, match="later transaction work failed"):
+        submit_then_abort()
 
     assert not CTFReceiptConsumption.objects.exists()
     assert not participant.submissions.exists()

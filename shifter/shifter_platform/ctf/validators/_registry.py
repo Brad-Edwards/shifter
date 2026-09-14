@@ -14,10 +14,13 @@ if TYPE_CHECKING:
 
 # Type alias for validator functions
 ValidatorFunc = Callable[[str, dict[str, Any]], bool]
-ReceiptContextValidatorFunc = Callable[
-    [str, dict[str, Any], "ReceiptValidationContext"],
-    "VerifiedReceiptEvidence | None",
-]
+if TYPE_CHECKING:
+    ReceiptContextValidatorFunc = Callable[
+        [str, dict[str, Any], ReceiptValidationContext],
+        VerifiedReceiptEvidence | None,
+    ]
+else:
+    ReceiptContextValidatorFunc = Callable[..., object]
 
 # Registry of named validators
 _VALIDATORS: dict[str, ValidatorFunc | ReceiptContextValidatorFunc] = {}

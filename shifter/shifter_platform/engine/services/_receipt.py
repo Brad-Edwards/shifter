@@ -9,7 +9,6 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from shared.receipt_validation import (
-    ReceiptContractError,
     ReceiptKeyMode,
     ReceiptRegistrationDemand,
     ReceiptVerifierBinding,
@@ -202,11 +201,15 @@ def _revoke_receipt_verifier_for_range(range_obj: Range) -> bool:
 
 
 @overload
-def _locked_range(request_id: UUID, *, required: Literal[True] = True) -> Range: ...
+def _locked_range(request_id: UUID, *, required: Literal[True] = True) -> Range:
+    """Return the required locked range."""
+    ...
 
 
 @overload
-def _locked_range(request_id: UUID, *, required: Literal[False]) -> Range | None: ...
+def _locked_range(request_id: UUID, *, required: Literal[False]) -> Range | None:
+    """Return an optional locked range."""
+    ...
 
 
 def _locked_range(request_id: UUID, *, required: bool = True) -> Range | None:
@@ -229,25 +232,45 @@ def _registration_matches(
     demand: ReceiptRegistrationDemand,
 ) -> bool:
     """Return whether an active row is an exact idempotent retry of ``demand``."""
-    return (
-        registration.materialization_id == range_obj.uuid
-        and registration.provisioning_operation_id == range_obj.provisioner_operation_id
-        and registration.deployment_id == demand.deployment_id
-        and registration.profile_id == demand.profile_id
-        and registration.provider_contract == demand.provider_contract
-        and registration.ctf_event_id == demand.ctf_event_id
-        and registration.ctf_participant_id == demand.ctf_participant_id
-        and tuple(registration.objectives) == demand.objectives
-        and registration.issuer_id == demand.issuer_id
-        and registration.provider_range_namespace == demand.provider_range_namespace
-        and registration.provider_participant_namespace == demand.provider_participant_namespace
-        and registration.key_mode == demand.key_mode.value
-        and registration.algorithm_id == demand.algorithm_id
-        and registration.key_id == demand.key_id
-        and registration.secret_version_ref == demand.secret_version_ref
-        and registration.public_verification_key == demand.public_verification_key
-        and registration.reset_generation == demand.reset_generation
+    persisted = (
+        registration.materialization_id,
+        registration.provisioning_operation_id,
+        registration.deployment_id,
+        registration.profile_id,
+        registration.provider_contract,
+        registration.ctf_event_id,
+        registration.ctf_participant_id,
+        tuple(registration.objectives),
+        registration.issuer_id,
+        registration.provider_range_namespace,
+        registration.provider_participant_namespace,
+        registration.key_mode,
+        registration.algorithm_id,
+        registration.key_id,
+        registration.secret_version_ref,
+        registration.public_verification_key,
+        registration.reset_generation,
     )
+    requested = (
+        range_obj.uuid,
+        range_obj.provisioner_operation_id,
+        demand.deployment_id,
+        demand.profile_id,
+        demand.provider_contract,
+        demand.ctf_event_id,
+        demand.ctf_participant_id,
+        demand.objectives,
+        demand.issuer_id,
+        demand.provider_range_namespace,
+        demand.provider_participant_namespace,
+        demand.key_mode.value,
+        demand.algorithm_id,
+        demand.key_id,
+        demand.secret_version_ref,
+        demand.public_verification_key,
+        demand.reset_generation,
+    )
+    return persisted == requested
 
 
 def _registration_integrity_holds(registration: ReceiptVerifierRegistration) -> bool:
@@ -262,7 +285,7 @@ def _registration_integrity_holds(registration: ReceiptVerifierRegistration) -> 
         return False
     try:
         _to_binding(registration)
-    except (ReceiptContractError, ValueError):
+    except ValueError:
         return False
     return True
 

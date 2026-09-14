@@ -44,10 +44,13 @@ class ScoringStrategyLike(Protocol):
 
 
 FlagValidator = Callable[["CTFFlag", str], bool]
-ReceiptContextFlagValidator = Callable[
-    ["CTFFlag", str, "ReceiptValidationContext"],
-    "VerifiedReceiptEvidence | None",
-]
+if TYPE_CHECKING:
+    ReceiptContextFlagValidator = Callable[
+        [CTFFlag, str, ReceiptValidationContext],
+        VerifiedReceiptEvidence | None,
+    ]
+else:
+    ReceiptContextFlagValidator = Callable[..., object]
 
 _flag_validators: dict[str, FlagValidator | ReceiptContextFlagValidator] = {}
 _server_context_flag_validators: set[str] = set()

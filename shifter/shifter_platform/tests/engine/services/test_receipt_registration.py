@@ -109,20 +109,23 @@ def test_exact_registration_replay_is_idempotent_but_changed_binding_conflicts()
     assert second.registration_revision == first.registration_revision
     assert ReceiptVerifierRegistration.objects.count() == 1
 
+    changed_demand = _demand(participant_id=uuid4())
     with pytest.raises(ReceiptRegistrationConflict):
-        register_receipt_verifier(request.request_id, _PROVISIONING_OPERATION_ID, _demand(participant_id=uuid4()))
+        register_receipt_verifier(request.request_id, _PROVISIONING_OPERATION_ID, changed_demand)
 
 
 def test_registration_rejects_stale_operation_generation_and_non_provision_operation():
     _user, request, range_obj = _owned_range(status=Range.Status.PROVISIONING)
 
+    stale_operation_id = uuid4()
+    demand = _demand()
     with pytest.raises(ReceiptBindingUnavailable, match="operation generation"):
-        register_receipt_verifier(request.request_id, uuid4(), _demand())
+        register_receipt_verifier(request.request_id, stale_operation_id, demand)
 
     range_obj.provisioner_operation = "destroy"
     range_obj.save(update_fields=["provisioner_operation"])
     with pytest.raises(ReceiptBindingUnavailable, match="operation generation"):
-        register_receipt_verifier(request.request_id, _PROVISIONING_OPERATION_ID, _demand())
+        register_receipt_verifier(request.request_id, _PROVISIONING_OPERATION_ID, demand)
 
 
 def test_rotated_operation_generation_immediately_fences_active_projection():

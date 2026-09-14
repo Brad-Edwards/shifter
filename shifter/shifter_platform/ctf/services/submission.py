@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from hashlib import sha256
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
@@ -20,14 +19,16 @@ from ctf.models import (
     CTFChallenge,
     CTFChallengeRating,
     CTFParticipant,
-    CTFReceiptConsumption,
     CTFSubmission,
 )
 from ctf.services.challenge import verify_flag
+from ctf.services.submission_receipts import (
+    SubmissionDecision,
+    consume_receipt,
+    revalidate_receipt_for_commit,
+    verify_and_score,
+)
 from shared.log_sanitize import safe_log_value
-
-if TYPE_CHECKING:
-    from shared.receipt_validation import ReceiptSubmissionContext, VerifiedReceiptEvidence
 
 logger = logging.getLogger(__name__)
 _REDACTED_RECEIPT = "[signed receipt redacted]"
@@ -72,83 +73,13 @@ def _load_submission_entities(participant_id: UUID, challenge_id: UUID) -> tuple
     return participant, challenge
 
 
-def _verify_and_score(
-    participant: CTFParticipant,
-    challenge: CTFChallenge,
-    submitted_flag: str,
-) -> tuple[bool, int, VerifiedReceiptEvidence | None, bool]:
-    """Verify the flag and compute the awarded points without mutating state.
-
-    Runs BEFORE the participant row lock is taken: a programmable/http flag
-    check can be slow or make an outbound call, and we must not hold the lock
-    across it.
-    """
-    from ctf.services.hint import get_total_hint_penalty
-    from ctf.services.scoring import calculate_solve_points
-
-    total_hint_penalty = get_total_hint_penalty(participant.id, challenge.id)
-
-    server_context = _submission_context(participant, challenge)
-    evidence: list[VerifiedReceiptEvidence] = []
-    sensitive_submission_attempted = False
-
-    def mark_sensitive_submission() -> None:
-        nonlocal sensitive_submission_attempted
-        sensitive_submission_attempted = True
-
-    is_correct = verify_flag(
-        challenge,
-        submitted_flag.strip(),
-        server_context=server_context,
-        receipt_submission=submitted_flag,
-        evidence_collector=evidence.append,
-        sensitive_submission_collector=mark_sensitive_submission,
-    )
-    points = calculate_solve_points(participant.event, challenge, total_hint_penalty) if is_correct else 0
-    if is_correct:
-        logger.info(
-            "Correct flag submitted: participant=%s, challenge=%s, points=%d",
-            participant.id,
-            safe_log_value(challenge.id),
-            points,
-        )
-    else:
-        logger.debug(
-            "Incorrect flag submitted: participant=%s, challenge=%s",
-            participant.id,
-            safe_log_value(challenge.id),
-        )
-    return is_correct, points, evidence[0] if evidence else None, sensitive_submission_attempted
-
-
-def _submission_context(
-    participant: CTFParticipant,
-    challenge: CTFChallenge,
-) -> ReceiptSubmissionContext | None:
-    """Build immutable trusted CTF facts without requiring a range for legacy flags."""
-    if participant.user_id is None:
-        return None
-    from shared.receipt_validation import ReceiptSubmissionContext
-
-    return ReceiptSubmissionContext(
-        event_id=participant.event_id,
-        participant_id=participant.pk,
-        challenge_id=challenge.pk,
-        range_instance_id=participant.range_instance_id,
-        owner_user_id=participant.user_id,
-    )
-
-
 def _record_submission_locked(
     participant: CTFParticipant,
     challenge: CTFChallenge,
     submitted_flag: str,
     *,
-    is_correct: bool,
-    points: int,
+    decision: SubmissionDecision,
     ip_address: str | None,
-    receipt_evidence: VerifiedReceiptEvidence | None,
-    sensitive_submission: bool,
 ) -> CTFSubmission:
     """Re-check gating under the participant lock, insert, and maintain scores.
 
@@ -175,8 +106,8 @@ def _record_submission_locked(
 
         assert_participant_can_compete(locked_participant)
         assert_challenge_available_for_participant(locked_participant, locked_challenge)
-        if receipt_evidence is not None:
-            _revalidate_receipt_for_commit(receipt_evidence, locked_participant, locked_challenge)
+        if decision.receipt_evidence is not None:
+            revalidate_receipt_for_commit(decision.receipt_evidence, locked_participant, locked_challenge)
 
         submissions = CTFSubmission.objects.filter(participant=locked_participant, challenge=locked_challenge)
         if submissions.filter(is_correct=True).exists():
@@ -192,9 +123,9 @@ def _record_submission_locked(
             submission = CTFSubmission.objects.create(
                 participant=locked_participant,
                 challenge=locked_challenge,
-                submitted_flag=_REDACTED_RECEIPT if sensitive_submission else submitted_flag,
-                is_correct=is_correct,
-                points_awarded=points,
+                submitted_flag=_REDACTED_RECEIPT if decision.sensitive_submission else submitted_flag,
+                is_correct=decision.is_correct,
+                points_awarded=decision.points,
                 attempt_number=attempt_count + 1,
                 ip_address=ip_address,
             )
@@ -210,104 +141,78 @@ def _record_submission_locked(
         # Update participant last active
         locked_participant.update_last_active()
 
-        if is_correct and receipt_evidence is not None:
-            _consume_receipt(submission, receipt_evidence)
+        if decision.is_correct and decision.receipt_evidence is not None:
+            consume_receipt(submission, decision.receipt_evidence)
 
-        # Maintain the materialized leaderboard (issue #850) in the same
-        # transaction as the authoritative write. Only a correct submission
-        # changes score/solve-count/last-solve, so incorrect attempts stay
-        # cheap (no recompute) — important under wrong-answer load.
-        if is_correct and dynamic_mode:
-            # Dynamic mode re-prices every correct solve (including this one)
-            # and recomputes all affected participant/team scores (CTF-202).
-            from ctf.services.scoring import apply_dynamic_decay
+        first_blood = _maintain_scores(
+            submission,
+            locked_participant,
+            locked_challenge,
+            is_correct=decision.is_correct,
+            dynamic_mode=dynamic_mode,
+        )
 
-            apply_dynamic_decay(locked_challenge)
-            submission.refresh_from_db(fields=["points_awarded"])
-        elif is_correct:
-            from ctf.services.scoring import recompute_participant_score, recompute_team_score
-
-            recompute_participant_score(locked_participant.id)
-            recompute_team_score(locked_participant.team_id)
-
-        if is_correct:
-            first_blood = CTFSubmission.objects.filter(challenge=locked_challenge, is_correct=True).count() == 1
-        else:
-            first_blood = False
-
-    if is_correct:
-        # CTF-802/CTF-1203: post-commit fanout so a bus or receiver hiccup can
-        # never roll back the solve.
-        from ctf.services.webhook import emit_webhook
-
-        solve_data = {
-            "challenge_id": str(challenge.pk),
-            "challenge_name": challenge.name,
-            "participant_id": str(participant.pk),
-            "participant_name": participant.name,
-            "points": submission.points_awarded,
-        }
-        emit_webhook(challenge.event, "flag_solve", solve_data)
-        if first_blood:
-            from ctf.services.notification import publish_event_notification
-
-            publish_event_notification(
-                challenge.event,
-                "first_blood",
-                {
-                    "challenge_id": str(challenge.pk),
-                    "challenge_name": challenge.name,
-                    "participant_name": participant.name,
-                },
-            )
-            emit_webhook(challenge.event, "first_blood", solve_data)
+    _emit_solve_events(submission, participant, challenge, is_correct=decision.is_correct, first_blood=first_blood)
 
     return submission
 
 
-def _revalidate_receipt_for_commit(
-    evidence: VerifiedReceiptEvidence,
+def _maintain_scores(
+    submission: CTFSubmission,
     participant: CTFParticipant,
     challenge: CTFChallenge,
+    *,
+    is_correct: bool,
+    dynamic_mode: bool,
+) -> bool:
+    """Maintain leaderboard state and report whether this is first blood."""
+    if dynamic_mode and is_correct:
+        from ctf.services.scoring import apply_dynamic_decay
+
+        apply_dynamic_decay(challenge)
+        submission.refresh_from_db(fields=["points_awarded"])
+    elif is_correct:
+        from ctf.services.scoring import recompute_participant_score, recompute_team_score
+
+        recompute_participant_score(participant.id)
+        recompute_team_score(participant.team_id)
+    return is_correct and CTFSubmission.objects.filter(challenge=challenge, is_correct=True).count() == 1
+
+
+def _emit_solve_events(
+    submission: CTFSubmission,
+    participant: CTFParticipant,
+    challenge: CTFChallenge,
+    *,
+    is_correct: bool,
+    first_blood: bool,
 ) -> None:
-    """Reauthorize callback evidence under the participant/challenge locks."""
-    from django.utils import timezone
+    """Emit solve fanout after the authoritative transaction commits."""
+    if not is_correct:
+        return
+    from ctf.services.webhook import emit_webhook
 
-    from ctf.services.challenge._receipt_context import revalidate_receipt_context
+    solve_data = {
+        "challenge_id": str(challenge.pk),
+        "challenge_name": challenge.name,
+        "participant_id": str(participant.pk),
+        "participant_name": participant.name,
+        "points": submission.points_awarded,
+    }
+    emit_webhook(challenge.event, "flag_solve", solve_data)
+    if first_blood:
+        from ctf.services.notification import publish_event_notification
 
-    context = evidence.context
-    if evidence.expires_at <= timezone.now() or not (
-        context.event_id == participant.event_id
-        and context.participant_id == participant.pk
-        and context.challenge_id == challenge.pk
-        and context.range_instance_id == participant.range_instance_id
-    ):
-        raise CTFValidationError("Receipt registration is no longer active")
-    revalidate_receipt_context(context)
-
-
-def _consume_receipt(submission: CTFSubmission, evidence: VerifiedReceiptEvidence) -> None:
-    """Persist issuer-scoped one-shot evidence in the scoring transaction."""
-    context = evidence.context
-    identity = sha256(f"{evidence.issuer_id}\0{evidence.receipt_id}".encode()).hexdigest()
-    try:
-        # The savepoint keeps a uniqueness collision translatable without
-        # poisoning the outer scoring transaction before it rolls back.
-        with transaction.atomic():
-            CTFReceiptConsumption.objects.create(
-                submission=submission,
-                receipt_identity_digest=f"sha256:{identity}",
-                issuer_id=evidence.issuer_id,
-                registration_revision=context.registration_revision,
-                materialization_id=context.materialization_id,
-                assignment_epoch=context.assignment_epoch,
-                valid_until=evidence.expires_at,
-            )
-    except IntegrityError as exc:
-        raise CTFValidationError(
-            "This receipt has already been redeemed",
-            code="CTF_RECEIPT_REPLAY",
-        ) from exc
+        publish_event_notification(
+            challenge.event,
+            "first_blood",
+            {
+                "challenge_id": str(challenge.pk),
+                "challenge_name": challenge.name,
+                "participant_name": participant.name,
+            },
+        )
+        emit_webhook(challenge.event, "first_blood", solve_data)
 
 
 def submit_flag(
@@ -360,20 +265,18 @@ def submit_flag(
 
     assert_challenge_available_for_participant(participant, challenge)
 
-    is_correct, points, receipt_evidence, sensitive_submission = _verify_and_score(
+    decision = verify_and_score(
         participant,
         challenge,
         submitted_flag,
+        verifier=verify_flag,
     )
     return _record_submission_locked(
         participant,
         challenge,
         submitted_flag,
-        is_correct=is_correct,
-        points=points,
+        decision=decision,
         ip_address=ip_address,
-        receipt_evidence=receipt_evidence,
-        sensitive_submission=sensitive_submission,
     )
 
 
