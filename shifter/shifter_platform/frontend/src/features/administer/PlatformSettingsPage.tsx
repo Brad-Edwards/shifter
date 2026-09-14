@@ -6,8 +6,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
  * configuration (environment, identity provider, cloud, Kubernetes, Terraform,
  * secrets, rollout flags) is owned by deployment; there is no validated platform
  * settings mutation service, so this workspace explains that authority and never
- * edits it. Account settings live in
- * Mission Control, not here.
+ * edits it. Personal account settings are a separate product surface rather than
+ * part of this deployment-owned configuration view.
  */
 export function PlatformSettingsPage() {
   return (
@@ -18,7 +18,8 @@ export function PlatformSettingsPage() {
         <AlertTitle>Managed by deployment</AlertTitle>
         <AlertDescription>
           Platform configuration is owned by the deployment pipeline and is not editable here. The platform SPA and RAES
-          provisioning path are the current product authorities. Personal account settings live under your profile in Mission Control.
+          provisioning path are the current product authorities. Personal account settings are not part of this platform
+          configuration surface.
         </AlertDescription>
       </Alert>
     </>

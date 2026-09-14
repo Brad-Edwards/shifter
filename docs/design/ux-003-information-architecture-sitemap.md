@@ -157,7 +157,7 @@ surface were removed by ADR-027 / issue #1195.
 | Dashboard / ranges | `/mission-control/` | Organizer | Launch and monitor ranges. |
 | Agents | `/mission-control/agents/` | Organizer | Inspect or delete available agents. |
 | Terminal | `/mission-control/terminal/` | Both | Access terminal sessions when a range is available. |
-| Settings | `/mission-control/settings/` | Organizer | Change user or platform settings. |
+| Platform settings compatibility alias | `/mission-control/settings/` | Staff | Redirect to the staff-owned Administer Platform Settings surface. |
 | Help | `/mission-control/help/` | Both | Read Mission Control help. |
 | Walkthrough | `/mission-control/walkthrough/` | Participant | CTF-only participant walkthrough entry from the shared sidebar. |
 | NGFW list | `/mission-control/ngfw/` | Organizer | List NGFW instances. |
@@ -167,6 +167,12 @@ surface were removed by ADR-027 / issue #1195.
 | Credentials | `/mission-control/credentials/` | Organizer | List reusable credentials. |
 | Add credential | `/mission-control/credentials/add/` | Organizer | Create a credential. |
 | Credential detail | `/mission-control/credentials/<credential_id>/` | Organizer | Inspect one credential. |
+
+Mission Control does not currently own a personal account settings surface.
+The existing `/mission-control/settings/` route remains a compatibility alias
+for staff bookmarks and redirects to `/administer/settings`. A future personal
+account settings surface requires its own ownership and permission contract; it
+must not reuse the deployment-owned Platform Settings page.
 
 ### Scenario Editor
 
@@ -220,8 +226,7 @@ Shifter
 |   |   |-- Agents
 |   |   |-- NGFW
 |   |   `-- Credentials
-|   |-- Terminal
-|   `-- Settings
+|   `-- Terminal
 |-- Author
 |   |-- Scenarios
 |   |-- Scenario Create
@@ -298,7 +303,6 @@ Operate navigation:
 - Challenges
 - Assets
 - Terminal
-- Settings
 
 Author navigation:
 
