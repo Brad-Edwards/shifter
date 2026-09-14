@@ -19,6 +19,7 @@ from shared.log_sanitize import safe_log_id
 from shared.mission_control_lease import DEFAULT_EXTENSION_DAYS, MissionControlLeasePolicy
 from workspaces.services import WorkspaceOperation
 
+from ._range_lease_policy import resolve_mission_control_lease_policy
 from ._range_workspace import authorize_range_workspace, authorized_range_workspace_ids
 
 if TYPE_CHECKING:
@@ -39,13 +40,15 @@ def _effective_lease_policy() -> MissionControlLeasePolicy:
     return settings.MISSION_CONTROL_LEASE_POLICY
 
 
-def _extensions_enabled() -> bool:
+def _extensions_enabled(user: User | None = None, *, for_update: bool = False) -> bool:
     """Whether the live deployment policy currently admits lease extensions.
 
     This is a live admission switch: it applies to every Mission Control generation
     after a rollout, independent of the per-generation duration snapshots.
     """
-    return _effective_lease_policy().extensions_enabled
+    if user is None:
+        return _effective_lease_policy().extensions_enabled
+    return resolve_mission_control_lease_policy(user, for_update=for_update).policy.extensions_enabled
 
 
 def _generation_increment(instance: RangeInstance) -> int:
@@ -73,6 +76,11 @@ class RangeLease:
     expires_at: datetime
     maximum_expires_at: datetime
     extension_days: int
+    initial_days: int | None = None
+    maximum_days: int | None = None
+    policy_source: str = ""
+    tenant_revision: int | None = None
+    group_revisions: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,9 @@ def build_range_lease(
     now: datetime | None = None,
     enforced_deadline: datetime | None = None,
     policy: MissionControlLeasePolicy | None = None,
+    policy_source: str = "deployment",
+    tenant_revision: int = 0,
+    group_revisions: tuple[tuple[int, int], ...] = (),
 ) -> RangeLease:
     """Return the product-authoritative lease for a new range generation.
 
@@ -110,7 +121,13 @@ def build_range_lease(
     if range_source is RangeSource.CTF:
         if enforced_deadline is None or enforced_deadline <= current:
             raise RangeLeaseConflict("CTF range cleanup deadline must be in the future")
-        return RangeLease(enforced_deadline, enforced_deadline, 0)
+        return RangeLease(
+            enforced_deadline,
+            enforced_deadline,
+            0,
+            policy_source="ctf_event",
+            tenant_revision=None,
+        )
     if range_source is not RangeSource.MISSION_CONTROL:
         raise RangeLeaseConflict("Unsupported range source")
     effective = policy or _effective_lease_policy()
@@ -118,16 +135,39 @@ def build_range_lease(
         current + timedelta(days=effective.initial_days),
         current + timedelta(days=effective.maximum_days),
         effective.extension_days,
+        initial_days=effective.initial_days,
+        maximum_days=effective.maximum_days,
+        policy_source=policy_source,
+        tenant_revision=tenant_revision,
+        group_revisions=group_revisions,
     )
 
 
-def _projection(instance: RangeInstance) -> RangeLeaseProjection:
+def build_resolved_mission_control_range_lease(
+    user: User,
+    *,
+    now: datetime | None = None,
+    for_update: bool = False,
+) -> RangeLease:
+    """Resolve and build a Mission Control lease with bounded provenance."""
+    resolved = resolve_mission_control_lease_policy(user, for_update=for_update)
+    return build_range_lease(
+        RangeSource.MISSION_CONTROL,
+        now=now,
+        policy=resolved.policy,
+        policy_source=resolved.source,
+        tenant_revision=resolved.tenant_revision,
+        group_revisions=tuple((item.group_id, item.revision) for item in resolved.group_revisions),
+    )
+
+
+def _projection(instance: RangeInstance, *, extensions_enabled: bool | None = None) -> RangeLeaseProjection:
     """Build a lease projection from a fully leased range instance."""
     if instance.expires_at is None or instance.maximum_expires_at is None:
         raise RangeLeaseConflict("Range lease is unavailable")
     can_extend = (
         instance.range_source == RangeSource.MISSION_CONTROL.value
-        and _extensions_enabled()
+        and (_extensions_enabled() if extensions_enabled is None else extensions_enabled)
         and instance.status
         not in {ResourceStatus.DESTROYING.value, ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value}
         and instance.expires_at > timezone.now()
@@ -158,7 +198,9 @@ def get_mission_control_range_lease(user: User) -> RangeLeaseProjection | None:
         .exclude(status=ResourceStatus.DESTROYING.value)
         .first()
     )
-    return get_range_lease_projection(instance) if instance is not None else None
+    if instance is None or instance.expires_at is None or instance.maximum_expires_at is None:
+        return None
+    return _projection(instance, extensions_enabled=_extensions_enabled(user))
 
 
 def extend_mission_control_range(user: User) -> RangeLeaseProjection:
@@ -188,7 +230,8 @@ def extend_mission_control_range(user: User) -> RangeLeaseProjection:
             raise RangeLeaseConflict("Range lease has expired")
         if instance.expires_at >= instance.maximum_expires_at:
             raise RangeLeaseConflict("Range has reached its maximum lifetime")
-        if not _extensions_enabled():
+        extensions_enabled = _extensions_enabled(user, for_update=True)
+        if not extensions_enabled:
             raise RangeLeaseConflict("Range lease extensions are disabled")
         previous = instance.expires_at
         instance.expires_at = min(
@@ -211,7 +254,7 @@ def extend_mission_control_range(user: User) -> RangeLeaseProjection:
                 context="mission_control_range_lease_extension",
             )
         )
-        return _projection(instance)
+        return _projection(instance, extensions_enabled=extensions_enabled)
 
 
 def reconcile_ctf_range_leases(range_instance_ids: Iterable[int], enforced_deadline: datetime) -> int:

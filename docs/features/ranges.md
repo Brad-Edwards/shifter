@@ -66,9 +66,9 @@ CTF participant and spare ranges use the CTF event cleanup time as their
 deadline and are removed automatically through the same range cleanup process;
 they are unaffected by the Mission Control lease policy below.
 
-### Configuring the lease policy (operators)
+### Configuring the lease policy
 
-The lease policy is deployment-owned. Set it in `shifter.yaml` under
+The deployment setting is the fallback policy. Set it in `shifter.yaml` under
 `settings.mission_control_leases`; the same provider-neutral block applies to both
 AWS and GCP:
 
@@ -105,10 +105,37 @@ Rules and behavior:
   range is still in use. Cleanup is asynchronous destruction dispatch, so billing
   stops when destruction completes, not exactly at the deadline.
 
-A policy change takes effect after the platform processes roll out with the new
-configuration (the runtime ConfigMap change triggers a normal rolling restart);
-mixed old/new processes may briefly apply different policies until the rollout
-completes.
+Deployment-fallback changes take effect after the platform processes roll out
+with the new configuration (the runtime ConfigMap change triggers a normal
+rolling restart); mixed old/new processes may briefly apply different fallback
+policies until the rollout completes.
+
+### Runtime tenant and group policy (platform administrators)
+
+An active platform superuser can change the effective Mission Control policy at
+**Administer → Platform settings** without redeploying Shifter. The page always
+shows the deployment fallback and whether the tenant currently uses that
+fallback or a runtime replacement.
+
+- Saving the tenant policy replaces all four fields as one revision-checked
+  operation. **Reset tenant policy** removes the runtime row and restores the
+  current deployment fallback.
+- A policy on an administrator-controlled Django RBAC group replaces the tenant
+  values for that group. If a user belongs to several configured groups, the
+  lowest initial, extension, and maximum durations win and extensions are
+  enabled only when every matching group and the tenant allow them. Group
+  initial and maximum durations cannot exceed the effective tenant maximum.
+- `CTF Participant`, provider claim strings, CTF teams, and workspace or
+  organization roles never select a Mission Control policy. Group policy
+  restricts lease behavior; it does not grant launch or range access.
+- Runtime duration changes affect new cold-created and warm-claimed generations
+  only. Existing generations retain their snapshotted deadlines and increment.
+  The current tenant/group `extensions_enabled` switch is checked live and can
+  stop another extension without shortening a range or disabling cleanup.
+- Each save or reset is strict-audited and uses the revision displayed by the
+  page. A stale browser receives a conflict and must refresh instead of silently
+  overwriting a newer change. Reset advances that revision even though the
+  override is removed, so a later replacement cannot reuse an old revision.
 
 ## Cancel a Range
 

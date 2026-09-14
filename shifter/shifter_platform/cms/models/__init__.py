@@ -28,6 +28,12 @@ from cms.models.catalogs import (
     InstanceType,
     OperatingSystem,
 )
+from cms.models.lease_policy import (
+    MissionControlGroupLeasePolicy,
+    MissionControlGroupLeasePolicyRevision,
+    MissionControlTenantLeasePolicy,
+    MissionControlTenantLeasePolicyRevision,
+)
 from cms.models.provisioning import (
     App,
     EntityBase,
@@ -53,6 +59,10 @@ __all__ = [
     "FileAsset",
     "Instance",
     "InstanceType",
+    "MissionControlGroupLeasePolicy",
+    "MissionControlGroupLeasePolicyRevision",
+    "MissionControlTenantLeasePolicy",
+    "MissionControlTenantLeasePolicyRevision",
     "OperatingSystem",
     "RaesPackageSource",
     "RangeInstance",

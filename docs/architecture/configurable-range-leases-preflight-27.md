@@ -7,6 +7,13 @@ Contract: the supplied title, body and acceptance criteria of
 requirement is attached. This note records boundaries and decisions, not an
 implementation plan or a claim that configurable leases already ship.
 
+Issue #2169's
+[runtime lease-policy preflight](runtime-mission-control-lease-policy-preflight-2169.md)
+supersedes this note's tenant-hierarchy non-goal and deploy-rollout-only policy
+assumption. The typed deployment policy remains the fallback contract; #2169
+defines its runtime tenant/group precedence and preserves the same generation,
+extension, cleanup, and CTF boundaries.
+
 ## Decisions
 
 **One deployment policy.** Use the existing root `shifter.yaml` contract with a

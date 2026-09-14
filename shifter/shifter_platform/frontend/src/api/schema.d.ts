@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/v1/administer/mission-control/lease-policy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read fallback, runtime tenant state, and policy-eligible groups. */
+        get: operations["api_v1_administer_mission_control_lease_policy_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace one policy-eligible RBAC group's complete lease policy. */
+        put: operations["api_v1_administer_mission_control_lease_policy_group_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove one group policy so the group inherits tenant policy. */
+        post: operations["api_v1_administer_mission_control_lease_policy_group_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace the complete runtime tenant policy under revision CAS. */
+        put: operations["api_v1_administer_mission_control_lease_policy_tenant_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove the runtime tenant replacement. */
+        post: operations["api_v1_administer_mission_control_lease_policy_tenant_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/administer/users/": {
         parameters: {
             query?: never;
@@ -3255,6 +3340,12 @@ export interface components {
             readonly success: boolean;
         };
         /**
+         * @description * `deployment` - deployment
+         *     * `runtime` - runtime
+         * @enum {string}
+         */
+        EffectiveSourceEnum: "deployment" | "runtime";
+        /**
          * @description * `status-quo` - Inherit deployment baseline
          *     * `none` - Zero egress (no outbound NAT path)
          * @enum {string}
@@ -3624,6 +3715,23 @@ export interface components {
             success: boolean;
             range: components["schemas"]["RangePresentation"];
         };
+        /** @description The canonical four-field policy projection. */
+        LeasePolicy: {
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
+        LeasePolicyGroupSettings: {
+            id: number;
+            name: string;
+            revision: number;
+            override: components["schemas"]["LeasePolicyOverride"] | null;
+        };
+        LeasePolicyOverride: {
+            policy: components["schemas"]["LeasePolicy"];
+            revision: number;
+        };
         /**
          * @description Schema-only description of the flat ``{"error": "<message>"}`` body some
          *     legacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).
@@ -3664,6 +3772,14 @@ export interface components {
             readonly declared_digest: string;
             readonly state: string;
             readonly is_refreshable: boolean;
+        };
+        MissionControlLeasePolicySettings: {
+            baseline: components["schemas"]["LeasePolicy"];
+            tenant_revision: number;
+            tenant_override: components["schemas"]["LeasePolicyOverride"] | null;
+            effective_tenant: components["schemas"]["LeasePolicy"];
+            effective_source: components["schemas"]["EffectiveSourceEnum"];
+            groups: components["schemas"]["LeasePolicyGroupSettings"][];
         };
         /**
          * @description * `advisory` - Advisory (soft cap)
@@ -4730,10 +4846,22 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
+        /** @description Strict full replacement plus expected revision. */
+        ReplaceLeasePolicy: {
+            expected_revision: number;
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
         /** @description Confirmation returned after resending non-secret login information. */
         ResendLoginInfoResult: {
             readonly success: boolean;
             readonly id: string;
+        };
+        /** @description Strict explicit reset command. */
+        ResetLeasePolicy: {
+            expected_revision: number;
         };
         /**
          * @description * `concurrent_ranges` - Concurrent ranges
@@ -5163,6 +5291,219 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    api_v1_administer_mission_control_lease_policy_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_administer_users_list: {
         parameters: {
             query?: {

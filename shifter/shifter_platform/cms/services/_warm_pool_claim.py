@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -88,10 +89,9 @@ class WarmClaimRequest:
     workspace_id: int
     egress_mode: str
     request_id: UUID
-    #: The trusted lease built for this launch, first-assigned to the claimed warm
-    #: generation inside the claim transaction so a warm hit gets automatic expiry
-    #: (issue #27). Warm-prepared rows are unleased until this point.
-    lease: RangeLease
+    #: Trusted event deadline for a CTF-owned generation. Mission Control policy is
+    #: resolved only after a warm generation is claimed inside this transaction.
+    enforced_deadline: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -190,7 +190,14 @@ def _run_atomic_claim(request: WarmClaimRequest, candidates: list[tuple[str, str
                 logger.error("warm claim: generation %s has no CMS range instance; rolling back", generation.uuid)
                 raise _WarmClaimRollback
             reassign_range_owner(range_instance.pk, request.user, rehome=True)
-            _assign_initial_user_lease(range_instance, request.lease)
+            from cms.services._range_lease import build_range_lease, build_resolved_mission_control_range_lease
+
+            lease = (
+                build_resolved_mission_control_range_lease(request.user, for_update=True)
+                if request.range_source is RangeSource.MISSION_CONTROL
+                else build_range_lease(request.range_source, enforced_deadline=request.enforced_deadline)
+            )
+            _assign_initial_user_lease(range_instance, lease)
             audit_log(
                 AuditEvent(
                     entity_type=AuditEntityType.RANGE.value,
@@ -271,4 +278,23 @@ def _assign_initial_user_lease(range_instance: RangeInstance, lease: RangeLease)
     range_instance.expires_at = lease.expires_at
     range_instance.maximum_expires_at = lease.maximum_expires_at
     range_instance.extension_days = lease.extension_days
-    range_instance.save(update_fields=["expires_at", "maximum_expires_at", "extension_days", "updated_at"])
+    range_instance.lease_initial_days = lease.initial_days
+    range_instance.lease_maximum_days = lease.maximum_days
+    range_instance.lease_policy_source = lease.policy_source
+    range_instance.lease_policy_tenant_revision = lease.tenant_revision
+    range_instance.lease_policy_group_revisions = [
+        {"group_id": group_id, "revision": revision} for group_id, revision in lease.group_revisions
+    ]
+    range_instance.save(
+        update_fields=[
+            "expires_at",
+            "maximum_expires_at",
+            "extension_days",
+            "lease_initial_days",
+            "lease_maximum_days",
+            "lease_policy_source",
+            "lease_policy_tenant_revision",
+            "lease_policy_group_revisions",
+            "updated_at",
+        ]
+    )

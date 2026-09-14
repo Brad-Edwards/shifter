@@ -123,6 +123,35 @@ range_config = {
 |-------|---------|
 | `Request` | Provisioning request container (correlation UUID) |
 | `RangeInstance` | Tracks hydrated scenario config sent to Engine |
+| `MissionControlTenantLeasePolicy` | Optional complete runtime replacement for the deployment lease fallback |
+| `MissionControlGroupLeasePolicy` | One complete, revisioned lease policy for an eligible Django RBAC group |
+| `MissionControl*LeasePolicyRevision` | Durable tenant/group compare-and-set fences retained across policy reset |
+
+### Mission Control lease-policy boundary
+
+CMS owns runtime Mission Control lease-policy persistence and resolution. The
+canonical value type remains
+`shared.mission_control_lease.MissionControlLeasePolicy`; ORM columns and API
+serializers only adapt that contract at their boundaries.
+
+`cms.services.resolve_mission_control_lease_policy()` reads the effective tenant
+policy and committed eligible-group memberships. Multiple configured groups are
+folded with minimum durations and logical-AND extension admission, then bounded
+by the tenant maximum. The resolver never reads provider claim copies,
+workspace/organization roles, CTF teams, or caller-supplied group selectors.
+
+Cold creation and warm claim resolve and snapshot the initial, increment,
+maximum, source, tenant revision, and group revisions inside their existing
+assignment transaction. Engine and provider adapters receive only the persisted
+deadline effects and do not query policy. Extension admission re-resolves the
+live boolean switch, while the generation's duration fields remain immutable.
+
+The `/api/v1/administer/mission-control/lease-policy/` surface uses browser
+session authentication with CSRF, an active-superuser service recheck, complete
+replacement/reset commands, revision compare-and-set semantics, and strict audit
+in the same transaction as each mutation. API tokens and staff-only sessions are
+not sufficient. Reset advances a durable scope revision before removing the
+override, preventing a stale command from matching a later policy incarnation.
 
 ## Internal Modules
 
