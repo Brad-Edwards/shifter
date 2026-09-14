@@ -47,6 +47,9 @@ CYBERSCRIPT_IMPORT_PATTERN = re.compile(
     r"^\s*(?:from|import)\s+(cyberscript(?:\.\w+)*)",
     re.MULTILINE,
 )
+RAES_PACKAGE_ROOTS = frozenset(
+    {"raes", "raes_contracts", "raes_runtime", "raes_processor", "raes_conformance", "raes_backend_protocols"}
+)
 
 
 def _facade_entry_allows(entry: str, module_path: str) -> bool:
@@ -288,6 +291,41 @@ def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violat
                 )
             )
 
+    # Import-linter owns the platform package graph. The standalone preparation
+    # worker is built from a sibling package, so enforce the same ADR-031-R1
+    # boundary here instead of leaving its container outside the graph.
+    if files is None:
+        packer_candidates = (repo_root / "shifter" / "packer" / "preparation").rglob("*.py")
+    else:
+        packer_candidates = (
+            repo_root / rel
+            for rel in files
+            if rel.startswith("shifter/packer/preparation/") and rel.endswith(".py")
+        )
+    for path in packer_candidates:
+        if not path.exists():
+            continue
+        rel = _repo_relative(path, repo_root)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
+        except SyntaxError:
+            continue
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                imported.add(node.module.split(".", 1)[0])
+            elif isinstance(node, ast.Import):
+                imported.update(alias.name.split(".", 1)[0] for alias in node.names)
+        for package in sorted(imported & RAES_PACKAGE_ROOTS):
+            violations.append(
+                Violation(
+                    "layer-imports",
+                    "ADR-031-R1",
+                    rel,
+                    f"preparation worker may not import {package}; use the shared.raes facade",
+                )
+            )
+
     return violations
 
 
@@ -372,6 +410,7 @@ __all__ = [
     "CLOUD_SKIP_FILES",
     "CYBERSCRIPT_IMPORT_PATTERN",
     "IMPORT_PATTERN",
+    "RAES_PACKAGE_ROOTS",
     "_INSTALLED_APPS",
     "_LAYER_POLICY_REL",
     "_OPAQUE_INSTALLED_APPS_METHODS",

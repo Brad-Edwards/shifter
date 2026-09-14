@@ -60,6 +60,7 @@ from log_redact import safe_log_value
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
 from plans.raes_content_delivery import RaesContentDeliveryPlan, RaesContentInstallOptions
 from plans.raes_feature_service import RaesFeatureServicePlan
+from plans.verification_only import VerificationOnlyPlan
 from raes_delivery_contract import (
     SAFE_SERVICE_IDENTITY,
     SUPPORTED_DELIVERY_CONTENT_TYPES,
@@ -96,6 +97,7 @@ class RaesContentDeliveryOps:
     object_storage_factory: Callable[[], ObjectStorage] = get_object_storage
     execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
     orchestrator_factory: Callable[[CommandExecutor], SetupOrchestrator] = SetupOrchestrator
+    verify_only: bool = False
 
 
 def default_content_delivery_ops() -> RaesContentDeliveryOps:
@@ -277,7 +279,7 @@ def _deliver_to_instance(
     try:
         if execution.wait_for_ready(timeout_seconds=_GUEST_READY_TIMEOUT_SECONDS) is False:
             raise RaesContentDeliveryError("RAES content delivery guest did not become ready")
-        plan = RaesContentDeliveryPlan(
+        plan: RaesContentDeliveryPlan | VerificationOnlyPlan = RaesContentDeliveryPlan(
             content_type=delivery.content_type,
             platform=delivery.platform,
             target=delivery.target,
@@ -289,6 +291,8 @@ def _deliver_to_instance(
                 file_mode=delivery.file_mode,
             ),
         )
+        if ops.verify_only:
+            plan = VerificationOnlyPlan(plan)
         try:
             result = ops.orchestrator_factory(execution.executor).orchestrate(
                 execution.target, plan, plan.get_context({}), execution.document_name
@@ -323,7 +327,11 @@ def _realize_service_on_instance(
     try:
         if execution.wait_for_ready(timeout_seconds=_GUEST_READY_TIMEOUT_SECONDS) is False:
             raise RaesContentDeliveryError("RAES feature service guest did not become ready")
-        plan = RaesFeatureServicePlan(platform=platform, package=package, version=version)
+        plan: RaesFeatureServicePlan | VerificationOnlyPlan = RaesFeatureServicePlan(
+            platform=platform, package=package, version=version
+        )
+        if ops.verify_only:
+            plan = VerificationOnlyPlan(plan)
         try:
             result = ops.orchestrator_factory(execution.executor).orchestrate(
                 execution.target, plan, plan.get_context({}), execution.document_name

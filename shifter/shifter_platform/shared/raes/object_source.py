@@ -19,6 +19,7 @@ hierarchy (ADR-031-R1 / ADR-024).
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import tarfile
 import tempfile
@@ -49,13 +50,15 @@ def stage_object_pack(
     max_archive_bytes: int,
     max_uncompressed_bytes: int,
     max_entries: int,
+    expected_pack_name: str = "",
 ) -> Iterator[Path]:
     """Download and safely extract one object-backed pack; yield its pack root.
 
     Heads the object to size-gate before transfer, downloads the single archive
     bound to that exact version (a replacement mid-flight fails closed), extracts
-    it under the guards below, and yields the single contained pack-root
-    directory. The private staging directory is always removed on exit, whether
+    it under the guards below, and yields the contained pack-root directory.
+    Upstream flat exports use the registered name; wrapped archives retain their
+    directory name. The private staging directory is always removed on exit, whether
     the body succeeds or raises. Digest and contract validation are the caller's
     responsibility against the yielded root (ADR-034-R5).
 
@@ -67,9 +70,11 @@ def stage_object_pack(
         max_archive_bytes: Hard cap on the downloaded archive size.
         max_uncompressed_bytes: Hard cap on total declared uncompressed bytes.
         max_entries: Hard cap on archive member count.
+        expected_pack_name: Registered identity used to contain upstream flat
+            exports. Contract and digest validation still verify that identity.
 
     Yields:
-        The extracted pack-root directory (a single top-level directory).
+        The extracted pack-root directory, named for ordinary identity validation.
 
     Raises:
         RaesPackageError: on missing config, over-size, retrieval failure, an
@@ -79,6 +84,8 @@ def stage_object_pack(
 
     if not bucket or not bucket.strip() or not key or not key.strip():
         raise RaesPackageError("object package storage location is not configured")
+    if expected_pack_name and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", expected_pack_name):
+        raise RaesPackageError("object package registered name is not a contained directory name")
 
     staging = Path(tempfile.mkdtemp(prefix="raes-object-pack-"))
     try:
@@ -112,7 +119,18 @@ def stage_object_pack(
             max_uncompressed_bytes=max_uncompressed_bytes,
             max_entries=max_entries,
         )
-        yield _single_pack_root(extract_dir)
+        if expected_pack_name and (extract_dir / "pack.yaml").is_file():
+            # Released env-packs exports contain pack-relative files without a
+            # wrapper directory. Name the staging root from the registration,
+            # never from unvalidated YAML or the object key. Callers then apply
+            # the ordinary name/inventory/digest checks to every extracted byte.
+            named_parent = staging / "named"
+            named_parent.mkdir()
+            pack_root = named_parent / expected_pack_name
+            extract_dir.rename(pack_root)
+            yield pack_root
+        else:
+            yield _single_pack_root(extract_dir)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 

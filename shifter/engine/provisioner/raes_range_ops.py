@@ -3,8 +3,9 @@
 Parallel to ``terraform_ops.run_range_terraform`` but for the RAES-native path
 (ADR-031, default off behind the platform feature flag). It realizes the
 serialized RAES plan into a real GCE range cell. It performs no cyberscript
-scenario setup, NGFW attachment, subnet-CIDR allocation, or Vertex credential
-management -- those are cyberscript/participant concerns.
+scenario setup, NGFW attachment, or Vertex credential management -- those are
+cyberscript/participant concerns. It invokes tenant subnet coordination only for
+the GCE adapter's backend-owned realization of open portable network intent.
 
 ADR-043 phase 5 (#1837) moved both sides of this path onto the operation
 contract:
@@ -29,9 +30,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from shared.operation_results import MAX_DIAGNOSTIC_CHARS, ResultStep
+from shared.raes.completion_evidence import build_completion_evidence
 from shared.raes.operation_input import RaesOperationInput, image_lookup_key
 from shared.range_instantiation_policy import (
     POLICY_DENIAL_CODE,
@@ -49,10 +52,16 @@ from provisioner_db_operation_input import (
     get_raes_operation_input,
 )
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
+from raes_gcp_adapter import requires_allocated_gce_network
 from raes_gcp_apply import RaesGceApplyOptions, apply_raes_range_cell, destroy_raes_range_cell
-from raes_plan import RaesPlanNode, parse_plan
+from raes_plan import RaesPlan, RaesPlanNode, parse_plan
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
+from range_subnet_allocation import (
+    _realized_range_spec_for_destroy,
+    _release_subnet_allocations_best_effort,
+    _reserve_range_subnet_cidrs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +83,9 @@ _INVALID_STATE_REASON_CODE = "invalid_state"
 _TIMEOUT_REASON_CODE = "cloud_timeout"
 
 _RESOURCE = "raes-range"
+_OPEN_NETWORK_SPEC = {
+    "subnets": [{"uuid": "backend.gce.network.default", "name": "backend-default"}],
+}
 
 
 class RaesGenerationError(RuntimeError):
@@ -86,6 +98,69 @@ class RaesRealizationError(ValueError):
     Subclasses ``ValueError`` so existing handlers keep their behaviour, while
     giving :func:`_classify_failure` a type it can trust to carry safe text.
     """
+
+
+@dataclass(frozen=True)
+class _GceNetworkAllocation:
+    """The closed shared-VPC allocation state used by every GCE lifecycle."""
+
+    required: bool
+    cidr: str | None = None
+
+    def require_available(self) -> str | None:
+        """Return the allocation, failing when this lifecycle needs a missing one."""
+        if self.required and self.cidr is None:
+            raise RaesRealizationError("GCE adapter subnet allocation is unavailable")
+        return self.cidr
+
+
+def _allocated_cidr(realized: dict[str, Any]) -> str:
+    """Return the one subnet selected for the GCE open-network adapter."""
+    subnets = realized.get("subnets")
+    if not isinstance(subnets, list) or len(subnets) != 1:
+        raise RaesRealizationError("GCE adapter subnet allocation is invalid")
+    cidr = subnets[0].get("cidr") if isinstance(subnets[0], dict) else None
+    if not isinstance(cidr, str) or not cidr:
+        raise RaesRealizationError("GCE adapter subnet allocation is unavailable")
+    return cidr
+
+
+def _allocated_open_network_for_provision(
+    request_id: str,
+    operation_id: str,
+    raes_plan: RaesPlan,
+    config: GCERangeCellConfig,
+) -> _GceNetworkAllocation:
+    """Reserve a shared-VPC subnet for network intent left open by RAE."""
+    if not requires_allocated_gce_network(raes_plan, config):
+        return _GceNetworkAllocation(required=False)
+    realized = _reserve_range_subnet_cidrs(
+        request_id,
+        _OPEN_NETWORK_SPEC,
+        operation_id=operation_id,
+    )
+    return _GceNetworkAllocation(required=True, cidr=_allocated_cidr(realized))
+
+
+def _allocated_open_network_for_destroy(
+    request_id: str,
+    operation_id: str,
+    raes_plan: RaesPlan,
+    config: GCERangeCellConfig,
+) -> _GceNetworkAllocation:
+    """Read the adapter's reserved subnet for reconstructive teardown."""
+    if not requires_allocated_gce_network(raes_plan, config):
+        return _GceNetworkAllocation(required=False)
+    realized = _realized_range_spec_for_destroy(
+        request_id,
+        _OPEN_NETWORK_SPEC,
+        operation_id=operation_id,
+    )
+    try:
+        cidr = _allocated_cidr(realized)
+    except RaesRealizationError:
+        cidr = None
+    return _GceNetworkAllocation(required=True, cidr=cidr)
 
 
 def _binding_error(message: str, code: str) -> CloudError:
@@ -261,12 +336,22 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         config = load_gce_range_cell_config(backend=backend)
         config = _config_for_range_placement(request_id, config)
         raes_plan = parse_plan(operation_input.plan)
+        network_allocation = _allocated_open_network_for_provision(
+            request_id,
+            generation,
+            raes_plan,
+            config,
+        )
         apply_result = apply_raes_range_cell(
             request_id,
             range_id,
             raes_plan,
             _registry_resolver(operation_input),
-            options=RaesGceApplyOptions(config=config, egress_mode=operation_input.egress_mode),
+            options=RaesGceApplyOptions(
+                config=config,
+                egress_mode=operation_input.egress_mode,
+                allocated_network_cidr=network_allocation.require_available(),
+            ),
             delivery_bindings=operation_input.binding_transport(),
             access_bindings=operation_input.access_binding_transport(),
         )
@@ -277,6 +362,13 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             raise RaesRealizationError("composition verification proof is invalid")
         resources = snapshot_resources(raes_plan, set(verified_addresses))
         members = _realized_members(apply_result)
+        completion = build_completion_evidence(
+            operation_input.plan,
+            resources=resources,
+            operating_systems=apply_result.get("operating_systems"),
+            compute_substrates=apply_result.get("compute_substrates"),
+            generation_id=run.operation_id,
+        )
     except Exception as exc:
         reason_code, diagnostic = _classify_failure(exc, "raes range provision")
         logger.error("RAES range provision failed for request_id=%s", request_id)
@@ -286,7 +378,12 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
     # The realized member/access projection rides the terminal result itself, so
     # the Engine validates it and transitions READY in one transaction against
     # this generation's own state (#1710, ADR-032-R10).
-    _report(ref, operation, ResultStep.RAES_TERMINAL_READY, {"raes_status": "succeeded", "members": members})
+    _report(
+        ref,
+        operation,
+        ResultStep.RAES_TERMINAL_READY,
+        {"raes_status": "succeeded", "members": members, "completion": completion},
+    )
 
 
 def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]]:
@@ -356,26 +453,38 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
     logger.info("Starting RAES range activation for request_id=%s", request_id)
     _report(ref, operation, ResultStep.RAES_ACTIVATE_RUNNING, {"raes_status": "running"})
     try:
+        operation_input = activation.raes_input
+        backend = _require_gce_live_fire_binding(operation_input)
+        config = _config_for_range_placement(request_id, load_gce_range_cell_config(backend=backend))
+        raes_plan = parse_plan(operation_input.plan)
+        network_allocation = _allocated_open_network_for_destroy(
+            request_id,
+            activation.prepared_generation_fence,
+            raes_plan,
+            config,
+        )
         result = activate_raes_range_cell(
             activation=activation,
             prepared_generation=UUID(activation.prepared_generation_fence),
             activate_generation=UUID(run.operation_id),
-            ops=default_activation_ops(),
+            ops=default_activation_ops(
+                config=config,
+                allocated_network_cidr=network_allocation.require_available(),
+            ),
         )
-        raes_plan = parse_plan(activation.raes_input.plan)
-        verified = {
-            *(item.address for item in raes_plan.content),
-            *(account.address for account in raes_plan.accounts),
-            *(feature.address for feature in raes_plan.features),
-        }
-        resources = snapshot_resources(raes_plan, verified)
+        resources = result.completion["resources"]
     except Exception as exc:
         reason_code, diagnostic = _classify_failure(exc, "raes range activate")
         logger.error("RAES range activation failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
         raise
     _report(ref, operation, ResultStep.RAES_ACTIVATE_SNAPSHOT, {"resources": resources})
-    _report(ref, operation, ResultStep.RAES_TERMINAL_READY, {"raes_status": "succeeded", "members": result.members})
+    _report(
+        ref,
+        operation,
+        ResultStep.RAES_TERMINAL_READY,
+        {"raes_status": "succeeded", "members": result.members, "completion": result.completion},
+    )
 
 
 def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) -> None:
@@ -393,11 +502,26 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
         config = _config_for_range_placement(request_id, config)
-        raes_plan = parse_plan(operation_input.plan)
-        destroy_raes_range_cell(request_id, range_id, raes_plan, config=config)
+        raes_plan = parse_plan(operation_input.plan, cleanup_only=True)
+        network_allocation = _allocated_open_network_for_destroy(
+            request_id,
+            generation,
+            raes_plan,
+            config,
+        )
+        destroy_raes_range_cell(
+            request_id,
+            range_id,
+            raes_plan,
+            config=config,
+            allocated_network_cidr=network_allocation.cidr,
+            reconstruct_without_allocation=network_allocation.required and network_allocation.cidr is None,
+        )
     except Exception as exc:
         reason_code, diagnostic = _classify_failure(exc, "raes range destroy")
         logger.error("RAES range destroy failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
         raise
+    if network_allocation.cidr is not None:
+        _release_subnet_allocations_best_effort(request_id, operation_id=generation)
     _report(ref, operation, ResultStep.RAES_TERMINAL_DESTROYED, {"raes_status": "succeeded"})

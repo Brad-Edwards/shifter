@@ -50,7 +50,7 @@ from django.conf import settings
 from cms.scenarios.catalog_presentation import RAES_SCENARIO_TYPE
 from cms.scenarios.registry import get_catalog_entry
 from shared.log_sanitize import safe_log_value
-from shared.raes.artifact_inventory import BackendArtifact, build_artifact_availability
+from shared.raes.artifact_inventory import ArtifactSupply, BackendArtifact, build_artifact_supply
 from shared.raes.image_policy import is_concrete_image_ref, resolve_from_candidates
 from shared.raes.realizability import (
     GapCategory,
@@ -266,6 +266,7 @@ def _stage_object_pack(source: RaesPackageSource) -> AbstractContextManager[Path
         max_archive_bytes=settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES,
         max_uncompressed_bytes=settings.RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
         max_entries=settings.RAES_PACKAGE_MAX_ENTRIES,
+        expected_pack_name=source.scenario_id,
     )
 
 
@@ -376,7 +377,7 @@ def _registry_candidates(names: set[str], *, target_id: str) -> dict[str, list[d
     return grouped
 
 
-def _availability_provider(target_id: str) -> Callable[[Mapping[str, Any]], dict[str, Any]]:
+def _availability_provider(target_id: str) -> Callable[[Mapping[str, Any]], ArtifactSupply]:
     """Return a provider that answers artifact availability from the tenant registry.
 
     Injected into :func:`assess_scenario_capability` so the artifact-resolution
@@ -386,9 +387,9 @@ def _availability_provider(target_id: str) -> Callable[[Mapping[str, Any]], dict
     this catalog layer never has to name upstream RAES contract types (ADR-031-R1).
     """
 
-    def provider(requirements: Mapping[str, Any]) -> dict[str, Any]:
+    def provider(requirements: Mapping[str, Any]) -> ArtifactSupply:
         """Answer per-requirement artifact availability for ``requirements`` from the registry."""
-        return build_artifact_availability(requirements, _backend_inventory(target_id))
+        return build_artifact_supply(requirements, _backend_inventory(target_id))
 
     return provider
 

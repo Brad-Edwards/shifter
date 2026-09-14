@@ -275,6 +275,7 @@ class TestArtifactBindingPersistence:
 
     def make_binding(self, target="provision.node.web") -> ArtifactBinding:
         return ArtifactBinding(
+            image_id="555",
             target=target,
             requirement_id="req-1",
             artifact_id="img-web",
@@ -304,6 +305,7 @@ class TestArtifactBindingPersistence:
         assert row.target_address == binding.target
         assert row.digest == binding.digest
         assert row.image_ref == binding.image_ref
+        assert row.image_id == "555"
         assert row.mechanism == "exact-artifact"
         assert row.artifact_version == "1.0.0"
 

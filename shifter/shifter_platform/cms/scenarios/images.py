@@ -79,7 +79,7 @@ def project_scenario_images(scenario_id: str) -> ScenarioImageProjection:
 
     tally: dict[tuple[str, str, str], int] = {}
     for node in scenario.nodes.values():
-        if str(node.type.value) != "vm" or node.source is None:
+        if str(node.type.value) != "compute" or node.source is None:
             continue
         key = (node.source.name, node.source.version, str(node.os.value) if node.os is not None else "")
         tally[key] = tally.get(key, 0) + 1

@@ -80,6 +80,13 @@ class KubernetesTaskProfile:
     # ingress is scoped to.
     node_selector: Mapping[str, str] | None = None
     tolerations: tuple[Toleration, ...] = field(default_factory=tuple)
+    # Explicit runtime grants for private task images and bounded workers.
+    # Empty defaults preserve existing provider profiles; the preparation
+    # adapter supplies these from its validated, separately installed grant.
+    image_pull_secrets: tuple[str, ...] = field(default_factory=tuple)
+    resource_requests: Mapping[str, str] | None = None
+    resource_limits: Mapping[str, str] | None = None
+    active_deadline_seconds: int | None = None
 
     def hardening_for(self, container_name: str) -> ProvisionerHardeningProfile | None:
         """Return the hardening profile when it applies to ``container_name``."""

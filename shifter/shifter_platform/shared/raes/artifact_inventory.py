@@ -23,9 +23,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from raes._source import ArtifactIdentity, ArtifactRequirement
+from raes.artifact_requirements import ArtifactIdentity, ArtifactRequirement
 from raes_contracts.apparatus import ApparatusIdentity
-from raes_contracts.contracts import ArtifactMechanismCapability, ArtifactRequirementAvailability
+from raes_contracts.contracts import (
+    ArtifactAcquisitionTimingModel,
+    ArtifactMechanismCapability,
+    ArtifactRequirementAvailability,
+)
 
 from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.artifact_resolution import (
@@ -33,6 +37,7 @@ from shared.raes.artifact_resolution import (
     ArtifactResolutionStatus,
     resolve_artifact_requirement,
 )
+from shared.raes.prepared_artifacts import VerifiedMaterialization
 
 __all__ = [
     "ArtifactSatisfactionError",
@@ -73,6 +78,55 @@ class BackendArtifact:
     machine_type: str = ""
     disk_size_gb: int | None = None
     disk_type: str = ""
+    image_id: str = ""
+    materialization: VerifiedMaterialization | None = None
+
+
+@dataclass(frozen=True)
+class ArtifactSupply:
+    """Native inventory facts beside, never hidden inside, the portable availability schema."""
+
+    availability: Mapping[str, ArtifactRequirementAvailability]
+    capabilities: tuple[ArtifactMechanismCapability, ...]
+    materializations: tuple[VerifiedMaterialization, ...]
+
+
+def build_artifact_supply(requirements, inventory, *, capabilities=()) -> ArtifactSupply:
+    """Join qualified facts to their exact inventory image and portable identity."""
+    qualified = tuple(item.materialization for item in inventory if _qualified(item))
+    declared = list(capabilities)
+    for facts in qualified:
+        capability = ArtifactMechanismCapability(
+            mechanism=facts.specification.profile,
+            supported_requirement_kinds=["source-artifact"],
+            supported_routes=[ArtifactAcquisitionTimingModel(acquisition="none", timing="backend-preparation")],
+        )
+        if capability not in declared:
+            declared.append(capability)
+    return ArtifactSupply(build_artifact_availability(requirements, inventory), tuple(declared), qualified)
+
+
+def _qualified(item: BackendArtifact) -> bool:
+    facts = item.materialization
+    return facts is not None and (
+        item.artifact_id,
+        item.version,
+        item.digest,
+        item.media_type,
+        item.image_ref,
+        item.image_id,
+        item.integrity_ref,
+        item.provenance_ref,
+    ) == (
+        facts.artifact.artifact_id,
+        facts.artifact.version,
+        facts.artifact.digest,
+        facts.artifact.media_type,
+        facts.image_ref,
+        facts.image_id,
+        facts.integrity_ref,
+        facts.provenance_ref,
+    )
 
 
 def build_artifact_availability(
@@ -189,14 +243,15 @@ def resolve_plan_artifact_bindings(
     requirements = _plan_artifact_requirements(plan)
     if not requirements:
         return ()
-    availability = build_artifact_availability(requirements, inventory)
+    supply = build_artifact_supply(requirements, inventory, capabilities=capabilities)
     bindings: list[ArtifactBinding] = []
     for address, requirement in requirements.items():
         resolution = resolve_artifact_requirement(
             requirement,
             address=address,
-            capabilities=capabilities,
-            availability=availability.get(address),
+            capabilities=supply.capabilities,
+            availability=supply.availability.get(address),
+            prepared_materializations=supply.materializations,
             backend=backend,
         )
         if resolution.status is ArtifactResolutionStatus.UNRESOLVABLE:
@@ -224,7 +279,19 @@ def _fenced_binding(
     disclosure = resolution.disclosure
     if disclosure is None:
         raise ArtifactSatisfactionError(f"satisfied artifact requirement at {address} has no disclosure")
-    owned = _match_identity(inventory, disclosure.artifact)
+    eligible = inventory
+    if disclosure.materialization_specification_id is not None:
+        eligible = [
+            item
+            for item in inventory
+            if _qualified(item)
+            and item.materialization is not None
+            and item.materialization.specification.specification_id == disclosure.materialization_specification_id
+            and item.materialization.specification.digest == disclosure.materialization_specification_digest
+            and item.integrity_ref in disclosure.integrity_refs
+            and item.provenance_ref in disclosure.provenance_refs
+        ]
+    owned = _match_identity(eligible, disclosure.artifact)
     if owned is None:
         raise ArtifactSatisfactionError(f"satisfied artifact for {address} is not in inventory")
     return ArtifactBinding(
@@ -238,6 +305,7 @@ def _fenced_binding(
         acquisition=disclosure.acquisition,
         timing=disclosure.timing,
         image_ref=owned.image_ref,
+        image_id=owned.image_id,
         machine_type=owned.machine_type,
         disk_size_gb=owned.disk_size_gb,
         disk_type=owned.disk_type,

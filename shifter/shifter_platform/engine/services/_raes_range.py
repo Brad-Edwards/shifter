@@ -207,6 +207,7 @@ def create_raes_range(
                 acquisition=binding.acquisition,
                 timing=binding.timing,
                 image_ref=binding.image_ref,
+                image_id=binding.image_id,
                 machine_type=binding.machine_type,
                 disk_size_gb=binding.disk_size_gb,
                 disk_type=binding.disk_type,

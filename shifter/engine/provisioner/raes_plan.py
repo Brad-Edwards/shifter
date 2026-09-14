@@ -28,11 +28,13 @@ they are re-exported here so callers keep importing from ``raes_plan``.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, cast
 
+import raes_plan_contract
 import raes_plan_domain
 import raes_plan_resources
 from raes_acl import build_node_acls
@@ -95,19 +97,21 @@ RAES_PROVISIONING_PLAN_KIND = "raes_provisioning_plan"
 #: stamp ``shared.raes.contracts.RAES_PROVISIONING_PLAN_CONTRACT_VERSION`` by a
 #: platform-side parity test (mirroring the ``RAES_PROVISIONING_PLAN_KIND`` pattern).
 #: A new transport envelope shape is a new ``-vN`` member of the supported set.
-RAES_PROVISIONING_PLAN_CONTRACT_VERSION = "raes-provisioning-plan-v1"
+RAES_PROVISIONING_PLAN_CONTRACT_VERSION = "raes-provisioning-plan-v2"
 SUPPORTED_CONTRACT_VERSIONS: frozenset[str] = frozenset({RAES_PROVISIONING_PLAN_CONTRACT_VERSION})
 
 #: Exact ``raes`` producer release this consumer accepts. A different producer
 #: release is a different reviewed contract and is rejected before realization.
-SUPPORTED_RAES_VERSION = "2.0.0"
+SUPPORTED_RAES_VERSION = "3.5.0"
 
 _MIB = 1024 * 1024
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
-    """Return ``value`` if it is a mapping, else an empty mapping."""
-    return value if isinstance(value, Mapping) else {}
+    """Read an optional mapping without discarding a malformed present value."""
+    if value is None:
+        return {}
+    return _require_mapping(value, where="plan field")
 
 
 def _spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -126,35 +130,63 @@ def _infrastructure_spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _resource_name(address: str, payload: Mapping[str, Any]) -> str:
-    """Return the authored resource name, falling back to the address leaf."""
+    """Return the authored name, or the complete canonical resource address."""
+    for field in ("name", "node_name"):
+        value = payload.get(field)
+        if value is not None and (not isinstance(value, str) or (value and not value.strip())):
+            raise RaesPlanError(f"{field} must be a string")
     name = payload.get("name") or payload.get("node_name")
     if isinstance(name, str) and name.strip():
         return name.strip()
-    return address.rsplit(".", 1)[-1]
+    return address
 
 
 def _os_family(payload: Mapping[str, Any]) -> str:
     """Mirror raes_backend_libvirt._os_family: os_family, else spec.node.os."""
     family = payload.get("os_family")
+    if family is not None and not isinstance(family, str):
+        raise RaesPlanError("os_family must be a string")
     if isinstance(family, str) and family:
         return family
     node_os = _node_spec(payload).get("os")
+    if node_os is not None and not isinstance(node_os, str):
+        raise RaesPlanError("node os must be a string")
     return node_os if isinstance(node_os, str) else ""
 
 
+def _os_identity_term(payload: Mapping[str, Any], field: str) -> str | None:
+    """Preserve an authored OS identity and reject conflicting repeated terms."""
+    outer = payload.get(field)
+    inner = _node_spec(payload).get(field)
+    # Public compiler defaults encode an unspecified optional OS term as "".
+    outer = None if outer == "" else outer
+    inner = None if inner == "" else inner
+    for value in (outer, inner):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise RaesPlanError(f"{field} must be a non-empty string")
+    if outer is not None and inner is not None and outer != inner:
+        raise RaesPlanError(f"conflicting {field} in node payload")
+    return outer if outer is not None else inner
+
+
 def _node_count(payload: Mapping[str, Any]) -> int:
-    """Return the node instance count (>= 1); default 1 for missing/invalid values."""
-    raw = payload.get("count")
-    if isinstance(raw, bool):
+    """Default an omitted count only; malformed presence is an admission error."""
+    raw = payload.get("count", 1)
+    # The public 3.5 compiler emits null for an omitted optional count.
+    if raw is None:
         return 1
-    if isinstance(raw, int) and raw >= 1:
-        return raw
-    return 1
+    if type(raw) is not int or raw < 1:
+        raise RaesPlanError("node count must be a positive integer")
+    return raw
 
 
 def _memory_mib(payload: Mapping[str, Any]) -> int | None:
     """Authored RAM -> MiB (mirror raes_backend_libvirt._memory_mib); None if absent."""
     raw = _mapping(_node_spec(payload).get("resources")).get("ram")
+    if raw is not None and (
+        isinstance(raw, bool) or not isinstance(raw, int | float) or not math.isfinite(raw) or raw <= 0
+    ):
+        raise RaesPlanError("ram must be a positive finite number")
     if isinstance(raw, int | float) and not isinstance(raw, bool) and raw > 0:
         if raw >= _MIB:
             return max(128, int((raw + _MIB - 1) // _MIB))
@@ -165,6 +197,14 @@ def _memory_mib(payload: Mapping[str, Any]) -> int | None:
 def _vcpus(payload: Mapping[str, Any]) -> int | None:
     """Authored CPU -> vcpus (mirror raes_backend_libvirt._vcpus); None if absent."""
     raw = _mapping(_node_spec(payload).get("resources")).get("cpu")
+    if raw is not None and (
+        isinstance(raw, bool)
+        or not isinstance(raw, int | float)
+        or not math.isfinite(raw)
+        or raw <= 0
+        or raw != int(raw)
+    ):
+        raise RaesPlanError("cpu must be a positive whole number")
     if isinstance(raw, int | float) and not isinstance(raw, bool) and raw > 0:
         return max(1, int(raw))
     return None
@@ -173,17 +213,21 @@ def _vcpus(payload: Mapping[str, Any]) -> int | None:
 def _image(payload: Mapping[str, Any]) -> RaesPlanImage | None:
     """Authored image from spec.node.source (name verbatim, mirror _image_ref)."""
     source = _node_spec(payload).get("source")
+    if source is None:
+        return None
     if isinstance(source, str) and source.strip():
         return RaesPlanImage(name=source.strip())
     if isinstance(source, Mapping):
         name = source.get("name")
         if isinstance(name, str) and name.strip():
             version = source.get("version")
+            if version is not None and (not isinstance(version, str) or (version and not version.strip())):
+                raise RaesPlanError("source version must be a string")
             return RaesPlanImage(
                 name=name.strip(),
                 version=version.strip() if isinstance(version, str) and version.strip() else None,
             )
-    return None
+    raise RaesPlanError("source must be a named string or mapping")
 
 
 def _network_refs(payload: Mapping[str, Any]) -> tuple[str, ...]:
@@ -191,9 +235,20 @@ def _network_refs(payload: Mapping[str, Any]) -> tuple[str, ...]:
     infra = _infrastructure_spec(payload)
     for field_name in ("networks", "links"):
         raw = infra.get(field_name)
+        if raw is None:
+            continue
         if isinstance(raw, list | tuple):
-            return tuple(ref for ref in raw if isinstance(ref, str) and ref.strip())
+            if any(not isinstance(ref, str) or not ref.strip() for ref in raw):
+                raise RaesPlanError("network references must be non-empty strings")
+            return tuple(raw)
+        raise RaesPlanError("network references must be a list")
     return ()
+
+
+def _network_selection_open(payload: Mapping[str, Any]) -> bool:
+    """Return whether network placement is deliberately left to the backend."""
+    infrastructure = _infrastructure_spec(payload)
+    return "networks" not in infrastructure and "links" not in infrastructure
 
 
 def _network(address: str, payload: Mapping[str, Any]) -> RaesPlanNetwork:
@@ -201,6 +256,12 @@ def _network(address: str, payload: Mapping[str, Any]) -> RaesPlanNetwork:
     props = _mapping(_infrastructure_spec(payload).get("properties"))
     cidr = props.get("cidr")
     gateway = props.get("gateway")
+    for field in ("cidr", "gateway"):
+        value = props.get(field)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise RaesPlanError(f"network {field} must be a non-empty string")
+    if "internal" in props and type(props["internal"]) is not bool:
+        raise RaesPlanError("network internal must be a boolean")
     return RaesPlanNetwork(
         address=address,
         name=_resource_name(address, payload),
@@ -343,7 +404,7 @@ def _build_composition_value[CompositionValue: (RaesPlanContent, RaesPlanAccount
     return value
 
 
-def parse_plan(range_config: dict[str, Any] | None) -> RaesPlan:
+def parse_plan(range_config: dict[str, Any] | None, *, cleanup_only: bool = False) -> RaesPlan:
     """Parse a serialized RAES plan from a range_config dict, failing closed.
 
     Self-discriminates on ``kind`` so an ``raes-range`` command run against a
@@ -359,7 +420,10 @@ def parse_plan(range_config: dict[str, Any] | None) -> RaesPlan:
     kind = envelope.get("kind")
     if kind != RAES_PROVISIONING_PLAN_KIND:
         raise RaesPlanError(f"kind must be {RAES_PROVISIONING_PLAN_KIND!r}, got {kind!r}")
-    raes_version = _validate_versions(envelope)
+    if not cleanup_only:
+        _validate_versions(envelope)
+    envelope = raes_plan_contract.prepare_envelope(envelope, cleanup_only=cleanup_only)
+    raes_version = envelope["raes_version"]
 
     resources = _require_mapping(envelope.get("resources"), where="resources")
     collected = raes_plan_resources.collect_resources(resources)
@@ -425,8 +489,11 @@ def _node(
         address=address,
         name=_resource_name(address, payload),
         os_family=_os_family(payload),
+        os_distribution=_os_identity_term(payload, "os_distribution"),
+        os_version=_os_identity_term(payload, "os_version"),
         count=_node_count(payload),
         network_addresses=resolved,
+        network_selection_open=_network_selection_open(payload),
         ram_mib=_memory_mib(payload),
         vcpus=_vcpus(payload),
         image=_image(payload),

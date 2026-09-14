@@ -58,7 +58,6 @@ from shared.audit import (
     audit_log,
 )
 
-# --- Public service functions ------------------------------------------------
 from ._agents import (
     create_agent,
     delete_agent,
@@ -81,6 +80,9 @@ from ._ngfws import (
     list_ngfws,
 )
 from ._non_user_range_launch import NonUserWorkflow, create_non_user_range
+
+# --- Public service functions ------------------------------------------------
+from ._pack_conformance import validate_registered_pack_conformance
 from ._queries import (
     find_range_instance_id_by_request,
     get_range_spec_by_id,
@@ -273,5 +275,6 @@ __all__ = (
     "resume_range",
     "resume_range_by_request_id",
     "transfer_user_ownership",
+    "validate_registered_pack_conformance",
     "validate_scenario_requirements",
 )

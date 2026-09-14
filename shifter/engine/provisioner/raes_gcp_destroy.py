@@ -85,10 +85,21 @@ def destroy_raes_range_cell(
     clients: GCEClients | None = None,
     secret_ops: RaesGceSecretOps | None = None,
     options: RaesGceDestroyOptions | None = None,
+    *,
+    allocated_network_cidr: str | None = None,
+    reconstruct_without_allocation: bool = False,
 ) -> None:
     """Destroy every GCE resource owned by one RAES range cell."""
     runtime = _destroy_runtime(config, clients, secret_ops, options or RaesGceDestroyOptions())
-    plan = build_raes_range_cell_plan(request_uuid, range_id, raes_plan, _default_destroy_profile, runtime.config)
+    plan = build_raes_range_cell_plan(
+        request_uuid,
+        range_id,
+        raes_plan,
+        _default_destroy_profile,
+        runtime.config,
+        allocated_network_cidr=allocated_network_cidr,
+        reconstruct_for_teardown=reconstruct_without_allocation,
+    )
     _destroy_instances(plan, raes_plan, runtime)
     delete_raes_directory_secrets(plan["range_id"], raes_plan, runtime.directory_secret_ops)
     _destroy_network_resources(plan, runtime.clients)

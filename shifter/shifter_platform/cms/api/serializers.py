@@ -24,6 +24,9 @@ class PackRegistrationSerializer(serializers.Serializer):
     package_ref = serializers.CharField(max_length=512)
     package_version = serializers.CharField(max_length=128)
     package_digest = serializers.CharField(max_length=71)
+    expected_package_digest = serializers.RegexField(
+        r"^sha256:[a-f0-9]{64}$", max_length=71, required=False, allow_blank=True, default=""
+    )
     lock_ref = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
     lock_digest = serializers.CharField(max_length=71, required=False, allow_blank=True, default="")
     provenance = serializers.DictField(required=False, default=dict)

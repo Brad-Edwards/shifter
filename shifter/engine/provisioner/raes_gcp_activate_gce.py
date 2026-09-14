@@ -11,16 +11,22 @@ GCE range (the repository's verification norm for provisioner cloud effects).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from dataclasses import dataclass
 from uuid import UUID
 
 from shared.warm_pool.activation_input import ActivationInput
 
+from raes_gcp_activate import ActivationResult
+
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
 class GceActivationOps:
     """Production activation ops for the GCE range-cell backend."""
+
+    config: object | None = None
+    allocated_network_cidr: str | None = None
 
     @staticmethod
     def scrub_pre_claim_access(activation: ActivationInput, prepared_generation: UUID) -> None:
@@ -54,8 +60,7 @@ class GceActivationOps:
                 delete_raes_account_secret(range_id, target, username, auth_method)
         GCPVpnSecretOps().delete_generation(range_id, prepared_generation, delete_identity=True)
 
-    @staticmethod
-    def realize_claimant_access(activation: ActivationInput, activate_generation: UUID) -> list[dict[str, Any]]:
+    def realize_claimant_access(self, activation: ActivationInput, activate_generation: UUID) -> ActivationResult:
         """Realize the claimant's fresh access on the already-realized range cell.
 
         Binds the declared participant access to the plan, mints a fresh
@@ -65,7 +70,12 @@ class GceActivationOps:
         """
         from raes_gcp_activate_realize import realize_claimant_access_on_cell
 
-        return realize_claimant_access_on_cell(activation, activate_generation)
+        return realize_claimant_access_on_cell(
+            activation,
+            activate_generation,
+            config=self.config,
+            allocated_network_cidr=self.allocated_network_cidr,
+        )
 
     @staticmethod
     def prior_access_revoked(activation: ActivationInput, prepared_generation: UUID) -> bool:

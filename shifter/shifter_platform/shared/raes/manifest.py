@@ -37,22 +37,30 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
 from typing import Any
 
-from raes._source import ArtifactMechanismProfile
+from raes.artifact_requirements import ArtifactMechanismProfile
 from raes_backend_protocols.capabilities import (
     BackendCapabilitySet,
     BackendManifest,
+    OperatingSystemCompatibility,
     ProvisionerCapabilities,
 )
 from raes_backend_protocols.manifest import backend_manifest_payload
-from raes_contracts.apparatus import ApparatusIdentity, ConceptBinding, RealizationSupportDeclaration
+from raes_contracts.apparatus import (
+    ApparatusIdentity,
+    ConceptBinding,
+    RealizationObservationCapability,
+    RealizationSupportDeclaration,
+)
 from raes_contracts.contracts import ArtifactAcquisitionTimingModel, ArtifactMechanismCapability
-from raes_contracts.vocabulary import RealizationSupportMode
+from raes_contracts.vocabulary import ObservationStrength, RealizationSupportMode, RealizationVerificationScope
 
 from shared.raes.contracts import (
     SHIFTER_BACKEND_NAME,
     SHIFTER_BACKEND_PROFILE,
+    SHIFTER_CONFIGURED_CONTRACT_VERSIONS,
     SHIFTER_SUPPORTED_CONTRACT_VERSIONS,
 )
+from shared.raes.realization import OPERATING_SYSTEMS
 
 __all__ = [
     "SHIFTER_BACKEND_NAME",
@@ -103,15 +111,21 @@ __all__ = [
 #: detail in the manifest.
 SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     name="shifter-provisioner",
-    supported_node_types=frozenset({"vm", "switch"}),
+    supported_node_types=frozenset({"compute", "switch"}),
     supported_os_families=frozenset({"linux", "windows"}),
+    operating_systems=tuple(
+        OperatingSystemCompatibility(row["family"], row["distribution"], frozenset(row["versions"]))
+        for row in OPERATING_SYSTEMS
+    ),
     supported_content_types=frozenset({"file", "directory"}),
     supported_account_features=frozenset({"groups", "shell", "home", "disabled", "auth_method", "spn"}),
     # #1561 realizes the bounded first RAES identity-domain profile: one
     # range-local Windows AD controller, Windows member joins, domain accounts,
     # uniqueness-preserving SPN registration, and directory readback.
     supported_domain_profiles=frozenset({"active_directory"}),
-    max_total_nodes=None,
+    # Completion carries one OS and substrate observation per instance. Keep
+    # provider mutation within the closed evidence transport admitted below.
+    max_total_nodes=64,
     supports_acls=True,
     supports_accounts=True,
     constraints={"network-address-family": "ipv4-only"},
@@ -126,26 +140,32 @@ def _current_backend_version() -> str:
         return "0.0.0+unknown"
 
 
-def create_shifter_backend_manifest(**_config: Any) -> BackendManifest:
+def create_shifter_backend_manifest(*, realization_envelope=None, **_config: Any) -> BackendManifest:
     """Return Shifter's ``provisioning-only`` RAES backend manifest.
 
-    The manifest declares exactly the ``provisioning-only`` profile's required
-    contracts and Shifter's honest provisioning capability envelope. It claims no
+    The generic published manifest declares exactly the ``provisioning-only``
+    profile's required contracts. A runtime-selected ``realization_envelope``
+    adds that contract to the configured target. Both variants claim no
     orchestrator, evaluator, participant-runtime, or observation capability, so
-    it infers as ``BackendCapabilityProfile.PROVISIONING_ONLY``.
+    they infer as ``BackendCapabilityProfile.PROVISIONING_ONLY``.
 
     Accepts and ignores arbitrary keyword config so it satisfies
     ``raes_runtime.registry.BackendRegistry``'s ``manifest_factory(**config)``
     contract -- the registry always calls the manifest factory with whatever
     config the caller passed to ``registry.create()``/``registry.manifest()``
     (e.g. the ``port`` kwarg ``shared.raes.runtime_target`` passes for the
-    components factory), even though this manifest itself takes no config.
+    components factory). ``realization_envelope`` is the one consumed setting.
     """
     return BackendManifest(
         name=SHIFTER_BACKEND_NAME,
         version=_current_backend_version(),
-        supported_contract_versions=SHIFTER_SUPPORTED_CONTRACT_VERSIONS,
+        supported_contract_versions=(
+            SHIFTER_CONFIGURED_CONTRACT_VERSIONS
+            if realization_envelope is not None
+            else SHIFTER_SUPPORTED_CONTRACT_VERSIONS
+        ),
         compatible_processors=frozenset({"raes-reference-processor"}),
+        realization_envelope=realization_envelope,
         concept_bindings=(
             ConceptBinding(scope="capabilities.provisioner.supported_node_types", family="assets"),
             ConceptBinding(scope="capabilities.provisioner.supported_os_families", family="assets"),
@@ -154,8 +174,17 @@ def create_shifter_backend_manifest(**_config: Any) -> BackendManifest:
             RealizationSupportDeclaration(
                 domain="runtime-realization",
                 support_mode=RealizationSupportMode.CONSTRAINED,
-                supported_constraint_kinds=frozenset({"node-type", "os-family"}),
-                supported_exact_requirement_kinds=frozenset({"declared-capability-match"}),
+                supported_constraint_kinds=frozenset({"node-type", "os-family", "source-artifact"}),
+                supported_exact_requirement_kinds=frozenset({"declared-capability-match", "source-artifact"}),
+                artifact_mechanisms=shifter_artifact_mechanism_capabilities(),
+                observation_capabilities={
+                    "operating-system": RealizationObservationCapability(
+                        RealizationVerificationScope.CONFIGURATION, ObservationStrength.GUEST_OBSERVED
+                    ),
+                    "compute-substrate": RealizationObservationCapability(
+                        RealizationVerificationScope.CONFIGURATION, ObservationStrength.DAEMON_OBSERVED
+                    ),
+                },
                 disclosure_kinds=frozenset(
                     {
                         "backend-manifest-v2",
@@ -221,7 +250,7 @@ def shifter_artifact_mechanism_capabilities() -> tuple[ArtifactMechanismCapabili
     return (
         ArtifactMechanismCapability(
             mechanism=exact_artifact_profile(),
-            supported_requirement_kinds=["exact"],
+            supported_requirement_kinds=["source-artifact"],
             supported_routes=[ArtifactAcquisitionTimingModel(acquisition="local-lookup", timing="backend-preparation")],
         ),
     )

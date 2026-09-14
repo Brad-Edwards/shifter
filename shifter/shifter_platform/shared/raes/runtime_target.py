@@ -8,12 +8,9 @@ introduces no parallel SDL and no re-modeled provisioning schema; the realizatio
 side (engine/provisioner) reads the RAES plan payloads directly via accessors
 that mirror the reference RAES backends.
 
-It mirrors the reference backend pattern: ``validate`` and ``apply`` funnel
-through one pure interpret step; every plan term is checked against the
-declared capability envelope and unsupported terms yield typed diagnostics;
-* ``apply`` refuses to dispatch on any error, and on a valid plan returns an
-  ``ApplyResult`` with non-empty ``changed_addresses`` and a PROVISIONING
-  ``RuntimeSnapshot`` reflecting the accepted realization.
+Validation, enqueue, and apply share the same pure admission step. Native
+launch uses an enqueue receipt. Synchronous apply succeeds only after completed
+provider and guest evidence has passed the public RAE realization boundary.
 
 Only :mod:`shared.raes` may import ``raes`` (ADR-031-R1 / ADR-024); realization consumes the serialized plan as
 plain data via the injected dispatch port.
@@ -29,13 +26,16 @@ from __future__ import annotations
 import importlib.metadata
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, is_dataclass, replace
+from enum import Enum
 from typing import Any
+from uuid import uuid4
 
+from pydantic import BaseModel
 from raes_backend_protocols.capabilities import BackendManifest, ProvisionerCapabilities
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
-from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
-from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
+from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from raes_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
 from shared.log_sanitize import safe_log_value
@@ -51,13 +51,14 @@ from shared.raes._runtime_target_envelope import (
 )
 from shared.raes.composition_envelope import account_operation_diagnostics, feature_operation_diagnostics
 from shared.raes.contracts import RAES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
-from shared.raes.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
+from shared.raes.dispatch_port import ShifterProvisioningDispatchPort
 from shared.raes.domain_topology import (
     backend_effect_domain_topology_diagnostics,
     sanitized_domain_topology_diagnostics,
 )
 from shared.raes.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.raes.participant_access import ParticipantAccessBinding
+from shared.raes.realization import create_shifter_realization_envelope
 
 __all__ = [
     "DOMAIN_CONTROLLER_PLACEMENT_RESOURCE_TYPE",
@@ -105,7 +106,9 @@ def _raes_version() -> str:
     return importlib.metadata.version("raes")
 
 
-def serialize_provisioning_plan(plan: ProvisioningPlan) -> dict[str, Any]:
+def serialize_provisioning_plan(
+    plan: ProvisioningPlan, *, backend_realization_envelope: object | None = None
+) -> dict[str, Any]:
     """Serialize the PROVISIONING resources of a compiled RAES plan to JSON-safe dict.
 
     The payloads are the RAES plan's own payloads, verbatim -- this is
@@ -133,10 +136,31 @@ def serialize_provisioning_plan(plan: ProvisioningPlan) -> dict[str, Any]:
         "contract_version": RAES_PROVISIONING_PLAN_CONTRACT_VERSION,
         "raes_version": _raes_version(),
         "resources": resources,
+        "operations": [_plan_json(item) for item in plan.operations],
+        "realization_authority": [_plan_json(item) for item in plan.realization_authority],
+        "realization_envelope": _plan_json(plan.realization_envelope),
+        "backend_realization_envelope": _plan_json(backend_realization_envelope),
+        "realization_constraints": [_plan_json(item) for item in plan.realization_constraints],
+        "operation_id": plan.operation_id,
     }
-    # Guarantee the envelope is JSON-safe for range_config persistence (payload
-    # Any values are compiler-produced primitives; default=str is a backstop).
-    return json.loads(json.dumps(envelope, default=str))
+    # Unknown values must fail serialization; their string representation is
+    # neither the authored contract nor a safe cross-process substitute.
+    return json.loads(json.dumps(envelope, allow_nan=False))
+
+
+def _plan_json(value: object) -> Any:
+    """Serialize public contract objects without inventing string fallbacks."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if is_dataclass(value) and not isinstance(value, type):
+        return _plan_json(asdict(value))
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {key: _plan_json(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_plan_json(item) for item in value]
+    return value
 
 
 # --- interpret (validate the plan, then serialize it) ---
@@ -190,6 +214,17 @@ def interpret_provisioning_plan(
         if resource.domain == RuntimeDomain.PROVISIONING
     ]
     diagnostics = _capability_envelope_diagnostics(provisioning, capabilities)
+    if any(
+        operation.address not in plan.resources or operation.action.value not in {"create", "unchanged"}
+        for operation in plan.operations
+    ):
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.incremental-unsupported",
+                "plan",
+                "native dispatch requires a complete fresh provisioning plan",
+            )
+        )
 
     diagnostics.extend(sanitized_domain_topology_diagnostics(plan, capabilities, snapshot))
     diagnostics.extend(backend_effect_domain_topology_diagnostics(plan, snapshot))
@@ -220,18 +255,23 @@ def _serialized_for_apply(
     plan: ProvisioningPlan,
     *,
     snapshot: RuntimeSnapshot | None = None,
+    backend_realization_envelope: object | None = None,
 ) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
     """Validate + serialize ``plan`` for validate/apply; (None, diagnostics) if unusable."""
     if not isinstance(plan, ProvisioningPlan):
         return None, [_diagnostic("shifter-provisioner.invalid-plan", "plan", "expected an RAES ProvisioningPlan")]
-    return interpret_provisioning_plan(plan, snapshot=snapshot)
+    serialized, diagnostics = interpret_provisioning_plan(plan, snapshot=snapshot)
+    if serialized is not None:
+        serialized["backend_realization_envelope"] = _plan_json(backend_realization_envelope)
+    return serialized, diagnostics
 
 
 class ShifterProvisioner:
     """Provisioner protocol implementation for Shifter's provisioning-only backend."""
 
-    def __init__(self, port: ShifterProvisioningDispatchPort) -> None:
+    def __init__(self, port: ShifterProvisioningDispatchPort, *, realization_envelope=None) -> None:
         self._port = port
+        self._realization_envelope = realization_envelope
         self._participant_access: tuple[ParticipantAccessBinding, ...] = ()
 
     def bind_participant_access(self, bindings: Sequence[ParticipantAccessBinding]) -> None:
@@ -255,8 +295,16 @@ class ShifterProvisioner:
         return diagnostics
 
     def apply(self, plan: ProvisioningPlan, snapshot: RuntimeSnapshot) -> ApplyResult:
-        """Validate + dispatch the serialized ``plan``; never dispatch on error."""
-        serialized, diagnostics = _serialized_for_apply(plan, snapshot=snapshot)
+        """Return realization success only for independently verified completion."""
+        from shared.raes.completion import completed_snapshot
+
+        if isinstance(plan, ProvisioningPlan):
+            plan = replace(plan, operation_id=plan.operation_id or str(uuid4()))
+        serialized, diagnostics = _serialized_for_apply(
+            plan,
+            snapshot=snapshot,
+            backend_realization_envelope=self._realization_envelope,
+        )
         if serialized is None:
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=diagnostics)
 
@@ -269,66 +317,49 @@ class ShifterProvisioner:
             )
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, failure])
 
-        entries = dict(snapshot.entries)
-        changed_addresses: list[str] = []
-        for resource in sorted(plan.resources.values(), key=lambda item: item.address):
-            if resource.domain != RuntimeDomain.PROVISIONING or resource.resource_type not in SUPPORTED_RESOURCE_TYPES:
-                continue
-            entries[resource.address] = _snapshot_entry(resource, result)
-            changed_addresses.append(resource.address)
-
+        if not result.accepted or result.completion is None:
+            pending = _diagnostic(
+                "shifter-provisioner.completion-unavailable", "plan", "dispatch acceptance is not completed realization"
+            )
+            return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, pending])
+        try:
+            observed = completed_snapshot(
+                plan,
+                result.completion,
+                baseline=snapshot,
+                serialized_plan=serialized,
+            )
+        except ValueError:
+            invalid = _diagnostic("shifter-provisioner.invalid-completion", "plan", "realization evidence is invalid")
+            return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, invalid])
         return ApplyResult(
-            success=result.accepted,
-            snapshot=snapshot.with_entries(entries),
-            diagnostics=diagnostics,
-            changed_addresses=changed_addresses,
+            success=True, snapshot=observed, diagnostics=diagnostics, changed_addresses=list(plan.resources)
         )
 
-
-def _echo_concern_values(source: Mapping[str, object], payload: dict[str, Any]) -> None:
-    """Echo authored realization-concern values into the snapshot entry payload.
-
-    The raes runtime non-approximation gate (SEM-218) compares each exact
-    authored requirement (``os_family``, ``node_type``, content ``spec.type``)
-    against the value the backend recorded at ``CONCERN_PAYLOAD_PATH`` in its
-    returned snapshot; an omitted value is a forbidden silent approximation.
-    Shifter dispatches asynchronously, so its provisional entry echoes the exact
-    values it commits to realize, and the gate sees realized == authored.
-    """
-    for path in CONCERN_PAYLOAD_PATH.values():
-        value: object = source
-        for key in path:
-            if isinstance(value, Mapping) and key in value:
-                value = value[key]
-            else:
-                value = None
-                break
-        if value is None:
-            continue
-        target = payload
-        for key in path[:-1]:
-            target = target.setdefault(key, {})
-        target[path[-1]] = value
+    def enqueue(self, plan: ProvisioningPlan) -> ShifterEnqueueResult:
+        """Validate and queue a native launch without claiming an observed state."""
+        if isinstance(plan, ProvisioningPlan):
+            plan = replace(plan, operation_id=plan.operation_id or str(uuid4()))
+        serialized, diagnostics = _serialized_for_apply(plan, backend_realization_envelope=self._realization_envelope)
+        if serialized is None:
+            return ShifterEnqueueResult(False, "rejected", (), tuple(diagnostics))
+        try:
+            receipt = self._port.realize(serialized, self._participant_access)
+        except Exception as exc:
+            failure = _diagnostic("shifter-provisioner.dispatch-failed", "plan", safe_log_value(exc))
+            return ShifterEnqueueResult(False, "rejected", (), (*diagnostics, failure))
+        addresses = tuple(serialized["resources"]) if receipt.accepted else ()
+        return ShifterEnqueueResult(receipt.accepted, receipt.status, addresses, tuple(diagnostics))
 
 
-def _snapshot_entry(resource: PlannedResource, result: ShifterDispatchResult) -> SnapshotEntry:
-    """Build a provisional PROVISIONING snapshot entry from the dispatch result.
+@dataclass(frozen=True)
+class ShifterEnqueueResult:
+    """A queue receipt with admission diagnostics; never a runtime snapshot."""
 
-    Echoes the authored realization-concern values (see ``_echo_concern_values``)
-    so the runtime non-approximation gate confirms Shifter committed to realize
-    exactly what the author declared.
-    """
-    payload: dict[str, Any] = {"request_id": result.request_id, "status": result.status}
-    if result.range_id:
-        payload["range_id"] = result.range_id
-    _echo_concern_values(resource.payload, payload)
-    return SnapshotEntry(
-        address=resource.address,
-        domain=RuntimeDomain.PROVISIONING,
-        resource_type=resource.resource_type,
-        payload=payload,
-        status=result.status,
-    )
+    accepted: bool
+    status: str
+    addresses: tuple[str, ...]
+    diagnostics: tuple[Diagnostic, ...]
 
 
 def create_shifter_backend_components(
@@ -338,8 +369,10 @@ def create_shifter_backend_components(
     **config: Any,
 ) -> RuntimeTargetComponents:
     """Build the ``provisioning-only`` Shifter backend components for ``manifest``."""
-    del manifest, config
-    return RuntimeTargetComponents(provisioner=ShifterProvisioner(port=port))
+    del config
+    return RuntimeTargetComponents(
+        provisioner=ShifterProvisioner(port=port, realization_envelope=manifest.realization_envelope)
+    )
 
 
 def register_shifter_backend(registry: BackendRegistry) -> None:
@@ -347,8 +380,31 @@ def register_shifter_backend(registry: BackendRegistry) -> None:
     registry.register(SHIFTER_BACKEND_NAME, create_shifter_backend_manifest, create_shifter_backend_components)
 
 
-def create_shifter_backend_target(*, port: ShifterProvisioningDispatchPort, **config: Any) -> RuntimeTarget:
-    """Return a fully configured, provisioning-only Shifter ``RuntimeTarget``."""
-    manifest = create_shifter_backend_manifest(**config)
+def create_shifter_backend_target(
+    *, port: ShifterProvisioningDispatchPort, scenario: object | None = None, **config: Any
+) -> RuntimeTarget:
+    """Return Shifter's generic or scenario-configured runtime target."""
+    realization_envelope = None
+    if scenario is not None:
+        scenario_name = getattr(scenario, "name", None)
+        nodes = getattr(scenario, "nodes", None)
+        compute_node_name = (
+            next(
+                (
+                    name
+                    for name, node in nodes.items()
+                    if getattr(getattr(node, "type", None), "value", None) == "compute"
+                ),
+                None,
+            )
+            if isinstance(nodes, Mapping)
+            else None
+        )
+        if not isinstance(scenario_name, str) or not scenario_name or compute_node_name is None:
+            raise ValueError("a configured Shifter target requires a named scenario with a compute node")
+        realization_envelope = create_shifter_realization_envelope(
+            scenario_name=scenario_name, compute_node_name=compute_node_name
+        )
+    manifest = create_shifter_backend_manifest(realization_envelope=realization_envelope, **config)
     components = create_shifter_backend_components(manifest=manifest, port=port, **config)
     return RuntimeTarget(name=SHIFTER_BACKEND_NAME, manifest=manifest, provisioner=components.provisioner)

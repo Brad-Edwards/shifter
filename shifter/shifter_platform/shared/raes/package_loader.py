@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from raes.scenarios import Scenario, ScenarioError, load_scenario
-from raes_runtime import RuntimeManager
 
 from shared.log_sanitize import safe_log_value
 from shared.raes.dispatch_port import ShifterProvisioningDispatchPort
@@ -123,6 +122,7 @@ def launch_raes_package(
     scenario_path: Path,
     port: ShifterProvisioningDispatchPort,
     parameters: dict[str, object] | None = None,
+    artifact_supply_provider=None,
 ) -> ShifterLaunchResult:
     """Load, plan, and dispatch the RAES package at ``scenario_path``.
 
@@ -138,9 +138,12 @@ def launch_raes_package(
     except (ScenarioError, OSError) as exc:
         raise RaesPackageError(f"failed to load RAES package: {safe_log_value(exc)}") from exc
 
-    target = create_shifter_backend_target(port=port)
-    manager = RuntimeManager(target)
-    execution_plan = manager.plan(scenario, parameters=parameters)
+    target = create_shifter_backend_target(port=port, scenario=scenario)
+    from shared.raes.artifact_planning import plan_with_artifact_supply
+
+    execution_plan, target = plan_with_artifact_supply(
+        scenario, target, parameters=parameters, supply_provider=artifact_supply_provider
+    )
 
     # #1710: lower the compiled participant-domain interactive access into the
     # bounded sidecar here -- this is the only point where Shifter holds the
@@ -168,10 +171,16 @@ def launch_raes_package(
         )
     target.provisioner.bind_participant_access(participant_access)
 
-    result = manager.apply(execution_plan)
+    if any(diagnostic.is_error for diagnostic in execution_plan.diagnostics):
+        return ShifterLaunchResult(
+            accepted=False,
+            status="rejected",
+            diagnostics=tuple(_render_diagnostic(diagnostic) for diagnostic in execution_plan.diagnostics),
+        )
+    result = target.provisioner.enqueue(execution_plan.provisioning)
     return ShifterLaunchResult(
-        accepted=result.success,
-        status="accepted" if result.success else "rejected",
-        changed_addresses=tuple(result.changed_addresses),
+        accepted=result.accepted,
+        status="accepted" if result.accepted else "rejected",
+        changed_addresses=result.addresses,
         diagnostics=tuple(_render_diagnostic(diagnostic) for diagnostic in result.diagnostics),
     )

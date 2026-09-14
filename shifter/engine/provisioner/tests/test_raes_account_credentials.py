@@ -123,11 +123,11 @@ def test_public_key_strategy_uses_account_specific_plan():
         instance_key="node.web#0",
         platform="windows",
         instance_output={"private_ip": execution.target},
-        accounts=(_account(auth_method="publickey"),),
+        accounts=(_account(auth_method="key"),),
         secret_ops=ops,
     )
 
-    # The publickey branch must retain its reference too (#1710); asserting it
+    # The key branch must retain its reference too (#1710); asserting it
     # only on the password path would leave this assignment uncovered.
     assert result == {"provision.account.alice": "projects/p/secrets/key"}
     calls.ensure_public_key.assert_called_once_with(7, "node.web#0", "alice")
@@ -300,11 +300,11 @@ def test_unsupported_credential_strategy_fails_closed():
 
 def test_destroy_deletes_each_authored_account_secret():
     ops, calls = _ops()
-    accounts = (_account(), _account(username="bob", auth_method="publickey", disabled=True))
+    accounts = (_account(), _account(username="bob", auth_method="key", disabled=True))
 
     delete_instance_account_credentials(7, "node.web#0", accounts, ops)
 
     assert calls.delete.call_args_list == [
         call(7, "node.web#0", "alice", "password"),
-        call(7, "node.web#0", "bob", "publickey"),
+        call(7, "node.web#0", "bob", "key"),
     ]

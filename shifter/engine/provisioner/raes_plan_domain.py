@@ -14,7 +14,7 @@ from typing import Any
 from raes_composition import RaesPlanAccount
 from raes_plan_types import RaesPlanDomain, RaesPlanError, RaesPlanNode
 
-SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "publickey"})
+SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "key"})
 SUPPORTED_PASSWORD_STRENGTHS: frozenset[str] = frozenset({"weak", "medium", "strong", "none"})
 _NO_CREDENTIAL_STRENGTH = "none"
 _DOMAIN_ACCOUNT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,19}$")

@@ -5,136 +5,154 @@ description: >
   isolated controller segments used by the Polaris participant journey.
 
 nodes:
-  shared_net: {type: Switch}
-  corporate_net: {type: Switch}
-  lab_net: {type: Switch}
-  scada_net: {type: Switch}
-  bunker_ot_net: {type: Switch}
-  splice_link: {type: Switch}
+  shared_net: {type: switch}
+  corporate_net: {type: switch}
+  lab_net: {type: switch}
+  scada_net: {type: switch}
+  bunker_ot_net: {type: switch}
+  splice_link: {type: switch}
 
   a0_boreas_web:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: polaris-boreas-web, version: "1.0"}
     resources: {ram: 512 mib, cpu: 1}
     services: [{port: 80, name: boreas-http}, {port: 53, protocol: udp, name: boreas-dns}]
   dns_boreas:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-bind-sidecar, version: "1.0"}
     resources: {ram: 512 mib, cpu: 1}
     services: [{port: 53, protocol: udp, name: internal-dns}]
   a1_mail:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-mail, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 25, name: smtp}, {port: 143, name: imap}, {port: 80, name: webmail}]
   a2_dc01:
-    type: VM
+    type: compute
     os: windows
-    os_version: Server 2022
+    os_distribution: windows-server
+    os_version: "2022"
     source: {name: polaris-windows-ad-dc, version: "1.0"}
     resources: {ram: 4 gib, cpu: 2}
     services: [{port: 53, protocol: udp, name: ad-dns}, {port: 88, name: kerberos}, {port: 389, name: ldap}, {port: 445, name: smb}]
   a3_intranet:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-intranet, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 80, name: intranet-http}]
   a4_fileshare:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-samba, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 445, name: smb}]
   a5_scada_gw:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-scada-gw, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 8080, name: hmi-http}, {port: 502, name: modbus}]
   a6_eng_ws01:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-workstation, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 22, name: ssh}]
   a7_git:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-gitea, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 3000, name: gitea-http}]
   a8_research_db:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-postgres, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 5432, name: postgres}]
   a9_splice_landing:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: polaris-splice-landing, version: "1.0"}
     resources: {ram: 512 mib, cpu: 1}
     services: [{port: 22, name: ssh}]
   a10_tail_ctrl:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: polaris-pymodbus-plc, version: "1.0"}
     resources: {ram: 512 mib, cpu: 1}
     services: [{port: 502, name: modbus}]
   a11_leg_ctrl:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: polaris-pymodbus-plc, version: "1.0"}
     resources: {ram: 512 mib, cpu: 1}
     services: [{port: 502, name: modbus}]
   a12_arms_ctrl:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: polaris-pymodbus-plc, version: "1.0"}
     resources: {ram: 512 mib, cpu: 1}
     services: [{port: 502, name: modbus}]
   a13_brain_main:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-brain-controller, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 9100, name: brain-protocol}]
   a14_kali:
-    type: VM
+    type: compute
     os: linux
-    os_version: Kali Rolling
+    os_distribution: x-shifter:kali
+    os_version: "rolling"
     source: {name: polaris-boreas-kali, version: "1.0"}
     resources: {ram: 4 gib, cpu: 2}
     services: [{port: 22, name: ssh}, {port: 3389, name: rdp}]
   a15_ops_eng01:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-workstation, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 22, name: ssh}, {port: 80, name: ops-telemetry}]
   a16_research_analyst01:
-    type: VM
+    type: compute
     os: linux
-    os_version: Debian 12
+    os_distribution: debian
+    os_version: "12"
     source: {name: polaris-boreas-workstation, version: "1.0"}
     resources: {ram: 1 gib, cpu: 1}
     services: [{port: 22, name: ssh}]
@@ -169,7 +187,7 @@ accounts:
   participant:
     username: kali
     node: a14_kali
-    auth_method: publickey
+    auth_method: key
   domain_administrator:
     username: Administrator
     node: a2_dc01
@@ -177,4 +195,79 @@ accounts:
   operator:
     username: operator
     node: a15_ops_eng01
-    auth_method: publickey
+    auth_method: key
+
+realization:
+  constraints:
+    - field_pointer: /nodes/a0_boreas_web
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/dns_boreas
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a1_mail
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a2_dc01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a3_intranet
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a4_fileshare
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a5_scada_gw
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a6_eng_ws01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a7_git
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a8_research_db
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a9_splice_landing
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a10_tail_ctrl
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a11_leg_ctrl
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a12_arms_ctrl
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a13_brain_main
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a14_kali
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a15_ops_eng01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/a16_research_analyst01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

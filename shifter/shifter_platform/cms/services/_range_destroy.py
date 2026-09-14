@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from django.db.models import Q
 from django.utils import timezone
 
 from cms.exceptions import CMSError
@@ -32,6 +33,16 @@ logger = logging.getLogger(__name__)
 # Shared error message for "Range not found" so we don't duplicate the literal (python:S1192).
 _RANGE_NOT_FOUND_MSG = "Range not found"
 _MISSING_REQUEST_MSG = "Range has no associated request"
+
+
+def _destroyable_instances():
+    """Failure hides a range from active views without proving resource cleanup.
+
+    Owners must still be able to request teardown after a failed launch or
+    cleanup. Other soft-deleted history remains outside this user entrypoint.
+    Ownership and current workspace authorization are checked by each caller.
+    """
+    return RangeInstance.all_objects.filter(Q(deleted_at__isnull=True) | Q(status=ResourceStatus.FAILED.value))
 
 
 def _engine_destroy_range_by_request_call(request_id: UUID) -> bool:
@@ -184,7 +195,7 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
     )
 
     try:
-        instance = RangeInstance.objects.get(pk=range_instance_pk)
+        instance = _destroyable_instances().get(pk=range_instance_pk)
     except RangeInstance.DoesNotExist:
         logger.warning(
             "destroy_range: range not found for user_id=%s, range_instance_pk=%s",
@@ -376,10 +387,14 @@ def destroy_range_by_request_id(user: User, request_id: str) -> None:
         request_id,
     )
 
-    instance = RangeInstance.objects.filter(
-        request__request_id=request_id,
-        user_id=user.id,
-    ).first()
+    instance = (
+        _destroyable_instances()
+        .filter(
+            request__request_id=request_id,
+            user_id=user.id,
+        )
+        .first()
+    )
 
     if not instance:
         logger.warning(

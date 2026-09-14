@@ -164,6 +164,10 @@ def list_backend_artifacts(*, provider: str) -> list[BackendArtifact]:
     catalog realizability contributor and the launch-time fencing resolver consume,
     so they agree on what the backend owns.
     """
+    from ._preparation_inventory import mapping_matches_admission, prepared_inventory_facts
+
+    rows = list_raes_image_mappings(provider=provider, include_disabled=False)
+    prepared = prepared_inventory_facts([row.id for row in rows])
     return [
         BackendArtifact(
             artifact_id=row.artifact_id,
@@ -176,9 +180,11 @@ def list_backend_artifacts(*, provider: str) -> list[BackendArtifact]:
             machine_type=row.machine_type,
             disk_size_gb=row.disk_size_gb,
             disk_type=row.disk_type,
+            materialization=prepared.get(row.id),
+            image_id=prepared[row.id].image_id if prepared.get(row.id) is not None else "",
         )
-        for row in list_raes_image_mappings(provider=provider, include_disabled=False)
-        if row.artifact_digest
+        for row in rows
+        if row.artifact_digest and (row.id not in prepared or mapping_matches_admission(row, prepared[row.id]))
     ]
 
 

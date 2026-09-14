@@ -37,7 +37,7 @@ _SDL = """name: e2e-content-delivery
 version: "1.0.0"
 nodes:
   web:
-    type: vm
+    type: compute
     os: linux
     source: base-linux
 content:

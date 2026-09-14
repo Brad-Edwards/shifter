@@ -44,6 +44,7 @@ _KEYS = frozenset(
         "acquisition",
         "timing",
         "image_ref",
+        "image_id",
         "machine_type",
         "disk_size_gb",
         "disk_type",
@@ -79,6 +80,7 @@ class ArtifactBinding:
     machine_type: str = ""
     disk_size_gb: int | None = None
     disk_type: str = ""
+    image_id: str = ""
 
     @classmethod
     def from_transport(cls, raw: Mapping[str, Any]) -> ArtifactBinding:
@@ -89,7 +91,7 @@ class ArtifactBinding:
         unexpected = sorted(actual - _KEYS)
         if unexpected:
             raise ArtifactBindingError(f"artifact binding has unexpected field(s): {', '.join(unexpected)}")
-        required = _KEYS - {"machine_type", "disk_size_gb", "disk_type"}
+        required = _KEYS - {"machine_type", "disk_size_gb", "disk_type", "image_id"}
         missing = sorted(required - actual)
         if missing:
             raise ArtifactBindingError(f"artifact binding is missing field(s): {', '.join(missing)}")
@@ -115,6 +117,7 @@ class ArtifactBinding:
             acquisition=acquisition,
             timing=timing,
             image_ref=_require_str(raw, "image_ref"),
+            image_id=_provider_image_id(raw.get("image_id", "")),
             machine_type=_optional_str(raw.get("machine_type")),
             disk_size_gb=_optional_positive_int(raw.get("disk_size_gb")),
             disk_type=_optional_str(raw.get("disk_type")),
@@ -133,10 +136,20 @@ class ArtifactBinding:
             "acquisition": self.acquisition,
             "timing": self.timing,
             "image_ref": self.image_ref,
+            "image_id": self.image_id,
             "machine_type": self.machine_type,
             "disk_size_gb": self.disk_size_gb,
             "disk_type": self.disk_type,
         }
+
+
+def _provider_image_id(value: object) -> str:
+    """Legacy inventory has no provider ID; a supplied immutable ID must be valid."""
+    if value == "":
+        return ""
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,19}", value):
+        raise ArtifactBindingError("artifact image_id must be an immutable GCE numeric identity")
+    return value
 
 
 def _require_str(raw: Mapping[str, Any], field: str) -> str:

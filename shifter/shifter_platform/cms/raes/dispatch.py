@@ -131,6 +131,12 @@ class CmsRaesDispatchPort:
             backend=shifter_backend_apparatus(),
         )
 
+    def artifact_supply(self, requirements):
+        """Give planning the same admitted backend inventory used to fence dispatch."""
+        from shared.raes.artifact_inventory import build_artifact_supply
+
+        return build_artifact_supply(requirements, self._backend_inventory())
+
     def _backend_inventory(self) -> tuple[BackendArtifact, ...]:
         """Return the selected backend's owned artifact inventory, or empty when it has none.
 

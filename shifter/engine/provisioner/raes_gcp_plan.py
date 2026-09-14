@@ -8,7 +8,9 @@ GCE apply layer (``_ensure_network``/``_ensure_subnetwork``/``_ensure_firewall``
 cyberscript scenario semantics: the image comes from the authored RAES ``source``
 resolved against the tenant registry (``resolve_gce_image``), sizing from
 ``resources``, and ``os_family`` drives only the OS realization dialect. Nodes are
-placed on their authored network; each ``count`` yields a distinct instance.
+placed on their authored network when one is selected. The GCE adapter supplies
+a backend-owned subnet when the portable plan leaves that selection open; each
+``count`` yields a distinct instance.
 
 Base range firewalls (intra-subnet allow, management, egress posture) are reused
 from ``gcp_range_cell_firewall.build_firewall_plan``; authored node ACLs are
@@ -49,6 +51,7 @@ from gcp_range_cell_types import (
     SubnetPlan,
 )
 from raes_access import RealizedAccessBinding
+from raes_gcp_adapter import RaesGceAdapterError, adapt_raes_plan_for_gce
 from raes_gcp_firewall import (
     acl_cidr_lookup,
     build_acl_firewalls,
@@ -76,6 +79,9 @@ def build_raes_range_cell_plan(
     config: GCERangeCellConfig | None = None,
     access_bindings: Sequence[RealizedAccessBinding] = (),
     egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY,
+    allocated_network_cidr: str | None = None,
+    *,
+    reconstruct_for_teardown: bool = False,
 ) -> RangeCellPlan:
     """Render the deterministic GCE range-cell plan for a parsed RAES plan.
 
@@ -91,6 +97,15 @@ def build_raes_range_cell_plan(
     neither scenario authorship nor installation enablement grants it.
     """
     resolved_config = config or load_gce_range_cell_config()
+    try:
+        raes_plan = adapt_raes_plan_for_gce(
+            raes_plan,
+            resolved_config,
+            allocated_network_cidr=allocated_network_cidr,
+            reconstruct_for_teardown=reconstruct_for_teardown,
+        )
+    except RaesGceAdapterError as exc:
+        raise RaesGcePlanError(str(exc)) from None
     network_name, network_link, manage_network = _network_placement(resolved_config, range_id)
 
     networks_by_address = {network.address: network for network in raes_plan.networks}
