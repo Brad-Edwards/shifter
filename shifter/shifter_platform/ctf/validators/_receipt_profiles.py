@@ -9,6 +9,7 @@ from urllib.parse import ParseResult, urlparse
 from shared.receipt_validation import ReceiptKeyMode
 
 _IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+_INVALID_KEY_MODES = "allowed_key_modes must be a non-empty tuple of unique key modes"
 _PROFILES: dict[str, ReceiptVerifierProfile] = {}
 
 
@@ -129,12 +130,12 @@ def _require_bound(name: str, value: object, minimum: int, maximum: int) -> None
 def _require_key_modes(value: object) -> None:
     """Require a non-empty tuple of unique closed key modes."""
     if not isinstance(value, tuple):
-        raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
+        raise ReceiptProfileError(_INVALID_KEY_MODES)
     key_modes: tuple[object, ...] = value
     if not key_modes or len(set(key_modes)) != len(key_modes):
-        raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
+        raise ReceiptProfileError(_INVALID_KEY_MODES)
     if not all(isinstance(mode, ReceiptKeyMode) for mode in key_modes):
-        raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
+        raise ReceiptProfileError(_INVALID_KEY_MODES)
 
 
 def _require_identifier_tuple(
