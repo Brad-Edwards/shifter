@@ -189,20 +189,23 @@ def _policy_reason(
         effective = intersect_profile(profile, need)
     except ContractError as exc:
         return _CONTRACT_ERROR_REASONS.get(exc.code, ModelAdmissionReason.POLICY_UNAVAILABLE)
-    if effective is None:
-        # Optional need with an empty intersection: explicit visible unavailability.
-        return ModelAdmissionReason.OPTIONAL_ABSENT
     return _effective_reason(need, demand, effective, sharing_admissible, sharing_profile)
 
 
 def _effective_reason(
     need: ScenarioNeed,
     demand: EventModelDemand | None,
-    effective: EffectiveProfile,
+    effective: EffectiveProfile | None,
     sharing_admissible: bool | None,
     sharing_profile: EffectiveProfile | None,
 ) -> ModelAdmissionReason:
-    """Fold the sharing overlap and organizer demand into the final reason."""
+    """Fold the sharing overlap and organizer demand into the final reason.
+
+    ``effective is None`` is an optional need with an empty catalog intersection:
+    explicit visible unavailability.
+    """
+    if effective is None:
+        return ModelAdmissionReason.OPTIONAL_ABSENT
     reason = ModelAdmissionReason.ADMITTED
     restricted = _restrict_by_sharing(effective, need, sharing_profile) if sharing_profile is not None else None
     if sharing_admissible is False:
