@@ -6,6 +6,9 @@ import os
 import re
 import subprocess  # nosec B404
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -245,6 +248,19 @@ def _redact_argv_for_log(cmd: list[str]) -> str:
     return " ".join(redacted)
 
 
+_verified_environment: ContextVar[dict[str, str] | None] = ContextVar("bootstrap_environment", default=None)
+
+
+@contextmanager
+def verified_command_environment(env: dict[str, str]) -> Iterator[None]:
+    """Bind existing runner helpers to the verified operator for this operation."""
+    token = _verified_environment.set(dict(env))
+    try:
+        yield
+    finally:
+        _verified_environment.reset(token)
+
+
 def _subprocess_env() -> dict[str, str]:
     """Child environment for bootstrap subprocess calls.
 
@@ -255,7 +271,8 @@ def _subprocess_env() -> dict[str, str]:
     commands. Everything else is inherited from the parent so ``AWS_PROFILE``,
     ``TF_*``, and the rest of the operator environment still flow through.
     """
-    return {**os.environ, "AWS_PAGER": ""}
+    selected = _verified_environment.get()
+    return {**(os.environ if selected is None else selected), "AWS_PAGER": ""}
 
 
 def run_cmd(
@@ -286,6 +303,11 @@ def run_cmd(
             result = subprocess.run(cmd, check=check, text=True, env=_subprocess_env())  # nosec B603 B607
         return result
     except subprocess.CalledProcessError as e:
+        if _verified_environment.get() is not None:
+            error("Verified bootstrap command failed; private child output suppressed")
+            if check:
+                raise SystemExit(1) from None
+            return None
         error(f"Command failed: {e}")
         if hasattr(e, "stderr") and e.stderr:
             print(e.stderr)
