@@ -91,9 +91,12 @@ function initCliButton() {
                 throw new Error('Server returned invalid response');
             }
 
-            // Open in new tab and check if it was blocked
+            // Open in new tab and check if it was blocked. A real Window always
+            // exposes a boolean `closed`, so `!popup` (blocked -> null) plus
+            // `popup.closed` (opened-then-closed) fully cover the blocked cases;
+            // a `=== undefined` third check would be dead code (javascript:S3403).
             const popup = globalThis.open(data.url, '_blank');
-            if (!popup || popup.closed || popup.closed === undefined) {
+            if (!popup || popup.closed) {
                 // Popup was blocked
                 const popupMessage = [
                     'Popup blocked. Click OK to try again.',
