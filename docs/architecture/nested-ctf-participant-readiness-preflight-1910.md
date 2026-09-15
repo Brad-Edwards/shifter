@@ -180,7 +180,7 @@ grant to the pooled host identity is not an acceptable stopgap.
 ## Signed receipt validation
 
 The [#1906 binding preflight](ctf-signed-receipt-binding-preflight-1906.md)
-and ADR-062 specialize this section: they distinguish command generation from
+and ADR-063 specialize this section: they distinguish command generation from
 materialization and assignment identity, define signer/key enrollment, and require
 transactional freshness and durable one-shot replay evidence. The paragraphs
 below describe the existing transport and scoring incumbents, not sufficient

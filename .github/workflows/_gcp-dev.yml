@@ -674,7 +674,7 @@ jobs:
             > "${RUNNER_TEMP}/gcp-release-scan-verdict.json"
       - name: Upload redacted scan verdict
         if: always() && steps.store_scan_evidence.outcome == 'success'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gcp-release-scan-verdict-${{ github.sha }}
           path: ${{ runner.temp }}/gcp-release-scan-verdict.json
@@ -1147,7 +1147,7 @@ jobs:
             '{schema_version: 1, source_sha: $source_sha, result: "passed", evidence_locator: $evidence_locator, evidence_sha256: $evidence_sha256}' \
             > "${RUNNER_TEMP}/gcp-running-image-verdict.json"
       - name: Upload redacted running-image verdict
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gcp-running-image-verdict-${{ github.sha }}
           path: ${{ runner.temp }}/gcp-running-image-verdict.json

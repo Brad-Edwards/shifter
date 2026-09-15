@@ -115,6 +115,13 @@
       "technical_docs": ["technical/shifter_platform/range-workspace-scoping-administration.md"]
     },
     {
+      "id": "retry-safe-range-operations",
+      "title": "Retry-safe range operations and truthful cleanup outcomes",
+      "requirement": "GEN-001",
+      "user_docs": ["features/retry-safe-range-operations.md"],
+      "technical_docs": ["technical/shifter_platform/retry-safe-range-operations.md"]
+    },
+    {
       "id": "aws-eks-backend-bundle",
       "title": "AWS EKS backend bundle",
       "requirement": "GEN-001",

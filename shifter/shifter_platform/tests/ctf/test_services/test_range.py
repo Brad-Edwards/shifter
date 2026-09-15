@@ -341,11 +341,13 @@ class TestCleanupEventRanges:
 
             result = range_service.cleanup_event_ranges(event_id)
 
-        assert result["destroyed"] == 1
+        assert result["dispatched"] == 1
         mock_destroy.assert_called_once_with(mock_user, 42)
         mock_participant.save.assert_called_once()
-        assert mock_participant.range_instance_id is None
-        assert mock_participant.range_status == ""
+        # #1919: dispatch retains the linkage and marks "destroying"; the verified
+        # terminal projection is what clears range_instance_id and releases capacity.
+        assert mock_participant.range_instance_id == 42
+        assert mock_participant.range_status == "destroying"
 
 
 class TestDestroyParticipantRange:
@@ -372,13 +374,13 @@ class TestDestroyParticipantRange:
         with patch("ctf.bridges.cms_destroy_range") as mock_destroy:
             result = range_service.destroy_participant_range(mock_participant.pk)
 
-        assert result["status"] == "destroyed"
+        assert result["status"] == "destroying"
         mock_destroy.assert_called_once_with(mock_participant.user, 42)
         mock_participant.save.assert_called_once()
-        # _destroy_single_range clears both fields; verify the status-clear too.
-        assert mock_participant.range_instance_id is None
-        assert mock_participant.range_status == ""
-        assert mock_participant.range_instance_id is None
+        # #1919: dispatch is not terminal cleanup -- the linkage is retained and the
+        # status is truthfully "destroying" until the range actually reaches DESTROYED.
+        assert mock_participant.range_instance_id == 42
+        assert mock_participant.range_status == "destroying"
 
 
 # ---------------------------------------------------------------------------

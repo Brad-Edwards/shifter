@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.conf import settings
@@ -34,9 +33,6 @@ from ctf.s3 import (
     upload_challenge_file,
 )
 from shared.log_sanitize import safe_log_fingerprint
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +135,8 @@ def add_challenge_file(
         )
 
     # Validate file size
-    file_obj.seek(0, 2)  # Seek to end
+    # Seek to end
+    file_obj.seek(0, 2)
     file_size = file_obj.tell()
     file_obj.seek(0)
     if file_size > MAX_FILE_SIZE:

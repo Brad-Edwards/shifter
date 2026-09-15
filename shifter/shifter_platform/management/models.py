@@ -3,11 +3,16 @@
 Platform administration models for user profiles and activity logging.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 
 class UserProfile(models.Model):
@@ -110,7 +115,7 @@ class UserProfile(models.Model):
     anonymized_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        """Persist one positive eligibility revision per auth group."""
+        """Table mapping, labels, and CTF-account identity invariants."""
 
         db_table = "mission_control_userprofile"
         verbose_name = "User Profile"
@@ -135,7 +140,7 @@ class UserProfile(models.Model):
         super().save(*args, **kwargs)
 
     @property
-    def is_deleted(self):
+    def is_deleted(self) -> bool:
         return self.deleted_at is not None
 
     @property
@@ -168,17 +173,19 @@ class ActivityLog(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
+        """Table mapping, default ordering, and labels for the activity log."""
+
         db_table = "mission_control_activitylog"
         ordering = ["-timestamp"]
         verbose_name = "Activity Log"
         verbose_name_plural = "Activity Logs"
 
-    def __str__(self):
+    def __str__(self) -> str:
         user_str = self.user.email if self.user else "anonymous"
         return f"{self.action} by {user_str} at {self.timestamp}"
 
     @classmethod
-    def log(cls, action: str, user=None, **metadata):
+    def log(cls, action: str, user: User | None = None, **metadata: Any) -> ActivityLog:
         """Convenience method to log an activity."""
         return cls.objects.create(user=user, action=action, metadata=metadata)
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods
 
 if TYPE_CHECKING:
@@ -126,16 +127,31 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
 
     event = participant.event
 
+    # URLs the scoreboard auto-refresh JS reads from #scoreboard-config. Built
+    # server-side so the template's data-* attributes stay under Sonar's line
+    # length limit (Web:MaxLineLengthCheck).
+    solve_history_url = reverse("ctf:participant_solve_history", kwargs={"participant_id": participant.pk})
+
     # If organizer has hidden the scoreboard, show a hidden message
     if not event.scoreboard_visible:
         return render(
             request,
             _SCOREBOARD_TEMPLATE,
-            {"participant": participant, "event": event, "scoreboard_hidden": True},
+            {
+                "participant": participant,
+                "event": event,
+                "scoreboard_hidden": True,
+                "scoreboard_url": reverse("ctf:api_scoreboard", kwargs={"event_id": event.id}),
+                "solve_history_url": solve_history_url,
+            },
         )
 
     freeze_at = event.scoreboard_freeze_at if event.is_scoreboard_frozen else None
     brackets, selected_bracket, bracket_id = _parsing._resolve_bracket_filter(event.id, request.GET.get("bracket"))
+
+    scoreboard_url = reverse("ctf:api_scoreboard", kwargs={"event_id": event.id})
+    if selected_bracket:
+        scoreboard_url = f"{scoreboard_url}?bracket={selected_bracket.id}"
 
     rankings = (
         get_team_scoreboard(event.id, freeze_at=freeze_at)
@@ -164,6 +180,8 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
         "selected_bracket": selected_bracket,
         "team_mode": event.team_mode,
         "frozen": event.is_scoreboard_frozen,
+        "scoreboard_url": scoreboard_url,
+        "solve_history_url": solve_history_url,
     }
     return render(request, _SCOREBOARD_TEMPLATE, context)
 

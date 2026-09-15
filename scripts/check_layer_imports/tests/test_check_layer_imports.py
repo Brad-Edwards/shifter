@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from _symbol_facade import (
@@ -652,6 +654,8 @@ class TestMain:
             capture_output=True,
             text=True,
             check=False,
+            # --output is confined to the working directory (S8707); run from tmp_path.
+            cwd=str(tmp_path),
         )
         assert result.returncode == 0, result.stderr
         assert output_file.exists()
@@ -732,10 +736,30 @@ class TestMainInProcess:
             (platform / layer_name).mkdir(parents=True)
         output_file = tmp_path / "report.json"
 
+        # --output is confined to the working directory (S8707); run from tmp_path.
+        monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(cli, "__file__", str(script_dir / "check_layer_imports.py"))
         monkeypatch.setattr(sys, "argv", ["check_layer_imports", "-o", str(output_file)])
         assert cli.main() == 0
         assert output_file.exists()
+
+    def test_main_rejects_output_path_traversal(self, tmp_path, monkeypatch):
+        """--output escaping the working directory is refused (S8707 path traversal)."""
+        import check_layer_imports as cli
+
+        script_dir = tmp_path / "scripts" / "check_layer_imports"
+        script_dir.mkdir(parents=True)
+        (script_dir / "layer_imports.yaml").write_text("allowed:\n  cms:\n    - shared\n")
+        platform = tmp_path / "shifter" / "shifter_platform"
+        for layer_name in ALL_LAYERS:
+            (platform / layer_name).mkdir(parents=True)
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(cli, "__file__", str(script_dir / "check_layer_imports.py"))
+        monkeypatch.setattr(sys, "argv", ["check_layer_imports", "-o", "../escape.json"])
+        with pytest.raises(SystemExit):
+            cli.main()
+        assert not (tmp_path.parent / "escape.json").exists()
 
 
 class TestGetImportsEdgeCases:

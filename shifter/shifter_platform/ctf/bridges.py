@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
     from django.contrib.auth.models import User
 
+    from ctf.models import CTFEvent
     from shared.capacity import CapacityAssessmentResult
     from shared.model_access import (
         AuthorityInvalidation,
@@ -36,7 +37,7 @@ class UserRole:
 
     is_ctf_organizer: bool
     is_ctf_participant: bool
-    active_ctf_event: Any  # CTFEvent | None
+    active_ctf_event: CTFEvent | None
 
 
 def get_user_role(user: User) -> UserRole:
@@ -68,7 +69,7 @@ def get_user_role(user: User) -> UserRole:
 class RangeProvisionResult:
     """Result of a range provisioning request."""
 
-    request_id: Any  # UUID
+    request_id: UUID
 
 
 def cms_declare_event_capacity(
@@ -185,28 +186,34 @@ def cms_create_range(
     return RangeProvisionResult(request_id=result.request_id)
 
 
-def cms_destroy_range(user, range_instance_id: int) -> None:
+def cms_destroy_range(user: User, range_instance_id: int) -> None:
     """Destroy a range via CMS."""
     import cms.services as cms_services
 
     cms_services.destroy_range(user, range_instance_id)
 
 
-def cms_stop_range(user, range_instance_id: int) -> None:
+def cms_stop_range(user: User | None, range_instance_id: int) -> None:
     """Stop (pause) a range via CMS."""
     import cms.services as cms_services
 
+    # CTFParticipant.user is a nullable SET_NULL FK; a range operation needs its
+    # owning user, so require one at the boundary.
+    assert user is not None
     cms_services.pause_range(user, range_instance_id)
 
 
-def cms_start_range(user, range_instance_id: int) -> None:
+def cms_start_range(user: User | None, range_instance_id: int) -> None:
     """Start (resume) a range via CMS."""
     import cms.services as cms_services
 
+    # CTFParticipant.user is a nullable SET_NULL FK; a range operation needs its
+    # owning user, so require one at the boundary.
+    assert user is not None
     cms_services.resume_range(user, range_instance_id)
 
 
-def cms_find_range_instance_id(request_id) -> int | None:
+def cms_find_range_instance_id(request_id: str | UUID) -> int | None:
     """Find RangeInstance PK by provisioning request ID."""
     import cms.services as cms_services
 

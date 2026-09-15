@@ -27,6 +27,7 @@ _SSH_USER_BY_OS = {
 
 
 def _get_provider() -> str:
+    """Return the active cloud provider identifier (e.g. ``aws`` or ``gcp``)."""
     return resolve_cloud_provider()
 
 

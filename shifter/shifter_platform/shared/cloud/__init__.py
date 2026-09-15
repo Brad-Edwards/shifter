@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 
 
 def _get_provider() -> str:
+    """Return the configured cloud provider identifier."""
     return settings.CLOUD_PROVIDER
 
 

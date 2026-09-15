@@ -2029,17 +2029,17 @@ class TestGcpBootstrapIdentityPlatform:
             tmp_path,
             "\n".join(
                 [
-                    'project_id                   = "prod-ksqdkj"',
-                    'gcp_bootstrap_admin_email    = "operator@paloaltonetworks.com"',
-                    'gcp_bootstrap_admin_password = "Galvatron7!!!"',
+                    'project_id                   = "example-gcp-project"',
+                    'gcp_bootstrap_admin_email    = "operator@example.test"',
+                    'gcp_bootstrap_admin_password = "example-admin-password"',
                     "",
                 ]
             ),
         )
 
         assert gcp_control_plane._gcp_bootstrap_creds_from_tfvars(tmp_path) == {
-            "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@paloaltonetworks.com",
-            "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
+            "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@example.test",
+            "GCP_BOOTSTRAP_ADMIN_PASSWORD": "example-admin-password",
         }
 
     def test_gcp_bootstrap_creds_from_tfvars_absent_overlay_returns_empty(self, tmp_path):
