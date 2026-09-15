@@ -43,7 +43,7 @@ def _valid_summary(request_id):
 def _mock_launch_ready(monkeypatch, request_id, torn):
     monkeypatch.setattr(
         "cms.services.create_range_dispatch",
-        lambda user, scenario, agents, range_source=None: SimpleNamespace(request_id=request_id),
+        lambda user, scenario, range_source=None: SimpleNamespace(request_id=request_id),
     )
     monkeypatch.setattr("cms.services.find_range_instance_id_by_request", lambda r: 5)
     monkeypatch.setattr("cms.services.get_range_status_by_id", lambda pk: ResourceStatus.READY.value)

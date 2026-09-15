@@ -19,7 +19,12 @@ if TYPE_CHECKING:
 
     from ctf.models import CTFEvent
     from shared.capacity import CapacityAssessmentResult
-    from shared.model_access import AuthorityInvalidation, ModelAccessRangeInstanceView, ModelAccessRangeView
+    from shared.model_access import (
+        AuthorityInvalidation,
+        ModelAccessRangeInstanceView,
+        ModelAccessRangeView,
+        OwnedReference,
+    )
     from shared.receipt_validation import ReceiptVerifierBinding
     from shared.remote_access import OpenVpnProfile
 
@@ -151,6 +156,7 @@ def cms_create_range(
     agents_by_os: dict[str, int],
     ngfw_enabled: bool,
     remote_access_teardown_at: datetime | None,
+    model_admission_subject: OwnedReference | None = None,
 ) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
@@ -158,17 +164,24 @@ def cms_create_range(
     to CTF ranges, allowing the user to hold both a Mission Control range and a
     CTF range simultaneously (#450). The source is server-derived here and is
     never caller-supplied.
+
+    ``model_admission_subject`` is the CTF draw reference (PLAT-202) used to
+    resolve the sharing overlap for required-model admission against the real
+    launch subject rather than the launcher identity.
     """
     import cms.services as cms_services
     from shared.enums import RangeSource
 
+    # RAES packages own topology; agents_by_os is accepted for caller back-compat
+    # but does not shape the plan.
+    del agents_by_os
     result = cms_services.create_range_dispatch(
         user=user,
         scenario=scenario,
-        agents_by_os=agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=RangeSource.CTF,
         remote_access_teardown_at=remote_access_teardown_at,
+        model_admission_subject=model_admission_subject,
     )
     return RangeProvisionResult(request_id=result.request_id)
 

@@ -250,7 +250,7 @@ class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
                 request, user, scenario, agents_by_os, workspace_uuid, caller_key, agents_selection or {}
             )
         try:
-            range_ctx = cms_create_range(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
+            range_ctx = cms_create_range(user, scenario, workspace_uuid=workspace_uuid)
         except CMSError as exc:
             return self._launch_failure_response(exc, user, scenario)
 

@@ -3621,6 +3621,9 @@ export interface components {
             readonly capacity_hints: {
                 [key: string]: unknown;
             };
+            readonly model_demand: {
+                [key: string]: unknown;
+            }[];
             readonly logo_url: string;
             readonly visible_os_types: string[];
             readonly theme_color: string;
@@ -3755,6 +3758,9 @@ export interface components {
             capacity_hints?: {
                 [key: string]: unknown;
             };
+            model_demand?: {
+                [key: string]: unknown;
+            }[];
             /** Format: uri */
             logo_url?: string;
             visible_os_types?: string[];

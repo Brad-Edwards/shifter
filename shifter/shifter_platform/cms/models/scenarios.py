@@ -202,3 +202,63 @@ class RaesPackageSource(models.Model):
         conformance signal as launchability on its own.
         """
         return self.conformance_status == self.ConformanceStatus.PASSED
+
+
+class ScenarioModelNeeds(models.Model):
+    """Staff-authored per-pack scenario→model-need binding (PLAT-202).
+
+    Shifter-owned, digest-bound overlay that rides the runtime pack lifecycle
+    (tenant/staff managed), keyed by ``scenario_id`` like :class:`ScenarioMetadata`.
+    It is deliberately NOT on :class:`RaesPackageSource` (which is provenance-only)
+    and NOT in the deploy-time mounted model-access catalog: a newly registered
+    model-requiring pack must be admissible without an operator catalog redeploy,
+    so the need follows the pack, while the catalog keeps owning the deployment
+    policy (profiles/shards/sharing) the need references.
+
+    ``needs`` maps ``workload_role`` to a :class:`shared.model_access.ScenarioNeed`
+    payload. ``authored_package_digest`` is the pack content digest the needs were
+    authored against; admission verifies the registered pack's current digest
+    against it so a re-registered pack cannot inherit a stale binding.
+    """
+
+    scenario_id = models.SlugField(
+        max_length=100,
+        unique=True,
+        help_text="Catalog id of the RAES package these model needs bind to",
+    )
+    authored_package_digest = models.CharField(
+        max_length=71,
+        help_text="Pack content digest the needs were authored against ('sha256:<64 hex>')",
+    )
+    needs = models.JSONField(
+        help_text="Map of workload_role to a shared.model_access.ScenarioNeed payload",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Model options: ordering and human-readable names."""
+
+        ordering = ["scenario_id"]
+        verbose_name = "Scenario Model Needs"
+        verbose_name_plural = "Scenario Model Needs"
+
+    def __str__(self) -> str:
+        return f"{self.scenario_id}: {len(self.needs or {})} workload need(s)"
+
+    def save(self, *args, **kwargs) -> None:
+        """Persist after validating the ``{workload_role: ScenarioNeed}`` payload.
+
+        Raises:
+            shared.model_access.catalog.ContractError: if any entry is malformed,
+                its key does not match its ``workload_role``, or its
+                ``scenario_digest`` does not equal ``authored_package_digest``.
+        """
+        from cms.scenarios.model_needs import validate_scenario_model_needs
+
+        self.needs = validate_scenario_model_needs(self.authored_package_digest, self.needs)
+        super().save(*args, **kwargs)

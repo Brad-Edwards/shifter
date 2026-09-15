@@ -15426,6 +15426,14 @@
             "additionalProperties": {},
             "readOnly": true
           },
+          "model_demand": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "readOnly": true
+          },
           "logo_url": {
             "type": "string",
             "readOnly": true
@@ -15467,6 +15475,7 @@
           "logo_url",
           "managed_content",
           "max_participants",
+          "model_demand",
           "name",
           "owner",
           "public_registration_enabled",
@@ -15866,6 +15875,14 @@
           "capacity_hints": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "model_demand": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "maxItems": 64
           },
           "logo_url": {
             "type": "string",
