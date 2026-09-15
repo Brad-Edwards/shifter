@@ -223,6 +223,31 @@ class TestRebuildRecovery:
     """``strategy=rebuild``: provision a fresh range for the participant."""
 
     @pytest.mark.django_db
+    def test_rebuild_admits_against_realized_range_subject_not_draw(
+        self, rich_participant, organizer_user, monkeypatch
+    ):
+        # PLAT-202 (#2119): the replacement must be admitted against the realized
+        # range's membership subject captured BEFORE teardown, not the draw — else a
+        # binding published against the range would be silently dropped on rebuild.
+        import cms.services._model_admission as gate
+        from shared.model_access import OwnedReference
+
+        participant, _old_range = rich_participant
+        captured: dict[str, object] = {}
+        original = gate.assert_launch_model_access
+
+        def _spy(**kwargs):
+            captured["subject"] = kwargs.get("subject")
+            return original(**kwargs)
+
+        monkeypatch.setattr(gate, "assert_launch_model_access", _spy)
+
+        recover_participant_range(participant.pk, strategy=RecoveryStrategy.REBUILD.value, operator=organizer_user)
+
+        assert captured["subject"] is not None
+        assert captured["subject"] != OwnedReference(owner="ctf", reference=f"draw:{participant.pk}")
+
+    @pytest.mark.django_db
     def test_rebuild_preserves_identity_and_scoring_state(self, rich_participant, submission_and_award, organizer_user):
         participant, old_range = rich_participant
         submission, award = submission_and_award
