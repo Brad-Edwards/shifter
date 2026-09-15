@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from inventory_bootstrap import invalid, write_private
 
@@ -19,7 +20,7 @@ def create_plan_directory(path: Path) -> Path:
     return path.resolve()
 
 
-def publish_plan(stack: str, plan: dict, binary: Path, destination: Path) -> dict:
+def publish_plan(stack: str, plan: dict[str, Any], binary: Path, destination: Path) -> dict[str, Any]:
     """Persist full private evidence; print only addresses, action kinds and counts.
 
     Called after validation and before apply by both stack adapters. Detailed

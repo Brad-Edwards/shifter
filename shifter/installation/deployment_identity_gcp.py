@@ -9,6 +9,7 @@ from .errors import ConfigIssue, InstallationConfigError
 
 
 def subject(execution: ExecutionRepository, environment: str) -> str:
+    """Build the default GitHub subject for one execution Environment."""
     return f"repo:{execution.repository}:environment:{environment}"
 
 

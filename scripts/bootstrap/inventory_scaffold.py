@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 from installation.deployment_inventory_types import DeploymentRecord
@@ -25,7 +26,7 @@ def scaffold_checks(record: DeploymentRecord, output: Path) -> None:
         raise invalid("execution check scaffolding currently supports the GCP consumer")
     if output.exists():
         raise invalid("scaffold output must be a new directory")
-    workflows: dict[str, dict] = {}
+    workflows: dict[str, dict[str, Any]] = {}
     for contexts in record.execution.purposes.values():
         for context in contexts:
             if context.reusable_workflow:

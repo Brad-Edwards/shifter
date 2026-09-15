@@ -29,15 +29,21 @@ PURPOSE_WORKFLOWS = {
 
 
 class ClosedRecord(BaseModel):
+    """Immutable inventory object that rejects unknown fields."""
+
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
 class ProductRevision(ClosedRecord):
+    """Canonical product repository pinned to an immutable commit."""
+
     repository: Literal["Brad-Edwards/shifter"]
     revision: Revision
 
 
 class ExecutionContext(ClosedRecord):
+    """One exact Environment, branch and supported workflow tuple."""
+
     environment: Environment
     ref: str = Field(pattern=r"^refs/heads/[A-Za-z0-9][A-Za-z0-9_/-]{0,150}$")
     workflow: str = Field(pattern=r"^[a-z][a-z0-9_-]*\.yml$")
@@ -48,6 +54,8 @@ class ExecutionContext(ClosedRecord):
 
 
 class ExecutionRepository(ClosedRecord):
+    """Private execution authority identified by immutable GitHub IDs."""
+
     repository: Repository
     repository_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
     owner_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
@@ -61,31 +69,40 @@ class ExecutionRepository(ClosedRecord):
         for purpose, contexts in self.purposes.items():
             if not contexts or len(contexts) > 8:
                 raise ValueError("purpose must have one to eight execution contexts")
-            seen: set[tuple[str, str, str, str | None]] = set()
-            for context in contexts:
-                count += 1
-                if context.workflow not in PURPOSE_WORKFLOWS[purpose]:
-                    raise ValueError("workflow is not a supported entry point for this purpose")
-                # GitHub Environment identity is case insensitive.
-                environment = context.environment.lower()
-                if environment in owners and owners[environment] != purpose:
-                    raise ValueError("purpose subjects must be disjoint")
-                owners[environment] = purpose
-                key = (environment, context.ref, context.workflow, context.reusable_workflow)
-                if key in seen:
-                    raise ValueError("duplicate execution context")
-                seen.add(key)
+            count += len(contexts)
+            self._validate_contexts(purpose, contexts, owners)
         if count > 12:
             raise ValueError("too many trust tuples for the bounded provider condition")
         return self
 
+    @staticmethod
+    def _validate_contexts(purpose: Purpose, contexts: list[ExecutionContext], owners: dict[str, str]) -> None:
+        """Enforce supported entry points, disjoint subjects and unique tuples."""
+        seen: set[tuple[str, str, str, str | None]] = set()
+        for context in contexts:
+            if context.workflow not in PURPOSE_WORKFLOWS[purpose]:
+                raise ValueError("workflow is not a supported entry point for this purpose")
+            # GitHub Environment identity is case insensitive.
+            environment = context.environment.lower()
+            if environment in owners and owners[environment] != purpose:
+                raise ValueError("purpose subjects must be disjoint")
+            owners[environment] = purpose
+            key = (environment, context.ref, context.workflow, context.reusable_workflow)
+            if key in seen:
+                raise ValueError("duplicate execution context")
+            seen.add(key)
+
 
 class StateReference(ClosedRecord):
+    """Dedicated remote state bucket and prefix for one stack."""
+
     bucket: Bucket
     prefix: str = Field(pattern=r"^[a-z0-9][a-z0-9_/-]{0,180}[a-z0-9]$")
 
 
 class SecretReference(ClosedRecord):
+    """Scoped secret locator without a secret value."""
+
     store: Literal["gcp-secret-manager", "aws-secrets-manager", "github-environment"]
     resource: str = Field(min_length=1, max_length=1024)
     repository: Repository | None = None
@@ -114,6 +131,8 @@ class SecretReference(ClosedRecord):
 
 
 class GcpIdentityInputs(ClosedRecord):
+    """Resource names and bounded capabilities within the deployment project."""
+
     name_prefix: str = Field(pattern=r"^[a-z][a-z0-9-]{2,21}[a-z0-9]$")
     evidence_bucket: Bucket
     runner_zone: str = Field(pattern=r"^[a-z]+-[a-z]+[0-9]-[a-z]$")
@@ -134,6 +153,8 @@ class GcpIdentityInputs(ClosedRecord):
 
 
 class DeploymentRecord(ClosedRecord):
+    """Versioned deployment, execution, state and secret-reference contract."""
+
     version: Literal[1]
     installation: RootConfig
     product: ProductRevision

@@ -303,17 +303,20 @@ def run_cmd(
             result = subprocess.run(cmd, check=check, text=True, env=_subprocess_env())  # nosec B603 B607
         return result
     except subprocess.CalledProcessError as e:
-        if _verified_environment.get() is not None:
-            error("Verified bootstrap command failed; private child output suppressed")
-            if check:
-                raise SystemExit(1) from None
-            return None
-        error(f"Command failed: {e}")
-        if hasattr(e, "stderr") and e.stderr:
-            print(e.stderr)
+        _report_command_failure(e)
         if check:
-            sys.exit(1)
+            raise SystemExit(1) from None
         return None
+
+
+def _report_command_failure(exc: subprocess.CalledProcessError) -> None:
+    """Keep private child failures out of logs when using verified credentials."""
+    if _verified_environment.get() is not None:
+        error("Verified bootstrap command failed; private child output suppressed")
+        return
+    error(f"Command failed: {exc}")
+    if exc.stderr:
+        print(exc.stderr)
 
 
 def run_cmd_secret_stdin(

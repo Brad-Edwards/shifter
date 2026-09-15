@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from installation.deployment_inventory import MAX_RECORD_BYTES, parse_record, validate_ownership
+from installation.deployment_inventory_types import DeploymentRecord
 from installation.errors import InstallationConfigError
 
 from bootstrap_core import get_repo_root
@@ -17,6 +18,7 @@ from inventory_github import publish_execution_bindings, reconcile_environments,
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register inventory validation, planning and bootstrap commands."""
     parser = subparsers.add_parser(
         "inventory", help="Validate or bootstrap a deployment from private external inventory"
     )
@@ -37,7 +39,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--execution-environment", help="Exact consumer execution Environment")
 
 
-def verified_inventory(args: argparse.Namespace):
+def verified_inventory(args: argparse.Namespace) -> DeploymentRecord:
+    """Load reviewed regular Git blobs and validate ownership across the inventory."""
     root = args.inventory_root.resolve()
     revision = args.inventory_revision
     if len(revision) != 40 or any(character not in "0123456789abcdef" for character in revision):
@@ -58,16 +61,21 @@ def verified_inventory(args: argparse.Namespace):
         raise invalid("record must belong to the bounded, committed deployment inventory")
     records = {}
     for path in paths:
-        entry = private_command(["git", "ls-tree", revision, "--", path], cwd=root).split()
-        if len(entry) < 3 or entry[0] not in {"100644", "100755"} or entry[1] != "blob":
-            raise invalid("inventory records must be committed regular files")
-        size = private_command(["git", "cat-file", "-s", entry[2]], cwd=root).strip()
-        if not size.isdecimal() or int(size) > MAX_RECORD_BYTES:
-            raise invalid("inventory record exceeds the input bound")
-        payload = private_command(["git", "cat-file", "blob", entry[2]], cwd=root)
-        records[path] = parse_record(payload.encode("utf-8"))
+        records[path] = _read_record(root, revision, path)
     validate_ownership(list(records.values()))
     return records[args.record]
+
+
+def _read_record(root: Path, revision: str, path: str) -> DeploymentRecord:
+    """Bound and parse one regular file from the immutable inventory commit."""
+    entry = private_command(["git", "ls-tree", revision, "--", path], cwd=root).split()
+    if len(entry) < 3 or entry[0] not in {"100644", "100755"} or entry[1] != "blob":
+        raise invalid("inventory records must be committed regular files")
+    size = private_command(["git", "cat-file", "-s", entry[2]], cwd=root).strip()
+    if not size.isdecimal() or int(size) > MAX_RECORD_BYTES:
+        raise invalid("inventory record exceeds the input bound")
+    payload = private_command(["git", "cat-file", "blob", entry[2]], cwd=root)
+    return parse_record(payload.encode("utf-8"))
 
 
 def stage_product(product_root: Path, revision: str, destination: Path) -> Path:
@@ -101,120 +109,130 @@ def stage_product(product_root: Path, revision: str, destination: Path) -> Path:
     return destination / roots[0]
 
 
+def _resolve_secret(record: DeploymentRecord, args: argparse.Namespace) -> None:
+    """Resolve one explicitly scoped binding into a new private output file."""
+    from inventory_secrets import resolve_secret
+
+    if (
+        args.secret_name not in record.secrets
+        or not args.secret_output
+        or args.execution_repository != record.execution.repository
+        or not args.execution_environment
+    ):
+        raise invalid("secret resolution requires a binding, output file and exact execution scope")
+    value = resolve_secret(
+        record.secrets[args.secret_name],
+        repository=args.execution_repository,
+        environment=args.execution_environment,
+    )
+    write_private(args.secret_output, value)
+
+
+def _authorize_bootstrap(record: DeploymentRecord, args: argparse.Namespace) -> None:
+    """Require explicit matching targets, activation intent and installed tools."""
+    if not all((args.operator, args.github_actor, args.execution_repository, args.project, args.plan_output)):
+        raise invalid(
+            "plan/bootstrap require operator, GitHub actor, repository, project and a new --plan-output directory"
+        )
+    if args.action == "bootstrap" and not args.apply:
+        raise invalid("bootstrap activation requires the explicit --apply flag")
+    if args.action == "plan" and args.apply:
+        raise invalid("plan cannot activate bootstrap changes")
+    authorize_record(record, execution_repository=args.execution_repository, project_id=args.project)
+    import shutil
+
+    from preflight import CheckResult, PreflightReport, Status
+
+    checks = []
+    for tool in ("git", "gh", "gcloud", "terraform", "uv"):
+        available = bool(shutil.which(tool))
+        checks.append(
+            CheckResult(
+                tool,
+                Status.OK if available else Status.FAIL,
+                "available" if available else "install this CLI before bootstrap",
+            )
+        )
+    report = PreflightReport("gcp", "local", record.installation.deployment.name, checks)
+    if not report.ok:
+        raise invalid(report.render())
+
+
+def _bootstrap(record: DeploymentRecord, args: argparse.Namespace) -> None:
+    """Stage the pinned product and execute both stacks under verified authority."""
+    from inventory_plan import create_plan_directory
+    from inventory_runner import bootstrap_runner
+
+    _authorize_bootstrap(record, args)
+    product_root = get_repo_root()
+    plan_output = create_plan_directory(args.plan_output)
+    write_private(
+        plan_output / "provenance.json",
+        json.dumps(
+            {
+                "inventory_repository": args.inventory_repository,
+                "inventory_revision": args.inventory_revision,
+                "product_repository": record.product.repository,
+                "product_revision": record.product.revision,
+                "deployment": record.installation.deployment.name,
+                "project": args.project,
+            },
+            sort_keys=True,
+            indent=2,
+        ),
+    )
+    with tempfile.TemporaryDirectory(prefix="shifter-inventory-") as temporary:
+        directory = Path(temporary)
+        tf_root = stage_product(product_root, record.product.revision, directory)
+        env = operator_environment(args.operator)
+        project_number = verify_projects(record, env)
+        verify_github_actor(record, args.github_actor, inventory_repository=args.inventory_repository)
+        ensure_services(record, env, apply=args.apply)
+        ensure_state_buckets(record, env, apply=args.apply)
+        with bootstrap_lock(record, directory, env):
+            reconcile_environments(record, apply=args.apply)
+            reconcile_subject(record, apply=args.apply)
+            result = plan_identity(
+                record,
+                directory=tf_root,
+                product_root=product_root,
+                project_number=project_number,
+                env=env,
+                plan_output=plan_output,
+                apply=args.apply,
+            )
+            result["runner_plan"] = bootstrap_runner(
+                record,
+                directory / "platform/terraform/gcp/global/github-runner",
+                env,
+                apply=args.apply,
+                plan_output=plan_output,
+            )
+            if args.apply:
+                from inventory_readback import verify_installed_identity
+
+                verify_installed_identity(record, project_number, env, product_root)
+                publish_execution_bindings(record, project_number)
+            result["inventory_revision"] = args.inventory_revision
+            result["plan_output"] = str(plan_output)
+            print(json.dumps(result, sort_keys=True))
+
+
 def handle(args: argparse.Namespace) -> None:
     """Validate all records, then operate only on the explicitly authorized one."""
     try:
         record = verified_inventory(args)
         if args.action == "validate":
             print(json.dumps({"deployment": record.installation.deployment.name, "valid": True}))
-            return
-        if args.action == "scaffold":
+        elif args.action == "scaffold":
             from inventory_scaffold import scaffold_checks
 
             if not args.output:
                 raise invalid("scaffold requires a new output directory")
             scaffold_checks(record, args.output)
-            return
-        if args.action == "resolve-secret":
-            from inventory_secrets import resolve_secret
-
-            if (
-                args.secret_name not in record.secrets
-                or not args.secret_output
-                or args.execution_repository != record.execution.repository
-                or not args.execution_environment
-            ):
-                raise invalid("secret resolution requires a binding, output file and exact execution scope")
-            value = resolve_secret(
-                record.secrets[args.secret_name],
-                repository=args.execution_repository,
-                environment=args.execution_environment,
-            )
-            write_private(args.secret_output, value)
-            return
-        if not all((args.operator, args.github_actor, args.execution_repository, args.project, args.plan_output)):
-            raise invalid(
-                "plan/bootstrap require operator, GitHub actor, repository, project and a new --plan-output directory"
-            )
-        if args.action == "bootstrap" and not args.apply:
-            raise invalid("bootstrap activation requires the explicit --apply flag")
-        if args.action == "plan" and args.apply:
-            raise invalid("plan cannot activate bootstrap changes")
-        authorize_record(record, execution_repository=args.execution_repository, project_id=args.project)
-        import shutil
-
-        from preflight import CheckResult, PreflightReport, Status
-
-        report = PreflightReport(
-            "gcp",
-            "local",
-            record.installation.deployment.name,
-            [
-                CheckResult(
-                    tool,
-                    Status.OK if shutil.which(tool) else Status.FAIL,
-                    "available" if shutil.which(tool) else "install this CLI before bootstrap",
-                )
-                for tool in ("git", "gh", "gcloud", "terraform", "uv")
-            ],
-        )
-        if not report.ok:
-            raise invalid(report.render())
-        product_root = get_repo_root()
-        from inventory_plan import create_plan_directory
-
-        plan_output = create_plan_directory(args.plan_output)
-        write_private(
-            plan_output / "provenance.json",
-            json.dumps(
-                {
-                    "inventory_repository": args.inventory_repository,
-                    "inventory_revision": args.inventory_revision,
-                    "product_repository": record.product.repository,
-                    "product_revision": record.product.revision,
-                    "deployment": record.installation.deployment.name,
-                    "project": args.project,
-                },
-                sort_keys=True,
-                indent=2,
-            ),
-        )
-        with tempfile.TemporaryDirectory(prefix="shifter-inventory-") as temporary:
-            directory = Path(temporary)
-            tf_root = stage_product(product_root, record.product.revision, directory)
-            env = operator_environment(args.operator)
-            project_number = verify_projects(record, env)
-            verify_github_actor(record, args.github_actor, inventory_repository=args.inventory_repository)
-            ensure_services(record, env, apply=args.apply)
-            ensure_state_buckets(record, env, apply=args.apply)
-            with bootstrap_lock(record, directory, env):
-                reconcile_environments(record, apply=args.apply)
-                reconcile_subject(record, apply=args.apply)
-                result = plan_identity(
-                    record,
-                    directory=tf_root,
-                    product_root=product_root,
-                    project_number=project_number,
-                    env=env,
-                    plan_output=plan_output,
-                    apply=args.apply,
-                )
-                from inventory_runner import bootstrap_runner
-
-                result["runner_plan"] = bootstrap_runner(
-                    record,
-                    directory / "platform/terraform/gcp/global/github-runner",
-                    env,
-                    apply=args.apply,
-                    plan_output=plan_output,
-                )
-                if args.apply:
-                    from inventory_readback import verify_installed_identity
-
-                    verify_installed_identity(record, project_number, env, product_root)
-                    publish_execution_bindings(record, project_number)
-                result["inventory_revision"] = args.inventory_revision
-                result["plan_output"] = str(plan_output)
-                print(json.dumps(result, sort_keys=True))
+        elif args.action == "resolve-secret":
+            _resolve_secret(record, args)
+        else:
+            _bootstrap(record, args)
     except InstallationConfigError as exc:
         raise SystemExit(str(exc)) from None

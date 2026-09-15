@@ -27,6 +27,7 @@
     },
     "ExecutionContext": {
       "additionalProperties": false,
+      "description": "One exact Environment, branch and supported workflow tuple.",
       "properties": {
         "environment": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
@@ -67,6 +68,7 @@
     },
     "ExecutionRepository": {
       "additionalProperties": false,
+      "description": "Private execution authority identified by immutable GitHub IDs.",
       "properties": {
         "repository": {
           "maxLength": 200,
@@ -124,6 +126,7 @@
     },
     "GcpIdentityInputs": {
       "additionalProperties": false,
+      "description": "Resource names and bounded capabilities within the deployment project.",
       "properties": {
         "name_prefix": {
           "pattern": "^[a-z][a-z0-9-]{2,21}[a-z0-9]$",
@@ -175,6 +178,7 @@
     },
     "ProductRevision": {
       "additionalProperties": false,
+      "description": "Canonical product repository pinned to an immutable commit.",
       "properties": {
         "repository": {
           "const": "Brad-Edwards/shifter",
@@ -232,6 +236,7 @@
     },
     "SecretReference": {
       "additionalProperties": false,
+      "description": "Scoped secret locator without a secret value.",
       "properties": {
         "store": {
           "enum": [
@@ -285,6 +290,7 @@
     },
     "StateReference": {
       "additionalProperties": false,
+      "description": "Dedicated remote state bucket and prefix for one stack.",
       "properties": {
         "bucket": {
           "pattern": "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$",
@@ -306,6 +312,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Versioned deployment, execution, state and secret-reference contract.",
   "properties": {
     "version": {
       "const": 1,

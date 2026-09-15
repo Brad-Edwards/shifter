@@ -428,6 +428,7 @@ def test_plan_cli_retains_both_stack_results_after_execution_cleanup(record_data
     import inventory_runner
     from inventory_plan import publish_plan
 
+    monkeypatch.setattr("shutil.which", lambda tool: f"/mock-bin/{tool}")
     record = validate_record(record_data)
     monkeypatch.setattr(inventory_cli, "verified_inventory", lambda args: record)
     monkeypatch.setattr(inventory_cli, "get_repo_root", lambda: ROOT)

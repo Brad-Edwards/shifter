@@ -10,6 +10,7 @@ from inventory_bootstrap import expected_identity_policy, private_json, verify_i
 
 
 def verify_installed_identity(record: DeploymentRecord, number: str, env: dict[str, str], product_root: Path) -> None:
+    """Compare installed provider and service-account trust to the exact contract."""
     expected = expected_identity_policy(record, number)
     project = expected["project_id"]
     pool = expected["name_prefix"] + "-github"

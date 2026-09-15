@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 from installation.deployment_inventory_types import DeploymentRecord
 
 from bootstrap_core import verified_command_environment
 from gcp_runner import GcpRunnerTarget, get_gcp_runner_config, register_runner, verify_runners, wait_for_runner_ssh
 from inventory_bootstrap import (
+    TERRAFORM_NO_INPUT,
     assert_plan_unchanged,
     file_digest,
     invalid,
@@ -20,8 +22,11 @@ from inventory_bootstrap import (
 )
 from inventory_plan import publish_plan
 
+RUNNER_PLAN = "runner.plan"
 
-def runner_tfvars(record: DeploymentRecord) -> dict:
+
+def runner_tfvars(record: DeploymentRecord) -> dict[str, Any]:
+    """Project inventory into the existing single-project runner inputs."""
     if record.gcp is None:
         raise invalid("runner bootstrap requires GCP inventory")
     return {
@@ -35,14 +40,15 @@ def runner_tfvars(record: DeploymentRecord) -> dict:
 
 def bootstrap_runner(
     record: DeploymentRecord, directory: Path, env: dict[str, str], *, apply: bool, plan_output: Path
-) -> dict:
+) -> dict[str, Any]:
+    """Inspect, preserve and optionally apply the runner plan before registration."""
     state = record.state["runner"]
     write_private(directory / "inventory.auto.tfvars.json", json.dumps(runner_tfvars(record), sort_keys=True))
     private_command(
         [
             "terraform",
             "init",
-            "-input=false",
+            TERRAFORM_NO_INPUT,
             "-lockfile=readonly",
             "-reconfigure",
             f"-backend-config=bucket={state.bucket}",
@@ -52,11 +58,11 @@ def bootstrap_runner(
         env=env,
     )
     private_command(
-        ["terraform", "plan", "-input=false", "-lock-timeout=120s", "-out=runner.plan"], cwd=directory, env=env
+        ["terraform", "plan", TERRAFORM_NO_INPUT, "-lock-timeout=120s", "-out=runner.plan"], cwd=directory, env=env
     )
-    path = directory / "runner.plan"
+    path = directory / RUNNER_PLAN
     digest = file_digest(path)
-    plan = private_json(["terraform", "show", "-json", "runner.plan"], cwd=directory, env=env)
+    plan = private_json(["terraform", "show", "-json", RUNNER_PLAN], cwd=directory, env=env)
     if not plan.get("resource_changes") or any(
         "delete" in item["change"]["actions"] for item in plan["resource_changes"]
     ):
@@ -66,14 +72,16 @@ def bootstrap_runner(
     assert_plan_unchanged(path, digest)
     if not apply:
         return summary
-    private_command(["terraform", "apply", "-input=false", "-lock-timeout=120s", "runner.plan"], cwd=directory, env=env)
+    private_command(
+        ["terraform", "apply", TERRAFORM_NO_INPUT, "-lock-timeout=120s", RUNNER_PLAN], cwd=directory, env=env
+    )
     outputs = private_json(["terraform", "output", "-json"], cwd=directory, env=env)
     with verified_command_environment(env):
         register_inventory_runners(record, outputs)
     return summary
 
 
-def register_inventory_runners(record: DeploymentRecord, outputs: dict) -> None:
+def register_inventory_runners(record: DeploymentRecord, outputs: dict[str, Any]) -> None:
     """Use the existing IAP/token handoff and skip already healthy registrations."""
     if record.gcp is None:
         raise invalid("runner bootstrap requires GCP inventory")

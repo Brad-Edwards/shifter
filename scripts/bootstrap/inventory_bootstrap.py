@@ -6,7 +6,7 @@ import hashlib
 import importlib.util
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - allowlisted argv, no shell execution
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +16,18 @@ from installation.errors import ConfigIssue, InstallationConfigError
 
 from bootstrap_core import _subprocess_env, _validate_argv
 
+type JsonValue = dict[str, JsonValue] | list[JsonValue] | str | int | float | bool | None
+
+TERRAFORM_NO_INPUT = "-input=false"
+IDENTITY_PLAN = "identity.plan"
+
 CHECKOV_VERSION = "3.2.534"
 # Exact source commit for the product pin; this release is absent from PyPI.
 CHECKOV_SOURCE = "git+https://github.com/bridgecrewio/checkov.git@73dac2f77484ea73f1740ea7bf91ffc67808b1b2"
 
 
 def invalid(message: str) -> InstallationConfigError:
+    """Build an operator-facing bootstrap error without private provider output."""
     return InstallationConfigError([ConfigIssue("bootstrap", message)])
 
 
@@ -47,7 +53,7 @@ def private_command(
         "uv": "policy scan",
     }.get(argv[0], "consumer")
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 - _validate_argv enforces the command allowlist
             argv,
             input=stdin,
             cwd=cwd,
@@ -64,14 +70,22 @@ def private_command(
     return result.stdout
 
 
-def private_json(argv: list[str], **kwargs: Any) -> Any:
+def private_json(
+    argv: list[str],
+    *,
+    stdin: str | None = None,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> JsonValue:
+    """Decode provider JSON without exposing malformed responses or secret values."""
     try:
-        return json.loads(private_command(argv, **kwargs))
+        return json.loads(private_command(argv, stdin=stdin, cwd=cwd, env=env))
     except (ValueError, TypeError):
         raise invalid("provider returned an invalid response; private output suppressed") from None
 
 
 def authorize_record(record: DeploymentRecord, *, execution_repository: str, project_id: str) -> None:
+    """Require explicit operator targets to match the validated deployment."""
     if (
         record.gcp is None
         or execution_repository != record.execution.repository
@@ -81,12 +95,14 @@ def authorize_record(record: DeploymentRecord, *, execution_repository: str, pro
 
 
 def write_private(path: Path, content: str | bytes) -> None:
+    """Create a new operator-selected private file without following leaf symlinks."""
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "wb") as target:
         target.write(content.encode("utf-8") if isinstance(content, str) else content)
 
 
 def write_identity_inputs(record: DeploymentRecord, directory: Path, *, project_number: str) -> None:
+    """Write validated identity inputs using the verified project number."""
     if not project_number.isdecimal() or project_number.startswith("0"):
         raise invalid("invalid verified foundation project number")
     values = identity_tfvars(record)
@@ -95,6 +111,7 @@ def write_identity_inputs(record: DeploymentRecord, directory: Path, *, project_
 
 
 def validate_checkov_result(report: dict[str, Any]) -> None:
+    """Require an unskipped WIF policy pass and no failed or malformed checks."""
     results = report.get("results", {})
     summary = report.get("summary", {})
     passed = results.get("passed_checks", [])
@@ -110,6 +127,7 @@ def validate_checkov_result(report: dict[str, Any]) -> None:
 
 
 def validate_environment(policy: dict[str, Any], branches: list[dict[str, Any]], expected: set[str]) -> None:
+    """Compare exact Environment branch authorization with inventory."""
     if policy.get("deployment_branch_policy") != {"protected_branches": False, "custom_branch_policies": True}:
         raise invalid("execution Environment requires exact deployment branch policies")
     actual = {(branch.get("type"), branch.get("name")) for branch in branches}
@@ -118,16 +136,19 @@ def validate_environment(policy: dict[str, Any], branches: list[dict[str, Any]],
 
 
 def file_digest(path: Path) -> str:
+    """Hash saved plan bytes for later integrity checks."""
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
 def assert_plan_unchanged(path: Path, expected_digest: str) -> None:
+    """Reject a saved plan whose bytes changed after inspection."""
     if file_digest(path) != expected_digest:
         raise invalid("saved Terraform plan changed after verification")
 
 
 def expected_identity_policy(record: DeploymentRecord, project_number: str) -> dict[str, Any]:
+    """Derive the exact single-project trust and service-account contract."""
     if record.gcp is None:
         raise invalid("GCP identity inputs are required")
     suffixes = {
@@ -159,6 +180,7 @@ def expected_identity_policy(record: DeploymentRecord, project_number: str) -> d
 def verify_identity_plan(
     plan: dict[str, Any], record: DeploymentRecord, project_number: str, product_root: Path
 ) -> None:
+    """Run the pinned product verifier against the resolved Terraform plan."""
     path = product_root / "scripts/check_tf_gcp_wif_trust/_resolved_plan.py"
     spec = importlib.util.spec_from_file_location("shifter_resolved_wif_policy", path)
     if spec is None or spec.loader is None:
@@ -186,7 +208,7 @@ def plan_identity(
         [
             "terraform",
             "init",
-            "-input=false",
+            TERRAFORM_NO_INPUT,
             "-lockfile=readonly",
             "-reconfigure",
             f"-backend-config=bucket={state.bucket}",
@@ -196,12 +218,12 @@ def plan_identity(
         env=env,
     )
     private_command(["terraform", "validate", "-no-color"], cwd=directory, env=env)
-    plan_path = directory / "identity.plan"
+    plan_path = directory / IDENTITY_PLAN
     private_command(
-        ["terraform", "plan", "-input=false", "-lock-timeout=120s", "-out=identity.plan"], cwd=directory, env=env
+        ["terraform", "plan", TERRAFORM_NO_INPUT, "-lock-timeout=120s", "-out=identity.plan"], cwd=directory, env=env
     )
     digest = file_digest(plan_path)
-    plan = private_json(["terraform", "show", "-json", "identity.plan"], cwd=directory, env=env)
+    plan = private_json(["terraform", "show", "-json", IDENTITY_PLAN], cwd=directory, env=env)
     verify_identity_plan(plan, record, project_number, product_root)
     json_path = directory / "identity.plan.json"
     write_private(json_path, json.dumps(plan))
@@ -230,7 +252,7 @@ def plan_identity(
     assert_plan_unchanged(plan_path, digest)
     if apply:
         private_command(
-            ["terraform", "apply", "-input=false", "-lock-timeout=120s", "identity.plan"], cwd=directory, env=env
+            ["terraform", "apply", TERRAFORM_NO_INPUT, "-lock-timeout=120s", IDENTITY_PLAN], cwd=directory, env=env
         )
     return {
         "deployment": record.installation.deployment.name,

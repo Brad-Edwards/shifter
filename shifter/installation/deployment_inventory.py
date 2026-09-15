@@ -17,6 +17,7 @@ MAX_RECORD_BYTES = 1_048_576
 
 
 def _invalid(message: str) -> InstallationConfigError:
+    """Build a structured inventory validation error."""
     return InstallationConfigError([ConfigIssue("inventory", message)])
 
 

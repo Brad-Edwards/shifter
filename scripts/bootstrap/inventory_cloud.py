@@ -8,10 +8,15 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from installation.deployment_inventory_types import DeploymentRecord
 
 from inventory_bootstrap import invalid, private_command, private_json, write_private
+
+GCP_INPUTS_REQUIRED = "GCP identity inputs are required"
+JSON_FORMAT = "--format=json"
+GCS_PREFIX = "gs://"
 
 
 def operator_environment(operator: str) -> dict[str, str]:
@@ -45,10 +50,11 @@ def operator_environment(operator: str) -> dict[str, str]:
 
 
 def verify_projects(record: DeploymentRecord, env: dict[str, str]) -> str:
+    """Verify the sole deployment project and return its numeric identity."""
     if record.gcp is None:
-        raise invalid("GCP identity inputs are required")
+        raise invalid(GCP_INPUTS_REQUIRED)
     project = record.installation.settings["project_id"]
-    detail = private_json(["gcloud", "projects", "describe", project, "--format=json"], env=env)
+    detail = private_json(["gcloud", "projects", "describe", project, JSON_FORMAT], env=env)
     if detail.get("projectId") != project or detail.get("lifecycleState") != "ACTIVE":
         raise invalid("bootstrap requires the exact active deployment project")
     project_number = str(detail.get("projectNumber", ""))
@@ -60,7 +66,7 @@ def verify_projects(record: DeploymentRecord, env: dict[str, str]) -> str:
 def ensure_services(record: DeploymentRecord, env: dict[str, str], *, apply: bool) -> None:
     """Reconcile required foundation APIs under explicit bootstrap authority."""
     if record.gcp is None:
-        raise invalid("GCP identity inputs are required")
+        raise invalid(GCP_INPUTS_REQUIRED)
     project = record.installation.settings["project_id"]
     services = {
         "iam.googleapis.com",
@@ -84,12 +90,13 @@ def ensure_services(record: DeploymentRecord, env: dict[str, str], *, apply: boo
 
 
 def ensure_state_buckets(record: DeploymentRecord, env: dict[str, str], *, apply: bool) -> None:
+    """Reconcile state storage and verify project ownership and protections."""
     if record.gcp is None:
-        raise invalid("GCP identity inputs are required")
+        raise invalid(GCP_INPUTS_REQUIRED)
     project = record.installation.settings["project_id"]
     for state in record.state.values():
-        buckets = private_json(["gcloud", "storage", "buckets", "list", "--project", project, "--format=json"], env=env)
-        found = any(bucket.get("name") in {state.bucket, "gs://" + state.bucket} for bucket in buckets)
+        buckets = private_json(["gcloud", "storage", "buckets", "list", "--project", project, JSON_FORMAT], env=env)
+        found = any(bucket.get("name") in {state.bucket, GCS_PREFIX + state.bucket} for bucket in buckets)
         if not found:
             if not apply:
                 raise invalid("state bucket is absent; initial bootstrap requires apply authority")
@@ -99,7 +106,7 @@ def ensure_state_buckets(record: DeploymentRecord, env: dict[str, str], *, apply
                     "storage",
                     "buckets",
                     "create",
-                    "gs://" + state.bucket,
+                    GCS_PREFIX + state.bucket,
                     "--project",
                     project,
                     "--location",
@@ -116,7 +123,7 @@ def ensure_state_buckets(record: DeploymentRecord, env: dict[str, str], *, apply
                     "storage",
                     "buckets",
                     "update",
-                    "gs://" + state.bucket,
+                    GCS_PREFIX + state.bucket,
                     "--versioning",
                     "--uniform-bucket-level-access",
                     "--public-access-prevention",
@@ -124,18 +131,23 @@ def ensure_state_buckets(record: DeploymentRecord, env: dict[str, str], *, apply
                 env=env,
             )
         metadata = private_json(
-            ["gcloud", "storage", "buckets", "describe", "gs://" + state.bucket, "--raw", "--format=json"], env=env
+            ["gcloud", "storage", "buckets", "describe", GCS_PREFIX + state.bucket, "--raw", JSON_FORMAT], env=env
         )
-        project_metadata = private_json(["gcloud", "projects", "describe", project, "--format=json"], env=env)
-        iam = metadata.get("iamConfiguration", {})
-        if (
-            str(metadata.get("projectNumber")) != str(project_metadata.get("projectNumber"))
-            or metadata.get("name") != state.bucket
-            or iam.get("uniformBucketLevelAccess", {}).get("enabled") is not True
-            or iam.get("publicAccessPrevention") != "enforced"
-            or metadata.get("versioning", {}).get("enabled") is not True
-        ):
-            raise invalid("state bucket ownership or security settings do not match; reconcile before planning")
+        project_metadata = private_json(["gcloud", "projects", "describe", project, JSON_FORMAT], env=env)
+        _verify_bucket_metadata(metadata, state.bucket, str(project_metadata.get("projectNumber")))
+
+
+def _verify_bucket_metadata(metadata: dict[str, Any], bucket: str, project_number: str) -> None:
+    """Require exact project ownership and all state-bucket protection settings."""
+    iam = metadata.get("iamConfiguration", {})
+    if (
+        str(metadata.get("projectNumber")) != project_number
+        or metadata.get("name") != bucket
+        or iam.get("uniformBucketLevelAccess", {}).get("enabled") is not True
+        or iam.get("publicAccessPrevention") != "enforced"
+        or metadata.get("versioning", {}).get("enabled") is not True
+    ):
+        raise invalid("state bucket ownership or security settings do not match; reconcile before planning")
 
 
 @contextmanager
