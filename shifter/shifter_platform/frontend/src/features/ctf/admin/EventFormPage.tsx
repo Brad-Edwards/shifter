@@ -63,6 +63,32 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               onChange={(v) => set("rules", v)}
             />
 
+            <div className="rounded-lg border border-border/60 p-4">
+              <CheckboxField
+                id="e-public-registration"
+                label="Publish public registration page"
+                checked={state.public_registration_enabled}
+                onChange={(checked) => set("public_registration_enabled", checked)}
+              />
+              <p className="mt-2 text-sm text-muted-foreground">
+                Off by default. Enabling this publishes the event name, description, dates, and registration deadline
+                to anyone with the link. Submitted names and email addresses enter a private organizer review queue;
+                they do not create participants automatically. The linked privacy notice is operator-supplied; review
+                it for this deployment before sharing the page.
+              </p>
+              {state.public_registration_enabled ? (
+                <Alert className="mt-3">
+                  <AlertTitle>Public disclosure preview</AlertTitle>
+                  <AlertDescription>
+                    <span className="font-medium">{state.name || "Untitled event"}</span>
+                    {state.description ? ` — ${state.description}` : " — No description"}. Event dates and the
+                    effective registration deadline will also be visible. The event logo, scenario, workspace,
+                    participant count, rules, and custom pages remain private.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
+
             <div className="grid gap-5 sm:grid-cols-2">
               <TextField
                 id="e-start"

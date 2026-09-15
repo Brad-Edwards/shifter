@@ -57,6 +57,13 @@ GCP_DEV_SUBJECT_REF_PAIR_RE = re.compile(
     r"assertion\.ref\s*==\s*'refs/heads/gcp-dev'\s*&&\s*"
     r"assertion\.sub\s*==\s*'[^']*:environment:gcp-dev'"
 )
+# Deploy-tenant peers admit their own branch ref paired with their own exact
+# Environment subject, exactly as gcp-dev does (ADR-004-R23).
+NAZGUL_REF_EQ_RE = re.compile(r"assertion\.ref\s*==\s*'refs/heads/nazgul'")
+NAZGUL_SUBJECT_REF_PAIR_RE = re.compile(
+    r"assertion\.ref\s*==\s*'refs/heads/nazgul'\s*&&\s*"
+    r"assertion\.sub\s*==\s*'[^']*:environment:nazgul'"
+)
 DOUBLE_QUOTED_RE = re.compile(r'"([^"]+)"')
 # The invariant checks scope to the attribute_condition VALUE, not the whole
 # provider block: attribute_mapping maps assertion.sub/ref/repository regardless
@@ -66,6 +73,9 @@ DOUBLE_QUOTED_RE = re.compile(r'"([^"]+)"')
 ATTRIBUTE_CONDITION_ASSIGNMENT_RE = re.compile(r"attribute_condition\s*=")
 _PROFILE_ARMS_PATTERN = (
     r'var\.environment\s*==\s*"gcp-dev"\s*\?\s*"(?P<gcp_dev>[^"]*)"\s*:\s*'
+    # Deploy-tenant peers of gcp-dev (e.g. nazgul) are added as their own arm the
+    # same way gcp-dev is. Optional so the legacy three-profile shape still parses.
+    r'(?:var\.environment\s*==\s*"nazgul"\s*\?\s*"(?P<nazgul>[^"]*)"\s*:\s*)?'
     r'var\.environment\s*==\s*"proof"\s*\?\s*"(?P<proof>[^"]*)"\s*:\s*'
     r'"(?P<prod>[^"]*)"'
 )
@@ -138,13 +148,24 @@ def _strip_hcl_comments(text: str) -> str:
 
 def _attribute_condition_alternatives(block: str) -> dict[str, str]:
     """Return each CEL string the supported profile selector can emit."""
+    # Optional deploy-tenant arms (e.g. nazgul) are absent from the legacy shape;
+    # skip any profile group the selector did not emit.
+    profiles = ("gcp_dev", "nazgul", "proof", "prod")
     profiled = PROFILED_TEMPLATE_CONDITION_RE.search(block)
     if profiled:
         common = profiled.group("common")
-        return {profile: common + profiled.group(profile) for profile in ("gcp_dev", "proof", "prod")}
+        return {
+            profile: common + profiled.group(profile)
+            for profile in profiles
+            if profiled.group(profile) is not None
+        }
     profiled = PROFILED_DIRECT_CONDITION_RE.search(block)
     if profiled:
-        return {profile: profiled.group(profile) for profile in ("gcp_dev", "proof", "prod")}
+        return {
+            profile: profiled.group(profile)
+            for profile in profiles
+            if profiled.group(profile) is not None
+        }
     static = STATIC_CONDITION_RE.search(block)
     return {"static": static.group(1)} if static else {}
 
@@ -209,6 +230,13 @@ def check_provider_condition(path: Path, lines: list[str], text: str) -> list[Vi
                 "gcp-dev",
                 "gcp-dev-destroy",
             },
+            "nazgul": {
+                "gcp-build-nazgul",
+                "gcp-validate-nazgul",
+                "gcp-release-scan-nazgul",
+                "nazgul",
+                "nazgul-destroy",
+            },
             "proof": {"gcp-build-proof", "gcp-validate-proof"},
             "prod": {"gcp-promote-prod"},
         }
@@ -253,6 +281,17 @@ def check_provider_condition(path: Path, lines: list[str], text: str) -> list[Vi
                         line_no,
                         "refs/heads/gcp-dev must be admitted exactly once and paired "
                         "directly with the exact gcp-dev Environment subject "
+                        "(ADR-004-R23)",
+                    )
+                )
+            nazgul_refs = NAZGUL_REF_EQ_RE.findall(condition)
+            if nazgul_refs and (len(nazgul_refs) != 1 or len(NAZGUL_SUBJECT_REF_PAIR_RE.findall(condition)) != 1):
+                violations.append(
+                    Violation(
+                        path,
+                        line_no,
+                        "refs/heads/nazgul must be admitted exactly once and paired "
+                        "directly with the exact nazgul Environment subject "
                         "(ADR-004-R23)",
                     )
                 )
@@ -339,12 +378,38 @@ def check_subject_consistency(path: Path, text: str) -> list[Violation]:
 
 
 def _normalize_image_subject(subject: str) -> str:
-    """Collapse concrete dev/proof image Environments to the module's profile seam."""
-    return re.sub(
-        r"environment:gcp-(build|validate)-(?:dev|proof)$",
+    """Collapse concrete per-tenant Environments to the module's profile seams.
+
+    Image lanes (build/validate, for dev/proof and deploy-tenant image lanes such
+    as nazgul) collapse to ${local.image_environment}; the deploy-tenant
+    Environments (release-scan/deploy/destroy for gcp-dev and its peers such as
+    nazgul) collapse to the ${var.environment} seam the single-source
+    purpose_subjects use. This only reconciles the purpose map against the
+    multi-arm condition; check_provider_condition's expected_contexts still
+    enforces each arm's exact literal subject set, so no arm can name a
+    cross-tenant or otherwise unexpected subject.
+    """
+    subject = re.sub(
+        r"environment:gcp-(build|validate)-(?:dev|proof|nazgul)$",
         r"environment:gcp-\1-${local.image_environment}",
         subject,
     )
+    subject = re.sub(
+        r"environment:gcp-release-scan-(?:dev|nazgul)$",
+        r"environment:gcp-release-scan-${local.image_environment}",
+        subject,
+    )
+    subject = re.sub(
+        r"environment:(?:gcp-dev|nazgul)-destroy$",
+        r"environment:${var.environment}-destroy",
+        subject,
+    )
+    subject = re.sub(
+        r"environment:(?:gcp-dev|nazgul)$",
+        r"environment:${var.environment}",
+        subject,
+    )
+    return subject
 
 
 def _purpose_entries(block: str) -> dict[str, set[str]]:

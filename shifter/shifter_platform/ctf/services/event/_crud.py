@@ -39,6 +39,7 @@ _EVENT_MUTABLE_FIELDS = frozenset(
     {
         "name",
         "description",
+        "public_registration_enabled",
         "event_start",
         "event_end",
         "registration_deadline",
@@ -126,6 +127,15 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
 
             hydrate_event_ctf_content(event.pk, resolved_content, actor_id=user.pk)
 
+        if event.public_registration_enabled:
+            from ctf.services.audit import audit_public_registration_publication
+
+            audit_public_registration_publication(
+                actor_id=user.pk,
+                event_id=event.pk,
+                enabled=True,
+            )
+
         logger.info("Created CTF event %s: %s", event.id, event.name)
 
     return event
@@ -186,83 +196,6 @@ def _reject_team_config_changes_after_start(event: CTFEvent, event_data: dict[st
             "Team settings cannot change after the event starts",
             details={"event_status": event.status, "fields": sorted(changed)},
         )
-
-
-def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: int | None = None) -> CTFEvent:
-    """Update an existing CTF event.
-
-    Args:
-        event_id: UUID of the event to update.
-        event_data: Dictionary containing fields to update.
-        actor_id: When supplied, the service asserts the ``config`` capability (#1922).
-
-    Returns:
-        The updated CTFEvent instance.
-
-    Raises:
-        CTFNotFoundError: If event doesn't exist.
-        CTFStateError: If event is not modifiable.
-        CTFValidationError: If event data is invalid.
-    """
-    logger.info("Updating CTF event %s", safe_log_value(event_id))
-
-    try:
-        event = CTFEvent.objects.get(pk=event_id)
-    except CTFEvent.DoesNotExist:
-        raise CTFNotFoundError(
-            f"Event {event_id} not found",
-            details={"event_id": str(event_id)},
-        ) from None
-
-    if actor_id is not None:
-        from ctf.enums import EventCapability
-        from ctf.services.authorization import assert_event_capability
-
-        assert_event_capability(actor_id, event, EventCapability.CONFIG)
-
-    _reject_team_config_changes_after_start(event, event_data)
-
-    # Check if event is modifiable
-    if not event.is_modifiable:
-        raise CTFStateError(
-            f"Event cannot be modified in {event.status} state",
-            details={"event_id": str(event_id), "status": event.status},
-        )
-
-    new_start = event_data.get("event_start", event.event_start)
-    new_end = event_data.get("event_end", event.event_end)
-    _validate_event_time_range(new_start, new_end)
-    validate_scoring_mode(event_data)
-
-    safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
-    if "scenario_id" in safe_data and safe_data["scenario_id"] != event.scenario_id:
-        from ctf.models import CTFContentHydrationReceipt
-
-        if CTFContentHydrationReceipt.objects.filter(event=event).exists():
-            raise CTFStateError(
-                "A hydrated event cannot change scenarios.",
-                code="CTF_CONTENT_SCENARIO_IMMUTABLE",
-            )
-    old_event_start = event.event_start
-    old_event_end = event.event_end
-    cleanup_may_change = bool({"event_end", "cleanup_delay_hours"} & safe_data.keys())
-    old_cleanup_time = event.get_cleanup_time() if cleanup_may_change else None
-
-    with transaction.atomic():
-        for key, value in safe_data.items():
-            setattr(event, key, value)
-        event.save()
-
-        logger.info("Updated CTF event %s", event.id)
-        _reschedule_event_if_schedule_changed(
-            event,
-            safe_data,
-            old_event_start=old_event_start,
-            old_event_end=old_event_end,
-            old_cleanup_time=old_cleanup_time,
-        )
-
-    return event
 
 
 def delete_event(event_id: UUID, *, actor_id: int | None = None) -> None:

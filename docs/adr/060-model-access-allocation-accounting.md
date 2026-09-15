@@ -90,9 +90,9 @@ Tests must exercise real PostgreSQL contention, duplicate and stale requests,
 crash recovery, budget reductions, and disconnects against controllable
 provider boundaries. Existing ADR checks alone do not establish these claims.
 
-M02 (#2119) implements the launch-time admission decision this ADR requires —
+M02 (#2119) implements the launch-time admission decision this ADR requires:
 required model access is enforced fail-closed at the CTF→CMS→Engine launch seam,
-independent of the best-effort PLAT-201 capacity path — while the broker,
+independent of the best-effort PLAT-201 capacity path, while the broker,
 allocation persistence, request accounting, and live provider admission remain
 later milestones. One decision refines this ADR's "extend the declaration/catalog
 seams with typed model demand": the per-pack scenario need is authored in a

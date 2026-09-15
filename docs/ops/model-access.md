@@ -106,9 +106,9 @@ allowed strategy. This is capacity/sizing input constrained by the scenario
 need; it cannot name a provider, account, region, shard, credential, or price.
 
 Required-access failure is deliberate and visible. A launch of a scenario with a
-required model need is refused before any range is dispatched — across every
+required model need is refused before any range is dispatched, across every
 launch family (participant, spare, wave, standalone, recovery-rebuild, and
-warm-claim activation) — when: model access is unconfigured, the referenced
+warm-claim activation), when: model access is unconfigured, the referenced
 profile is absent, the pack digest is stale, a required capability is
 unavailable, the profile intersection is empty, the sharing overlap conflicts,
 or the range posture is zero-egress (`deny-all`/`none`) for required external

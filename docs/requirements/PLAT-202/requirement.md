@@ -111,7 +111,7 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → CODE `shifter/shifter_platform/cms/scenarios/model_needs.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/cms/migrations/0046_scenariomodelneeds.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/ctf/models/event.py`
-- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/migrations/0057_ctfevent_model_demand.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/migrations/0058_ctfevent_model_demand.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/range/capacity.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_admission.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_model_admission.py`

@@ -47,7 +47,6 @@ from ._crud import (
     event_pk_if_exists,
     force_delete_event,
     get_event,
-    update_event,
 )
 from ._lifecycle import (
     activate_event,
@@ -63,6 +62,7 @@ from ._lifecycle import (
     start_event,
 )
 from ._queries import get_event_stats, get_organizer_events
+from ._update import update_event
 from .scheduling import _cancel_event_tasks, _schedule_event_tasks
 
 __all__ = (

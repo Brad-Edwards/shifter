@@ -17,6 +17,7 @@ export const NO_SCENARIO = "__none__";
 interface FormState {
   name: string;
   description: string;
+  public_registration_enabled: boolean;
   event_start: string;
   event_end: string;
   registration_deadline: string;
@@ -45,6 +46,7 @@ interface FormState {
 const EMPTY: FormState = {
   name: "",
   description: "",
+  public_registration_enabled: false,
   event_start: "",
   event_end: "",
   registration_deadline: "",
@@ -74,6 +76,7 @@ function fromEvent(event: CtfEventDetail): FormState {
   return {
     name: event.name ?? "",
     description: event.description ?? "",
+    public_registration_enabled: Boolean(event.public_registration_enabled),
     event_start: toDateTimeLocalValue(event.event_start),
     event_end: toDateTimeLocalValue(event.event_end),
     registration_deadline: toDateTimeLocalValue(event.registration_deadline),
@@ -138,6 +141,7 @@ function toPayload(state: FormState): CtfEventWrite {
   return {
     name: state.name,
     description: state.description,
+    public_registration_enabled: state.public_registration_enabled,
     event_start: fromDateTimeLocalValue(state.event_start) ?? "",
     event_end: fromDateTimeLocalValue(state.event_end) ?? "",
     registration_deadline: fromDateTimeLocalValue(state.registration_deadline),

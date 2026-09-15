@@ -242,6 +242,13 @@ export type CtfParticipantAdd = components["schemas"]["ParticipantAdd"];
 export type CtfParticipantImportResult = components["schemas"]["ParticipantImportResult"];
 export type CtfParticipantPasswordRequest = components["schemas"]["ParticipantPasswordRequest"];
 export type CtfParticipantPasswordResult = components["schemas"]["ParticipantPasswordResult"];
+export type CtfPublicRegistrationRequest = components["schemas"]["PublicRegistrationRequest"];
+export type CtfPublicRegistrationRequestListResponse =
+  components["schemas"]["PublicRegistrationRequestListResponse"];
+export type CtfPublicRegistrationDispositionAction =
+  components["schemas"]["PublicRegistrationDispositionActionEnum"];
+export type CtfPublicRegistrationDispositionResult =
+  components["schemas"]["PublicRegistrationDispositionResult"];
 export type CtfParticipantProfile = components["schemas"]["ParticipantProfile"];
 export type CtfProfileUpdateRequest = components["schemas"]["PatchedProfileUpdateRequest"];
 export type CtfEventStaffMember = components["schemas"]["EventStaffMember"];

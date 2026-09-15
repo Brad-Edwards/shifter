@@ -34,6 +34,7 @@ from typing import Any
 
 from config import load_aws_polaris_agent_config
 
+from ._polaris_credential_asset import splice_credential_helper_b64
 from ._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
 from ._polaris_scripts_aux import (
     FETCH_POLARIS_TESTS_SCRIPT,
@@ -271,6 +272,7 @@ class PolarisRangeBootstrapPlan:
         return {
             "dc_ip": dc_ip,
             "public_key": public_key,
+            "splice_credential_helper_b64": splice_credential_helper_b64(),
             # AWS-only POLARIS_RANGE_BOOTSTRAP_SCRIPT fragments (#1377 slice
             # 5); empty by default so GCP's render is byte-for-byte identical
             # to before -- _aws_agent_context overrides both with real content.
