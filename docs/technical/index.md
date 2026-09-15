@@ -47,3 +47,5 @@ Internal planning documents and development notes.
 
 - [Plans](plans/) - Implementation plans
 - [Notes](notes/) - Development notes
+
+- [External deployment inventory contract](../architecture/deployment-inventory-contract.md)

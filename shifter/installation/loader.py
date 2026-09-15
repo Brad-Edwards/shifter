@@ -126,6 +126,11 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
             [ConfigIssue(str(path), f"could not read root installation config: {detail}")]
         ) from exc
 
+    return parse_yaml_mapping(text, path)
+
+
+def parse_yaml_mapping(text: str, path: Path) -> dict[str, Any]:
+    """Parse already bounded input with the canonical duplicate/merge-key checks."""
     try:
         # Parse to a node graph first (no Python objects constructed) so duplicate
         # mapping keys can be rejected before SafeLoader silently collapses them.
@@ -239,6 +244,15 @@ def load_root_config(path: str | Path) -> RootConfig:
     """
     config_path = Path(path)
     data = _read_yaml_mapping(config_path)
+    return validate_root_config_data(data)
+
+
+def validate_root_config_data(data: dict[str, Any]) -> RootConfig:
+    """Validate embedded installation intent through the same canonical checks.
+
+    External deployment inventory embeds this contract; it must not grow a
+    second implementation of backend, profile, settings or secret validation.
+    """
     try:
         config = RootConfig.model_validate(data)
     except ValidationError as exc:

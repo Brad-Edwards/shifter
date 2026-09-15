@@ -4,12 +4,11 @@ variable "project_id" {
 }
 
 variable "environment" {
-  description = "Identity-root profile: gcp-dev, proof, or prod."
+  description = "Deployment ID, independent of installation profile and purpose."
   type        = string
-
   validation {
-    condition     = contains(["gcp-dev", "nazgul", "proof", "prod"], var.environment)
-    error_message = "environment must be gcp-dev, nazgul, proof, or prod."
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$", var.environment))
+    error_message = "environment must be a DNS-label-safe deployment ID."
   }
 }
 
@@ -33,19 +32,6 @@ variable "github_repo" {
   description = "GitHub repository allowed to federate into the purpose identities."
   type        = string
   default     = "shifter"
-}
-
-variable "allowed_workflow_refs" {
-  description = "Full protected refs accepted by image, destroy, and ordinary deploy paths."
-  type        = list(string)
-  default     = ["refs/heads/dev", "refs/heads/main"]
-
-  validation {
-    condition = length(var.allowed_workflow_refs) > 0 && alltrue([
-      for ref in var.allowed_workflow_refs : contains(["refs/heads/dev", "refs/heads/main"], ref)
-    ])
-    error_message = "allowed_workflow_refs may contain only refs/heads/dev and refs/heads/main."
-  }
 }
 
 variable "build_roles" {
@@ -220,9 +206,12 @@ variable "promotion_reader_service_account_email" {
 }
 
 variable "terraform_state_bucket_name" {
-  description = "Existing GCS backend bucket receiving resource-scoped deploy/destroy access; defaults to <project>-terraform-state."
+  description = "Explicit deployment-owned GCS backend bucket receiving scoped deploy/destroy access."
   type        = string
-  default     = ""
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.terraform_state_bucket_name))
+    error_message = "terraform_state_bucket_name must name the separately owned platform state bucket."
+  }
 }
 
 variable "platform_external_bucket_names" {
@@ -233,7 +222,7 @@ variable "platform_external_bucket_names" {
   validation {
     condition = alltrue([
       for name in var.platform_external_bucket_names :
-      length(trimspace(name)) > 0 && lower(name) != lower("${var.project_id}-release-evidence")
+      length(trimspace(name)) > 0 && lower(name) != lower(var.release_evidence_bucket_name)
     ])
     error_message = "platform_external_bucket_names must contain non-empty names and must not include this identity root's release-evidence bucket."
   }
