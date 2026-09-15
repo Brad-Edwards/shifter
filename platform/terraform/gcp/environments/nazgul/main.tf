@@ -104,6 +104,7 @@ module "platform_core" {
   dns_record_ttl                     = var.dns_record_ttl
   identity_allowed_email_domain      = var.identity_allowed_email_domain
   identity_allowed_emails            = var.identity_allowed_emails
+  enable_gcs_usage_log_delivery      = var.enable_gcs_usage_log_delivery
   enable_identity_blocking_function  = var.enable_identity_blocking_function
   email_backend                      = var.email_backend
   email_from_address                 = var.email_from_address
