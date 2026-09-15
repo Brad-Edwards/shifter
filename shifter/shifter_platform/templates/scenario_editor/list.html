@@ -1,7 +1,7 @@
 {# SPDX-FileCopyrightText: 2026 Palo Alto Networks, Inc. #}
 {# SPDX-License-Identifier: MIT #}
 {% extends "scenario_editor/base.html" %}
-{% load i18n %}
+{% load i18n static %}
 {% block title %}
     Scenarios
 {% endblock %}
@@ -173,16 +173,5 @@
     {% endif %}
 {% endblock %}
 {% block extra_js %}
-    <script>
-document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll(".js-scenario-delete-btn").forEach(function (button) {
-        button.addEventListener("click", function (event) {
-            const scenarioName = button.dataset.scenarioName || "";
-            if (!confirm("Delete scenario '" + scenarioName + "'? This cannot be undone.")) {
-                event.preventDefault();
-            }
-        });
-    });
-});
-    </script>
+    <script src="{% static 'js/scenario-editor-list.js' %}" defer></script>
 {% endblock %}
