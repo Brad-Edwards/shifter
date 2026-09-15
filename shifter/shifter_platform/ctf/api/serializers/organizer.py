@@ -176,6 +176,7 @@ class EventDetailSerializer(_EventAccessProjectionMixin, serializers.Serializer)
     reminder_hours = serializers.ListField(child=serializers.IntegerField(), read_only=True)
     event_timezone = serializers.CharField(read_only=True, allow_blank=True)
     capacity_hints = serializers.DictField(read_only=True)
+    model_demand = serializers.ListField(child=serializers.DictField(), read_only=True)
     logo_url = serializers.CharField(read_only=True, allow_blank=True)
     visible_os_types = serializers.ListField(child=serializers.CharField(), read_only=True)
     theme_color = serializers.CharField(read_only=True, allow_blank=True)
@@ -231,9 +232,27 @@ class EventWriteSerializer(serializers.Serializer):
     )
     event_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     capacity_hints = serializers.DictField(required=False)
+    model_demand = serializers.ListField(child=serializers.DictField(), required=False, max_length=64)
     logo_url = serializers.URLField(required=False, allow_blank=True, max_length=500)
     visible_os_types = serializers.ListField(child=serializers.CharField(max_length=32), required=False, max_length=16)
     theme_color = serializers.RegexField(r"^(#[0-9a-fA-F]{6})?$", required=False, allow_blank=True)
+
+    def validate_model_demand(self, value: list[dict]) -> list[dict]:
+        """Validate each typed model-demand entry (PLAT-202, CTF-908).
+
+        Organizer input is bounded by the closed ``EventModelDemand`` contract; a
+        malformed entry is rejected at the write boundary rather than dropped later.
+        """
+        from pydantic import ValidationError as _PydanticValidationError
+
+        from shared.model_access.admission import EventModelDemand
+
+        for entry in value:
+            try:
+                EventModelDemand.model_validate(entry)
+            except _PydanticValidationError as exc:
+                raise serializers.ValidationError("invalid model demand entry") from exc
+        return value
 
 
 class EventLifecycleRequestSerializer(serializers.Serializer):

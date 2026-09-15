@@ -89,3 +89,19 @@ equivalent enforcement, not an unreviewed fail-open cache.
 Tests must exercise real PostgreSQL contention, duplicate and stale requests,
 crash recovery, budget reductions, and disconnects against controllable
 provider boundaries. Existing ADR checks alone do not establish these claims.
+
+M02 (#2119) implements the launch-time admission decision this ADR requires —
+required model access is enforced fail-closed at the CTF→CMS→Engine launch seam,
+independent of the best-effort PLAT-201 capacity path — while the broker,
+allocation persistence, request accounting, and live provider admission remain
+later milestones. One decision refines this ADR's "extend the declaration/catalog
+seams with typed model demand": the per-pack scenario need is authored in a
+Shifter-owned, digest-bound `ScenarioModelNeeds` overlay that rides the runtime
+pack lifecycle, not in the deploy-time mounted catalog, so a newly registered
+model-requiring pack is admissible without an operator catalog redeploy; the
+catalog keeps owning the deployment policy (profiles/shards/sharing) the need
+references. The M02 admit/deny verdict is a deterministic recompute (no persisted
+decision yet); the zero-egress admitted-broker exception and the
+demand-strategy/allocation threading are revisited when the broker capability
+lands. See
+[architecture § Launch-time model admission](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/architecture.md#launch-time-model-admission-m02-2119).

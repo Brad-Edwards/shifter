@@ -83,6 +83,42 @@ within operator limits; scale-down drains connections for the request bound
 and then terminates them with retained accounting. There is no transparent
 stream migration or post-crash replay.
 
+## Scenario model needs and required-access admission (M02, #2119)
+
+A scenario declares its logical model need through a Shifter-owned, staff-authored
+overlay (`ScenarioModelNeeds`), not by editing the RAES pack and not through the
+deploy-time mounted catalog. Author it per registered scenario pack:
+
+- Key it by `scenario_id` and set `authored_package_digest` to the exact pack
+  content digest the need is authored against. Map each `workload_role` to a
+  `ScenarioNeed` (required flag, required/allowed capabilities, allowed
+  strategies, data regions, limits) whose `profile_id` names a profile in the
+  mounted catalog. The overlay is validated on save; a workload-role/key or
+  digest mismatch is rejected.
+- Because the overlay rides the runtime pack lifecycle, adding a model-requiring
+  pack needs no catalog redeploy. But re-registering the pack with new content
+  changes its digest: re-author the overlay against the new digest, or a
+  required launch fails closed (`digest_mismatch`) until you do.
+
+Organizers declare typed model demand per workload on the event (CTF-908):
+expected concurrency and per-participant request/input/output demand plus the
+allowed strategy. This is capacity/sizing input constrained by the scenario
+need; it cannot name a provider, account, region, shard, credential, or price.
+
+Required-access failure is deliberate and visible. A launch of a scenario with a
+required model need is refused before any range is dispatched — across every
+launch family (participant, spare, wave, standalone, recovery-rebuild, and
+warm-claim activation) — when: model access is unconfigured, the referenced
+profile is absent, the pack digest is stale, a required capability is
+unavailable, the profile intersection is empty, the sharing overlap conflicts,
+or the range posture is zero-egress (`deny-all`/`none`) for required external
+model use. An unavailable sharing authority yields an indeterminate outcome that
+also refuses the launch (fail closed) rather than proceeding. Optional model
+access that cannot be satisfied is admitted as an explicit visible absence and
+does not block. The refusal carries a bounded reason code and no raw figures or
+rejected values. The admitted private-broker exception for a zero-egress range
+is deferred with the broker runtime.
+
 ## Cost and quota controls
 
 Before an event, inventory provider model enablement, supported regions,

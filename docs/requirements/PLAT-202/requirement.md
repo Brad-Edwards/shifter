@@ -104,3 +104,22 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_types.py`
 - IMPLEMENTS → CODE `shifter/engine/provisioner/raes_gcp_apply.py`
 - IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_model_broker.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2119` (M02: enforcing scenario/event model admission)
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/admission.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/models/scenarios.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/scenarios/model_needs.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/migrations/0046_scenariomodelneeds.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/models/event.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/migrations/0057_ctfevent_model_demand.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/range/capacity.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_admission.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_model_admission.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_raes_range_create.py`
+- IMPLEMENTS → DOCUMENTATION `docs/ops/model-access.md`
+- IMPLEMENTS → DOCUMENTATION `docs/adr/060-model-access-allocation-accounting.md`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_admission.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_scenario_model_needs.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_model_demand_declaration.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_admission.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_launch_model_admission.py`

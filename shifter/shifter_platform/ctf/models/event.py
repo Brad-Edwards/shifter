@@ -97,6 +97,15 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         blank=True,
         help_text="Organizer-authored shared-resource demand hints declared to the engine (CTF-908)",
     )
+    model_demand = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Typed organizer model demand per workload role (CTF-908, PLAT-202): a list of "
+            "shared.model_access.EventModelDemand payloads. Constrained by the scenario need; "
+            "never names a provider, account, region, shard, credential, or price"
+        ),
+    )
     rules = models.TextField(
         blank=True,
         default="",

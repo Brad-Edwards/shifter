@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 
     from cms.models import RaesPackageSource, Request
     from shared.enums import RangeSource
+    from shared.model_access import OwnedReference
     from shared.range_instantiation_policy import BackendAdmission
     from shared.schemas.range import RangeContext
 
@@ -319,6 +320,7 @@ def _create_raes_native_range_impl(
     instantiation_purpose: InstantiationPurpose,
     workspace_uuid: str | UUID | None = None,
     enforced_deadline: datetime | None = None,
+    model_admission_subject: OwnedReference | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -379,13 +381,31 @@ def _create_raes_native_range_impl(
         correlation_key=request_id,
     )
 
+    from cms.services._range_workspace import resolve_effective_egress_mode
+
+    egress_mode = resolve_effective_egress_mode(workspace_id)
+
+    # PLAT-202: required model access is a fail-closed admission decision enforced
+    # here, before any dispatch (cold, warm-claim, or non-user), so every launch
+    # family is gated once. Distinct from the best-effort capacity path: a required
+    # denial or indeterminate outcome refuses the launch rather than proceeding. A
+    # scenario with no authored model need passes through unchanged.
+    from cms.services._model_admission import assert_launch_model_access
+
+    assert_launch_model_access(
+        user=user,
+        scenario_id=scenario,
+        egress_mode=egress_mode,
+        subject=model_admission_subject,
+        package_digest=source.package_digest,
+    )
+
     # #28: attempt an atomic warm-pool claim before cold provisioning. A hit
     # transfers a ready, compatible, system-owned generation to this user (audited
     # ownership rehome) and enqueues activation, which realizes the claimant's
     # fresh, sanitized access. A miss / disabled policy / unsupported backend
     # cold-falls-back through the unchanged reservation + dispatch path below, with
     # the inputs already validated for this launch.
-    from cms.services._range_workspace import resolve_effective_egress_mode
     from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
 
     claimed_request_id = attempt_warm_claim(
@@ -398,7 +418,7 @@ def _create_raes_native_range_impl(
             instantiation_purpose=instantiation_purpose,
             range_source=range_source,
             workspace_id=workspace_id,
-            egress_mode=resolve_effective_egress_mode(workspace_id),
+            egress_mode=egress_mode,
             request_id=request_id,
             enforced_deadline=enforced_deadline,
         )
@@ -412,6 +432,19 @@ def _create_raes_native_range_impl(
     )
 
     try:
+        # PLAT-202/#2119: _reserve_active_range_slot resolves egress under the
+        # workspace lock, and that authoritative posture — not the earlier
+        # preliminary read — is what dispatch uses. Re-run the model gate against
+        # it so a posture change between admission and reservation cannot dispatch
+        # a required-model range with an incompatible egress. A denial here is
+        # released and marked FAILED by the surrounding handler.
+        assert_launch_model_access(
+            user=user,
+            scenario_id=scenario,
+            egress_mode=egress_mode,
+            subject=model_admission_subject,
+            package_digest=source.package_digest,
+        )
         _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
     except Exception:
         # Dispatch failed before an Engine lifecycle can converge, so mark the
@@ -438,6 +471,7 @@ def create_range_dispatch(
     range_source: RangeSource | None = None,
     remote_access_teardown_at: datetime | None = None,
     workspace_uuid: str | UUID | None = None,
+    model_admission_subject: OwnedReference | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
@@ -459,6 +493,7 @@ def create_range_dispatch(
             ngfw_enabled=ngfw_enabled,
             remote_access_teardown_at=remote_access_teardown_at,
             workspace_uuid=workspace_uuid,
+            model_admission_subject=model_admission_subject,
         ),
     )
 
@@ -489,4 +524,5 @@ def dispatch_range_launch(
         instantiation_purpose=instantiation_purpose,
         workspace_uuid=options.workspace_uuid,
         enforced_deadline=options.remote_access_teardown_at,
+        model_admission_subject=options.model_admission_subject,
     )

@@ -61,6 +61,7 @@ _EVENT_MUTABLE_FIELDS = frozenset(
         "reminder_hours",
         "event_timezone",
         "capacity_hints",
+        "model_demand",
         "logo_url",
         "visible_os_types",
         "theme_color",
