@@ -265,7 +265,7 @@ export const FORBIDDEN_PATTERN =
  * PlatformDetails values: "Linux/UNIX", "Windows", "Windows with SQL Server", etc.
  */
 export function getSsmDocument(platformDetails) {
-  if (platformDetails && platformDetails.toLowerCase().startsWith("windows")) {
+  if (platformDetails?.toLowerCase().startsWith("windows")) {
     return "AWS-RunPowerShellScript";
   }
   return "AWS-RunShellScript";

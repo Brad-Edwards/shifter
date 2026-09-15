@@ -46,11 +46,13 @@ class ScenarioMetadata(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Model options: ordering and human-readable names."""
+
         ordering = ["scenario_id"]
         verbose_name = "Scenario Metadata"
         verbose_name_plural = "Scenario Metadata"
 
-    def __str__(self):
+    def __str__(self) -> str:
         status = "enabled" if self.enabled else "disabled"
         access = "staff-only" if self.staff_only else "all users"
         return f"{self.scenario_id}: {status}, {access}"

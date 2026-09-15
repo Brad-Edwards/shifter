@@ -765,8 +765,8 @@ class DashboardManager {
         if (participantsEl) {
             participantsEl.textContent = '';
             for (const participant of projection.participants || []) {
-                const runtimeStatus = participant.runtime ? participant.runtime.status : null;
-                const implementationStatus = participant.implementation ? participant.implementation.status : null;
+                const runtimeStatus = participant.runtime?.status ?? null;
+                const implementationStatus = participant.implementation?.status ?? null;
                 const status = runtimeStatus || implementationStatus || 'unknown';
                 const line = document.createElement('div');
                 line.textContent = `${participant.participant_ref}: ${status}`;

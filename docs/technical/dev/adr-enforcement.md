@@ -995,3 +995,12 @@ To add a production path:
 - Prefer explicit exceptions over hidden tolerances.
 - Do not make CI architecture checks skippable through the normal test-skip path.
 - Keep review friction focused on guardrail files, not on ordinary feature code.
+
+## Guardrail maintenance log
+
+- **agent-attribution matcher (`scripts/adr_guard/agent_attribution.py`)** — the
+  attribution-detection regexes were simplified from `\s*.*` to `.*` to remove
+  super-linear backtracking (SonarCloud `python:S8786`, ReDoS). Match behavior is
+  unchanged (`.*` already spans the leading whitespace the redundant `\s*` matched)
+  and is pinned by the existing `tests/test_agent_attribution.py` parity tests. No
+  change to what the guardrail forbids.

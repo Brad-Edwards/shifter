@@ -7,6 +7,8 @@ from cms.models import AgentConfig, OperatingSystem, ScenarioMetadata, Subnet
 
 @admin.register(OperatingSystem)
 class OperatingSystemAdmin(admin.ModelAdmin):
+    """Admin for operating system catalog entries."""
+
     list_display = ("name", "slug", "extensions")
     search_fields = ("name", "slug")
     ordering = ("name",)
@@ -14,6 +16,8 @@ class OperatingSystemAdmin(admin.ModelAdmin):
 
 @admin.register(AgentConfig)
 class AgentConfigAdmin(admin.ModelAdmin):
+    """Admin for user-uploaded agent config assets."""
+
     list_display = (
         "name",
         "user",
@@ -30,6 +34,8 @@ class AgentConfigAdmin(admin.ModelAdmin):
 
 @admin.register(Subnet)
 class SubnetAdmin(admin.ModelAdmin):
+    """Admin for provisioned subnet records."""
+
     list_display = ("name", "request", "status", "created_at", "deleted_at")
     list_filter = ("status", "deleted_at", "created_at")
     search_fields = ("name", "id")
@@ -38,6 +44,8 @@ class SubnetAdmin(admin.ModelAdmin):
 
 @admin.register(ScenarioMetadata)
 class ScenarioMetadataAdmin(admin.ModelAdmin):
+    """Admin for per-scenario metadata overrides."""
+
     list_display = ("scenario_id", "enabled", "staff_only", "updated_by", "updated_at")
     list_filter = ("enabled", "staff_only")
     search_fields = ("scenario_id",)

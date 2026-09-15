@@ -24,7 +24,7 @@
                 <div class="launch-tile-content">
                     <div class="launch-tile-form">
                         <div class="form-group">
-                            <label class="form-label">
+                            <label class="form-label" for="scenario-select-value">
                                 {% trans "Scenario" %}
                             </label>
                             <div class="shifter-dropdown full-width" id="scenario-dropdown">
@@ -49,7 +49,7 @@
                         </div>
                         <!-- OS Selection - shown when scenario has from_agent instances -->
                         <div class="form-group d-none" id="os-selection-section">
-                            <label class="form-label">
+                            <label class="form-label" for="os-select-value">
                                 {% trans "Victim OS" %}
                             </label>
                             <div class="shifter-dropdown full-width" id="os-dropdown">
@@ -80,7 +80,7 @@
                         </div>
                         <!-- Agent dropdown - filtered by selected OS for from_agent scenarios -->
                         <div class="form-group d-none" id="agent-section">
-                            <label class="form-label">
+                            <label class="form-label" for="agent-select-value">
                                 {% trans "Agent" %}
                             </label>
                             <div class="shifter-dropdown full-width" id="agent-dropdown">
@@ -102,7 +102,7 @@
                         </div>
                         <!-- Windows Agent dropdown - shown when scenario requires Windows agents -->
                         <div class="form-group d-none" id="windows-agent-section">
-                            <label class="form-label">
+                            <label class="form-label" for="windows-agent-select-value">
                                 {% trans "Windows Agent" %}
                             </label>
                             <div class="shifter-dropdown full-width"
@@ -127,7 +127,7 @@
                         </div>
                         <!-- Linux Agent dropdown - shown when scenario requires Linux agents -->
                         <div class="form-group d-none" id="linux-agent-section">
-                            <label class="form-label">
+                            <label class="form-label" for="linux-agent-select-value">
                                 {% trans "Linux Agent" %}
                             </label>
                             <div class="shifter-dropdown full-width"

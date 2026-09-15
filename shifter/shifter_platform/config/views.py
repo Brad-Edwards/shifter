@@ -2,10 +2,12 @@
 
 import json
 import logging
+from typing import cast
 
 from django.conf import settings
 from django.contrib.auth import BACKEND_SESSION_KEY, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -28,7 +30,7 @@ DASHBOARD_URL = "mission_control:dashboard"
 logger = logging.getLogger(__name__)
 
 
-def home(request):
+def home(request: HttpRequest) -> HttpResponse:
     """Landing page - coming soon."""
     return render(request, "coming_soon.html")
 
@@ -39,7 +41,8 @@ def privacy_notice(request: HttpRequest) -> HttpResponse:
     return render(request, "privacy/notice.html")
 
 
-def _render_identity_platform_login(request, *, status_code: int = 200):
+def _render_identity_platform_login(request: HttpRequest, *, status_code: int = 200) -> HttpResponse:
+    """Render the Identity Platform login page for the current request."""
     client_config = identity_platform_auth.identity_platform_client_config()
     site_url = (settings.SITE_URL or "").rstrip("/") or request.build_absolute_uri("/").rstrip("/")
     return render(
@@ -61,7 +64,8 @@ def _render_identity_platform_login(request, *, status_code: int = 200):
     )
 
 
-def _render_identity_platform_logout(request):
+def _render_identity_platform_logout(request: HttpRequest) -> HttpResponse:
+    """Render the Identity Platform logout page for the current request."""
     client_config = identity_platform_auth.identity_platform_client_config()
     return render(
         request,
@@ -78,9 +82,18 @@ def _render_identity_platform_logout(request):
     )
 
 
+def _login_response_for_provider(request: HttpRequest) -> HttpResponse:
+    """Return the login response for the configured authentication provider."""
+    if settings.AUTH_PROVIDER == "oidc":
+        return HttpResponseRedirect(reverse("oidc_authentication_init"))
+    if settings.AUTH_PROVIDER != "identity_platform":
+        return HttpResponseForbidden("Unsupported auth provider")
+    return _render_identity_platform_login(request)
+
+
 @ensure_csrf_cookie
 @require_http_methods(["GET", "HEAD"])
-def platform_login(request):
+def platform_login(request: HttpRequest) -> HttpResponse:
     """Route authentication to the configured provider."""
     if request.user.is_authenticated:
         from config.workspace_invitation_auth import preserve_staged_invitation_across_logout
@@ -92,29 +105,23 @@ def platform_login(request):
         logout(request)
         request.session[STAGED_INVITATION_SESSION_KEY] = staged
 
-    if settings.AUTH_PROVIDER == "oidc":
-        return HttpResponseRedirect(reverse("oidc_authentication_init"))
-    if settings.AUTH_PROVIDER != "identity_platform":
-        return HttpResponseForbidden("Unsupported auth provider")
-
-    return _render_identity_platform_login(request)
+    return _login_response_for_provider(request)
 
 
-@require_POST
-def identity_platform_session(request):
-    """Create a Django session from a verified Identity Platform ID token."""
-    if settings.AUTH_PROVIDER != "identity_platform":
-        return JsonResponse({"error": "unsupported_auth_provider"}, status=403)
-
+def _parse_id_token(request: HttpRequest) -> str:
+    """Extract and validate the ID token from the request body, raising ``ValueError`` on bad input."""
     try:
         payload = json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "invalid_request", "message": "Request body must be valid JSON."}, status=400)
-
+    except json.JSONDecodeError as exc:
+        raise ValueError("Request body must be valid JSON.") from exc
     id_token = str(payload.get("idToken", "")).strip()
     if not id_token:
-        return JsonResponse({"error": "invalid_request", "message": "An ID token is required."}, status=400)
+        raise ValueError("An ID token is required.")
+    return id_token
 
+
+def _authenticate_and_respond(request: HttpRequest, id_token: str) -> JsonResponse:
+    """Authenticate the ID token, establish a Django session, and return the redirect payload."""
     try:
         user = identity_platform_auth.login_with_identity_token(request, id_token)
     except identity_platform_auth.IdentityPlatformAuthError as exc:
@@ -135,8 +142,22 @@ def identity_platform_session(request):
     return JsonResponse({"redirect_url": reverse("dashboard_router")})
 
 
+@require_POST
+def identity_platform_session(request: HttpRequest) -> HttpResponse:
+    """Create a Django session from a verified Identity Platform ID token."""
+    if settings.AUTH_PROVIDER != "identity_platform":
+        return JsonResponse({"error": "unsupported_auth_provider"}, status=403)
+
+    try:
+        id_token = _parse_id_token(request)
+    except ValueError as exc:
+        return JsonResponse({"error": "invalid_request", "message": str(exc)}, status=400)
+
+    return _authenticate_and_respond(request, id_token)
+
+
 @require_http_methods(["GET", "HEAD"])
-def legacy_oidc_authenticate(request):
+def legacy_oidc_authenticate(request: HttpRequest) -> HttpResponse:
     """Keep the AWS login URL stable while redirecting GCP deployments to the provider router."""
     if settings.AUTH_PROVIDER == "oidc":
         from mozilla_django_oidc.views import OIDCAuthenticationRequestView
@@ -147,22 +168,23 @@ def legacy_oidc_authenticate(request):
 
 @require_http_methods(["GET", "HEAD"])
 @login_required
-def dashboard_router(request):
+def dashboard_router(request: HttpRequest) -> HttpResponse:
     """Route authenticated users to the role-aware SPA home/dashboard."""
     from config.workspace_invitation_auth import pop_post_login_continuation
 
     continuation = pop_post_login_continuation(request)
     if continuation is not None:
         return HttpResponseRedirect(continuation)
+    user = cast(User, request.user)
     logger.debug(
         "Routing user=%s to the platform SPA dashboard",
-        safe_log_fingerprint(request.user.email),
+        safe_log_fingerprint(user.email),
     )
     return HttpResponseRedirect(reverse("home"))
 
 
 @require_POST
-def logout_view(request):
+def logout_view(request: HttpRequest) -> HttpResponse:
     """Log out the current user, routing to the correct logout mechanism.
 
     OIDC users (authenticated via ShifterOIDCBackend) get their Django

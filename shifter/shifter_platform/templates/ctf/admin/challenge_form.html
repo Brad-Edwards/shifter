@@ -415,10 +415,12 @@
             <div class="form-actions">
                 {% if is_edit %}
                     <a href="{% url 'ctf:admin_challenge_detail' challenge_id=challenge.pk %}"
-                       class="btn btn-cancel">{% trans "Cancel" %}</a>
+                       class="btn btn-cancel"
+                       aria-label="{% trans 'Cancel and return to challenge' %}">{% trans "Cancel" %}</a>
                 {% else %}
                     <a href="{% url 'ctf:admin_challenge_list' event_id=event.pk %}"
-                       class="btn btn-cancel">{% trans "Cancel" %}</a>
+                       class="btn btn-cancel"
+                       aria-label="{% trans 'Cancel and return to challenge list' %}">{% trans "Cancel" %}</a>
                 {% endif %}
                 <button type="submit" class="btn btn-primary">
                     {% if is_edit %}
