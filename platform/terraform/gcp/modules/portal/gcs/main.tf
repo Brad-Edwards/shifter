@@ -27,6 +27,10 @@ resource "google_storage_bucket" "audit_logs" {
 # uses uniform bucket-level access, so the required WRITE permission is granted
 # with the narrow objectCreator IAM role rather than a bucket ACL.
 resource "google_storage_bucket_iam_member" "audit_log_writer" {
+  # Gated for Domain Restricted Sharing orgs: the google.com group is rejected by
+  # iam.allowedPolicyMemberDomains (Error 412) where the policy does not permit the
+  # Google customer. Cloud Audit Logs are unaffected (google_project_iam_audit_config).
+  count  = var.enable_gcs_usage_log_delivery ? 1 : 0
   bucket = google_storage_bucket.audit_logs.name
   role   = "roles/storage.objectCreator"
   member = "group:cloud-storage-analytics@google.com"

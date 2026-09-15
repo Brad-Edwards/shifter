@@ -212,11 +212,12 @@ resource "google_compute_network_peering" "range_to_platform" {
 module "portal_gcs" {
   source = "../portal/gcs"
 
-  project_id      = var.project_id
-  region          = var.region
-  environment     = var.environment
-  common_labels   = local.common_labels
-  public_hostname = local.normalized_public_hostname
+  project_id                    = var.project_id
+  region                        = var.region
+  environment                   = var.environment
+  common_labels                 = local.common_labels
+  public_hostname               = local.normalized_public_hostname
+  enable_gcs_usage_log_delivery = var.enable_gcs_usage_log_delivery
 
   depends_on = [module.project_services]
 }

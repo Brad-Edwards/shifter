@@ -334,6 +334,18 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+variable "enable_gcs_usage_log_delivery" {
+  description = <<-EOT
+    Grant the Google-managed group cloud-storage-analytics@google.com objectCreator
+    on the audit-logs bucket for GCS usage-log delivery. It names a google.com
+    principal, which a Domain Restricted Sharing org policy
+    (iam.allowedPolicyMemberDomains) forbids; set to false in such projects, where
+    the binding fails with Error 412. Cloud Audit Logs are unaffected.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "enable_identity_blocking_function" {
   description = <<-EOT
     Deploy the gen1 beforeCreate blocking function enforcing the sign-up domain
