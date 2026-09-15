@@ -253,6 +253,15 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+variable "enable_gcs_usage_log_delivery" {
+  type = bool
+  # This org's Domain Restricted Sharing policy (iam.allowedPolicyMemberDomains)
+  # forbids granting the google.com cloud-storage-analytics group, so GCS
+  # usage-log delivery is disabled here (the binding fails with Error 412). Cloud
+  # Audit Logs are unaffected (google_project_iam_audit_config).
+  default = false
+}
+
 variable "enable_identity_blocking_function" {
   description = <<-EOT
     Deploy the gen1 beforeCreate blocking function enforcing the sign-up domain

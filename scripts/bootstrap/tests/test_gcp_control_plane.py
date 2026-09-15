@@ -476,6 +476,32 @@ class TestResolveShifterConfigPath:
         assert "shifter.yaml" in capsys.readouterr().out
 
 
+class TestResolveHelmValuesPath:
+    def test_environment_named_file_is_preferred(self, tmp_path):
+        """gcp-dev / gcp-prod name their backend-profile values file directly."""
+        chart = tmp_path / "chart"
+        chart.mkdir()
+        (chart / "values-gcp-dev.yaml").write_text("x: 1\n")
+        config = deploy.GDCBootstrapConfig(project_id="prod-h5k4z5", environment="gcp-dev")
+
+        assert gcp_control_plane.resolve_helm_values_path(config, chart) == chart / "values-gcp-dev.yaml"
+
+    def test_tenant_environment_uses_backend_profile_file(self, tmp_path):
+        """A per-tenant environment (no env-named file) reuses values-gcp-<profile> from shifter.yaml."""
+        chart = tmp_path / "chart"
+        chart.mkdir()
+        (chart / "values-gcp-dev.yaml").write_text("x: 1\n")
+        shifter = tmp_path / "shifter.yaml"
+        shifter.write_text(
+            "version: 1\nbackend: gcp\ndeployment:\n  name: nazgul\n  domain: nazgul.keplerops.com\n  profile: dev\n"
+        )
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-wpfcav", environment="nazgul", shifter_config_path=str(shifter)
+        )
+
+        assert gcp_control_plane.resolve_helm_values_path(config, chart) == chart / "values-gcp-dev.yaml"
+
+
 class TestGcpControlPlaneSecurityInputs:
     """Tests for the bootstrap security preflight that runs before Terraform apply."""
 
