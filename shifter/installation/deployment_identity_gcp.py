@@ -8,9 +8,17 @@ from .deployment_inventory_types import DeploymentRecord, ExecutionRepository
 from .errors import ConfigIssue, InstallationConfigError
 
 
+def subject_prefix(execution: ExecutionRepository) -> str:
+    """Derive the reviewed GitHub subject format from exact repository identity."""
+    if execution.subject_format == "immutable":
+        owner, repository = execution.repository.split("/")
+        return f"repo:{owner}@{execution.owner_id}/{repository}@{execution.repository_id}"
+    return f"repo:{execution.repository}"
+
+
 def subject(execution: ExecutionRepository, environment: str) -> str:
-    """Build the default GitHub subject for one execution Environment."""
-    return f"repo:{execution.repository}:environment:{environment}"
+    """Build the exact GitHub subject for one execution Environment."""
+    return f"{subject_prefix(execution)}:environment:{environment}"
 
 
 def trust_condition(execution: ExecutionRepository) -> str:
@@ -72,6 +80,7 @@ def identity_tfvars(record: DeploymentRecord) -> dict[str, Any]:
         "github_repo": repo,
         "github_repository_id": execution.repository_id,
         "github_owner_id": execution.owner_id,
+        "github_subject_format": execution.subject_format,
         "purpose_contexts": contexts,
         "release_evidence_bucket_name": record.gcp.evidence_bucket,
         "terraform_state_bucket_name": record.state["platform"].bucket,

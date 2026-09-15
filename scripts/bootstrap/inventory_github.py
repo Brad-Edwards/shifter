@@ -6,6 +6,7 @@ import json
 from typing import Any
 from urllib.parse import quote
 
+from installation.deployment_identity_gcp import subject_prefix
 from installation.deployment_inventory_types import DeploymentRecord
 
 from inventory_bootstrap import invalid, private_command, private_json, validate_environment
@@ -42,27 +43,28 @@ def _verify_inventory_source(repository: str) -> None:
 
 
 def reconcile_subject(record: DeploymentRecord, *, apply: bool) -> None:
-    """Select the reviewed default subject contract and read back its exact prefix.
+    """Reconcile and verify the explicitly reviewed GitHub subject format.
 
-    Numeric repository and owner claims remain mandatory in provider trust. The
-    pinned Checkov rule currently supports the name-based default sub grammar.
-    Bootstrap explicitly configures that grammar, including for new repositories;
-    it never guesses a repository's effective format from its creation date.
+    Newly created repositories require immutable subjects. An incompatible
+    inventory fails readback; bootstrap never silently substitutes a format.
     """
+    immutable = record.execution.subject_format == "immutable"
     endpoint = f"repos/{record.execution.repository}/actions/oidc/customization/sub"
     headers = ["-H", "X-GitHub-Api-Version: 2026-03-10"]
     if apply:
         private_command(
             ["gh", "api", *headers, "--method", "PUT", endpoint, "--input", "-"],
-            stdin=json.dumps({"use_default": True, "use_immutable_subject": False}),
+            stdin=json.dumps({"use_default": True, "use_immutable_subject": immutable}),
         )
     template = private_json(["gh", "api", *headers, endpoint])
     if (
         template.get("use_default") is not True
-        or template.get("use_immutable_subject") is not False
-        or template.get("sub_claim_prefix") != "repo:" + record.execution.repository
+        or template.get("use_immutable_subject") is not immutable
+        or template.get("sub_claim_prefix") != subject_prefix(record.execution)
     ):
-        raise invalid("OIDC subject readback differs from inventory; configure the reviewed default subject contract")
+        raise invalid(
+            "OIDC subject readback differs from inventory; review execution.subject_format and repository IDs"
+        )
 
 
 def execution_environments(record: DeploymentRecord) -> dict[str, set[str]]:

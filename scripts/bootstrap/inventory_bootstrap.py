@@ -227,7 +227,15 @@ def plan_identity(
     verify_identity_plan(plan, record, project_number, product_root)
     json_path = directory / "identity.plan.json"
     write_private(json_path, json.dumps(plan))
-    checkov = ["uv", "tool", "run", "--from", CHECKOV_SOURCE, "checkov"]
+    checkov = [
+        "uv",
+        "tool",
+        "run",
+        "--from",
+        CHECKOV_SOURCE,
+        "python",
+        str(product_root / "scripts/bootstrap/inventory_checkov.py"),
+    ]
     report = private_json(
         [
             *checkov,

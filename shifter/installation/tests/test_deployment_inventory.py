@@ -258,7 +258,8 @@ def test_bucket_capabilities_cannot_bypass_state_or_evidence_isolation(record, c
         deployment_inventory.validate_record(record)
 
 
-def test_published_schema_is_a_usable_external_shape_contract(record):
+@pytest.mark.parametrize("subject_format", ["default", "immutable"])
+def test_published_schema_is_a_usable_external_shape_contract(record, subject_format):
     import json
     from pathlib import Path
 
@@ -267,6 +268,7 @@ def test_published_schema_is_a_usable_external_shape_contract(record):
     schema_path = Path(__file__).parents[1] / "published_contract/deployment-inventory.v1.schema.json"
     schema = json.loads(schema_path.read_text())
     jsonschema.Draft202012Validator.check_schema(schema)
+    record["execution"]["subject_format"] = subject_format
     jsonschema.validate(record, schema)
     record["execution"]["unrestricted_policy"] = "true"
     with pytest.raises(jsonschema.ValidationError):
@@ -288,3 +290,24 @@ def test_extra_project_configuration_is_not_supported(record, field):
     record["gcp"][field] = "another-project"
     with pytest.raises(InstallationConfigError):
         deployment_inventory.validate_record(record)
+
+
+@pytest.mark.parametrize(
+    "subject_format,prefix",
+    [
+        ("default", "repo:example/product"),
+        ("immutable", "repo:example@456/product@123"),
+    ],
+)
+def test_subject_format_binds_reviewed_repository_ids(record, subject_format, prefix):
+    from installation.deployment_identity_gcp import identity_tfvars, subject, trust_condition
+
+    record["execution"]["subject_format"] = subject_format
+    parsed = deployment_inventory.validate_record(record)
+    expected = prefix + ":environment:customer-deploy"
+    assert subject(parsed.execution, "customer-deploy") == expected
+    condition = trust_condition(parsed.execution)
+    assert f"assertion.sub == '{expected}'" in condition
+    assert "assertion.repository_id == '123'" in condition
+    assert "assertion.repository_owner_id == '456'" in condition
+    assert identity_tfvars(parsed)["github_subject_format"] == subject_format

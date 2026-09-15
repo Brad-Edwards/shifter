@@ -90,9 +90,14 @@ same semantic verifier after apply.
 Checkov's source/parser check is not an authentication proof: its substring analysis
 can accept boolean bypasses such as `true || ...`. Exact semantic comparison rejects
 those bypasses; generated private workflows test allowed impersonation, an invalid
-audience and cross-purpose denial against Google. The pinned Checkov parser supports
-the default name-based subject grammar, explicitly configured and read back during
-bootstrap. Immutable numeric repository claims independently prevent namespace reuse.
+audience and cross-purpose denial against Google. The inventory explicitly selects `default` (legacy names) or `immutable` (names
+plus numeric owner/repository IDs). Bootstrap verifies the exact effective prefix;
+new repositories require `immutable`. Both formats also bind the numeric claims.
+The bootstrap scanner adapter extends only the pinned CKV_GCP_125 repository
+parser for GitHub's immutable syntax. It refuses an unexpected scanner version or
+parser pattern and preserves upstream evaluation, reporting and failure status.
+The ordinary repository scan remains unchanged; the adapter scans the exact live
+saved plan after independent full-policy verification.
 No CKV_GCP_125 waiver or ignored scanner failure is introduced.
 
 ## Persistence, errors and migration

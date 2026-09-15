@@ -101,12 +101,16 @@ uv run --project scripts/bootstrap python scripts/bootstrap/deploy.py inventory 
 The command checks authority before mutation, matches Environment names without
 regard to capitalization, preserves and verifies existing reviewer/wait/self-review
 and administrator-bypass protections, reconciles exact branch policies, and
-configures the reviewed default OIDC subject grammar. New repositories can otherwise default to immutable
-subjects. Numeric `repository_id` and `repository_owner_id` remain mandatory in
-cloud trust; configuring the supported grammar does not permit a replacement
-repository with the same name. The pinned CKV_GCP_125 parser currently requires
-this grammar. Bootstrap reads it back, including `sub_claim_prefix`, before trust
-activation. See [GitHub's OIDC reference](https://docs.github.com/en/actions/reference/security/oidc).
+configures the reviewed OIDC subject format. Set `execution.subject_format` to
+`immutable` for new repositories; `default` preserves existing name-only subjects.
+Immutable prefixes include both reviewed IDs (`repo:OWNER@OWNER_ID/REPO@REPO_ID`).
+Bootstrap verifies `use_default`, `use_immutable_subject` and the exact
+`sub_claim_prefix` before trust activation; it never silently falls back to another
+format. Numeric `repository_id` and `repository_owner_id` remain mandatory in
+cloud trust for both formats. A version-checked compatibility adapter extends the
+pinned CKV_GCP_125 parser to accept immutable syntax, while preserving blocking
+scan results and independent exact-policy verification. See
+[GitHub's OIDC reference](https://docs.github.com/en/actions/reference/security/oidc).
 
 Bootstrap uses a short-lived token from the explicit gcloud account for both
 Terraform and runner operations. It rejects impersonation/credential-file

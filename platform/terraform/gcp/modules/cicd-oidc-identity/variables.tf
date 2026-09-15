@@ -227,3 +227,13 @@ variable "platform_external_bucket_names" {
     error_message = "platform_external_bucket_names must contain non-empty names and must not include this identity root's release-evidence bucket."
   }
 }
+
+variable "github_subject_format" {
+  description = "Reviewed GitHub default subject format: legacy names or immutable owner/repository IDs."
+  type        = string
+  default     = "default"
+  validation {
+    condition     = contains(["default", "immutable"], var.github_subject_format)
+    error_message = "github_subject_format must be default or immutable."
+  }
+}

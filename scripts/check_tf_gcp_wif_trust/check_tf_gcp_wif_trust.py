@@ -30,7 +30,7 @@ REQUIRED_OUTPUTS = frozenset({
 # an operator ever handles an inventory or cloud credential.
 PROVIDER_EXPRESSION = '''"assertion.repository == '${var.github_org}/${var.github_repo}' && assertion.repository_id == '${var.github_repository_id}' && assertion.repository_owner_id == '${var.github_owner_id}' && assertion.event_name == 'workflow_dispatch' && (${join(" || ", flatten([
     for purpose, contexts in var.purpose_contexts : [
-      for context in contexts : "(assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:${context.environment}' && assertion.ref == '${context.ref}' && assertion.workflow_ref == '${context.workflow_ref}'${context.reusable_workflow_ref == "" ? "" : " && assertion.job_workflow_ref == '${context.reusable_workflow_ref}'"})"
+      for context in contexts : "(assertion.sub == '${local.subject_prefix}:environment:${context.environment}' && assertion.ref == '${context.ref}' && assertion.workflow_ref == '${context.workflow_ref}'${context.reusable_workflow_ref == "" ? "" : " && assertion.job_workflow_ref == '${context.reusable_workflow_ref}'"})"
     ]
   ]))})"'''
 
@@ -53,8 +53,11 @@ def check_generic_source(path: Path, text: str) -> list[Violation]:
         errors.append("Provider must use the GitHub OIDC issuer")
     if "principalSet://" in clean or "allowed_audiences" in clean:
         errors.append("Repository-wide principals and alternate audiences are forbidden")
+    subject_prefix = 'subject_prefix = var.github_subject_format == "immutable" ? "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repository_id}" : "repo:${var.github_org}/${var.github_repo}"'
+    if _compact(subject_prefix) not in _compact(clean):
+        errors.append("Subject prefix must derive from the reviewed format and immutable repository IDs")
     subject_map = '''for purpose in ["build", "validate", "promote", "release_scan", "deploy", "destroy"] :
-    purpose => distinct([for context in lookup(var.purpose_contexts, purpose, []) : "repo:${var.github_org}/${var.github_repo}:environment:${context.environment}"])'''
+    purpose => distinct([for context in lookup(var.purpose_contexts, purpose, []) : "${local.subject_prefix}:environment:${context.environment}"])'''
     if _compact(subject_map) not in _compact(clean):
         errors.append("All purpose subjects must derive from the validated context mapping")
     principal = 'sub => "principal://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${var.name_prefix}-github/subject/${sub}"'

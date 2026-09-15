@@ -59,7 +59,7 @@ class ExecutionRepository(ClosedRecord):
     repository: Repository
     repository_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
     owner_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
-    subject_format: Literal["default"]
+    subject_format: Literal["default", "immutable"]
     purposes: dict[Purpose, list[ExecutionContext]] = Field(min_length=1, max_length=6)
 
     @model_validator(mode="after")

@@ -22,9 +22,10 @@ locals {
   service_account_names = {
     for purpose, email in local.service_account_emails : purpose => "projects/${var.project_id}/serviceAccounts/${email}"
   }
+  subject_prefix = var.github_subject_format == "immutable" ? "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repository_id}" : "repo:${var.github_org}/${var.github_repo}"
   purpose_subjects = {
     for purpose in ["build", "validate", "promote", "release_scan", "deploy", "destroy"] :
-    purpose => distinct([for context in lookup(var.purpose_contexts, purpose, []) : "repo:${var.github_org}/${var.github_repo}:environment:${context.environment}"])
+    purpose => distinct([for context in lookup(var.purpose_contexts, purpose, []) : "${local.subject_prefix}:environment:${context.environment}"])
   }
   federated_subjects = toset(flatten(values(local.purpose_subjects)))
   purpose_subject_principals = {
@@ -70,7 +71,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
   attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && assertion.repository_id == '${var.github_repository_id}' && assertion.repository_owner_id == '${var.github_owner_id}' && assertion.event_name == 'workflow_dispatch' && (${join(" || ", flatten([
     for purpose, contexts in var.purpose_contexts : [
-      for context in contexts : "(assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:${context.environment}' && assertion.ref == '${context.ref}' && assertion.workflow_ref == '${context.workflow_ref}'${context.reusable_workflow_ref == "" ? "" : " && assertion.job_workflow_ref == '${context.reusable_workflow_ref}'"})"
+      for context in contexts : "(assertion.sub == '${local.subject_prefix}:environment:${context.environment}' && assertion.ref == '${context.ref}' && assertion.workflow_ref == '${context.workflow_ref}'${context.reusable_workflow_ref == "" ? "" : " && assertion.job_workflow_ref == '${context.reusable_workflow_ref}'"})"
     ]
   ]))})"
   oidc {

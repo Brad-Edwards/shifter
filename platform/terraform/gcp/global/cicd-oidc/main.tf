@@ -37,6 +37,7 @@ module "cicd_oidc_identity" {
   project_number                         = var.project_number
   github_repository_id                   = var.github_repository_id
   github_owner_id                        = var.github_owner_id
+  github_subject_format                  = var.github_subject_format
   purpose_contexts                       = var.purpose_contexts
   release_evidence_bucket_name           = var.release_evidence_bucket_name
   region                                 = var.region

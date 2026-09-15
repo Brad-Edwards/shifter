@@ -54,6 +54,14 @@ class GenericSourceTests(unittest.TestCase):
             [error for path in MODULE.glob("*.tf") for error in check_file(path)], []
         )
 
+    def test_immutable_subject_ids_cannot_be_substituted(self):
+        self.assertTrue(self.check_changed(
+            "${var.github_org}@${var.github_owner_id}", "${var.github_org}@999"
+        ))
+        self.assertTrue(self.check_changed(
+            "${var.github_repo}@${var.github_repository_id}", "${var.github_repo}@999"
+        ))
+
     def test_bypassing_a_claim_gate_is_rejected(self):
         for claim in (
             "sub",

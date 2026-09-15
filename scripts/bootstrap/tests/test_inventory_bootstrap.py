@@ -182,9 +182,19 @@ def test_verified_environment_flows_through_existing_runner_process_helpers(monk
     assert _subprocess_env()["GOOGLE_OAUTH_ACCESS_TOKEN"] == "ambient-credential"
 
 
-def test_new_repository_subject_configuration_requires_exact_readback(record, monkeypatch):
+@pytest.mark.parametrize("subject_format", ["default", "immutable"])
+def test_new_repository_subject_configuration_requires_exact_readback(record, monkeypatch, subject_format):
     from inventory_github import reconcile_subject
 
+    data = record.model_dump(mode="json")
+    data["execution"]["subject_format"] = subject_format
+    record = validate_record(data)
+    owner, repo = record.execution.repository.split("/")
+    prefix = (
+        f"repo:{owner}@{record.execution.owner_id}/{repo}@{record.execution.repository_id}"
+        if subject_format == "immutable"
+        else "repo:" + record.execution.repository
+    )
     calls = []
 
     def process(argv, **kwargs):
@@ -195,8 +205,8 @@ def test_new_repository_subject_configuration_requires_exact_readback(record, mo
             else json.dumps(
                 {
                     "use_default": True,
-                    "use_immutable_subject": False,
-                    "sub_claim_prefix": "repo:" + record.execution.repository,
+                    "use_immutable_subject": subject_format == "immutable",
+                    "sub_claim_prefix": prefix,
                 }
             )
         )
@@ -204,11 +214,24 @@ def test_new_repository_subject_configuration_requires_exact_readback(record, mo
 
     monkeypatch.setattr(subprocess, "run", process)
     reconcile_subject(record, apply=True)
-    assert json.loads(calls[0][1]["input"]) == {"use_default": True, "use_immutable_subject": False}
+    assert json.loads(calls[0][1]["input"]) == {
+        "use_default": True,
+        "use_immutable_subject": subject_format == "immutable",
+    }
     assert len(calls) == 2
-    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "{}", ""))
-    with pytest.raises(InstallationConfigError):
-        reconcile_subject(record, apply=False)
+    for response in [
+        {},
+        {"use_default": True, "use_immutable_subject": subject_format == "immutable", "sub_claim_prefix": prefix + "9"},
+        {"use_default": True, "use_immutable_subject": subject_format != "immutable", "sub_claim_prefix": prefix},
+        {"use_default": False, "use_immutable_subject": subject_format == "immutable", "sub_claim_prefix": prefix},
+    ]:
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda argv, response=response, **kw: subprocess.CompletedProcess(argv, 0, json.dumps(response), ""),
+        )
+        with pytest.raises(InstallationConfigError):
+            reconcile_subject(record, apply=False)
 
 
 def identity_plan(record):

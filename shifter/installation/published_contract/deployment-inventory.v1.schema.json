@@ -87,7 +87,10 @@
           "type": "string"
         },
         "subject_format": {
-          "const": "default",
+          "enum": [
+            "default",
+            "immutable"
+          ],
           "title": "Subject Format",
           "type": "string"
         },
