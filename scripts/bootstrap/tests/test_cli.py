@@ -513,6 +513,43 @@ class TestMainCLI:
             assert config.range_backend == "gdc"
             assert config.builds_gdc_substrate is True
 
+    def test_gdc_bootstrap_defaults_to_gcp_dev_environment(self):
+        """gdc-bootstrap defaults to the gcp-dev environment for back-compat."""
+        with (
+            patch(
+                "sys.argv",
+                ["deploy.py", "gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+        ):
+            deploy.main()
+
+            config = mock_gdc_bootstrap.call_args[0][0]
+            assert config.environment == "gcp-dev"
+
+    def test_gdc_bootstrap_environment_selects_tenant(self):
+        """--environment selects a per-tenant deployment (Terraform root, state prefix, values-<env>)."""
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "deploy.py",
+                    "gdc-bootstrap",
+                    "--project-id",
+                    "prod-wpfcav",
+                    "--environment",
+                    "nazgul",
+                ],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+        ):
+            deploy.main()
+
+            config = mock_gdc_bootstrap.call_args[0][0]
+            assert config.environment == "nazgul"
+
     def test_gdc_bootstrap_terraform_identity_operator_adc(self):
         """--terraform-identity operator-adc threads through to the config (#1718)."""
         with (

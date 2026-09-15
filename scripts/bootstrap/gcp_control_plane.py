@@ -19,6 +19,8 @@ from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
+import yaml
+
 from bootstrap_core import (
     _GDC_APISERVER_BACKEND_PORT,
     _GDC_SCENARIO_POD_KALI_IMAGE,
@@ -141,7 +143,11 @@ def render_gcp_platform_runtime_env(
     bootstrap_env_values: dict[str, str] | None = None,
 ) -> str:
     """Render the static, project-aware runtime env contract for the GKE control plane."""
-    bootstrap_values = load_bootstrap_env_values() if bootstrap_env_values is None else bootstrap_env_values
+    bootstrap_values = (
+        load_bootstrap_env_values(environment=config.environment)
+        if bootstrap_env_values is None
+        else bootstrap_env_values
+    )
     bootstrap_staff_emails = _merge_csv_env_values(
         [bootstrap_values.get("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "")],
         [bootstrap_operator_email or ""],
@@ -289,20 +295,28 @@ def parse_simple_env_file(path: Path) -> dict[str, str]:
 # credentials as the source of truth (issue #1570). local.auto.tfvars is
 # gitignored; operators keep the value here, CI renders it from the matching
 # GitHub secret. parse_simple_env_file handles the HCL `key = "value"` form.
-_GCP_DEV_TFVARS_OVERLAY = "platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars"
+_TFVARS_OVERLAY_TEMPLATE = "platform/terraform/gcp/environments/{environment}/local.auto.tfvars"
+# Back-compat default (gcp-dev) overlay path; per-tenant paths derive from the
+# environment via _tfvars_overlay_path.
+_GCP_DEV_TFVARS_OVERLAY = _TFVARS_OVERLAY_TEMPLATE.format(environment="gcp-dev")
 # The overlay's HCL keys map to bootstrap env vars by uppercasing (e.g.
 # gcp_bootstrap_admin_email -> GCP_BOOTSTRAP_ADMIN_EMAIL), so derive the env key
 # rather than hardcoding a second literal for each.
 _TFVARS_BOOTSTRAP_KEYS = ("gcp_bootstrap_admin_email", "gcp_bootstrap_admin_password")
 
 
-def _gcp_bootstrap_creds_from_tfvars(repo_root: Path) -> dict[str, str]:
-    """Read the first-operator creds from the gcp-dev tfvars overlay (source of truth)."""
-    parsed = parse_simple_env_file(repo_root / _GCP_DEV_TFVARS_OVERLAY)
+def _tfvars_overlay_path(environment: str) -> str:
+    """Repo-relative operator-creds overlay path for the given environment."""
+    return _TFVARS_OVERLAY_TEMPLATE.format(environment=environment)
+
+
+def _gcp_bootstrap_creds_from_tfvars(repo_root: Path, environment: str = "gcp-dev") -> dict[str, str]:
+    """Read the first-operator creds from the environment's tfvars overlay (source of truth)."""
+    parsed = parse_simple_env_file(repo_root / _tfvars_overlay_path(environment))
     return {tf_key.upper(): parsed[tf_key] for tf_key in _TFVARS_BOOTSTRAP_KEYS if parsed.get(tf_key)}
 
 
-def load_bootstrap_env_values(repo_root: Path | None = None) -> dict[str, str]:
+def load_bootstrap_env_values(repo_root: Path | None = None, environment: str = "gcp-dev") -> dict[str, str]:
     """Load bootstrap values from repo-local env files, then the process environment.
 
     The gcp-dev tfvars overlay is applied last so the recorded operator credentials
@@ -317,13 +331,15 @@ def load_bootstrap_env_values(repo_root: Path | None = None) -> dict[str, str]:
     for env_path in [repo_root / ".env", repo_root.parent / "shifter" / ".env"]:
         values.update(parse_simple_env_file(env_path))
     values.update(os.environ)
-    values.update(_gcp_bootstrap_creds_from_tfvars(repo_root))
+    values.update(_gcp_bootstrap_creds_from_tfvars(repo_root, environment))
     return values
 
 
-def resolve_gcp_bootstrap_operator_credentials(env_values: dict[str, str] | None = None) -> tuple[str, str] | None:
+def resolve_gcp_bootstrap_operator_credentials(
+    env_values: dict[str, str] | None = None, environment: str = "gcp-dev"
+) -> tuple[str, str] | None:
     """Resolve the first operator email/password for the GCP identity bootstrap."""
-    values = load_bootstrap_env_values() if env_values is None else env_values
+    values = load_bootstrap_env_values(environment=environment) if env_values is None else env_values
 
     email = (
         values.get("GCP_BOOTSTRAP_ADMIN_EMAIL")
@@ -459,7 +475,7 @@ def ensure_gcp_identity_platform_operator(
     dry_run: bool = False,
 ) -> str | None:
     """Create the first GCP operator account if it does not already exist."""
-    credentials = resolve_gcp_bootstrap_operator_credentials()
+    credentials = resolve_gcp_bootstrap_operator_credentials(environment=config.environment)
     if credentials is None:
         if dry_run:
             info("[DRY-RUN] Would prompt for the first GCP operator email and password")
@@ -1197,6 +1213,32 @@ def resolve_shifter_config_path(config: GDCBootstrapConfig, repo_root: Path) -> 
     return config_path
 
 
+def _read_deployment_profile(config_path: Path) -> str:
+    """Read ``deployment.profile`` from the root installation config (default 'prod')."""
+    with config_path.open(encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    deployment = data.get("deployment", {}) if isinstance(data, dict) else {}
+    if not isinstance(deployment, dict):
+        return "prod"
+    return str(deployment.get("profile", "prod"))
+
+
+def resolve_helm_values_path(config: GDCBootstrapConfig, chart_path: Path) -> Path:
+    """Select the chart's Helm values override for this deployment.
+
+    The chart ships a closed set of ``values-<backend>-<profile>.yaml`` files (no
+    per-tenant files; enforced by platform/charts/shifter/tests/test_chart_contract.py).
+    The gcp-dev / gcp-prod environments name their backend-profile file directly, so
+    they resolve unchanged. A per-tenant environment (e.g. nazgul) has no env-named
+    file and reuses the gcp backend's profile file resolved from shifter.yaml.
+    """
+    env_named = chart_path / f"values-{config.environment}.yaml"
+    if env_named.exists():
+        return env_named
+    profile = _read_deployment_profile(resolve_shifter_config_path(config, get_repo_root()))
+    return chart_path / f"values-gcp-{profile}.yaml"
+
+
 def render_range_egress_tfvars(repo_root: Path, config_path: Path, output_path: Path, dry_run: bool = False) -> None:
     """Render the range egress bridge tfvars from ``config_path`` via ``shifter-config render``.
 
@@ -1845,7 +1887,7 @@ def deploy_gcp_control_plane_with_helm(
     cluster_name = str(_get_output_value(outputs, "gke_cluster_name"))
     cluster_location = str(_get_output_value(outputs, "gke_cluster_location"))
     chart_path = get_repo_root() / "platform" / "charts" / "shifter"
-    environment_values_path = chart_path / f"values-{config.environment}.yaml"
+    environment_values_path = resolve_helm_values_path(config, chart_path)
 
     if not environment_values_path.exists():
         error(f"Missing Helm values override for environment {config.environment}: {environment_values_path}")
