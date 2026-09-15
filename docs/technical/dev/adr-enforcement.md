@@ -998,7 +998,7 @@ To add a production path:
 
 ## Guardrail maintenance log
 
-- **agent-attribution matcher (`scripts/adr_guard/agent_attribution.py`)** — the
+- **agent-attribution matcher (`scripts/adr_guard/agent_attribution.py`)**: the
   attribution-detection regexes were simplified from `\s*.*` to `.*` to remove
   super-linear backtracking (SonarCloud `python:S8786`, ReDoS). Match behavior is
   unchanged (`.*` already spans the leading whitespace the redundant `\s*` matched)
