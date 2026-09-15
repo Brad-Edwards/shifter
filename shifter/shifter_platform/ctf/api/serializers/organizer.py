@@ -253,7 +253,7 @@ class EventWriteSerializer(serializers.Serializer):
     visible_os_types = serializers.ListField(child=serializers.CharField(max_length=32), required=False, max_length=16)
     theme_color = serializers.RegexField(r"^(#[0-9a-fA-F]{6})?$", required=False, allow_blank=True)
 
-    def validate_model_demand(self, value: list[dict]) -> list[dict]:
+    def validate_model_demand(self, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Validate each typed model-demand entry (PLAT-202, CTF-908).
 
         Organizer input is bounded by the closed ``EventModelDemand`` contract; a

@@ -245,7 +245,7 @@ def test_dispatch_routes_registered_raes_source(user, monkeypatch):
         "cms.services._raes_range_create._create_raes_native_range_impl",
         lambda u, s, **kwargs: routed.update(scenario=s, purpose=kwargs.get("instantiation_purpose")),
     )
-    create_range_dispatch(user, "raes-x", {})
+    create_range_dispatch(user, "raes-x")
     assert routed["scenario"] == "raes-x"
     # The product router always mints live-fire authority (#1354, ADR-030-R6).
     assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE

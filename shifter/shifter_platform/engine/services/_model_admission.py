@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from shared.model_access import (
+    EffectivePolicy,
     EffectiveProfile,
     EventModelDemand,
     ModelAccessCatalog,
@@ -140,7 +141,16 @@ def _resolve_sharing(
         # The authority could not be consulted: required access is indeterminate.
         logger.exception("model-access: sharing authority unavailable during admission")
         return None, False, None
+    return _fold_sharing(effective)
 
+
+def _fold_sharing(effective: EffectivePolicy) -> tuple[bool | None, bool, EffectiveProfile | None]:
+    """Fold a compiled effective policy into (admissible, authority_available, profile).
+
+    No matching binding is no constraint; a stale membership projection fails
+    closed as an unavailable authority; otherwise the overlap's admissibility and
+    compiled profile carry forward.
+    """
     if not effective.contributions:
         return None, True, None
     if effective.stale:

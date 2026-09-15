@@ -68,8 +68,9 @@ def assert_launch_model_access(
         # rather than proceed as if no need existed.
         logger.warning("model-access: launch refused for scenario %s (needs unresolvable)", safe_log_value(scenario_id))
         raise CMSError(_DENIED_MESSAGE, details={"code": "model-access-denied", "reason_codes": ["needs_unavailable"]})
+    # No authored model need: no required-model gate.
     if not projection.needs:
-        return  # no authored model need: no required-model gate
+        return
 
     need_projections = {role: projection.for_workload(role) for role in projection.needs}
     egress_permits_model = egress_mode not in _ZERO_EGRESS_MODES

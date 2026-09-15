@@ -22,7 +22,7 @@ from shared.model_access.catalog import ContractError
 logger = logging.getLogger(__name__)
 
 
-def validate_scenario_model_needs(authored_package_digest: str, needs: object) -> dict:
+def validate_scenario_model_needs(authored_package_digest: str, needs: object) -> dict[str, dict[str, object]]:
     """Validate the ``{workload_role: ScenarioNeed}`` overlay payload.
 
     Returns the normalized JSON-safe mapping to persist. Each entry must parse as
@@ -33,7 +33,7 @@ def validate_scenario_model_needs(authored_package_digest: str, needs: object) -
     """
     if not isinstance(needs, dict) or not needs:
         raise ContractError("scenario_needs.empty", "needs")
-    normalized: dict[str, dict] = {}
+    normalized: dict[str, dict[str, object]] = {}
     for role, payload in needs.items():
         try:
             need = ScenarioNeed.model_validate(payload)
@@ -95,25 +95,19 @@ def project_scenario_model_needs(
     """
     from cms.models import RaesPackageSource, ScenarioModelNeeds
 
+    needs: dict[str, ScenarioNeed] = {}
     try:
         row = ScenarioModelNeeds.objects.filter(scenario_id=scenario_id).first()
+        for role, payload in (row.needs if row is not None else {}).items():
+            needs[role] = ScenarioNeed.model_validate(payload)
     except Exception:
-        # A read failure is not a confirmed absence: fail closed rather than
-        # letting the launch gate treat an unreadable overlay as "no need".
-        logger.exception("model-access: could not read scenario model needs")
+        # A read failure or a malformed stored need is a *resolution failure*, not
+        # a confirmed absence: fail closed rather than letting the launch gate
+        # treat an unreadable/untrusted overlay as "no need".
+        logger.exception("model-access: could not resolve scenario model needs")
         return ScenarioModelNeedsProjection(needs={}, digest_verified=False, resolution_failed=True)
     if row is None:
         return ScenarioModelNeedsProjection(needs={}, digest_verified=False)
-
-    needs: dict[str, ScenarioNeed] = {}
-    try:
-        for role, payload in (row.needs or {}).items():
-            needs[role] = ScenarioNeed.model_validate(payload)
-    except ValidationError:
-        # A malformed stored need is a resolution failure, never absence: an
-        # overlay row exists but we cannot trust what it requires.
-        logger.exception("model-access: stored scenario needs failed to parse")
-        return ScenarioModelNeedsProjection(needs={}, digest_verified=False, resolution_failed=True)
 
     if expected_digest is not None:
         current_digest = expected_digest

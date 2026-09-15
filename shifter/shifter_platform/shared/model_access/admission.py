@@ -122,63 +122,106 @@ def decide_model_admission(
     overlap (when it carries a profile facet); the need is intersected against it
     so a sharing restriction actually tightens the decision.
     """
-    role = projection.workload_role
     need = projection.need
-
-    # No authored binding: this workload carries no required-model gate.
     if need is None:
-        return _result(role, ModelAdmissionOutcome.ADMITTED, ModelAdmissionReason.NO_BINDING, required=False)
+        # No authored binding: this workload carries no required-model gate.
+        return _result(
+            projection.workload_role, ModelAdmissionOutcome.ADMITTED, ModelAdmissionReason.NO_BINDING, required=False
+        )
 
-    required = bool(need.required)
+    reason = _precondition_reason(projection.digest_verified, authority_available, profile, egress_permits_model)
+    if reason is None:
+        reason = _policy_reason(need, demand, profile, sharing_admissible, sharing_profile)
+    return _render(projection.workload_role, bool(need.required), reason)
 
-    # A binding authored against different pack content cannot be trusted.
-    if not projection.digest_verified:
-        return _closed_or_absent(role, required, ModelAdmissionReason.DIGEST_MISMATCH)
 
-    # Required access needs a live authority to prove membership and policy.
-    if not authority_available:
-        if required:
-            return _result(
-                role, ModelAdmissionOutcome.INDETERMINATE, ModelAdmissionReason.AUTHORITY_UNAVAILABLE, required=True
-            )
+def _render(role: str, required: bool, reason: ModelAdmissionReason) -> ModelAdmissionResult:
+    """Map a computed reason to the fail-closed outcome for one workload.
+
+    A required need denies (or is indeterminate when the authority could not be
+    consulted); an optional need renders as explicit visible absence and never
+    blocks.
+    """
+    if reason is ModelAdmissionReason.ADMITTED:
+        return _result(role, ModelAdmissionOutcome.ADMITTED, reason, required=required)
+    if not required:
         return _absent(role)
+    outcome = (
+        ModelAdmissionOutcome.INDETERMINATE
+        if reason is ModelAdmissionReason.AUTHORITY_UNAVAILABLE
+        else ModelAdmissionOutcome.DENIED
+    )
+    return _result(role, outcome, reason, required=True)
 
-    # Deployment policy must offer the referenced profile.
+
+def _precondition_reason(
+    digest_verified: bool, authority_available: bool, profile: ModelProfile | None, egress_permits_model: bool
+) -> ModelAdmissionReason | None:
+    """Return the first failing precondition reason, or None when all hold.
+
+    A binding authored against different pack content cannot be trusted; required
+    access needs a live authority and an offered deployment profile; zero-egress
+    is incompatible with required external model use.
+    """
+    checks = (
+        (not digest_verified, ModelAdmissionReason.DIGEST_MISMATCH),
+        (not authority_available, ModelAdmissionReason.AUTHORITY_UNAVAILABLE),
+        (profile is None, ModelAdmissionReason.POLICY_UNAVAILABLE),
+        (not egress_permits_model, ModelAdmissionReason.EGRESS_INCOMPATIBLE),
+    )
+    for failed, reason in checks:
+        if failed:
+            return reason
+    return None
+
+
+def _policy_reason(
+    need: ScenarioNeed,
+    demand: EventModelDemand | None,
+    profile: ModelProfile | None,
+    sharing_admissible: bool | None,
+    sharing_profile: EffectiveProfile | None,
+) -> ModelAdmissionReason:
+    """Intersect the need with the deployment profile, then fold sharing effects."""
     if profile is None:
-        return _closed_or_absent(role, required, ModelAdmissionReason.POLICY_UNAVAILABLE)
-
-    # Zero-egress is incompatible with required external model use.
-    if not egress_permits_model:
-        return _closed_or_absent(role, required, ModelAdmissionReason.EGRESS_INCOMPATIBLE)
-
-    # Intersect the scenario need with the deployment profile (fail-closed for required).
+        return ModelAdmissionReason.POLICY_UNAVAILABLE
     try:
         effective = intersect_profile(profile, need)
     except ContractError as exc:
-        reason = _CONTRACT_ERROR_REASONS.get(exc.code, ModelAdmissionReason.POLICY_UNAVAILABLE)
-        return _closed_or_absent(role, required, reason)
+        return _CONTRACT_ERROR_REASONS.get(exc.code, ModelAdmissionReason.POLICY_UNAVAILABLE)
     if effective is None:
         # Optional need with an empty intersection: explicit visible unavailability.
-        return _absent(role)
+        return ModelAdmissionReason.OPTIONAL_ABSENT
+    return _effective_reason(need, demand, effective, sharing_admissible, sharing_profile)
 
-    # A required grant needs the sharing overlap to resolve cleanly.
+
+def _effective_reason(
+    need: ScenarioNeed,
+    demand: EventModelDemand | None,
+    effective: EffectiveProfile,
+    sharing_admissible: bool | None,
+    sharing_profile: EffectiveProfile | None,
+) -> ModelAdmissionReason:
+    """Fold the sharing overlap and organizer demand into the final reason."""
+    reason = ModelAdmissionReason.ADMITTED
+    restricted = _restrict_by_sharing(effective, need, sharing_profile) if sharing_profile is not None else None
     if sharing_admissible is False:
-        return _closed_or_absent(role, required, ModelAdmissionReason.SHARING_CONFLICT)
+        reason = ModelAdmissionReason.SHARING_CONFLICT
+    elif restricted is not None:
+        reason = restricted
+    elif demand is not None and not _demand_strategy_allowed(demand, effective, sharing_profile):
+        reason = ModelAdmissionReason.STRATEGY_NOT_ALLOWED
+    return reason
 
-    # An admissible sharing overlap still restricts: intersect the need against
-    # its compiled effective profile, not just the catalog profile.
+
+def _demand_strategy_allowed(
+    demand: EventModelDemand, effective: EffectiveProfile, sharing_profile: EffectiveProfile | None
+) -> bool:
+    """Whether the organizer's selected strategy stays within the effective envelope."""
     strategies = set(effective.allowed_strategies)
     if sharing_profile is not None:
-        restricted = _restrict_by_sharing(effective, need, sharing_profile)
-        if restricted is not None:
-            return _closed_or_absent(role, required, restricted)
         strategies &= set(sharing_profile.allowed_strategies)
-
-    # The organizer's selected strategy must stay within the effective envelope.
-    if demand is not None and demand.allowed_strategy not in strategies:
-        return _closed_or_absent(role, required, ModelAdmissionReason.STRATEGY_NOT_ALLOWED)
-
-    return _result(role, ModelAdmissionOutcome.ADMITTED, ModelAdmissionReason.ADMITTED, required=required)
+    return demand.allowed_strategy in strategies
 
 
 def _restrict_by_sharing(
@@ -189,25 +232,22 @@ def _restrict_by_sharing(
     """Return a denial reason when the sharing overlap forecloses the need, else None.
 
     The sharing overlap must reference the same profile and must still leave every
-    required capability available and a non-empty region/strategy intersection
-    once combined with the catalog-intersected envelope.
+    required capability available and a non-empty capability/region/strategy
+    intersection once combined with the catalog-intersected envelope. An empty
+    capability intersection is never admissible, even when the need lists no
+    *required* capabilities (a subset check trivially passes for an empty set).
     """
-    if sharing_profile.profile_id != need.profile_id:
-        return ModelAdmissionReason.SHARING_CONFLICT
     capabilities = set(effective.capabilities) & set(sharing_profile.capabilities)
-    # An empty capability intersection is never admissible, even when the need
-    # lists no *required* capabilities (a subset check trivially passes for an
-    # empty required set). intersect_profile and the sharing compiler both reject
-    # this; preserve the invariant when combining the two envelopes.
-    if not capabilities:
-        return ModelAdmissionReason.EMPTY_INTERSECTION
-    if not set(need.required_capabilities).issubset(capabilities):
-        return ModelAdmissionReason.REQUIRED_CAPABILITY_UNAVAILABLE
-    if not (set(effective.data_regions) & set(sharing_profile.data_regions)):
-        return ModelAdmissionReason.EMPTY_INTERSECTION
-    if not (set(effective.allowed_strategies) & set(sharing_profile.allowed_strategies)):
-        return ModelAdmissionReason.EMPTY_INTERSECTION
-    return None
+    regions = set(effective.data_regions) & set(sharing_profile.data_regions)
+    strategies = set(effective.allowed_strategies) & set(sharing_profile.allowed_strategies)
+    reason: ModelAdmissionReason | None = None
+    if sharing_profile.profile_id != need.profile_id:
+        reason = ModelAdmissionReason.SHARING_CONFLICT
+    elif not capabilities or not regions or not strategies:
+        reason = ModelAdmissionReason.EMPTY_INTERSECTION
+    elif not set(need.required_capabilities).issubset(capabilities):
+        reason = ModelAdmissionReason.REQUIRED_CAPABILITY_UNAVAILABLE
+    return reason
 
 
 def _result(
@@ -215,13 +255,6 @@ def _result(
 ) -> ModelAdmissionResult:
     """Build one admission result."""
     return ModelAdmissionResult(workload_role=role, outcome=outcome, reason=reason, required=required)
-
-
-def _closed_or_absent(role: str, required: bool, reason: ModelAdmissionReason) -> ModelAdmissionResult:
-    """Deny a required need; render an optional one as explicit visible absence."""
-    if required:
-        return _result(role, ModelAdmissionOutcome.DENIED, reason, required=True)
-    return _absent(role)
 
 
 def _absent(role: str) -> ModelAdmissionResult:

@@ -59,6 +59,8 @@ class ScenarioModelNeedsForm(forms.ModelForm):
     """
 
     class Meta:
+        """Bind the form to ScenarioModelNeeds with an explicit field set."""
+
         model = ScenarioModelNeeds
         fields = ("scenario_id", "authored_package_digest", "needs", "updated_by")
 

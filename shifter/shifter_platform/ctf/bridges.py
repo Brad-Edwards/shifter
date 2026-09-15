@@ -171,10 +171,12 @@ def cms_create_range(
     import cms.services as cms_services
     from shared.enums import RangeSource
 
+    # RAES packages own topology; agents_by_os is accepted for caller back-compat
+    # but does not shape the plan.
+    del agents_by_os
     result = cms_services.create_range_dispatch(
         user=user,
         scenario=scenario,
-        agents_by_os=agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=RangeSource.CTF,
         remote_access_teardown_at=remote_access_teardown_at,
