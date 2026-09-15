@@ -2382,6 +2382,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mission-control/range/{request_id}/cleanup-outcome/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the cleanup outcome for the owned range's request_id. */
+        get: operations["api_v1_mission_control_range_cleanup_outcome"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mission-control/range/{request_id}/raes/operation-receipts/": {
         parameters: {
             query?: never;
@@ -3416,6 +3433,11 @@ export interface components {
          * @enum {string}
          */
         CleanupControlRequestActionEnum: "defer" | "cancel";
+        /** @description One retained cleanup obligation (#2086, ADR-063-R4). */
+        CleanupObligation: {
+            code: string;
+            detail: string;
+        };
         /** @description One entry from ``mission_control.utils.build_connection_urls``. */
         ConnectionUrl: {
             uuid: string | null;
@@ -3599,6 +3621,9 @@ export interface components {
             readonly capacity_hints: {
                 [key: string]: unknown;
             };
+            readonly model_demand: {
+                [key: string]: unknown;
+            }[];
             readonly logo_url: string;
             readonly visible_os_types: string[];
             readonly theme_color: string;
@@ -3733,6 +3758,9 @@ export interface components {
             capacity_hints?: {
                 [key: string]: unknown;
             };
+            model_demand?: {
+                [key: string]: unknown;
+            }[];
             /** Format: uri */
             logo_url?: string;
             visible_os_types?: string[];
@@ -3876,6 +3904,7 @@ export interface components {
         LaunchRangeResponse: {
             success: boolean;
             range: components["schemas"]["RangePresentation"];
+            recovered?: boolean;
         };
         /** @description The canonical four-field policy projection. */
         LeasePolicy: {
@@ -4861,6 +4890,22 @@ export interface components {
         RangeAccessResponse: {
             readonly redirect: string;
             readonly message: string;
+        };
+        /** @description Truthful range cleanup-outcome projection (#2086, ADR-063-R4). */
+        RangeCleanupOutcomeResponse: {
+            /** Format: uuid */
+            request_id: string;
+            found: boolean;
+            operation_status: string;
+            dispatch_status: string;
+            cancel_state: string;
+            cleanup: string;
+            residual_obligations: components["schemas"]["CleanupObligation"][];
+            /** Format: date-time */
+            verification_observed_at?: string | null;
+            verification_scope?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * @description One entry in the range-history list (``GET .../ranges/``, #1370).
@@ -12103,6 +12148,45 @@ export interface operations {
             };
         };
     };
+    api_v1_mission_control_range_cleanup_outcome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeCleanupOutcomeResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_mission_control_raes_operation_receipts_list: {
         parameters: {
             query?: never;
@@ -12448,7 +12532,10 @@ export interface operations {
     api_v1_mission_control_range_launch: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional caller retry key (max 200 characters; leading/trailing whitespace trimmed, empty treated as absent). When supplied the launch is idempotent: a retry with the same key and the same launch selections recovers the original range instead of dispatching a duplicate; the same key with different selections returns 409. */
+                "Idempotency-Key"?: string;
+            };
             path?: never;
             cookie?: never;
         };

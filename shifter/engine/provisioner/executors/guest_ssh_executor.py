@@ -49,7 +49,7 @@ class GuestSSHExecutor:
         connect_timeout_seconds: int = 10,
         host_public_key: str | None = None,
         known_hosts_host: str | None = None,
-    ):
+    ) -> None:
         self._username = username
         self._port = port
         self._poll_interval = poll_interval_seconds
@@ -149,7 +149,8 @@ class GuestSSHExecutor:
         args += [f"{self._username}@{host}", *remote_command]
         return args
 
-    def _get_remote_command(self, document_name: str) -> list[str]:
+    @staticmethod
+    def _get_remote_command(document_name: str) -> list[str]:
         if document_name == "AWS-RunPowerShellScript":
             return [
                 "powershell.exe",
@@ -170,7 +171,8 @@ class GuestSSHExecutor:
         # regresses.
         return ["sudo", "-n", "bash", "-se"]
 
-    def _build_command_input(self, script: str, stdin_input: str | None, document_name: str) -> str:
+    @staticmethod
+    def _build_command_input(script: str, stdin_input: str | None, document_name: str) -> str:
         parts: list[str] = []
         if document_name != "AWS-RunPowerShellScript":
             parts.append("set -euo pipefail")

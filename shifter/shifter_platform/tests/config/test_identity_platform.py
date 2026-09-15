@@ -575,3 +575,50 @@ class TestIdentityPlatformBackendSubjectFirstResolution:
         assert result.pk == existing.pk
         profile.refresh_from_db()
         assert profile.issuer == _ISSUER
+
+
+# =============================================================================
+# Provider-routing guards in config/views.py
+# =============================================================================
+
+
+@override_settings(AUTH_PROVIDER="disabled", DEBUG=False)
+def test_platform_login_forbids_unsupported_auth_provider(client):
+    """An unsupported AUTH_PROVIDER makes the login route refuse rather than fall
+    through to a provider (config/views.py:90)."""
+    response = client.get(reverse("platform_login"))
+
+    assert response.status_code == 403
+    assert b"Unsupported auth provider" in response.content
+
+
+@override_settings(
+    AUTH_PROVIDER="identity_platform",
+    DEBUG=False,
+    IDENTITY_ALLOWED_EMAIL_DOMAIN="paloaltonetworks.com",
+)
+def test_identity_platform_session_rejects_blank_id_token(client):
+    """A syntactically valid body carrying a blank idToken is rejected as a
+    malformed request (config/views.py:119 -> 400 invalid_request)."""
+    response = client.post(
+        reverse("identity_platform_session"),
+        data=json.dumps({"idToken": "   "}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
+
+
+@override_settings(AUTH_PROVIDER="oidc", DEBUG=False)
+def test_identity_platform_session_forbidden_when_provider_not_identity_platform(client):
+    """The Identity Platform session exchange refuses when the deployment is not
+    configured for that provider (config/views.py:149)."""
+    response = client.post(
+        reverse("identity_platform_session"),
+        data=json.dumps({"idToken": "any-token"}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"] == "unsupported_auth_provider"

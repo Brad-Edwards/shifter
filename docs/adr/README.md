@@ -46,7 +46,7 @@ directory credentials.
 
 ## Runtime Enforcement
 
-ADR-062 records the [signed CTF receipt binding preflight for #1906](../architecture/ctf-signed-receipt-binding-preflight-1906.md).
+ADR-063 records the [signed CTF receipt binding preflight for #1906](../architecture/ctf-signed-receipt-binding-preflight-1906.md).
 It fixes trusted context, protected signer/key registration, lifecycle fencing
 and atomic replay evidence while preserving existing validator contracts.
 The #1906 source implementation supplies runtime, registration, compatibility,

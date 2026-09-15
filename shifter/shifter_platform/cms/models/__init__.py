@@ -42,7 +42,7 @@ from cms.models.provisioning import (
     Subnet,
 )
 from cms.models.range import ACTIVE_RANGE_UNIQUE_CONSTRAINT, RangeInstance
-from cms.models.scenarios import RaesPackageSource, ScenarioMetadata
+from cms.models.scenarios import RaesPackageSource, ScenarioMetadata, ScenarioModelNeeds
 
 __all__ = [
     "ACTIVE_RANGE_UNIQUE_CONSTRAINT",
@@ -68,5 +68,6 @@ __all__ = [
     "RangeInstance",
     "Request",
     "ScenarioMetadata",
+    "ScenarioModelNeeds",
     "Subnet",
 ]

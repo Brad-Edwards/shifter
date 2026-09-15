@@ -17,8 +17,14 @@ if TYPE_CHECKING:
 
     from django.contrib.auth.models import User
 
+    from ctf.models import CTFEvent
     from shared.capacity import CapacityAssessmentResult
-    from shared.model_access import AuthorityInvalidation, ModelAccessRangeInstanceView, ModelAccessRangeView
+    from shared.model_access import (
+        AuthorityInvalidation,
+        ModelAccessRangeInstanceView,
+        ModelAccessRangeView,
+        OwnedReference,
+    )
     from shared.receipt_validation import ReceiptVerifierBinding
     from shared.remote_access import OpenVpnProfile
 
@@ -31,7 +37,7 @@ class UserRole:
 
     is_ctf_organizer: bool
     is_ctf_participant: bool
-    active_ctf_event: Any  # CTFEvent | None
+    active_ctf_event: CTFEvent | None
 
 
 def get_user_role(user: User) -> UserRole:
@@ -63,7 +69,7 @@ def get_user_role(user: User) -> UserRole:
 class RangeProvisionResult:
     """Result of a range provisioning request."""
 
-    request_id: Any  # UUID
+    request_id: UUID
 
 
 def cms_declare_event_capacity(
@@ -150,6 +156,7 @@ def cms_create_range(
     agents_by_os: dict[str, int],
     ngfw_enabled: bool,
     remote_access_teardown_at: datetime | None,
+    model_admission_subject: OwnedReference | None = None,
 ) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
@@ -157,43 +164,56 @@ def cms_create_range(
     to CTF ranges, allowing the user to hold both a Mission Control range and a
     CTF range simultaneously (#450). The source is server-derived here and is
     never caller-supplied.
+
+    ``model_admission_subject`` is the CTF draw reference (PLAT-202) used to
+    resolve the sharing overlap for required-model admission against the real
+    launch subject rather than the launcher identity.
     """
     import cms.services as cms_services
     from shared.enums import RangeSource
 
+    # RAES packages own topology; agents_by_os is accepted for caller back-compat
+    # but does not shape the plan.
+    del agents_by_os
     result = cms_services.create_range_dispatch(
         user=user,
         scenario=scenario,
-        agents_by_os=agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=RangeSource.CTF,
         remote_access_teardown_at=remote_access_teardown_at,
+        model_admission_subject=model_admission_subject,
     )
     return RangeProvisionResult(request_id=result.request_id)
 
 
-def cms_destroy_range(user, range_instance_id: int) -> None:
+def cms_destroy_range(user: User, range_instance_id: int) -> None:
     """Destroy a range via CMS."""
     import cms.services as cms_services
 
     cms_services.destroy_range(user, range_instance_id)
 
 
-def cms_stop_range(user, range_instance_id: int) -> None:
+def cms_stop_range(user: User | None, range_instance_id: int) -> None:
     """Stop (pause) a range via CMS."""
     import cms.services as cms_services
 
+    # CTFParticipant.user is a nullable SET_NULL FK; a range operation needs its
+    # owning user, so require one at the boundary.
+    assert user is not None
     cms_services.pause_range(user, range_instance_id)
 
 
-def cms_start_range(user, range_instance_id: int) -> None:
+def cms_start_range(user: User | None, range_instance_id: int) -> None:
     """Start (resume) a range via CMS."""
     import cms.services as cms_services
 
+    # CTFParticipant.user is a nullable SET_NULL FK; a range operation needs its
+    # owning user, so require one at the boundary.
+    assert user is not None
     cms_services.resume_range(user, range_instance_id)
 
 
-def cms_find_range_instance_id(request_id) -> int | None:
+def cms_find_range_instance_id(request_id: str | UUID) -> int | None:
     """Find RangeInstance PK by provisioning request ID."""
     import cms.services as cms_services
 

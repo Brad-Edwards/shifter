@@ -155,6 +155,8 @@ class RangeInstance(SoftDeleteMixin, models.Model):
     all_objects = SoftDeleteQuerySet.as_manager()
 
     class Meta:
+        """Model metadata: verbose names, base manager, and active-range constraints."""
+
         verbose_name = "Range Instance"
         verbose_name_plural = "Range Instances"
         base_manager_name = "all_objects"
@@ -185,10 +187,10 @@ class RangeInstance(SoftDeleteMixin, models.Model):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Range {self.range_id}: {self.scenario_id}"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
         """Save with terminal-status soft-delete invariant enforcement.
 
         Delegates the invariant to

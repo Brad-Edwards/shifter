@@ -29,6 +29,7 @@ exactly as before the split.
 
 from ._capacity import CapacityDeclaration
 from ._capacity_assessment import CapacityAssessment, CapacityDraw, CapacityReservation
+from ._cleanup_verification import CleanupVerificationOutcome, RangeCleanupVerification
 from ._launch import InterruptState, ProvisionerLaunchIntent, ProvisionerLaunchStatus
 from ._operation_io import (
     OperationInput,
@@ -54,6 +55,7 @@ from ._raes import (
 from ._range import Range
 from ._receipt import ReceiptVerifierRegistration
 from ._request import App, Instance, Instantiation, Request
+from ._retry_binding import PublicOperationRetryBinding, RetryBindingStatus
 from ._sharing import (
     AllocationGroup,
     MembershipProjection,
@@ -73,6 +75,7 @@ __all__ = [
     "CapacityDeclaration",
     "CapacityDraw",
     "CapacityReservation",
+    "CleanupVerificationOutcome",
     "Instance",
     "Instantiation",
     "InterruptState",
@@ -90,14 +93,17 @@ __all__ = [
     "PreparedArtifactAdmission",
     "ProvisionerLaunchIntent",
     "ProvisionerLaunchStatus",
+    "PublicOperationRetryBinding",
     "RaesArtifactSatisfactionBinding",
     "RaesContentDeliveryBinding",
     "RaesImageMapping",
     "RaesParticipantAccessBinding",
     "Range",
+    "RangeCleanupVerification",
     "RangeEventOutbox",
     "ReceiptVerifierRegistration",
     "Request",
+    "RetryBindingStatus",
     "SharingAuthorityFence",
     "SharingBindingRecord",
     "SharingBindingRevision",

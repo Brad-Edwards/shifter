@@ -11,7 +11,7 @@ if str(SHIFTER_DIR) not in sys.path:
     sys.path.insert(0, str(SHIFTER_DIR))
 
 
-def main():
+def main() -> None:
     """Run administrative tasks."""
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
     try:

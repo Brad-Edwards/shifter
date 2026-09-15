@@ -14,11 +14,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from django.conf import settings
 from django.db import transaction
 
 from cms.exceptions import CMSError
@@ -48,6 +46,7 @@ if TYPE_CHECKING:
 
     from cms.models import RaesPackageSource, Request
     from shared.enums import RangeSource
+    from shared.model_access import OwnedReference
     from shared.range_instantiation_policy import BackendAdmission
     from shared.schemas.range import RangeContext
 
@@ -87,138 +86,12 @@ def _dispatch_raes_package(
     tenancy scope) rides the same way so the RAES path scopes ranges exactly like
     the cyberscript path (ADR-046-R3).
     """
+    from cms.services._raes_dispatch import dispatch_object_raes_package, dispatch_repo_raes_package
+
     if source.source_kind == _OBJECT_SOURCE_KIND:
-        _dispatch_object_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        dispatch_object_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
     else:
-        _dispatch_repo_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
-
-
-def _dispatch_repo_raes_package(
-    request_id: UUID,
-    user: User,
-    source: RaesPackageSource,
-    backend_admission: BackendAdmission | None,
-    workspace_id: int,
-    egress_mode: str,
-) -> None:
-    """Resolve a repo pack under ``RAES_PACKAGE_ROOT``, verify its digest, launch."""
-    from cms.scenarios.pack_validation import PackDigestError, verify_pack_digest
-    from shared.raes.package_loader import RaesPackageError, resolve_pack_root
-
-    try:
-        pack_root = resolve_pack_root(source.package_ref, package_root=Path(settings.RAES_PACKAGE_ROOT))
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES package could not be resolved: {exc}") from exc
-    try:
-        digest_matches = verify_pack_digest(pack_root, source.package_digest)
-    except PackDigestError as exc:
-        raise CMSError("RAES pack content identity could not be verified") from exc
-    if not digest_matches:
-        raise CMSError("RAES pack content digest no longer matches registration")
-    _launch_pack(request_id, user, pack_root, backend_admission, workspace_id, egress_mode)
-
-
-def _dispatch_object_raes_package(
-    request_id: UUID,
-    user: User,
-    source: RaesPackageSource,
-    backend_admission: BackendAdmission | None,
-    workspace_id: int,
-    egress_mode: str,
-) -> None:
-    """Stage an object-backed pack, bind its identity + digest, then launch.
-
-    Object rows are registered without content validation or digest binding
-    (#1578), so this resolver provides the equivalent identity guarantees repo
-    packs get (ADR-034-R5): it downloads the single immutable archive named by
-    ``package_ref`` into a private temp dir, safely extracts it, re-runs the
-    upstream pack contract validation, asserts the pack identity matches the
-    registered ``scenario_id``, and verifies the canonical ``package_digest`` --
-    all before SDL resolution, planning, or dispatch. The staged directory is
-    always cleaned up by the resolver context manager.
-    """
-    from cms.scenarios.pack_validation import (
-        PackDigestError,
-        PackValidationError,
-        validate_pack,
-        verify_pack_digest,
-    )
-    from shared.cloud import get_object_storage
-    from shared.raes.object_source import stage_object_pack
-    from shared.raes.package_loader import RaesPackageError
-
-    bucket = str(getattr(settings, "RAES_PACKAGE_BUCKET", "") or "").strip()
-    if not bucket:
-        raise CMSError("Object-backed RAES packages are not available: no package bucket is configured")
-
-    try:
-        with stage_object_pack(
-            storage=get_object_storage(),
-            bucket=bucket,
-            key=_object_package_key(source.package_ref),
-            max_archive_bytes=settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES,
-            max_uncompressed_bytes=settings.RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
-            max_entries=settings.RAES_PACKAGE_MAX_ENTRIES,
-            expected_pack_name=source.scenario_id,
-        ) as pack_root:
-            try:
-                validated_name = validate_pack(pack_root)
-            except PackValidationError as exc:
-                raise CMSError("RAES pack failed validation") from exc
-            if validated_name != source.scenario_id:
-                raise CMSError("RAES pack identity does not match the registered scenario")
-            try:
-                digest_matches = verify_pack_digest(pack_root, source.package_digest)
-            except PackDigestError as exc:
-                raise CMSError("RAES pack content identity could not be verified") from exc
-            if not digest_matches:
-                raise CMSError("RAES pack content digest no longer matches registration")
-            _launch_pack(request_id, user, pack_root, backend_admission, workspace_id, egress_mode)
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES object package could not be resolved: {exc}") from exc
-
-
-def _object_package_key(package_ref: str) -> str:
-    """Join the configured object-package prefix with the row's ``package_ref``."""
-    prefix = str(getattr(settings, "RAES_PACKAGE_PREFIX", "") or "").strip().strip("/")
-    ref = package_ref.strip().lstrip("/")
-    return f"{prefix}/{ref}" if prefix else ref
-
-
-def _launch_pack(
-    request_id: UUID,
-    user: User,
-    pack_root: Path,
-    backend_admission: BackendAdmission | None,
-    workspace_id: int,
-    egress_mode: str,
-) -> None:
-    """Select the single SDL entry, dispatch through the port, assert acceptance."""
-    from cms.raes.dispatch import CmsRaesDispatchPort
-    from shared.raes.package_loader import RaesPackageError, launch_raes_package, resolve_pack_scenario_path
-
-    try:
-        scenario_path = resolve_pack_scenario_path(pack_root)
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES package could not be resolved: {exc}") from exc
-
-    port = CmsRaesDispatchPort(
-        user_id=user.id,
-        request_id=str(request_id),
-        backend_admission=backend_admission,
-        pack_root=pack_root,
-        workspace_id=workspace_id,
-        egress_mode=egress_mode,
-    )
-    try:
-        result = launch_raes_package(
-            scenario_path=scenario_path, port=port, artifact_supply_provider=port.artifact_supply
-        )
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES package could not be launched: {exc}") from exc
-    if not result.accepted:
-        logger.warning("create_raes_native_range: dispatch not accepted request_id=%s", request_id)
-        raise CMSError("RAES provisioning was not accepted")
+        dispatch_repo_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
 
 
 def _audit_raes_range_provision(request_id: UUID, scenario: str, user: User, range_source: RangeSource) -> None:
@@ -319,6 +192,7 @@ def _create_raes_native_range_impl(
     instantiation_purpose: InstantiationPurpose,
     workspace_uuid: str | UUID | None = None,
     enforced_deadline: datetime | None = None,
+    model_admission_subject: OwnedReference | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -379,13 +253,31 @@ def _create_raes_native_range_impl(
         correlation_key=request_id,
     )
 
+    from cms.services._range_workspace import resolve_effective_egress_mode
+
+    egress_mode = resolve_effective_egress_mode(workspace_id)
+
+    # PLAT-202: required model access is a fail-closed admission decision enforced
+    # here, before any dispatch (cold, warm-claim, or non-user), so every launch
+    # family is gated once. Distinct from the best-effort capacity path: a required
+    # denial or indeterminate outcome refuses the launch rather than proceeding. A
+    # scenario with no authored model need passes through unchanged.
+    from cms.services._model_admission import assert_launch_model_access
+
+    assert_launch_model_access(
+        user=user,
+        scenario_id=scenario,
+        egress_mode=egress_mode,
+        subject=model_admission_subject,
+        package_digest=source.package_digest,
+    )
+
     # #28: attempt an atomic warm-pool claim before cold provisioning. A hit
     # transfers a ready, compatible, system-owned generation to this user (audited
     # ownership rehome) and enqueues activation, which realizes the claimant's
     # fresh, sanitized access. A miss / disabled policy / unsupported backend
     # cold-falls-back through the unchanged reservation + dispatch path below, with
     # the inputs already validated for this launch.
-    from cms.services._range_workspace import resolve_effective_egress_mode
     from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
 
     claimed_request_id = attempt_warm_claim(
@@ -398,7 +290,7 @@ def _create_raes_native_range_impl(
             instantiation_purpose=instantiation_purpose,
             range_source=range_source,
             workspace_id=workspace_id,
-            egress_mode=resolve_effective_egress_mode(workspace_id),
+            egress_mode=egress_mode,
             request_id=request_id,
             enforced_deadline=enforced_deadline,
         )
@@ -412,6 +304,19 @@ def _create_raes_native_range_impl(
     )
 
     try:
+        # PLAT-202/#2119: _reserve_active_range_slot resolves egress under the
+        # workspace lock, and that authoritative posture — not the earlier
+        # preliminary read — is what dispatch uses. Re-run the model gate against
+        # it so a posture change between admission and reservation cannot dispatch
+        # a required-model range with an incompatible egress. A denial here is
+        # released and marked FAILED by the surrounding handler.
+        assert_launch_model_access(
+            user=user,
+            scenario_id=scenario,
+            egress_mode=egress_mode,
+            subject=model_admission_subject,
+            package_digest=source.package_digest,
+        )
         _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
     except Exception:
         # Dispatch failed before an Engine lifecycle can converge, so mark the
@@ -433,23 +338,22 @@ def _create_raes_native_range_impl(
 def create_range_dispatch(
     user: User,
     scenario: str,
-    agents_by_os: dict[str, int],
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
     remote_access_teardown_at: datetime | None = None,
     workspace_uuid: str | UUID | None = None,
+    model_admission_subject: OwnedReference | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
-    ``agents_by_os`` and ``ngfw_enabled`` remain accepted at the public service
-    seam while callers migrate their request shape; RAES packages own topology
-    and authored infrastructure intent, so neither value changes the plan.
+    ``ngfw_enabled`` remains accepted at the public service seam while callers
+    migrate their request shape; RAES packages own topology and authored
+    infrastructure intent, so it does not change the plan.
 
     ``workspace_uuid`` is the optional public workspace selection (ADR-046-R9),
     threaded to whichever create path runs. Server-derived callers (e.g. the CTF
     bridge) omit it, so their ranges bind to the launcher's personal workspace.
     """
-    del agents_by_os
     return dispatch_range_launch(
         user,
         scenario,
@@ -459,6 +363,7 @@ def create_range_dispatch(
             ngfw_enabled=ngfw_enabled,
             remote_access_teardown_at=remote_access_teardown_at,
             workspace_uuid=workspace_uuid,
+            model_admission_subject=model_admission_subject,
         ),
     )
 
@@ -489,4 +394,5 @@ def dispatch_range_launch(
         instantiation_purpose=instantiation_purpose,
         workspace_uuid=options.workspace_uuid,
         enforced_deadline=options.remote_access_teardown_at,
+        model_admission_subject=options.model_admission_subject,
     )

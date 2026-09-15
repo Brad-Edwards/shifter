@@ -33,8 +33,24 @@ from ._capacity_plan import (
     assess_event_capacity,
     release_capacity_reservations,
 )
+from ._cleanup_outcome import (
+    CLEANUP_NOT_APPLICABLE,
+    CLEANUP_PENDING,
+    CLEANUP_UNKNOWN,
+    CLEANUP_VERIFIED_TERMINAL,
+    CleanupObligation,
+    RangeCleanupOutcome,
+    project_range_cleanup_outcome,
+)
+from ._cleanup_verification import (
+    CleanupVerificationView,
+    is_cleanup_verified_absent,
+    latest_cleanup_verification,
+    record_cleanup_verification,
+)
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
+from ._model_admission import admit_range_model_access
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
 from ._preparation_adapters import (
@@ -53,6 +69,16 @@ from ._preparation_operations import (
     retry_artifact_preparation,
 )
 from ._preparation_worker import read_preparation_worker_input, record_preparation_worker_result
+from ._public_operations import (
+    DEFAULT_RETRY_TTL_SECONDS,
+    MintedOperation,
+    RetryBindingResult,
+    RetryKeyConflict,
+    bind_public_operation,
+    lookup_public_operation,
+    operation_id_for_request,
+    prune_expired_retry_bindings,
+)
 from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
 from ._raes_evidence import record_raes_operation_status, record_raes_runtime_snapshot
 from ._raes_image import (
@@ -148,12 +174,20 @@ from ._warm_pool import (
 )
 
 __all__ = (
+    "CLEANUP_NOT_APPLICABLE",
+    "CLEANUP_PENDING",
+    "CLEANUP_UNKNOWN",
+    "CLEANUP_VERIFIED_TERMINAL",
+    "DEFAULT_RETRY_TTL_SECONDS",
+    "CleanupObligation",
+    "CleanupVerificationView",
     "EngineError",
     "EventCapacityRequest",
     "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",
     "MembershipEvidence",
+    "MintedOperation",
     "ModelAccessRangeView",
     "PreparationAdapterView",
     "PreparationView",
@@ -162,12 +196,15 @@ __all__ = (
     "RaesImageMappingView",
     "RaesRangeRef",
     "RangeBindings",
+    "RangeCleanupOutcome",
     "RangeMembership",
     "RangeOwnershipTransferBlocked",
     "RangeProjectionIntegrityError",
     "RangeWorkspaceRebindOutcome",
     "ReceiptBindingUnavailable",
     "ReceiptRegistrationConflict",
+    "RetryBindingResult",
+    "RetryKeyConflict",
     "SSHConnection",
     "SecretsError",
     "SharingError",
@@ -178,10 +215,12 @@ __all__ = (
     "activate_preparation_grant",
     "active_generation_count",
     "admit_range_capacity",
+    "admit_range_model_access",
     "admit_warm_generation_capacity",
     "apply_pending_operation_results",
     "assess_declared_event_capacity",
     "assess_event_capacity",
+    "bind_public_operation",
     "bucket_state_counts",
     "cancel_artifact_preparation",
     "cancel_range",
@@ -220,15 +259,21 @@ __all__ = (
     "has_openvpn_profile",
     "install_preparation_adapter",
     "invalidate_sharing_authority",
+    "is_cleanup_verified_absent",
     "latest_capacity_declaration",
+    "latest_cleanup_verification",
     "list_backend_artifacts",
     "list_preparation_adapters",
     "list_raes_image_mappings",
+    "lookup_public_operation",
+    "operation_id_for_request",
     "pause_range",
     "preview_effective_policy",
     "project_raes_operation_status",
+    "project_range_cleanup_outcome",
     "project_receipt_verifier_binding",
     "project_selector_resolution",
+    "prune_expired_retry_bindings",
     "publish_authority_fence",
     "publish_membership_projection",
     "publish_sharing_binding",
@@ -241,6 +286,7 @@ __all__ = (
     "reconcile_capacity_budgets",
     "reconcile_preparations",
     "record_capacity_declaration",
+    "record_cleanup_verification",
     "record_preparation_worker_result",
     "record_raes_operation_status",
     "record_raes_runtime_snapshot",

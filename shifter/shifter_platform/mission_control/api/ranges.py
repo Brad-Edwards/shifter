@@ -7,7 +7,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from django.contrib.auth.models import User
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -44,6 +44,7 @@ from mission_control.api._base import (
     _raw_request,
     _validated,
 )
+from mission_control.api._retry_launch import RetrySafeLaunchMixin
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
 from mission_control.api.rate_limit import RangeLaunchRateThrottle
 from mission_control.api.serializers import (
@@ -158,7 +159,7 @@ class ExtendRangeLeaseView(MissionControlAPIView):
         return response
 
 
-class LaunchRangeView(MissionControlAPIView):
+class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
     """Launch a new cyber range."""
 
     permission_classes = [
@@ -172,6 +173,21 @@ class LaunchRangeView(MissionControlAPIView):
 
     @extend_schema(
         request=LaunchRangeSerializer,
+        parameters=[
+            OpenApiParameter(
+                name="Idempotency-Key",
+                type=str,
+                location=OpenApiParameter.HEADER,
+                required=False,
+                description=(
+                    "Optional caller retry key (max 200 characters; leading/trailing whitespace "
+                    "trimmed, empty treated as absent). When supplied the launch is idempotent: a "
+                    "retry with the same key and the same launch selections recovers the original "
+                    "range instead of dispatching a duplicate; the same key with different "
+                    "selections returns 409."
+                ),
+            )
+        ],
         responses=LaunchRangeResponseSerializer,
         operation_id="api_v1_mission_control_range_launch",
     )
@@ -181,11 +197,11 @@ class LaunchRangeView(MissionControlAPIView):
         if error is not None:
             return error
         assert data is not None
+        return self._dispatch_launch(request, self.actor_user(), data)
 
-        user = self.actor_user()
-        return self._launch_range(request, user, data)
-
-    def _launch_range(self, request: Request, user: User, data: dict[str, Any]) -> Response:
+    def _launch_range(
+        self, request: Request, user: User, data: dict[str, Any], caller_key: str | None = None
+    ) -> Response:
         """Launch a range once the request body has passed serializer checks."""
         scenario = str(data.get("scenario", "basic"))
         valid_scenarios = {s["id"] for s in cms_list_launchable_scenarios(user, "range_launch")}
@@ -196,7 +212,9 @@ class LaunchRangeView(MissionControlAPIView):
         if agents_error is not None:
             return agents_error
 
-        return self._create_range(request, user, scenario, agents_by_os, data.get("workspace_uuid"))
+        return self._create_range(
+            request, user, scenario, agents_by_os, data.get("workspace_uuid"), caller_key, self._agents_selection(data)
+        )
 
     def _resolve_agents_by_os(self, user: User, data: dict[str, Any]) -> tuple[dict[str, int] | None, Response | None]:
         """Resolve either the explicit agent map or a legacy single agent id."""
@@ -223,10 +241,16 @@ class LaunchRangeView(MissionControlAPIView):
         scenario: str,
         agents_by_os: dict[str, int] | None,
         workspace_uuid: UUID | None = None,
+        caller_key: str | None = None,
+        agents_selection: dict[str, Any] | None = None,
     ) -> Response:
         """Create a range and record the launch audit event."""
+        if caller_key is not None:
+            return self._create_range_first_use(
+                request, user, scenario, agents_by_os, workspace_uuid, caller_key, agents_selection or {}
+            )
         try:
-            range_ctx = cms_create_range(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
+            range_ctx = cms_create_range(user, scenario, workspace_uuid=workspace_uuid)
         except CMSError as exc:
             return self._launch_failure_response(exc, user, scenario)
 
