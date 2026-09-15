@@ -154,9 +154,15 @@ def bind_first_use_launch(
     deployment_scope = resolve_deployment_scope()
     digest = _digest(user, scenario, agents_selection, workspace_uuid, deployment_scope)
 
+    # RAES packages own topology; agents_by_os is accepted for caller back-compat
+    # (the retry-key intent digest already binds agents_selection) but does not
+    # shape the create_range_dispatch plan after PLAT-202 dropped that parameter
+    # from the service seam. Matches ctf.bridges.cms_launch_range.
+    del agents_by_os
+
     def mint() -> MintedOperation:
         """Dispatch the RAES create and return the minted request/operation identity."""
-        ctx = create_range_dispatch(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
+        ctx = create_range_dispatch(user, scenario, workspace_uuid=workspace_uuid)
         return MintedOperation(request_id=str(ctx.request_id), operation_id=operation_id_for_request(ctx.request_id))
 
     result = bind_public_operation(
