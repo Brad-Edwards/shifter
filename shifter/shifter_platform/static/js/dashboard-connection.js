@@ -31,7 +31,13 @@ class DashboardConnectionBase {
     _handleSessionExpired() {
         console.log('Session expired, redirecting to login...');
         this._closeStatusSocket();
-        globalThis.location.href = this.loginUrl;
+        // Only navigate to a same-origin target: loginUrl is a server-rendered
+        // path, but validating it blocks a javascript:/cross-origin value from
+        // ever reaching location.href (DOM-sourced redirect hardening).
+        const loginTarget = new URL(this.loginUrl, globalThis.location.origin);
+        if (loginTarget.origin === globalThis.location.origin) {
+            globalThis.location.href = loginTarget.href;
+        }
     }
 
     _bindCleanup() {

@@ -30,7 +30,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (data.error) {
                         alert(data.error);
                     } else {
-                        globalThis.location.href = config.listUrl;
+                        // config.listUrl is a server-rendered path; validate
+                        // same-origin so a tampered DOM value can't redirect
+                        // off-origin or via a javascript: URI.
+                        const listTarget = new URL(config.listUrl, globalThis.location.origin);
+                        if (listTarget.origin === globalThis.location.origin) {
+                            globalThis.location.href = listTarget.href;
+                        }
                     }
                 })
                 .catch(function () {

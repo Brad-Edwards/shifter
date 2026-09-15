@@ -151,7 +151,11 @@ def identity_platform_session(request: HttpRequest) -> HttpResponse:
     try:
         id_token = _parse_id_token(request)
     except ValueError as exc:
-        return JsonResponse({"error": "invalid_request", "message": str(exc)}, status=400)
+        # Log the specific parse failure server-side; return a fixed generic
+        # message so no exception detail is exposed to the caller (CodeQL
+        # py/stack-trace-exposure).
+        logger.info("identity_platform_session: rejected malformed request: %s", exc)
+        return JsonResponse({"error": "invalid_request", "message": "Invalid authentication request."}, status=400)
 
     return _authenticate_and_respond(request, id_token)
 
