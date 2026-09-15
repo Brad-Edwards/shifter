@@ -200,6 +200,35 @@ def _materialize_resolution(
         raise ModelAccessSelectorError() from exc
 
 
+def participant_model_admission_subject(participant: CTFParticipant) -> OwnedReference:
+    """Return a participant's authoritative model-access membership subject (PLAT-202).
+
+    Before any range is realized the draw reference is authoritative; once a range
+    exists the published sharing membership uses that range's canonical reference
+    (see :func:`_materialize_resolution`), so a replacement launch must resolve the
+    realized range reference rather than the draw — otherwise a binding published
+    against the range would not match and its restriction would be bypassed.
+
+    This must be evaluated **before** any teardown of the range being replaced:
+    ``resolve_model_access_range_instances`` excludes a ``DESTROYING`` instance, so
+    resolving after teardown would silently fall back to the draw and drop a
+    range-scoped restriction. Fail closed (raise) when a realized range cannot be
+    resolved rather than substituting the draw identity; the recovery flow captures
+    this subject before it blocks the old range. A stale published projection is
+    denied downstream by the Engine effective-policy compiler (stale membership →
+    indeterminate), so admission is never silently widened.
+    """
+    if participant.range_instance_id is None:
+        return OwnedReference(owner="ctf", reference=f"draw:{participant.pk}")
+
+    from ctf.bridges import cms_resolve_model_access_range_instances
+
+    views = tuple(cms_resolve_model_access_range_instances((participant.range_instance_id,)))
+    if len(views) != 1:
+        raise ModelAccessSelectorError()
+    return views[0].range_ref
+
+
 def classify_model_access_selected_ranges(range_uuids: tuple[UUID, ...]) -> tuple[UUID, ...]:
     """Return the exact subset backed by CTF participants or spare ranges.
 

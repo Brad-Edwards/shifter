@@ -1,5 +1,13 @@
 """Canonical dependency-light model-access contract (PLAT-202)."""
 
+from shared.model_access.admission import (
+    EventModelDemand,
+    ModelAdmissionOutcome,
+    ModelAdmissionReason,
+    ModelAdmissionResult,
+    ScenarioNeedProjection,
+    decide_model_admission,
+)
 from shared.model_access.allocation import RankedShard, ShardWeight
 from shared.model_access.authority import (
     AuthorityInvalidation,
@@ -101,12 +109,16 @@ __all__ = [
     "EffectivePolicy",
     "EffectiveProfile",
     "EligibilityBasis",
+    "EventModelDemand",
     "MembershipMode",
     "ModelAccessCatalog",
     "ModelAccessRangeInstanceView",
     "ModelAccessRangePage",
     "ModelAccessRangeView",
     "ModelAccountReference",
+    "ModelAdmissionOutcome",
+    "ModelAdmissionReason",
+    "ModelAdmissionResult",
     "ModelAlias",
     "ModelProfile",
     "ModelProjectReference",
@@ -131,6 +143,7 @@ __all__ = [
     "ResolvedSpendingEligibility",
     "ResolvedSubjectAuthority",
     "ScenarioNeed",
+    "ScenarioNeedProjection",
     "SelectorAuthorityEvidence",
     "SelectorKind",
     "SelectorResolution",
@@ -146,6 +159,7 @@ __all__ = [
     "canonical_bytes",
     "compile_effective_policy",
     "compute_digest",
+    "decide_model_admission",
     "digest_matches",
     "intersect_profile",
     "load_catalog_json",

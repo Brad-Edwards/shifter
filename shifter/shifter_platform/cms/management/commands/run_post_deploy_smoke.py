@@ -102,7 +102,6 @@ class Command(BaseCommand):
         context = cms_services.create_range(
             user,
             variant.scenario_id,
-            {},
             ngfw_enabled=False,
         )
         if context.request_id is None:
