@@ -82,12 +82,22 @@ mkdir -p "${COMPOSE_DIR}"
 tar xzf "${STACK_TARBALL}" -C "${COMPOSE_DIR}"
 rm -f "${STACK_TARBALL}"
 
-if [[ ! -f "${COMPOSE_DIR}/docker-compose.yml" ]]; then
-  fail_stack "no docker-compose.yml at ${COMPOSE_DIR} after extracting the stack tarball."
+# Locate the compose file in the extracted tree. Two supported layouts:
+#   * flat: docker-compose.yml at the extraction root; or
+#   * canonical build-v1.tar.gz (aws-range/repack_build_artifact.sh), which keeps
+#     the polaris/build/ prefix and ships polaris/flags/ + polaris/contract_source.py
+#     in the parent so a0-website's `context: ..` resolves. Build from that nested
+#     dir so the parent (with flags/) is inside the extracted tree.
+if [[ -f "${COMPOSE_DIR}/docker-compose.yml" ]]; then
+  compose_dir="${COMPOSE_DIR}"
+elif [[ -f "${COMPOSE_DIR}/polaris/build/docker-compose.yml" ]]; then
+  compose_dir="${COMPOSE_DIR}/polaris/build"
+else
+  fail_stack "no docker-compose.yml at ${COMPOSE_DIR} or ${COMPOSE_DIR}/polaris/build after extracting the stack tarball."
 fi
 
-echo "polaris verify-stack: validating and building compose stack in ${COMPOSE_DIR}"
-cd "${COMPOSE_DIR}"
+echo "polaris verify-stack: validating and building compose stack in ${compose_dir}"
+cd "${compose_dir}"
 
 # Supply a throwaway bake-only pair and the reviewed entrypoint wrapper as a
 # separate Compose layer. Range bootstrap later replaces this with a per-range

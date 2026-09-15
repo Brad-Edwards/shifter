@@ -83,6 +83,56 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  # GKE Workload Identity: pods mint their GSA token from the node-local GKE
+  # metadata server (169.254.169.254). Dataplane V2 enforces the default-deny
+  # egress, so without this allow the token mint hangs and every Google API call
+  # (Secret Manager, Pub/Sub) fails on auth. Mirrors the kustomize base
+  # (platform/k8s/gcp/base/networkpolicies.yaml) so the Helm and kustomize deploy
+  # paths enforce the same posture.
+  name: allow-platform-metadata-server-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32 # NOSONAR - GKE metadata server (Workload Identity).
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 988
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  # GKE Workload Identity token mint for range-provisioning Jobs (see the
+  # platform metadata-server policy above).
+  name: allow-jobs-metadata-server-egress
+  namespace: {{ .Values.namespaces.jobs }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32 # NOSONAR - GKE metadata server (Workload Identity).
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 988
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-public-ingress-to-platform-backends
   namespace: {{ .Values.namespaces.platform }}
   labels:
