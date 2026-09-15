@@ -39,3 +39,32 @@ class TestCmsListScenariosLaunchability:
 
         assert "polaris-ok" in ids
         assert "polaris-pending" not in ids
+
+
+class TestCmsRangeControlRequiresOwningUser:
+    """cms_stop_range/cms_start_range require the range's owning user at the
+    CTF/CMS boundary before forwarding to CMS (bridges.py:189, 199)."""
+
+    def test_stop_range_forwards_to_pause(self, user, monkeypatch):
+        calls: list = []
+        monkeypatch.setattr("cms.services.pause_range", lambda u, rid: calls.append((u, rid)))
+
+        bridges.cms_stop_range(user, 42)
+
+        assert calls == [(user, 42)]
+
+    def test_start_range_forwards_to_resume(self, user, monkeypatch):
+        calls: list = []
+        monkeypatch.setattr("cms.services.resume_range", lambda u, rid: calls.append((u, rid)))
+
+        bridges.cms_start_range(user, 7)
+
+        assert calls == [(user, 7)]
+
+    def test_stop_range_requires_a_user(self):
+        with pytest.raises(AssertionError):
+            bridges.cms_stop_range(None, 42)
+
+    def test_start_range_requires_a_user(self):
+        with pytest.raises(AssertionError):
+            bridges.cms_start_range(None, 7)

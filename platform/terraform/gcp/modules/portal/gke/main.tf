@@ -147,15 +147,12 @@ resource "google_container_cluster" "platform" {
 
   resource_labels = var.common_labels
 
-  # The node_config block above configures ONLY the transient default pool, which
-  # is deleted immediately (remove_default_node_pool = true). GKE still records
-  # that pool's computed node_config (e.g. GKE-assigned network tags) in state, so
-  # every subsequent apply tries to reconcile this block against a pool that no
-  # longer exists and fails with `Node pool "default-pool" not found on update`.
-  # node_config is consumed only at create (to pin the transient pool's SA to the
-  # node SA, per the comment above); the real per-pool configuration lives on the
-  # google_container_node_pool resources below. Ignore post-create drift on the
-  # cluster-level block so cluster updates never target the removed default pool.
+  # node_config here only templates the initial default pool, which
+  # remove_default_node_pool deletes right after creation; the real workloads run
+  # on the dedicated google_container_node_pool resources below (each with its own
+  # node_config). Post-create drift on this block (e.g. server-defaulted network
+  # tags) cannot be reconciled — an update targets the now-absent "default-pool"
+  # and fails with 400 "Node pool default-pool not found on update" — so ignore it.
   lifecycle {
     ignore_changes = [node_config]
   }

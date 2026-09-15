@@ -1,6 +1,6 @@
 """Post-teardown provider inventory/readback of RAES range-cell resources.
 
-#2086, ADR-062-R4/R5. Verified terminal cleanup requires an independent
+#2086, ADR-063-R4/R5. Verified terminal cleanup requires an independent
 inventory/readback, not a logical status. After destroy, this re-checks every
 resource the plan owns via a GET on the exact same enumeration ``raes_gcp_destroy``
 deletes: NotFound means gone, a returned resource is a residual, and a

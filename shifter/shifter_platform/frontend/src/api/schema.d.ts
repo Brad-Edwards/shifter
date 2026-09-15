@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/v1/administer/mission-control/lease-policy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read fallback, runtime tenant state, and policy-eligible groups. */
+        get: operations["api_v1_administer_mission_control_lease_policy_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace one policy-eligible RBAC group's complete lease policy. */
+        put: operations["api_v1_administer_mission_control_lease_policy_group_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove one group policy so the group inherits tenant policy. */
+        post: operations["api_v1_administer_mission_control_lease_policy_group_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace the complete runtime tenant policy under revision CAS. */
+        put: operations["api_v1_administer_mission_control_lease_policy_tenant_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove the runtime tenant replacement. */
+        post: operations["api_v1_administer_mission_control_lease_policy_tenant_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/administer/users/": {
         parameters: {
             query?: never;
@@ -1021,6 +1106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/registration-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the bounded pending queue for one authorized event. */
+        get: operations["ctf_events_registration_requests_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/results/export/": {
         parameters: {
             query?: never;
@@ -1985,6 +2087,23 @@ export interface paths {
         put?: never;
         /** @description Return a no-store credential after role, ownership, state and rate gates. */
         post: operations["ctf_range_vpn_profile_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/registration-requests/{request_id}/disposition/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate authority and apply exactly one terminal disposition. */
+        post: operations["ctf_registration_requests_disposition_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3314,7 +3433,7 @@ export interface components {
          * @enum {string}
          */
         CleanupControlRequestActionEnum: "defer" | "cancel";
-        /** @description One retained cleanup obligation (#2086, ADR-062-R4). */
+        /** @description One retained cleanup obligation (#2086, ADR-063-R4). */
         CleanupObligation: {
             code: string;
             detail: string;
@@ -3401,6 +3520,12 @@ export interface components {
             readonly success: boolean;
         };
         /**
+         * @description * `deployment` - deployment
+         *     * `runtime` - runtime
+         * @enum {string}
+         */
+        EffectiveSourceEnum: "deployment" | "runtime";
+        /**
          * @description * `status-quo` - Inherit deployment baseline
          *     * `none` - Zero egress (no outbound NAT path)
          * @enum {string}
@@ -3461,6 +3586,9 @@ export interface components {
             readonly id: string;
             readonly name: string;
             readonly description: string;
+            readonly public_registration_enabled: boolean;
+            /** Format: uri */
+            readonly public_registration_url: string | null;
             readonly status: string;
             /** Format: date-time */
             readonly event_start: string;
@@ -3493,6 +3621,9 @@ export interface components {
             readonly capacity_hints: {
                 [key: string]: unknown;
             };
+            readonly model_demand: {
+                [key: string]: unknown;
+            }[];
             readonly logo_url: string;
             readonly visible_os_types: string[];
             readonly theme_color: string;
@@ -3596,6 +3727,7 @@ export interface components {
         EventWrite: {
             name: string;
             description?: string;
+            public_registration_enabled?: boolean;
             /** Format: date-time */
             event_start: string;
             /** Format: date-time */
@@ -3626,6 +3758,9 @@ export interface components {
             capacity_hints?: {
                 [key: string]: unknown;
             };
+            model_demand?: {
+                [key: string]: unknown;
+            }[];
             /** Format: uri */
             logo_url?: string;
             visible_os_types?: string[];
@@ -3771,6 +3906,25 @@ export interface components {
             range: components["schemas"]["RangePresentation"];
             recovered?: boolean;
         };
+        /** @description The canonical four-field policy projection. */
+        LeasePolicy: {
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
+        /** @description Serialize one eligible group and its optional runtime override. */
+        LeasePolicyGroupSettings: {
+            id: number;
+            name: string;
+            revision: number;
+            override: components["schemas"]["LeasePolicyOverride"] | null;
+        };
+        /** @description Serialize one complete runtime override and its revision. */
+        LeasePolicyOverride: {
+            policy: components["schemas"]["LeasePolicy"];
+            revision: number;
+        };
         /**
          * @description Schema-only description of the flat ``{"error": "<message>"}`` body some
          *     legacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).
@@ -3811,6 +3965,15 @@ export interface components {
             readonly declared_digest: string;
             readonly state: string;
             readonly is_refreshable: boolean;
+        };
+        /** @description Serialize the complete administrator settings projection. */
+        MissionControlLeasePolicySettings: {
+            baseline: components["schemas"]["LeasePolicy"];
+            tenant_revision: number;
+            tenant_override: components["schemas"]["LeasePolicyOverride"] | null;
+            effective_tenant: components["schemas"]["LeasePolicy"];
+            effective_source: components["schemas"]["EffectiveSourceEnum"];
+            groups: components["schemas"]["LeasePolicyGroupSettings"][];
         };
         /**
          * @description * `advisory` - Advisory (soft cap)
@@ -4494,6 +4657,40 @@ export interface components {
             readonly role: components["schemas"]["WorkspaceRoleEnum"];
             readonly capabilities: string[];
         };
+        /** @description Closed organizer decision vocabulary. */
+        PublicRegistrationDisposition: {
+            action: components["schemas"]["PublicRegistrationDispositionActionEnum"];
+        };
+        /**
+         * @description * `approve` - approve
+         *     * `reject` - reject
+         * @enum {string}
+         */
+        PublicRegistrationDispositionActionEnum: "approve" | "reject";
+        /** @description Terminal disposition result. */
+        PublicRegistrationDispositionResult: {
+            /** Format: uuid */
+            readonly request_id: string;
+            readonly disposition: string;
+            /** Format: uuid */
+            readonly participant_id: string | null;
+        };
+        /** @description One pending request visible only to an authorized event organizer. */
+        PublicRegistrationRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+            /** Format: email */
+            readonly email: string;
+            readonly disposition: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Paginated pending-request queue. */
+        PublicRegistrationRequestListResponse: {
+            readonly requests: components["schemas"]["PublicRegistrationRequest"][];
+            readonly total: number;
+        };
         /**
          * @description Public scoreboard read surface.
          *
@@ -4694,7 +4891,7 @@ export interface components {
             readonly redirect: string;
             readonly message: string;
         };
-        /** @description Truthful range cleanup-outcome projection (#2086, ADR-062-R4). */
+        /** @description Truthful range cleanup-outcome projection (#2086, ADR-063-R4). */
         RangeCleanupOutcomeResponse: {
             /** Format: uuid */
             request_id: string;
@@ -4912,10 +5109,22 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
+        /** @description Strict full replacement plus expected revision. */
+        ReplaceLeasePolicy: {
+            expected_revision: number;
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
         /** @description Confirmation returned after resending non-secret login information. */
         ResendLoginInfoResult: {
             readonly success: boolean;
             readonly id: string;
+        };
+        /** @description Strict explicit reset command. */
+        ResetLeasePolicy: {
+            expected_revision: number;
         };
         /**
          * @description * `concurrent_ranges` - Concurrent ranges
@@ -5352,6 +5561,219 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    api_v1_administer_mission_control_lease_policy_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_administer_users_list: {
         parameters: {
             query?: {
@@ -8347,6 +8769,45 @@ export interface operations {
             };
         };
     };
+    ctf_events_registration_requests_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationRequestListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_results_export_retrieve: {
         parameters: {
             query?: never;
@@ -10887,6 +11348,51 @@ export interface operations {
                 };
             };
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_registration_requests_disposition_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicRegistrationDisposition"];
+                "application/x-www-form-urlencoded": components["schemas"]["PublicRegistrationDisposition"];
+                "multipart/form-data": components["schemas"]["PublicRegistrationDisposition"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationDispositionResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

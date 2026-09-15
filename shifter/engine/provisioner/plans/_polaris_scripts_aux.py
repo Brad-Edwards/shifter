@@ -220,22 +220,11 @@ if ! docker exec a14-kali test -s /home/kali/.ssh/authorized_keys; then
   exit 1
 fi
 
-# 4a. Splice-relay credential gate (#707): private key staged on a14-kali
-#     and matching pubkey installed on a9-splice. Without both halves the
-#     Bunker chain (flags 31-36) is unreachable post-splice. Mode is also
-#     checked on the private key — wrong perms invite client refusal at
-#     ssh-time, which masquerades as the original P0 symptom.
-if ! docker exec a14-kali test -s /home/kali/.ssh/splice_relay; then
-  echo "polaris verify: splice_relay private key missing on a14-kali" >&2
-  exit 1
-fi
-splice_mode=$(docker exec a14-kali stat -c '%a' /home/kali/.ssh/splice_relay 2>/dev/null || echo "")
-if [[ "$splice_mode" != "600" ]]; then
-  echo "polaris verify: splice_relay private key has wrong mode '$splice_mode' (expected 600)" >&2
-  exit 1
-fi
-if ! docker exec a9-splice test -s /root/.ssh/authorized_keys; then
-  echo "polaris verify: a9-splice /root/.ssh/authorized_keys is missing or empty" >&2
+# 4a. The shared host helper checks the complete projection contract: regular
+# files, numeric ownership, modes, converged SSH config, A14/A9 key-pair match,
+# and (when the splice network is open) a real non-interactive SSH connection.
+if ! /opt/polaris/libexec/polaris-splice-credential.py host-check --container a14-kali; then
+  echo "polaris verify: splice credential contract failed" >&2
   exit 1
 fi
 

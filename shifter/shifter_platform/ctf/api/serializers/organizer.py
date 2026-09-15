@@ -152,6 +152,8 @@ class EventDetailSerializer(_EventAccessProjectionMixin, serializers.Serializer)
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True, allow_blank=True)
+    public_registration_enabled = serializers.BooleanField(read_only=True)
+    public_registration_url = serializers.SerializerMethodField()
     status = serializers.CharField(read_only=True)
     event_start = serializers.DateTimeField(read_only=True)
     event_end = serializers.DateTimeField(read_only=True)
@@ -176,10 +178,24 @@ class EventDetailSerializer(_EventAccessProjectionMixin, serializers.Serializer)
     reminder_hours = serializers.ListField(child=serializers.IntegerField(), read_only=True)
     event_timezone = serializers.CharField(read_only=True, allow_blank=True)
     capacity_hints = serializers.DictField(read_only=True)
+    model_demand = serializers.ListField(child=serializers.DictField(), read_only=True)
     logo_url = serializers.CharField(read_only=True, allow_blank=True)
     visible_os_types = serializers.ListField(child=serializers.CharField(), read_only=True)
     theme_color = serializers.CharField(read_only=True, allow_blank=True)
     managed_content = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_public_registration_url(self, event: CTFEvent) -> str | None:
+        """Build the share URL only from the validated installation origin."""
+        from django.urls import reverse
+
+        from shared.site_url import SiteUrlUnavailable, validated_site_url
+
+        try:
+            origin = validated_site_url()
+        except SiteUrlUnavailable:
+            return None
+        return f"{origin}{reverse('ctf:public_event_registration', args=[event.pk])}"
 
     @extend_schema_field(ManagedContentSummarySerializer(allow_null=True))
     def get_managed_content(self, event: CTFEvent) -> dict[str, object] | None:
@@ -207,6 +223,7 @@ class EventWriteSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=200)
     description = serializers.CharField(required=False, allow_blank=True)
+    public_registration_enabled = serializers.BooleanField(required=False)
     event_start = serializers.DateTimeField()
     event_end = serializers.DateTimeField()
     registration_deadline = serializers.DateTimeField(required=False, allow_null=True)
@@ -231,9 +248,27 @@ class EventWriteSerializer(serializers.Serializer):
     )
     event_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     capacity_hints = serializers.DictField(required=False)
+    model_demand = serializers.ListField(child=serializers.DictField(), required=False, max_length=64)
     logo_url = serializers.URLField(required=False, allow_blank=True, max_length=500)
     visible_os_types = serializers.ListField(child=serializers.CharField(max_length=32), required=False, max_length=16)
     theme_color = serializers.RegexField(r"^(#[0-9a-fA-F]{6})?$", required=False, allow_blank=True)
+
+    def validate_model_demand(self, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Validate each typed model-demand entry (PLAT-202, CTF-908).
+
+        Organizer input is bounded by the closed ``EventModelDemand`` contract; a
+        malformed entry is rejected at the write boundary rather than dropped later.
+        """
+        from pydantic import ValidationError as _PydanticValidationError
+
+        from shared.model_access.admission import EventModelDemand
+
+        for entry in value:
+            try:
+                EventModelDemand.model_validate(entry)
+            except _PydanticValidationError as exc:
+                raise serializers.ValidationError("invalid model demand entry") from exc
+        return value
 
 
 class EventLifecycleRequestSerializer(serializers.Serializer):

@@ -1,4 +1,4 @@
-"""Retry-safe public operation surface at the engine service boundary (#2086, ADR-062).
+"""Retry-safe public operation surface at the engine service boundary (#2086, ADR-063).
 
 Re-exports the retry-binding primitives and the request -> operation-generation
 lookup through ``engine.services`` so the CMS and presentation layers reach them

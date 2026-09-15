@@ -31,6 +31,21 @@ From **CTF Admin → Events → Create**, set the core parameters:
 | Submission cooldown / attempt limit | Anti-brute-force throttles |
 | Scoreboard visibility / freeze | Whether and when standings are shown |
 | Auto cleanup / cleanup delay | Whether ranges are torn down after the event |
+| Publish public registration page | Opt-in public event details and request form; off by default |
+
+### Optional public registration
+
+Enable **Publish public registration page** only when you want an unauthenticated
+signup surface for this event. The form previews the disclosure: event name,
+description, start/end times, effective registration deadline, and timezone. It does
+not publish the scenario, workspace, capacity, participant roster, rules, challenges,
+briefing, custom pages, or logo. The privacy notice linked from the page is
+operator-supplied; review it for your deployment before sharing the URL.
+
+The share link appears on the event overview after publication is enabled. The page
+is reachable only while the event is in **Registration** and the event remains
+explicitly published. Turning the switch off, starting, or cancelling the event
+closes the public route without changing the stored switch.
 
 ## 2. Add Challenges
 
@@ -92,6 +107,15 @@ From an event's **Participants** page you can add participants individually or b
 import a roster. Each participant is tracked through registration, range assignment,
 and scoring. Use **Brackets** to group participants into ranked cohorts, and (in team
 mode) manage team membership.
+
+Requests from the optional public page appear separately at the top of this screen.
+**Reject** closes a request without side effects. **Approve** sends the request
+through the same participant-admission path as a manual add: current capacity and
+duplicate-email policy are rechecked, then the isolated account, participant seat,
+and normal provisioning wake-up are created. A public submission itself never sends
+mail, creates credentials, reserves capacity, or provisions a range. Requests can be
+reviewed only once and their PII is removed by the scheduler after the event-relative
+participant-account retention window.
 
 Participants use isolated temporary accounts on the dedicated CTF login page.
 Generate accounts before an event and hand out each generated username and initial

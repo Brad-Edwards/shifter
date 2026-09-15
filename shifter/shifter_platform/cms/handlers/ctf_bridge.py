@@ -20,7 +20,7 @@ def notify_ctf_range_status(
     Any layer that depends on CMS (e.g. CTF) can register receivers
     for this signal to react to range status changes.
 
-    ``cleanup_verified`` (#2086, ADR-062-R4/R5) reports whether durable scoped
+    ``cleanup_verified`` (#2086, ADR-063-R4/R5) reports whether durable scoped
     provider inventory/readback evidence confirms every owned resource is gone. A
     terminal ``DESTROYED`` status without that evidence is not proof of absence, so
     CTF receivers must retain capacity and linkage until it is True.

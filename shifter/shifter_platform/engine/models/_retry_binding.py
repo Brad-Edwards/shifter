@@ -1,6 +1,6 @@
 """Public-operation retry binding: a caller retry key -> one server-owned operation.
 
-ADR-062 (#2086). Public clients supply a retry key so a lost launch response can
+ADR-063 (#2086). Public clients supply a retry key so a lost launch response can
 be recovered without duplicating effects. This row is the idempotency/admission
 *index* for the retry identity ``(deployment_scope, actor_key, action,
 caller_key)`` bound to an existing server-owned ``request_id`` + ``operation_id``
@@ -40,7 +40,7 @@ class PublicOperationRetryBinding(models.Model):
     # The operation generation bound at first use. Nullable because the generation
     # can be minted asynchronously after the request is created; the current
     # generation is always resolvable from the request's range, and this column
-    # caches the association once known (ADR-062-R1).
+    # caches the association once known (ADR-063-R1).
     operation_id = models.UUIDField(editable=False, null=True, blank=True, db_index=True)
     # "sha256:" + 64 hex characters -- the canonical immutable-intent digest.
     intent_digest = models.CharField(max_length=71)

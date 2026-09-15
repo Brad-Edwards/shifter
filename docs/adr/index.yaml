@@ -747,7 +747,7 @@
       },
       {
         "id": "ADR-011-R9",
-        "description": "Mission Control lease configuration uses one typed provider-neutral policy derived from root installation settings, validated at installation and runtime composition, and delivered through existing backend renderers. Defaults remain 30/30/365 whole days. Durations apply when a user lease is first assigned, including warm claims; each generation retains its deadlines and extension increment. A separate deployment extension-admission switch may deny further extensions without rewriting bounds or disabling cleanup. CTF event deadlines and warm-pool idle expiry retain their own owners. Existing CMS lease, workspace authorization, transactional extension, canonical system destruction, audit and API projection boundaries remain authoritative. Design and required evidence are recorded in docs/architecture/configurable-range-leases-preflight-27.md; this rule does not claim runtime enforcement is implemented.",
+        "description": "Mission Control lease configuration uses one typed provider-neutral policy. Root installation settings are validated at installation/runtime composition and delivered through the existing backend renderers as the deployment fallback, defaulting to 30/30/365 whole days. A CMS-owned, strict-audited runtime tenant replacement may supersede all four fallback fields without redeploy; complete policies for administrator-controlled, policy-eligible Django RBAC groups restrictively compose beneath the tenant and are never workspace, organization, raw provider/self-service claim, CTF-team, or cloud authority. Durations resolve when a user lease is first assigned, including warm claims, and each generation retains its deadlines and extension increment. Effective tenant/group extension-admission switches remain live and may deny further extensions without rewriting bounds or disabling cleanup. The owner control remains the empty-body, server-increment extension bounded by the persisted generation maximum; callers never select deadlines or increments. CTF event deadlines and warm-pool idle expiry retain their own owners. Existing CMS lease, workspace authorization, transactional extension, canonical system destruction, audit and API projection boundaries remain authoritative. Design and executable evidence are recorded in docs/architecture/configurable-range-leases-preflight-27.md, docs/architecture/runtime-mission-control-lease-policy-preflight-2169.md, and the registered CMS/API/UI/test paths.",
         "checks": []
       }
     ],
@@ -761,7 +761,19 @@
       "docs/architecture/provider-neutral-range-substrate.md",
       "docs/architecture/aws-deploy-tfvars-preflight-1249.md",
       "docs/architecture/configurable-range-leases-preflight-27.md",
+      "https://github.com/Brad-Edwards/shifter/issues/2169",
+      "docs/architecture/runtime-mission-control-lease-policy-preflight-2169.md",
       "docs/adr/index.yaml",
+      "shifter/shifter_platform/cms/models/lease_policy.py",
+      "shifter/shifter_platform/cms/services/_range_lease_policy.py",
+      "shifter/shifter_platform/cms/services/_range_lease_policy_support.py",
+      "shifter/shifter_platform/config/api_administer_leases.py",
+      "shifter/shifter_platform/frontend/src/features/administer/PlatformSettingsPage.tsx",
+      "shifter/shifter_platform/tests/cms/test_runtime_lease_policy.py",
+      "shifter/shifter_platform/tests/cms/test_runtime_lease_policy_concurrency_postgres.py",
+      "shifter/shifter_platform/tests/config/test_mission_control_lease_admin_api.py",
+      "docs/features/ranges.md",
+      "docs/technical/shifter_platform/cms.md",
       "shifter/installation/__init__.py",
       "shifter/installation/schema.py",
       "shifter/installation/contract.py",
@@ -2240,7 +2252,7 @@
       },
       {
         "id": "ADR-039-R10",
-        "description": "User-held client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only a trusted product launch path may mint the closed capability beside scenario intent; product provenance and ownership stay at the product/CMS boundary, while the capability binds one authoritative participant-access target and an enforced server-owned access deadline. CMS persists one lease for every new CTF and Mission Control range: the current deadline is the sole automatic-cleanup authority and the immutable generation ceiling bounds certificate `notAfter`. CTF derives both from event cleanup. Mission Control uses a deployment-configured, server-owned lease policy (initial, extension-increment, and maximum durations defaulting to 30/30/365 days and snapshotted per generation; see ADR-011-R9), extends only through server-selected increments, and cannot exceed the generation's maximum lifetime; HTTP callers cannot select a deadline, increment, or the extension-admission switch. The DB-authoritative reconciler locks due rows and reuses canonical system-attributed destroy and existing product projections rather than a CTF- or Mission-Control-specific cleanup workflow. Any future product must supply the same enforced lease semantics or introduce an explicitly versioned renewal/revocation lifecycle; caller-supplied, silently expiring, and unbounded deadlines are prohibited, and topology alone never activates a VPN. A required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the user-controlled target), creates one owner/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former owner, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret; the provisioner writes serviceAccountUser only on that generated gateway account before Compute attaches it. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every live-fire adapter eligible for an enabled product profile must pass the same real-client handshake, isolation, lifecycle, secret-deletion, and capacity conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
+        "description": "User-held client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only a trusted product launch path may mint the closed capability beside scenario intent; product provenance and ownership stay at the product/CMS boundary, while the capability binds one authoritative participant-access target and an enforced server-owned access deadline. CMS persists one lease for every new CTF and Mission Control range: the current deadline is the sole automatic-cleanup authority and the immutable generation ceiling bounds certificate `notAfter`. CTF derives both from event cleanup. Mission Control uses one typed, server-owned lease policy: the deployment-configured 30/30/365 default is the fallback, an audited runtime tenant policy may replace it, and every matching persisted Django RBAC-group policy composes restrictively beneath the tenant (see ADR-011-R9 and the #2169 preflight). Durations resolve inside the cold-create or warm-claim transaction and are snapshotted per generation; the tenant/group extension-admission switch is live. Owners extend only through the existing empty-body action and the generation's server-selected increment, never beyond its immutable maximum; HTTP callers cannot select a deadline, increment, maximum, group, or switch. The DB-authoritative reconciler locks due rows and reuses canonical system-attributed destroy and existing product projections rather than a CTF- or Mission-Control-specific cleanup workflow. Any future product must supply the same enforced lease semantics or introduce an explicitly versioned renewal/revocation lifecycle; caller-supplied, silently expiring, and unbounded deadlines are prohibited, and topology alone never activates a VPN. A required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the user-controlled target), creates one owner/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former owner, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret; the provisioner writes serviceAccountUser only on that generated gateway account before Compute attaches it. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every live-fire adapter eligible for an enabled product profile must pass the same real-client handshake, isolation, lifecycle, secret-deletion, and capacity conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
         "checks": []
       },
       {
@@ -2259,8 +2271,10 @@
       "https://github.com/Brad-Edwards/shifter/issues/1695",
       "https://github.com/Brad-Edwards/shifter/issues/1696",
       "https://github.com/Brad-Edwards/shifter/issues/28",
+      "https://github.com/Brad-Edwards/shifter/issues/2169",
       "docs/architecture/provider-neutral-range-substrate.md",
       "docs/architecture/range-warm-pool-preflight-28.md",
+      "docs/architecture/runtime-mission-control-lease-policy-preflight-2169.md",
       "docs/architecture/ctf-openvpn-participant-access-preflight-1695.md",
       "docs/architecture/non-ctf-openvpn-range-access-preflight-1696.md",
       "docs/architecture/branch-routing-provider-coupling-inventory.md",
@@ -2730,6 +2744,11 @@
         "id": "ADR-046-R14",
         "description": "Range-scope administration is distinct from range-owner reassignment and interactive range access. Its closed workspace operations are owner/admin-only and never reuse REASSIGN_RANGE, READ_RANGE, staff status, organization authority, or the PLAT-236 superuser offboarding override as authority. The staff-session administration API lists only a bounded, paginated CMS projection for a workspace; it does not grant access to another user's range. Rebinding accepts only the range request UUID and a target workspace public UUID, reauthorizes the actor for scope administration in both the persisted source and target workspaces, requires the unchanged range owner to remain a member of the active target workspace, and never creates membership. One CMS-owned, request-attributed, strict-audited transaction locks and compare-and-set verifies the CMS Request, CMS RangeInstance, and Engine Range bindings, then changes all three or none; projection absence, multiplicity, or disagreement fails closed and is not silently repaired. Rebinding changes no user/owner, provenance, lifecycle, lease, credential, access-channel, backend, pinned egress, capacity, scenario, or cloud state. A range participating in another domain's immutable workspace aggregate, including an ADR-051-bound CTF event, cannot move independently unless that owning domain validates the same target through its public service boundary; absent that seam, the move fails closed. Public responses and logs remain bounded and non-enumerating, and workspace identities never enter scenario contracts, provider input, argv, environment, or guest metadata.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R15",
+        "description": "Mission Control runtime lease policy (#2169) is a CMS-owned product policy, not workspace tenancy. Its tenant scope is the standalone deployment; its optional group layer selects from committed membership in administrator-controlled, policy-eligible Django auth.Group rows and never from workspace/organization roles, raw provider/self-service claim strings, CTF teams/events, staff flags, cloud groups, or caller-supplied names/IDs. Self-service-synchronized groups are ineligible. Group policy can restrict the lease of an otherwise authorized owner but grants no launch, workspace, range, or remote-access authority. Multiple matching policies compose by the documented restrictive meet, while the existing workspace service remains an independent additive authorization gate. No organization/workspace lease policy or implicit workspace inheritance is introduced without a later ADR.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2747,6 +2766,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/1944",
       "https://github.com/Brad-Edwards/shifter/issues/1945",
       "https://github.com/Brad-Edwards/shifter/issues/1946",
+      "https://github.com/Brad-Edwards/shifter/issues/2169",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
       "docs/architecture/range-workspace-scoping-preflight-1327.md",
@@ -2756,6 +2776,7 @@
       "docs/architecture/workspace-resource-quotas-preflight-1946.md",
       "docs/architecture/user-lifecycle-administration-preflight-1943.md",
       "docs/architecture/range-workspace-scoping-administration-preflight-1944.md",
+      "docs/architecture/runtime-mission-control-lease-policy-preflight-2169.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",
@@ -3825,8 +3846,14 @@
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/060-model-access-allocation-accounting.md",
       "docs/architecture/model-access/sharing.md",
+      "docs/architecture/model-access/sharing-authority-preflight-2140.md",
       "docs/architecture/model-access/architecture.md",
-      "docs/architecture/model-access/delivery.md"
+      "docs/architecture/model-access/delivery.md",
+      "shifter/shifter_platform/shared/model_access/authority.py",
+      "shifter/shifter_platform/engine/services/_sharing.py",
+      "shifter/shifter_platform/config/model_access_sharing.py",
+      "shifter/shifter_platform/tests/engine/services/test_model_access_authority_postgres.py",
+      "shifter/shifter_platform/tests/engine/services/test_model_access_range_pagination.py"
     ]
   },
   {

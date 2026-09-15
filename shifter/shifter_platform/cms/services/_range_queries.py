@@ -390,7 +390,7 @@ def get_range_by_request_id(user: User, request_id: str, *, include_terminal: bo
             terminal (DESTROYED/FAILED) range the caller still owns is authorized
             and projected instead of 404'd. The retry-safe replay and cleanup-
             outcome surfaces need this to report on terminal operations
-            (#2086, ADR-062-R4); the default preserves the active-only behavior.
+            (#2086, ADR-063-R4); the default preserves the active-only behavior.
 
     Returns:
         RangeContext: Template-safe projection of the range

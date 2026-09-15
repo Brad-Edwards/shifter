@@ -1,4 +1,4 @@
-"""API-level retry-safe launch behavior (#2086, ADR-062).
+"""API-level retry-safe launch behavior (#2086, ADR-063).
 
 Drives the real launch endpoint with an ``Idempotency-Key`` header: a replay with
 the same key + selections recovers the original range without a duplicate; a
@@ -80,3 +80,83 @@ def test_launch_without_key_is_unchanged(authenticated_client, make_agent, hydra
     assert response.status_code == 200, response.content
     assert "recovered" not in response.json()
     assert PublicOperationRetryBinding.objects.count() == 0
+
+
+def test_first_use_key_conflict_returns_409(authenticated_client, make_agent, hydratable_scenario, monkeypatch):
+    """A concurrent contender winning the key at first-use dispatch maps to 409.
+
+    ``bind_first_use_launch`` raises ``RetryKeyConflict`` when the loser reads the
+    winner's differing intent after the unique-key race; the view must translate
+    that into the ``retry_key_conflict`` 409 without leaving a binding behind.
+    """
+    from cms.services import RetryKeyConflict
+    from engine.models import PublicOperationRetryBinding
+
+    def _raise(*_args, **_kwargs):
+        raise RetryKeyConflict("retry key is already bound to a different operation intent")
+
+    monkeypatch.setattr("mission_control.api._retry_launch.bind_first_use_launch", _raise)
+    client, user = authenticated_client(email="retry-firstuse-conflict@example.com")
+    agent = make_agent(user)
+
+    response = _launch(client, agent.id, hydratable_scenario.scenario_id, key="race-first-use")
+
+    assert response.status_code == 409, response.content
+    assert PublicOperationRetryBinding.objects.count() == 0
+
+
+def test_first_use_cms_error_maps_to_launch_failure(authenticated_client, make_agent, hydratable_scenario, monkeypatch):
+    """A CMS failure during first-use dispatch routes through ``_launch_failure_response``.
+
+    A generic ``CMSError`` from ``bind_first_use_launch`` is a bad request (400),
+    and no retry binding is persisted for the failed dispatch.
+    """
+    from engine.models import PublicOperationRetryBinding
+    from shared.exceptions import CMSError
+
+    def _raise(*_args, **_kwargs):
+        raise CMSError("catalog validation failed")
+
+    monkeypatch.setattr("mission_control.api._retry_launch.bind_first_use_launch", _raise)
+    client, user = authenticated_client(email="retry-firstuse-cms@example.com")
+    agent = make_agent(user)
+
+    response = _launch(client, agent.id, hydratable_scenario.scenario_id, key="first-use-cms")
+
+    assert response.status_code == 400, response.content
+    assert PublicOperationRetryBinding.objects.count() == 0
+
+
+def test_agents_selection_normalizes_agents_dict():
+    """The agents-map selection is projected with string keys, int values, sorted."""
+    from mission_control.api._retry_launch import RetrySafeLaunchMixin
+
+    selection = RetrySafeLaunchMixin._agents_selection({"agents": {"windows": 1, "linux": "2"}})
+
+    assert selection == {"agents": {"linux": 2, "windows": 1}}
+
+
+def test_bound_range_response_falls_back_to_null_range_on_cms_error(monkeypatch):
+    """When the bound range cannot be projected, the payload carries ``range=None``.
+
+    ``get_range_by_request_id`` raising ``CMSError`` (e.g. a terminal/absent bound
+    range) must not fail the response; it degrades to a null range while still
+    reporting success and the recovered flag.
+    """
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from mission_control.api._retry_launch import RetrySafeLaunchMixin
+    from shared.exceptions import CMSError
+
+    def _raise(*_args, **_kwargs):
+        raise CMSError("bound range no longer projectable")
+
+    monkeypatch.setattr("mission_control.api._retry_launch.get_range_by_request_id", _raise)
+    outcome = SimpleNamespace(request_id=str(uuid4()))
+
+    response = RetrySafeLaunchMixin._bound_range_response(None, outcome, recovered=True)
+
+    assert response.data["success"] is True
+    assert response.data["recovered"] is True
+    assert response.data["range"] is None

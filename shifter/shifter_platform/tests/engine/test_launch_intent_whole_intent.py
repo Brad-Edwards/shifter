@@ -1,4 +1,4 @@
-"""Internal re-enqueue must compare the complete immutable intent (#2086, ADR-062-R2).
+"""Internal re-enqueue must compare the complete immutable intent (#2086, ADR-063-R2).
 
 The stored ``OperationInput`` is immutable per operation generation. Re-enqueuing
 the same generation with a *different* composed intent (a changed compiled plan or

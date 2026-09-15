@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from cms.models import Request
     from shared.enums import RangeSource
+    from shared.model_access import OwnedReference
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,10 @@ class LaunchOptions:
     ngfw_enabled: bool = False
     remote_access_teardown_at: datetime | None = None
     workspace_uuid: str | UUID | None = None
+    # PLAT-202: the canonical sharing-membership subject (a CTF draw reference)
+    # so required-model admission resolves the sharing overlap against the real
+    # launch subject rather than the launcher identity.
+    model_admission_subject: OwnedReference | None = None
 
 
 def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR

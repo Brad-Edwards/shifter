@@ -1,4 +1,4 @@
-"""Retry-safe range launch orchestration (#2086, ADR-062-R1/R2/R3).
+"""Retry-safe range launch orchestration (#2086, ADR-063-R1/R2/R3).
 
 ``resolve_retry_recovery`` recovers a bound operation for a replay without minting
 or catalog validation; ``bind_first_use_launch`` dispatches + binds on first use. A
@@ -33,7 +33,9 @@ def actor(db):
 
 
 def _patch_mint(monkeypatch, *, calls):
-    def _dispatch(user, scenario, agents_by_os, workspace_uuid=None):
+    def _dispatch(user, scenario, workspace_uuid=None):
+        # RAES packages own topology post-PLAT-202; create_range_dispatch no
+        # longer takes agents_by_os (see cms.services._retry_safe_launch).
         calls.append(scenario)
         return _FakeCtx(uuid4())
 

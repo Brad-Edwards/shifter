@@ -227,9 +227,9 @@
       "uri": "raes-environment-pack:/containers/boreas-kali/Dockerfile",
       "checksum": {
         "algorithm": "sha256",
-        "value": "404e4cf459531ca91d9a44a58737e83022cf020744a82839cfa5188ed41af7e8"
+        "value": "4843fc082643d35475a9516af69c9980d2c38f1be97af8d7b4a60789d003c39d"
       },
-      "size_bytes": 552,
+      "size_bytes": 682,
       "created_at": "2026-07-13T00:00:00Z",
       "source": "shifter-test-fixture",
       "satisfies_refs": [],
@@ -243,9 +243,9 @@
       "uri": "raes-environment-pack:/containers/boreas-kali/entrypoint.sh",
       "checksum": {
         "algorithm": "sha256",
-        "value": "0e16a621a4013096bea3e9f231693dc5b8dc6ff716ab9385d17bea5c35de981b"
+        "value": "3713e447380e13abe29c388ecc85866321a9015c8ed4f509bf3f807a999f8b37"
       },
-      "size_bytes": 473,
+      "size_bytes": 796,
       "created_at": "2026-07-13T00:00:00Z",
       "source": "shifter-test-fixture",
       "satisfies_refs": [],
@@ -2083,9 +2083,9 @@
       "uri": "raes-environment-pack:/tests/walkthroughs/flags-31-36-bunker.md",
       "checksum": {
         "algorithm": "sha256",
-        "value": "f55e21a14e00e0ee1160f3deab392215cf257d32ef7cc108e965054af616924a"
+        "value": "42cd59d51194a42c6ce315d373ab106924513e492679f7542bf88ab8539d97cd"
       },
-      "size_bytes": 10151,
+      "size_bytes": 10218,
       "created_at": "2026-07-13T00:00:00Z",
       "source": "shifter-test-fixture",
       "satisfies_refs": [],
@@ -2107,7 +2107,23 @@
       "satisfies_refs": [],
       "sensitivity": "internal",
       "description": null
+    },
+    "artifact-131": {
+      "artifact_id": "artifact-131",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/containers/boreas-kali/polaris_splice_credential.py",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "5844bb1374f90d805fa443a66da03af1caa24628e52e3c3d29b02aa6052de4db"
+      },
+      "size_bytes": 13978,
+      "created_at": "2026-07-13T00:00:00Z",
+      "source": "shifter-test-fixture",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
     }
   },
-  "set_digest": "sha256:814c2f55fdbed41f622f249b2c51f013654e6af4c1cd614d0ef870c1fba11b00"
+  "set_digest": "sha256:f7f7b9c29a43d07d9512a929ee6ba497dd2c1377bb78d4a767b6b832d1b3448c"
 }

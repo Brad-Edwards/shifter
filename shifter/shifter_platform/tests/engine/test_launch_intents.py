@@ -375,3 +375,57 @@ def test_validate_rejects_non_uuid_operation_id() -> None:
     request_id = "17171717-1717-1717-1717-171717171717"
     with pytest.raises(ValueError, match="operation_id must be a UUID"):
         validate_provisioner_command(["range", "provision", "--request-id", request_id, "--operation-id", "nope"])
+
+
+def test_stored_intent_check_is_a_noop_when_no_input_was_materialized() -> None:
+    """A generation with no stored ``OperationInput`` (a legacy range) has nothing
+    to compare, so the replay-equivalence guard returns without raising."""
+    from uuid import uuid4
+
+    from engine.launch_intents import _assert_stored_intent_matches
+
+    payload = {
+        "version": 1,
+        "resource": "range",
+        "operation": "provision",
+        "request_id": "31313131-3131-3131-3131-313131313131",
+    }
+    # No OperationInput exists for this operation generation.
+    _assert_stored_intent_matches(payload, uuid4())
+
+
+def test_stored_intent_check_is_a_noop_for_a_legacy_range_without_a_request() -> None:
+    """A legacy range carries no linked ``Request``, so there is no current intent
+    to compose and compare; the guard returns before the digest check."""
+    from uuid import uuid4
+
+    from django.contrib.auth import get_user_model
+
+    from engine.launch_intents import _assert_stored_intent_matches
+    from engine.models import OperationInput, Range
+
+    operation_id = uuid4()
+    user = get_user_model().objects.create_user(username=f"{uuid4()}@example.com")
+    legacy_range = Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
+        request=None,
+        user=user,
+        status=Range.Status.PROVISIONING,
+    )
+    OperationInput.objects.create(
+        operation_id=operation_id,
+        request_id=uuid4(),
+        resource="range",
+        operation="provision",
+        contract_version="1",
+        envelope={},
+    )
+    payload = {
+        "version": 1,
+        "resource": "range",
+        "operation": "provision",
+        "range_id": legacy_range.pk,
+        "user_id": legacy_range.user_id,
+    }
+
+    _assert_stored_intent_matches(payload, operation_id)

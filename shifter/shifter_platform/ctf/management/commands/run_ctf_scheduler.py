@@ -44,6 +44,7 @@ from argparse import ArgumentParser
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
+from types import FrameType
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -64,6 +65,15 @@ HEARTBEAT_FILE = Path(tempfile.gettempdir()) / "ctf-scheduler-heartbeat"
 # scheduler liveness file so long-running work does not look stale.
 ShutdownCheck = Callable[[], bool]
 Heartbeat = Callable[[], None]
+
+
+def _run_retention_maintenance() -> None:
+    """Run the bounded CTF retention sweeps once per scheduler cycle."""
+    from ctf.services.participant.accounts import purge_expired_participant_accounts
+    from ctf.services.public_registration import purge_expired_public_registration_requests
+
+    purge_expired_participant_accounts()
+    purge_expired_public_registration_requests()
 
 
 class Command(BaseCommand):
@@ -105,9 +115,7 @@ class Command(BaseCommand):
         while not self.shutdown:
             try:
                 self._recover_stale_tasks()
-                from ctf.services.participant.accounts import purge_expired_participant_accounts
-
-                purge_expired_participant_accounts()
+                _run_retention_maintenance()
                 self._process_due_tasks(batch_size)
             except Exception:
                 logger.exception("Error in CTF scheduler poll cycle")
@@ -123,7 +131,7 @@ class Command(BaseCommand):
         self._cleanup_heartbeat()
         logger.info("CTF scheduler shutdown complete")
 
-    def _signal_handler(self, signum: int, frame: Any) -> None:
+    def _signal_handler(self, signum: int, frame: FrameType | None) -> None:
         sig_name = signal.Signals(signum).name
         logger.info("CTF scheduler received %s, shutting down", sig_name)
         self.shutdown = True
@@ -255,7 +263,8 @@ def _handle_spin_up_ranges(
     from ctf.services.range import provision_event_ranges_throttled
 
     event = task.event
-    spinup_window = event.range_spinup_minutes * 60  # convert to seconds
+    # convert to seconds
+    spinup_window = event.range_spinup_minutes * 60
 
     def task_heartbeat() -> None:
         """Keep both the claimed task and the scheduler liveness file fresh.

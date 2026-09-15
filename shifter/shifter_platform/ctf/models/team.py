@@ -267,6 +267,14 @@ class CTFParticipant(CTFBaseModel):
         related_name="members",
         help_text="Team membership (for team-based events)",
     )
+    cohort = models.ForeignKey(
+        "CTFCohort",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="participants",
+        help_text="Stable event-owned cohort membership used by model-access selection",
+    )
     bracket = models.ForeignKey(
         CTFBracket,
         on_delete=models.SET_NULL,
@@ -404,6 +412,9 @@ class CTFParticipant(CTFBaseModel):
                 errors.setdefault("team", []).append("Cannot join a team in non-team-mode event.")
             elif self.team.event_id != self.event_id:
                 errors.setdefault("team", []).append("Team must belong to the same event.")
+
+        if self.cohort and self.cohort.event_id != self.event_id:
+            errors.setdefault("cohort", []).append("Cohort must belong to the same event.")
 
         if errors:
             raise ValidationError(errors)

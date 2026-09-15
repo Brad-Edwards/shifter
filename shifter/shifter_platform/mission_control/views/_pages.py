@@ -32,10 +32,32 @@ logger = logging.getLogger(__name__)
 @require_GET
 def dashboard(request: HttpRequest) -> HttpResponse:
     """Ranges page - launch and manage cyber ranges."""
+    from django.middleware.csrf import get_token
+    from django.urls import reverse
+
+    from shared.auth import is_ctf_participant_only
+
+    # Build the client bootstrap payload server-side and hand it to the template
+    # via ``json_script`` so the template stays within SonarCloud's inline-JS
+    # length limit (Web:LongJavaScriptCheck). dashboard-init.js reads it from the
+    # ``#dashboard-config`` element.
     context = {
         "page_title": "Ranges",
         "active_nav": "ranges",
-        "provisioning_timeout_ms": django_settings.PROVISIONING_TIMEOUT_MS,
+        "dashboard_config": {
+            "csrfToken": get_token(request),
+            "rangeUrl": reverse("v1:mission_control:range-current"),
+            "launchUrl": reverse("v1:mission_control:range-launch"),
+            "cancelUrl": reverse("v1:mission_control:range-cancel"),
+            "destroyUrl": reverse("v1:mission_control:range-destroy"),
+            "pauseUrl": reverse("v1:mission_control:range-pause"),
+            "resumeUrl": reverse("v1:mission_control:range-resume"),
+            "agentsUrl": reverse("v1:mission_control:agents-list"),
+            "scenariosUrl": reverse("v1:mission_control:scenarios-list"),
+            "loginUrl": reverse("dashboard_router"),
+            "provisioningTimeoutMs": django_settings.PROVISIONING_TIMEOUT_MS,
+            "viewOnly": is_ctf_participant_only(request.user),
+        },
     }
     return render(request, "mission_control/dashboard.html", context)
 

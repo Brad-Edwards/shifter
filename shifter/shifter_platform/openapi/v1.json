@@ -6,6 +6,351 @@
     "description": "Authenticated HTTP/JSON API for Shifter platform integrations."
   },
   "paths": {
+    "/api/v1/administer/mission-control/lease-policy/": {
+      "get": {
+        "operationId": "api_v1_administer_mission_control_lease_policy_retrieve",
+        "description": "Read fallback, runtime tenant state, and policy-eligible groups.",
+        "tags": [
+          "administer"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionControlLeasePolicySettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/": {
+      "put": {
+        "operationId": "api_v1_administer_mission_control_lease_policy_group_replace",
+        "description": "Replace one policy-eligible RBAC group's complete lease policy.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceLeasePolicy"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceLeasePolicy"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceLeasePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionControlLeasePolicySettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/reset/": {
+      "post": {
+        "operationId": "api_v1_administer_mission_control_lease_policy_group_reset",
+        "description": "Explicitly remove one group policy so the group inherits tenant policy.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetLeasePolicy"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetLeasePolicy"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetLeasePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionControlLeasePolicySettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/mission-control/lease-policy/tenant/": {
+      "put": {
+        "operationId": "api_v1_administer_mission_control_lease_policy_tenant_replace",
+        "description": "Replace the complete runtime tenant policy under revision CAS.",
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceLeasePolicy"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceLeasePolicy"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceLeasePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionControlLeasePolicySettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/mission-control/lease-policy/tenant/reset/": {
+      "post": {
+        "operationId": "api_v1_administer_mission_control_lease_policy_tenant_reset",
+        "description": "Explicitly remove the runtime tenant replacement.",
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetLeasePolicy"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetLeasePolicy"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetLeasePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionControlLeasePolicySettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/administer/users/": {
       "get": {
         "operationId": "api_v1_administer_users_list",
@@ -5017,6 +5362,66 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/registration-requests/": {
+      "get": {
+        "operationId": "ctf_events_registration_requests_retrieve",
+        "description": "Return the bounded pending queue for one authorized event.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicRegistrationRequestListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/results/export/": {
       "get": {
         "operationId": "ctf_events_results_export_retrieve",
@@ -8929,6 +9334,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/registration-requests/{request_id}/disposition/": {
+      "post": {
+        "operationId": "ctf_registration_requests_disposition_create",
+        "description": "Validate authority and apply exactly one terminal disposition.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicRegistrationDisposition"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicRegistrationDisposition"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicRegistrationDisposition"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicRegistrationDispositionResult"
                 }
               }
             },
@@ -14397,7 +14882,7 @@
       },
       "CleanupObligation": {
         "type": "object",
-        "description": "One retained cleanup obligation (#2086, ADR-062-R4).",
+        "description": "One retained cleanup obligation (#2086, ADR-063-R4).",
         "properties": {
           "code": {
             "type": "string"
@@ -14658,6 +15143,14 @@
           "success"
         ]
       },
+      "EffectiveSourceEnum": {
+        "enum": [
+          "deployment",
+          "runtime"
+        ],
+        "type": "string",
+        "description": "* `deployment` - deployment\n* `runtime` - runtime"
+      },
       "EgressPolicyEnum": {
         "enum": [
           "status-quo",
@@ -14814,6 +15307,16 @@
             "type": "string",
             "readOnly": true
           },
+          "public_registration_enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "public_registration_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "readOnly": true
+          },
           "status": {
             "type": "string",
             "readOnly": true
@@ -14923,6 +15426,14 @@
             "additionalProperties": {},
             "readOnly": true
           },
+          "model_demand": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "readOnly": true
+          },
           "logo_url": {
             "type": "string",
             "readOnly": true
@@ -14964,8 +15475,11 @@
           "logo_url",
           "managed_content",
           "max_participants",
+          "model_demand",
           "name",
           "owner",
+          "public_registration_enabled",
+          "public_registration_url",
           "range_config",
           "range_spinup_minutes",
           "rating_visibility",
@@ -15275,6 +15789,9 @@
           "description": {
             "type": "string"
           },
+          "public_registration_enabled": {
+            "type": "boolean"
+          },
           "event_start": {
             "type": "string",
             "format": "date-time"
@@ -15358,6 +15875,14 @@
           "capacity_hints": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "model_demand": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "maxItems": 64
           },
           "logo_url": {
             "type": "string",
@@ -15719,6 +16244,84 @@
           "success"
         ]
       },
+      "LeasePolicy": {
+        "type": "object",
+        "description": "The canonical four-field policy projection.",
+        "properties": {
+          "initial_days": {
+            "type": "integer",
+            "maximum": 36500,
+            "minimum": 1
+          },
+          "extension_days": {
+            "type": "integer",
+            "maximum": 36500,
+            "minimum": 1
+          },
+          "maximum_days": {
+            "type": "integer",
+            "maximum": 36500,
+            "minimum": 1
+          },
+          "extensions_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "extension_days",
+          "extensions_enabled",
+          "initial_days",
+          "maximum_days"
+        ]
+      },
+      "LeasePolicyGroupSettings": {
+        "type": "object",
+        "description": "Serialize one eligible group and its optional runtime override.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "override": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LeasePolicyOverride"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "override",
+          "revision"
+        ]
+      },
+      "LeasePolicyOverride": {
+        "type": "object",
+        "description": "Serialize one complete runtime override and its revision.",
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/LeasePolicy"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "policy",
+          "revision"
+        ]
+      },
       "LegacyError": {
         "type": "object",
         "description": "Schema-only description of the flat ``{\"error\": \"<message>\"}`` body some\nlegacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).\n\nThis is NOT the canonical :class:`ApiErrorSerializer` envelope. It exists so\nthe contract describes those endpoints' real wire shape truthfully rather\nthan pretending they use the structured envelope. New endpoints must use the\ncanonical envelope; this documents existing behavior, it does not endorse it.",
@@ -15779,6 +16382,47 @@
           "is_refreshable",
           "scenario_id",
           "state"
+        ]
+      },
+      "MissionControlLeasePolicySettings": {
+        "type": "object",
+        "description": "Serialize the complete administrator settings projection.",
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/LeasePolicy"
+          },
+          "tenant_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tenant_override": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LeasePolicyOverride"
+              }
+            ],
+            "nullable": true
+          },
+          "effective_tenant": {
+            "$ref": "#/components/schemas/LeasePolicy"
+          },
+          "effective_source": {
+            "$ref": "#/components/schemas/EffectiveSourceEnum"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeasePolicyGroupSettings"
+            }
+          }
+        },
+        "required": [
+          "baseline",
+          "effective_source",
+          "effective_tenant",
+          "groups",
+          "tenant_override",
+          "tenant_revision"
         ]
       },
       "ModeEnum": {
@@ -17996,6 +18640,109 @@
           "workspace_uuid"
         ]
       },
+      "PublicRegistrationDisposition": {
+        "type": "object",
+        "description": "Closed organizer decision vocabulary.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/PublicRegistrationDispositionActionEnum"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "PublicRegistrationDispositionActionEnum": {
+        "enum": [
+          "approve",
+          "reject"
+        ],
+        "type": "string",
+        "description": "* `approve` - approve\n* `reject` - reject"
+      },
+      "PublicRegistrationDispositionResult": {
+        "type": "object",
+        "description": "Terminal disposition result.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "disposition": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "disposition",
+          "participant_id",
+          "request_id"
+        ]
+      },
+      "PublicRegistrationRequest": {
+        "type": "object",
+        "description": "One pending request visible only to an authorized event organizer.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "disposition": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "disposition",
+          "email",
+          "id",
+          "name"
+        ]
+      },
+      "PublicRegistrationRequestListResponse": {
+        "type": "object",
+        "description": "Paginated pending-request queue.",
+        "properties": {
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicRegistrationRequest"
+            },
+            "readOnly": true
+          },
+          "total": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "requests",
+          "total"
+        ]
+      },
       "PublicScoreboardResponse": {
         "type": "object",
         "description": "Public scoreboard read surface.\n\nThe runtime returns one of two shapes: the ``{\"scoreboard_hidden\": true}``\nsentinel when the event hides its scoreboard, or the full ranking payload\n(``event_id``, ``team_mode``, ``frozen``, ``rankings``, ``bracket_rankings``,\n``brackets``). Every field is optional so this one serializer documents the\nunion without changing the view's runtime ``JsonResponse``.",
@@ -18569,7 +19316,7 @@
       },
       "RangeCleanupOutcomeResponse": {
         "type": "object",
-        "description": "Truthful range cleanup-outcome projection (#2086, ADR-062-R4).",
+        "description": "Truthful range cleanup-outcome projection (#2086, ADR-063-R4).",
         "properties": {
           "request_id": {
             "type": "string",
@@ -19169,6 +19916,41 @@
           "message"
         ]
       },
+      "ReplaceLeasePolicy": {
+        "type": "object",
+        "description": "Strict full replacement plus expected revision.",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "initial_days": {
+            "type": "integer",
+            "maximum": 36500,
+            "minimum": 1
+          },
+          "extension_days": {
+            "type": "integer",
+            "maximum": 36500,
+            "minimum": 1
+          },
+          "maximum_days": {
+            "type": "integer",
+            "maximum": 36500,
+            "minimum": 1
+          },
+          "extensions_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "extension_days",
+          "extensions_enabled",
+          "initial_days",
+          "maximum_days"
+        ]
+      },
       "ResendLoginInfoResult": {
         "type": "object",
         "description": "Confirmation returned after resending non-secret login information.",
@@ -19185,6 +19967,19 @@
         "required": [
           "id",
           "success"
+        ]
+      },
+      "ResetLeasePolicy": {
+        "type": "object",
+        "description": "Strict explicit reset command.",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "expected_revision"
         ]
       },
       "ResourceEnum": {

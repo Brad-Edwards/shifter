@@ -1,4 +1,4 @@
-"""API for the truthful range cleanup-outcome projection (#2086, ADR-062-R4).
+"""API for the truthful range cleanup-outcome projection (#2086, ADR-063-R4).
 
 Authorized by range ownership: an owner sees the distinct cleanup facts; a
 not-owned or unknown request_id is an opaque 404.

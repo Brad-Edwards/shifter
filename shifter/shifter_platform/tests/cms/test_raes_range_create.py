@@ -94,6 +94,56 @@ def test_launch_snapshots_the_configured_lease_policy_onto_the_generation(user, 
 
 
 @pytest.mark.django_db
+def test_launch_resolves_group_policy_inside_reservation_and_records_provenance(user, monkeypatch):
+    from django.contrib.auth.models import Group
+    from django.db import connection
+
+    from cms.models import MissionControlGroupLeasePolicy
+    from shared.audit import AuditAction, AuditEntityType
+    from shared.models import AuditLog
+
+    _make_source(user)
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
+    group = Group.objects.create(name="Short Lease")
+    user.groups.add(group)
+    MissionControlGroupLeasePolicy.objects.create(
+        group=group,
+        initial_days=7,
+        extension_days=3,
+        maximum_days=90,
+        extensions_enabled=True,
+    )
+    from cms.services import _range_lease as lease_module
+
+    original = lease_module.resolve_mission_control_lease_policy
+
+    def assert_transaction(owner, *, for_update=False):
+        assert connection.in_atomic_block
+        assert for_update is True
+        return original(owner, for_update=for_update)
+
+    monkeypatch.setattr(lease_module, "resolve_mission_control_lease_policy", assert_transaction)
+
+    ctx = create_raes_native_range(user, "raes-launch")
+
+    instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
+    assert instance.extension_days == 3
+    assert instance.lease_initial_days == 7
+    assert instance.lease_maximum_days == 90
+    assert instance.lease_policy_source == "group"
+    assert instance.lease_policy_tenant_revision == 0
+    assert instance.lease_policy_group_revisions == [{"group_id": group.pk, "revision": 1}]
+    audit = AuditLog.objects.get(
+        entity_type=AuditEntityType.RANGE,
+        action=AuditAction.PROVISION,
+        entity_id=instance.pk,
+    )
+    assert audit.new_state["lease_policy_source"] == "group"
+    assert audit.new_state["lease_initial_days"] == 7
+    assert audit.new_state["lease_maximum_days"] == 90
+
+
+@pytest.mark.django_db
 def test_dispatch_failure_marks_failed_and_raises(user, monkeypatch):
     _make_source(user)
 
@@ -193,11 +243,9 @@ def test_dispatch_routes_registered_raes_source(user, monkeypatch):
     routed = {}
     monkeypatch.setattr(
         "cms.services._raes_range_create._create_raes_native_range_impl",
-        lambda u, s, *, range_source=None, instantiation_purpose=None, workspace_uuid=None, enforced_deadline=None: (
-            routed.update(scenario=s, purpose=instantiation_purpose)
-        ),
+        lambda u, s, **kwargs: routed.update(scenario=s, purpose=kwargs.get("instantiation_purpose")),
     )
-    create_range_dispatch(user, "raes-x", {})
+    create_range_dispatch(user, "raes-x")
     assert routed["scenario"] == "raes-x"
     # The product router always mints live-fire authority (#1354, ADR-030-R6).
     assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE

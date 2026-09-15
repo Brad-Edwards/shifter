@@ -93,7 +93,7 @@ def destroy_participant_range(participant_id: UUID) -> dict[str, Any]:
 
     _destroy_single_range(participant, participant.user)
 
-    # Truthful outcome (ADR-062-R4): the destroy is dispatched, not verified gone.
+    # Truthful outcome (ADR-063-R4): the destroy is dispatched, not verified gone.
     # The terminal DESTROYED projection is what confirms teardown.
     return {
         "participant_id": str(participant_id),
@@ -154,7 +154,7 @@ def cleanup_event_ranges(event_id: UUID) -> dict[str, Any]:
     _cleanup_event_spares_best_effort(event_id)
 
     # Counts are teardowns *dispatched*, not verified destroyed: terminal cleanup
-    # is confirmed later by scoped provider inventory/readback (ADR-062-R4).
+    # is confirmed later by scoped provider inventory/readback (ADR-063-R4).
     return {
         "event_id": str(event_id),
         "total": dispatched + failed,
@@ -190,7 +190,7 @@ def _destroy_single_range(participant: CTFParticipant, user: User | None) -> boo
     evidence) so the participant/range/reservation linkage is retained until the
     resources are actually gone -- a reusable slot is never returned, and cleanup
     success is never reported, while unresolved resources can still own it
-    (ADR-062-R4/R5). The reconciler remains the backstop for a range whose terminal
+    (ADR-063-R4/R5). The reconciler remains the backstop for a range whose terminal
     projection never arrives.
 
     Returns the dispatch disposition: ``True`` when a destroy was dispatched,

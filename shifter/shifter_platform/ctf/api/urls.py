@@ -78,6 +78,16 @@ urlpatterns = [
         name="api_participant_list",
     ),
     path(
+        "events/<uuid:event_id>/registration-requests/",
+        organizer.PublicRegistrationRequestListView.as_view(),
+        name="api_public_registration_request_list",
+    ),
+    path(
+        "registration-requests/<uuid:request_id>/disposition/",
+        organizer.PublicRegistrationDispositionView.as_view(),
+        name="api_public_registration_request_disposition",
+    ),
+    path(
         "events/<uuid:event_id>/participants/import/",
         organizer.ParticipantImportView.as_view(),
         name="api_participant_import",

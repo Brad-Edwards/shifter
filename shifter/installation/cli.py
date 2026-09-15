@@ -65,6 +65,7 @@ from .scaffold import ScaffoldError, available_backends, scaffold_config
 
 
 def _cmd_validate(path_str: str) -> int:
+    """Validate the installation root config at ``path_str``; return the process exit code."""
     config_path = Path(path_str)
     try:
         config = load_root_config(config_path)

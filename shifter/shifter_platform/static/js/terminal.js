@@ -503,14 +503,14 @@ class TerminalManager extends TerminalLayoutBaseClass {
         if (this.layoutMode === 'tabs') {
             // Fit only active terminal (if it has one - skip RDP-only)
             const termData = this.terminals.get(this.activeTerminalUuid);
-            if (termData && termData.fitAddon) {
+            if (termData?.fitAddon) {
                 termData.fitAddon.fit();
             }
         } else {
             // Fit both split pane terminals (skip RDP-only)
             [this.leftPaneUuid, this.rightPaneUuid].forEach(uuid => {
                 const termData = this.terminals.get(uuid);
-                if (termData && termData.fitAddon) {
+                if (termData?.fitAddon) {
                     termData.fitAddon.fit();
                 }
             });

@@ -1,4 +1,4 @@
-"""Regression: CTF range teardown retains linkage/capacity until verified cleanup (#1919, ADR-062-R4/R5).
+"""Regression: CTF range teardown retains linkage/capacity until verified cleanup (#1919, ADR-063-R4/R5).
 
 Dispatch is not verified destruction: releasing capacity or clearing the linkage
 at dispatch, or on a logical DESTROYED status without scoped provider
@@ -86,3 +86,35 @@ def test_unverified_terminal_retains_capacity_and_linkage(ctf_event_active, part
     # The status projection still advances (the elif branch), only the linkage/capacity is retained.
     assert participant.range_status == ResourceStatus.DESTROYED.value
     assert released == []
+
+
+def test_destroy_single_range_skips_when_no_range_instance(ctf_event_active, participant_user, monkeypatch):
+    """No range assigned -> dispatch is skipped and reported not-dispatched (lifecycle.py:205)."""
+    dispatched: list = []
+    monkeypatch.setattr(
+        "ctf.bridges.cms_destroy_range", lambda user, range_instance_id: dispatched.append(range_instance_id)
+    )
+    participant = CTFParticipant.objects.create(
+        event=ctf_event_active,
+        user=participant_user,
+        email=participant_user.email,
+        name="racer",
+        status="active",
+        range_instance_id=None,
+        range_status="",
+    )
+
+    assert lifecycle._destroy_single_range(participant, participant_user) is False
+    assert dispatched == []
+
+
+def test_destroy_single_range_skips_when_no_owner(ctf_event_active, participant_user, monkeypatch):
+    """A range with no owning user cannot be dispatched (lifecycle.py:208)."""
+    dispatched: list = []
+    monkeypatch.setattr(
+        "ctf.bridges.cms_destroy_range", lambda user, range_instance_id: dispatched.append(range_instance_id)
+    )
+    participant = _participant(ctf_event_active, participant_user)  # range_instance_id=42
+
+    assert lifecycle._destroy_single_range(participant, None) is False
+    assert dispatched == []

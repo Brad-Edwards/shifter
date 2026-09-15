@@ -24,6 +24,7 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#681` (PLAT-202: Per-Range LLM Access Management)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2118` (Policy catalog and shared access contracts)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2139` (Persist sharing bindings and resolve overlapping policies)
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2140` (Project sharing membership and fence authority changes)
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/architecture.md`
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/canonical-json-v1-vector.json`
 - IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/models.py`
@@ -42,12 +43,29 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → CONFIG `shifter/shifter_platform/config/_model_access_settings.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_sharing.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_sharing.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/authority.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/authority_port.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_model_access_sharing.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/model_access_sharing.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/config/model_access_sharing.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/workspaces/services/_model_access.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/management/services.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/signals.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/signals.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/migrations/0057_model_access_sharing.py`
 - IMPLEMENTS → CODE `scripts/gcp/render_runtime_env.py`
 - IMPLEMENTS → CODE `scripts/bootstrap/aws_eks.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_contract.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_effective_policy.py`
 - TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_sharing.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_access_authority_postgres.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_access_range_pagination.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_sharing_authority_invalidation.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_model_access_sharing.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_model_access_sharing.py`
+- TESTS → TEST `shifter/shifter_platform/tests/config/test_model_access_sharing.py`
+- TESTS → TEST `shifter/shifter_platform/tests/management/test_model_access_authority.py`
+- TESTS → TEST `shifter/shifter_platform/tests/workspaces/test_services.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_allocation.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_provider.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_schema_publication.py`
@@ -86,3 +104,22 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_types.py`
 - IMPLEMENTS → CODE `shifter/engine/provisioner/raes_gcp_apply.py`
 - IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_model_broker.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2119` (M02: enforcing scenario/event model admission)
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/admission.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/models/scenarios.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/scenarios/model_needs.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/migrations/0046_scenariomodelneeds.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/models/event.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/migrations/0058_ctfevent_model_demand.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/range/capacity.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_admission.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_model_admission.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_raes_range_create.py`
+- IMPLEMENTS → DOCUMENTATION `docs/ops/model-access.md`
+- IMPLEMENTS → DOCUMENTATION `docs/adr/060-model-access-allocation-accounting.md`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_admission.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_scenario_model_needs.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_model_demand_declaration.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_admission.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_launch_model_admission.py`

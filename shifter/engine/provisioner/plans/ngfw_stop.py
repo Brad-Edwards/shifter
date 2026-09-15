@@ -49,7 +49,8 @@ class NGFWStopPlan:
         ),
     ]
 
-    def get_context(self, instance: Any) -> dict[str, Any]:
+    @staticmethod
+    def get_context(instance: object) -> dict[str, Any]:
         """Get context variables for NGFW stop.
 
         Args:

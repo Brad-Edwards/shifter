@@ -59,6 +59,7 @@ from ._retry_binding import PublicOperationRetryBinding, RetryBindingStatus
 from ._sharing import (
     AllocationGroup,
     MembershipProjection,
+    SharingAuthorityFence,
     SharingBindingRecord,
     SharingBindingRevision,
     SharingPoolRecord,
@@ -103,6 +104,7 @@ __all__ = [
     "ReceiptVerifierRegistration",
     "Request",
     "RetryBindingStatus",
+    "SharingAuthorityFence",
     "SharingBindingRecord",
     "SharingBindingRevision",
     "SharingPoolRecord",

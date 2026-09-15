@@ -12,6 +12,8 @@ the Sonar line budget without changing the plan's public surface.
 # direct in-container writes are not durable. extra_hosts keeps the restricted
 # OAuth and Vertex routes present across ordinary container restarts.
 GCP_AGENT_COMPOSE_BLOCK = (
+    "\n    volumes:"
+    "\n      - /opt/polaris/libexec/polaris-splice-credential.py:/usr/local/libexec/polaris-splice-credential.py:ro"
     "\n    extra_hosts:"
     '\n      - "oauth2.googleapis.com:199.36.153.8"'
     '\n      - "aiplatform.googleapis.com:199.36.153.8"'

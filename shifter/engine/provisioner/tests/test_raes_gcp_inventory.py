@@ -1,4 +1,4 @@
-"""Post-teardown provider inventory/readback of RAES range cells (#2086, ADR-062-R4/R5)."""
+"""Post-teardown provider inventory/readback of RAES range cells (#2086, ADR-063-R4/R5)."""
 
 from __future__ import annotations
 

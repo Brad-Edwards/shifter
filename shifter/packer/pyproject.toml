@@ -43,7 +43,7 @@ indent-style = "space"
 pythonpath = [".", "../shifter_platform"]
 
 [tool.coverage.run]
-source = ["preparation"]
+source = ["preparation", "files"]
 omit = ["tests/*", "*/tests/*"]
 
 [tool.coverage.report]

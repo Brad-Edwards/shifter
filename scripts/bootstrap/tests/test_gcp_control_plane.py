@@ -476,6 +476,32 @@ class TestResolveShifterConfigPath:
         assert "shifter.yaml" in capsys.readouterr().out
 
 
+class TestResolveHelmValuesPath:
+    def test_environment_named_file_is_preferred(self, tmp_path):
+        """gcp-dev / gcp-prod name their backend-profile values file directly."""
+        chart = tmp_path / "chart"
+        chart.mkdir()
+        (chart / "values-gcp-dev.yaml").write_text("x: 1\n")
+        config = deploy.GDCBootstrapConfig(project_id="prod-h5k4z5", environment="gcp-dev")
+
+        assert gcp_control_plane.resolve_helm_values_path(config, chart) == chart / "values-gcp-dev.yaml"
+
+    def test_tenant_environment_uses_backend_profile_file(self, tmp_path):
+        """A per-tenant environment (no env-named file) reuses values-gcp-<profile> from shifter.yaml."""
+        chart = tmp_path / "chart"
+        chart.mkdir()
+        (chart / "values-gcp-dev.yaml").write_text("x: 1\n")
+        shifter = tmp_path / "shifter.yaml"
+        shifter.write_text(
+            "version: 1\nbackend: gcp\ndeployment:\n  name: nazgul\n  domain: nazgul.keplerops.com\n  profile: dev\n"
+        )
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-wpfcav", environment="nazgul", shifter_config_path=str(shifter)
+        )
+
+        assert gcp_control_plane.resolve_helm_values_path(config, chart) == chart / "values-gcp-dev.yaml"
+
+
 class TestGcpControlPlaneSecurityInputs:
     """Tests for the bootstrap security preflight that runs before Terraform apply."""
 
@@ -2003,17 +2029,17 @@ class TestGcpBootstrapIdentityPlatform:
             tmp_path,
             "\n".join(
                 [
-                    'project_id                   = "prod-ksqdkj"',
-                    'gcp_bootstrap_admin_email    = "operator@paloaltonetworks.com"',
-                    'gcp_bootstrap_admin_password = "Galvatron7!!!"',
+                    'project_id                   = "example-gcp-project"',
+                    'gcp_bootstrap_admin_email    = "operator@example.test"',
+                    'gcp_bootstrap_admin_password = "example-admin-password"',
                     "",
                 ]
             ),
         )
 
         assert gcp_control_plane._gcp_bootstrap_creds_from_tfvars(tmp_path) == {
-            "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@paloaltonetworks.com",
-            "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
+            "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@example.test",
+            "GCP_BOOTSTRAP_ADMIN_PASSWORD": "example-admin-password",
         }
 
     def test_gcp_bootstrap_creds_from_tfvars_absent_overlay_returns_empty(self, tmp_path):

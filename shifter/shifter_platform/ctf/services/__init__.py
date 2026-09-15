@@ -88,6 +88,11 @@ from ctf.services.hint import (
     update_hint,
     use_hint,
 )
+from ctf.services.model_access_sharing import (
+    ModelAccessSelectorError,
+    classify_model_access_selected_ranges,
+    resolve_model_access_selector,
+)
 from ctf.services.participant import (
     ParticipantPasswordIssuance,
     add_participant,
@@ -105,6 +110,14 @@ from ctf.services.participant import (
     set_participant_hidden,
     set_participant_role,
     unban_participant,
+)
+from ctf.services.public_registration import (
+    approve_public_registration_request,
+    list_pending_public_registration_requests,
+    purge_expired_public_registration_requests,
+    reject_public_registration_request,
+    resolve_public_event,
+    submit_public_registration_request,
 )
 from ctf.services.range import (
     cleanup_event_ranges,
@@ -133,6 +146,7 @@ from ctf.services.submission import (
 
 __all__ = [
     "ContentRefreshResult",
+    "ModelAccessSelectorError",
     "ParticipantPasswordIssuance",
     "activate_event",
     "active_event_summary",
@@ -141,6 +155,7 @@ __all__ = [
     "add_hint",
     "add_participant",
     "add_prerequisite",
+    "approve_public_registration_request",
     "archive_event",
     "assert_event_content_hydration_ready",
     "assign_participant_bracket",
@@ -150,6 +165,7 @@ __all__ = [
     "calculate_score",
     "cancel_event",
     "check_prerequisites_met",
+    "classify_model_access_selected_ranges",
     "cleanup_event_ranges",
     "complete_event",
     "create_bracket",
@@ -198,10 +214,13 @@ __all__ = [
     "list_brackets",
     "list_challenges_for_event",
     "list_participants_for_event",
+    "list_pending_public_registration_requests",
     "open_registration",
     "pause_event",
     "provision_participant_range",
+    "purge_expired_public_registration_requests",
     "refresh_event_ctf_content",
+    "reject_public_registration_request",
     "remove_challenge_file",
     "remove_flag",
     "remove_hint",
@@ -211,6 +230,8 @@ __all__ = [
     "request_event_provisioning",
     "resend_login_info",
     "reset_participant_password",
+    "resolve_model_access_selector",
+    "resolve_public_event",
     "resolve_scenario_ctf_content",
     "resume_event",
     "revoke_award",
@@ -219,6 +240,7 @@ __all__ = [
     "set_participant_role",
     "start_event",
     "submit_flag",
+    "submit_public_registration_request",
     "unban_participant",
     "update_bracket",
     "update_challenge",

@@ -227,7 +227,7 @@ class TestForceDeleteEvent:
 
         DB-backed: the destroy is dispatched (``cms_destroy_range`` mocked so no
         network boundary is crossed) and counted as a dispatch, not verified
-        destruction. A no-op skip (no owner) is not counted (#2086, ADR-062-R4).
+        destruction. A no-op skip (no owner) is not counted (#2086, ADR-063-R4).
         """
         from ctf.models import CTFEvent, CTFParticipant
         from ctf.services.event import force_delete_event

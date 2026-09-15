@@ -109,7 +109,7 @@ class RaesRuntimeSnapshotListView(_RaesRecordListView):
 
 
 class RangeCleanupOutcomeView(MissionControlReadAPIView):
-    """``GET`` the truthful cleanup outcome for a range (#2086, ADR-062-R4).
+    """``GET`` the truthful cleanup outcome for a range (#2086, ADR-063-R4).
 
     Authorizes range ownership before disclosing anything (a not-owned or unknown
     request_id is an opaque 404), then reports the distinct cleanup facts and any

@@ -101,10 +101,38 @@ the locked transaction. Missing, unknown, foreign-deployment or stale evidence
 denies publication and effective-policy resolution without revealing whether a
 foreign object exists.
 
+M20 realizes this boundary as one closed `SharingAuthorityEvidence` projection.
+Selector membership, per-subject live authorization, per-atom publisher
+authority and per-group funded eligibility retain independent owner-qualified
+references and revisions. Engine stores those facts but never discovers them:
+the composition root resolves each atom through CTF, CMS, Management or
+Workspaces, unions bounded named collections, then projects and publishes in
+one transaction. A conflicting same-revision projection rejects, an exact replay
+is idempotent, and a lower revision cannot replace current evidence. Automatic
+range populations use UUID keyset pages of at most 1,000 rows; every page carries
+the complete assessment count, and publication retains that count with the
+projection and immutable binding revision. A changed count or broken continuation
+fails the assessment instead of publishing a partial collection.
+
+Database writers use one lock hierarchy: pool and binding records when present,
+then the selector's membership projection, then authority fences ordered by the
+complete owner-qualified reference. Projection refresh locks the projection
+before refreshing fences. Publication and drain follow the same order, so a
+concurrent refresh cannot hold a fence while waiting on a projection held by the
+publisher.
+
+CTF cohorts are stable event-owned UUID records, not aliases for brackets,
+capacity `cohort_size`, labels or names. Participants and explicitly assigned
+spares may carry cohort membership; team/cohort `include_spares` includes only
+spares explicitly assigned to that team/cohort, while event `include_spares`
+uses that event's active spare pool. Realized subjects use canonical Engine
+range UUIDs and pre-realization snapshot members retain stable CTF draw UUIDs.
+
 Selectors are closed, typed data. Initial bounds are 32 atomic selectors per
 collection and 1,000 explicit user/range/participant IDs per binding.
 Automatic selectors may match a larger deployment population, resolved with
-bounded pagination and an explicit assessment count. Support bounded union
+bounded keyset pagination and an explicit assessment count; the 1,000 bound is
+per page, not a cap on the automatic result. Support bounded union
 with set semantics; no recursively nested groups, arbitrary query language,
 SQL, executable expression or wildcard provider selector. A user-group
 adapter's canonical membership semantics remain owned by that identity

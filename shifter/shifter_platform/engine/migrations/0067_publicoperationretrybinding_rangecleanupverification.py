@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("engine", "0065_merge_20260914_0740"),
+        ("engine", "0066_merge_sharing_authority_artifact_preparation"),
     ]
 
     operations = [

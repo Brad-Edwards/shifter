@@ -10,6 +10,7 @@ from uuid import UUID
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.urls import reverse
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -263,6 +264,16 @@ def challenge_detail(request: HttpRequest, challenge_id: UUID) -> HttpResponse:
         "attempt_limit_mode": participant.event.attempt_limit_mode,
         "timeout_retry_after": timeout_retry_after,
         "show_solution": bool(challenge.solution and participant.event.status in ("ended", "archived")),
+        # Client bootstrap payload rendered via ``json_script`` so the template
+        # stays within SonarCloud's inline-JS length limit; ctf-challenge-detail.js
+        # reads it from the ``#ctf-challenge-detail-config`` element.
+        "challenge_detail_config": {
+            "submitFlagUrl": reverse("v1:ctf:api_submit_flag", kwargs={"challenge_id": challenge.pk}),
+            "useHintUrl": reverse("v1:ctf:api_use_hint", kwargs={"challenge_id": challenge.pk}),
+            "rateChallengeUrl": reverse("v1:ctf:api_rate_challenge", kwargs={"challenge_id": challenge.pk}),
+            "challengePoints": challenge.points or 0,
+            "totalHintPenalty": total_hint_penalty or 0,
+        },
     }
 
     # Add rating context
