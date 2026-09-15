@@ -226,7 +226,7 @@ class LaunchRangeView(MissionControlAPIView):
     ) -> Response:
         """Create a range and record the launch audit event."""
         try:
-            range_ctx = cms_create_range(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
+            range_ctx = cms_create_range(user, scenario, workspace_uuid=workspace_uuid)
         except CMSError as exc:
             return self._launch_failure_response(exc, user, scenario)
 

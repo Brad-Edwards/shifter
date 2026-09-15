@@ -98,7 +98,7 @@ class Command(BaseCommand):
 
     def _launch(self, user: User, scenario: str) -> UUID:
         """Launch the RAES package through the product dispatch (routes to native)."""
-        context = cms_services.create_range_dispatch(user, scenario, {}, range_source=RangeSource.MISSION_CONTROL)
+        context = cms_services.create_range_dispatch(user, scenario, range_source=RangeSource.MISSION_CONTROL)
         if context.request_id is None:
             raise CommandError("launch returned no request_id")
         request_id = UUID(str(context.request_id))

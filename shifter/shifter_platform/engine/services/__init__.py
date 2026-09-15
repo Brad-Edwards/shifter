@@ -35,6 +35,7 @@ from ._capacity_plan import (
 )
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
+from ._model_admission import admit_range_model_access
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
 from ._preparation_adapters import (
@@ -178,6 +179,7 @@ __all__ = (
     "activate_preparation_grant",
     "active_generation_count",
     "admit_range_capacity",
+    "admit_range_model_access",
     "admit_warm_generation_capacity",
     "apply_pending_operation_results",
     "assess_declared_event_capacity",
