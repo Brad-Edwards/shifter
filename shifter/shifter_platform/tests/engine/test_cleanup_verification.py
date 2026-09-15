@@ -69,6 +69,16 @@ def _binding(request_id, *, expired):
     )
 
 
+def test_cleanup_verification_str_names_request_and_outcome():
+    from engine.models import RangeCleanupVerification
+
+    request_id = uuid4()
+    row = RangeCleanupVerification(request_id=request_id, outcome=CleanupVerificationOutcome.VERIFIED_ABSENT.value)
+    rendered = str(row)
+    assert str(request_id) in rendered
+    assert CleanupVerificationOutcome.VERIFIED_ABSENT.value in rendered
+
+
 def test_prune_command_removes_only_verified_expired_bindings():
     verified = uuid4()
     _binding(verified, expired=True)

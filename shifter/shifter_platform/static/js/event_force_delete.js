@@ -20,3 +20,8 @@ if (document.readyState === 'loading') {
 } else {
     initEventForceDelete();
 }
+
+// Expose for testing
+if (typeof module !== 'undefined' && module.exports) { // eslint-disable-line no-undef
+    module.exports = { initEventForceDelete: initEventForceDelete }; // eslint-disable-line no-undef
+}

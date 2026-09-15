@@ -187,8 +187,8 @@
 {% endblock %}
 {% block extra_js %}
     <div id="scoreboard-config"
-         data-scoreboard-url="{% url 'ctf:api_scoreboard' event_id=event.pk %}{% if selected_bracket %}?bracket={{ selected_bracket.id }}{% endif %}"
-         data-solve-history-url="{% if participant %}{% url 'ctf:participant_solve_history' participant_id=participant.pk %}{% endif %}"
+         data-scoreboard-url="{{ scoreboard_url }}"
+         data-solve-history-url="{{ solve_history_url }}"
          data-participant-id="{{ participant_id }}"
          hidden></div>
     <script src="{% static 'js/scoreboard.js' %}" defer></script>

@@ -7,8 +7,8 @@
 // #ctf-range-list-config element's data-* attributes.
 
 document.addEventListener('DOMContentLoaded', function () {
-    var cfg = document.getElementById('ctf-range-list-config').dataset;
-    var manager = new CTFRangeManager({
+    const cfg = document.getElementById('ctf-range-list-config').dataset;
+    const manager = new CTFRangeManager({
         csrfToken: cfg.csrfToken,
         provisionAllUrl: cfg.provisionAllUrl,
         rangeListUrl: cfg.rangeListUrl,

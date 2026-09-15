@@ -3,10 +3,8 @@
 Scenarios, agents, credentials, and range orchestration.
 """
 
-from typing import Any
 
-
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> object:
     """Lazy import for CMS public API.
 
     Defers imports until first access to avoid circular import issues

@@ -93,7 +93,7 @@ function initCliButton() {
 
             // Open in new tab and check if it was blocked
             const popup = globalThis.open(data.url, '_blank');
-            if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+            if (!popup || popup.closed || popup.closed === undefined) {
                 // Popup was blocked
                 const popupMessage = [
                     'Popup blocked. Click OK to try again.',

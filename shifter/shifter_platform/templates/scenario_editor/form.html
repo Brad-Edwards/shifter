@@ -154,12 +154,10 @@
             </button>
             {% if mode == 'edit' %}
                 <a href="{% url 'scenario_editor:detail' scenario_id=scenario.id %}"
-                   class="btn btn-secondary"
-                   aria-label="{% trans 'Cancel and return to scenario' %}">{% trans "Cancel" %}</a>
+                   class="btn btn-secondary">{% trans "Cancel" %}</a>
             {% else %}
                 <a href="{% url 'scenario_editor:list' %}"
-                   class="btn btn-secondary"
-                   aria-label="{% trans 'Cancel and return to scenario list' %}">{% trans "Cancel" %}</a>
+                   class="btn btn-secondary">{% trans "Cancel" %}</a>
             {% endif %}
         </div>
     </form>

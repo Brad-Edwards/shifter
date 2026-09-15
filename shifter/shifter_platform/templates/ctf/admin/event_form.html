@@ -367,13 +367,11 @@
             {% if is_edit %}
                 <a id="cancel-link"
                    href="{% url 'ctf:admin_event_detail' event_id=event_id %}"
-                   class="btn btn-cancel"
-                   aria-label="{% trans 'Cancel and return to event' %}">{% trans "Cancel" %}</a>
+                   class="btn btn-cancel">{% trans "Cancel" %}</a>
             {% else %}
                 <a id="cancel-link"
                    href="{% url 'ctf:admin_event_list' %}"
-                   class="btn btn-cancel"
-                   aria-label="{% trans 'Cancel and return to event list' %}">{% trans "Cancel" %}</a>
+                   class="btn btn-cancel">{% trans "Cancel" %}</a>
             {% endif %}
             <button type="button" class="btn btn-primary" id="submit-btn">
                 {% if is_edit %}

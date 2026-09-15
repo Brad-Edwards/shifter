@@ -24,18 +24,11 @@
 
 import { z } from "zod";
 
-import {
-  PolicyError,
-  Policy,
-  parsePolicy,
-  loadPolicy,
-  profileFromEnv,
-} from "./policy-config.js";
+import { PolicyError, Policy } from "./policy-config.js";
 import {
   idempotencyCache,
   idempotencyInFlight,
   registeredDescriptorNames,
-  _resetGateCachesForTests,
 } from "./policy-gate-state.js";
 import {
   _fingerprintArgs,
@@ -57,9 +50,6 @@ import {
   _augmentSchemaWithControlKeys,
 } from "./policy-tool-policy.js";
 import {
-  validateApexCoverage,
-  consumeApexToken,
-  resolveSecretHandle,
   _enforceRateCap,
   _enforceApexApproval,
   _storePlan,
@@ -70,17 +60,20 @@ import {
   _reapExpiredSecretHandles,
 } from "./policy-gates.js";
 
+// Re-export the names that other modules import from `./policy.js` but that
+// this module does not itself use. `export … from` keeps them as pure
+// re-exports (javascript:S7763) without an intermediate local binding.
+export { parsePolicy, loadPolicy, profileFromEnv } from "./policy-config.js";
+export { _resetGateCachesForTests } from "./policy-gate-state.js";
 export {
-  PolicyError,
-  Policy,
-  parsePolicy,
-  loadPolicy,
-  profileFromEnv,
   validateApexCoverage,
   consumeApexToken,
   resolveSecretHandle,
-  _resetGateCachesForTests,
-};
+} from "./policy-gates.js";
+
+// PolicyError and Policy are re-exported AND used within this module (thrown /
+// `instanceof`), so they remain imported above and exported as local bindings.
+export { PolicyError, Policy };
 
 // ===========================================================================
 // Phase 2 gates (#1198)

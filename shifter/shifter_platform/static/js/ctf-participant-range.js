@@ -43,7 +43,7 @@ function pollRdpSession(statusUrl, attemptsRemaining) {
                     throw new Error('RDP session request timed out');
                 }
                 return new Promise(function (resolve) {
-                    window.setTimeout(resolve, 1000);
+                    globalThis.setTimeout(resolve, 1000);
                 }).then(function () {
                     return pollRdpSession(statusUrl, attemptsRemaining - 1);
                 });

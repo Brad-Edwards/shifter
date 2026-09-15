@@ -323,22 +323,7 @@
     </template>
 {% endblock %}
 {% block extra_js %}
-    <script id="dashboard-config" type="application/json">
-        {
-            "csrfToken": "{{ csrf_token }}",
-            "rangeUrl": "{% url 'v1:mission_control:range-current' %}",
-            "launchUrl": "{% url 'v1:mission_control:range-launch' %}",
-            "cancelUrl": "{% url 'v1:mission_control:range-cancel' %}",
-            "destroyUrl": "{% url 'v1:mission_control:range-destroy' %}",
-            "pauseUrl": "{% url 'v1:mission_control:range-pause' %}",
-            "resumeUrl": "{% url 'v1:mission_control:range-resume' %}",
-            "agentsUrl": "{% url 'v1:mission_control:agents-list' %}",
-            "scenariosUrl": "{% url 'v1:mission_control:scenarios-list' %}",
-            "loginUrl": "{% url 'dashboard_router' %}",
-            "provisioningTimeoutMs": {{ provisioning_timeout_ms }},
-            "viewOnly": {{ is_ctf_participant_only|yesno:"true,false" }}
-        }
-    </script>
+    {{ dashboard_config|json_script:"dashboard-config" }}
     <script src="{% static 'js/dashboard-connection.js' %}" defer></script>
     <script src="{% static 'js/dashboard-tiles.js' %}" defer></script>
     <script src="{% static 'js/dashboard-launch.js' %}" defer></script>

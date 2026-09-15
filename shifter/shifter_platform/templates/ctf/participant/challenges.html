@@ -55,7 +55,6 @@
                 {% for tag in event_tags %}
                     {% if category_filter %}
                         <a href="{{ challenges_url }}?tag={{ tag.name|urlencode }}&category={{ category_filter }}"
-                           aria-label="{% trans 'Filter by tag, keeping category' %}"
                            class="btn btn-sm
                                   {% if tag_filter == tag.name %}
                                       btn-secondary
@@ -67,7 +66,6 @@
                         </a>
                     {% else %}
                         <a href="{{ challenges_url }}?tag={{ tag.name|urlencode }}"
-                           aria-label="{% trans 'Filter by tag' %}"
                            class="btn btn-sm
                                   {% if tag_filter == tag.name %}
                                       btn-secondary
@@ -87,7 +85,6 @@
                 <small class="text-muted me-2">{% trans "Topics:" %}</small>
                 {% if category_filter and tag_filter %}
                     <a href="{{ challenges_url }}?category={{ category_filter }}&tag={{ tag_filter|urlencode }}"
-                       aria-label="{% trans 'Show all topics, keeping category and tag' %}"
                        class="btn btn-sm
                               {% if not topic_filter %}btn-info{% else %}btn-outline-info{% endif %}
                               me-1 mb-1">
@@ -95,7 +92,6 @@
                     </a>
                 {% elif category_filter %}
                     <a href="{{ challenges_url }}?category={{ category_filter }}"
-                       aria-label="{% trans 'Show all topics, keeping category' %}"
                        class="btn btn-sm
                               {% if not topic_filter %}btn-info{% else %}btn-outline-info{% endif %}
                               me-1 mb-1">
@@ -103,7 +99,6 @@
                     </a>
                 {% elif tag_filter %}
                     <a href="{{ challenges_url }}?tag={{ tag_filter|urlencode }}"
-                       aria-label="{% trans 'Show all topics, keeping tag' %}"
                        class="btn btn-sm
                               {% if not topic_filter %}btn-info{% else %}btn-outline-info{% endif %}
                               me-1 mb-1">
@@ -111,7 +106,6 @@
                     </a>
                 {% else %}
                     <a href="{{ challenges_url }}"
-                       aria-label="{% trans 'Show all topics' %}"
                        class="btn btn-sm
                               {% if not topic_filter %}btn-info{% else %}btn-outline-info{% endif %}
                               me-1 mb-1">
@@ -122,7 +116,6 @@
                     {% with topic_name=topic.name|urlencode tag_name=tag_filter|urlencode c=category_filter %}
                     {% if category_filter and tag_filter %}
                         <a href="{{ challenges_url }}?topic={{ topic_name }}&category={{ c }}&tag={{ tag_name }}"
-                           aria-label="{% trans 'Filter by topic, keeping category and tag' %}"
                            class="btn btn-sm
                                   {% if topic_filter == topic.name %}btn-info{% else %}btn-outline-info{% endif %}
                                   me-1 mb-1">
@@ -130,7 +123,6 @@
                         </a>
                     {% elif category_filter %}
                         <a href="{{ challenges_url }}?topic={{ topic_name }}&category={{ c }}"
-                           aria-label="{% trans 'Filter by topic, keeping category' %}"
                            class="btn btn-sm
                                   {% if topic_filter == topic.name %}btn-info{% else %}btn-outline-info{% endif %}
                                   me-1 mb-1">
@@ -138,7 +130,6 @@
                         </a>
                     {% elif tag_filter %}
                         <a href="{{ challenges_url }}?topic={{ topic_name }}&tag={{ tag_name }}"
-                           aria-label="{% trans 'Filter by topic, keeping tag' %}"
                            class="btn btn-sm
                                   {% if topic_filter == topic.name %}btn-info{% else %}btn-outline-info{% endif %}
                                   me-1 mb-1">
@@ -146,7 +137,6 @@
                         </a>
                     {% else %}
                         <a href="{{ challenges_url }}?topic={{ topic_name }}"
-                           aria-label="{% trans 'Filter by topic' %}"
                            class="btn btn-sm
                                   {% if topic_filter == topic.name %}btn-info{% else %}btn-outline-info{% endif %}
                                   me-1 mb-1">

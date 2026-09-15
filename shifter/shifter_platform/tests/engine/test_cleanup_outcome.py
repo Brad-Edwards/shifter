@@ -16,6 +16,7 @@ from django.contrib.auth import get_user_model
 
 from engine.models import (
     CleanupVerificationOutcome,
+    InterruptState,
     ProvisionerLaunchIntent,
     ProvisionerLaunchStatus,
     Range,
@@ -130,3 +131,32 @@ def test_dead_lettered_dispatch_adds_obligation():
     outcome = project_range_cleanup_outcome(request_id)
     assert outcome.cleanup == CLEANUP_PENDING
     assert any(o.code == "dispatch_dead_lettered" for o in outcome.residual_obligations)
+
+
+def test_residuals_found_without_categories_still_flags_a_residual():
+    # RESIDUALS_FOUND with no enumerated categories must still record a residual
+    # obligation (absence is not proven), not silently drop to an empty success.
+    request_id = _range(Range.Status.DESTROYED)
+    _verify(request_id, CleanupVerificationOutcome.RESIDUALS_FOUND.value, residuals=[])
+    outcome = project_range_cleanup_outcome(request_id)
+    assert outcome.cleanup == CLEANUP_UNKNOWN
+    assert any(
+        o.code == "residual_resource" and "found residual resources" in o.detail for o in outcome.residual_obligations
+    )
+
+
+def test_interrupt_exhausted_adds_obligation():
+    operation_id = uuid4()
+    request_id = _range(Range.Status.DESTROYING, operation_id=operation_id)
+    from django.utils import timezone
+
+    ProvisionerLaunchIntent.objects.create(
+        operation_id=operation_id,
+        idempotency_key=str(uuid4()),
+        payload={"version": 1, "resource": "raes-range", "operation": "provision", "request_id": str(request_id)},
+        status=ProvisionerLaunchStatus.RUNNING,
+        interrupt_state=InterruptState.EXHAUSTED,
+        next_attempt_at=timezone.now(),
+    )
+    outcome = project_range_cleanup_outcome(request_id)
+    assert any(o.code == "interrupt_exhausted" for o in outcome.residual_obligations)

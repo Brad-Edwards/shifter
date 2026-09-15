@@ -446,14 +446,6 @@
     </div>
 {% endblock %}
 {% block extra_js %}
-    <script id="ctf-challenge-detail-config" type="application/json">
-    {
-        "submitFlagUrl": "{% url 'v1:ctf:api_submit_flag' challenge_id=challenge.pk %}",
-        "useHintUrl": "{% url 'v1:ctf:api_use_hint' challenge_id=challenge.pk %}",
-        "rateChallengeUrl": "{% url 'v1:ctf:api_rate_challenge' challenge_id=challenge.pk %}",
-        "challengePoints": {{ challenge.points|default:0 }},
-        "totalHintPenalty": {{ total_hint_penalty|default:0 }}
-    }
-    </script>
+    {{ challenge_detail_config|json_script:"ctf-challenge-detail-config" }}
     <script src="{% static 'js/ctf-challenge-detail.js' %}" defer></script>
 {% endblock %}

@@ -226,7 +226,7 @@ class DashboardConnectionBase {
             }
 
             const data = await this._fetchJson(this.rangeUrl, 'Status poll failed');
-            if (!data || !data.range) return;
+            if (!data?.range) return;
 
             const polledStatus = data.range.status;
 

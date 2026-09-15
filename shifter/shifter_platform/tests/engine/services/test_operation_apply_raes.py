@@ -26,10 +26,11 @@ from engine.models import (
     OperationResultInbox,
     ProvisionerLaunchIntent,
     Range,
+    RangeCleanupVerification,
     RangeEventOutbox,
     Request,
 )
-from engine.services import apply_pending_operation_results
+from engine.services import apply_pending_operation_results, is_cleanup_verified_absent
 from shared.audit import bind_audit_writer, get_audit_writer, reset_audit_writer
 from shared.enums import ResourceStatus
 from shared.models import RaesOperationRecord
@@ -328,6 +329,34 @@ class TestDestroyLifecycle:
         assert _disposition(row) == OperationResultDisposition.APPLIED
         assert fx.range.status == ResourceStatus.DESTROYED.value
         assert RangeEventOutbox.objects.count() == 1
+
+    def test_terminal_destroyed_records_scoped_cleanup_inventory_evidence(self):
+        # A terminal destroy carrying provider inventory/readback evidence records
+        # a RangeCleanupVerification BEFORE the DESTROYED transition, so pruning and
+        # verified_terminal gate on it, not the logical status (#2086, ADR-063-R4/R5).
+        fx = _Fixture(operation="destroy", status=ResourceStatus.DESTROYING.value)
+        row = fx.seed(
+            ResultStep.RAES_TERMINAL_DESTROYED,
+            {
+                "raes_status": RAES_STATE_SUCCEEDED,
+                "cleanup_inventory": {
+                    "outcome": "VERIFIED_ABSENT",
+                    "residual_categories": [],
+                    "scope": {"project": "proj-x", "categories": ["instances"]},
+                },
+            },
+        )
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        assert _disposition(row) == OperationResultDisposition.APPLIED
+        assert fx.range.status == ResourceStatus.DESTROYED.value
+        evidence = RangeCleanupVerification.objects.get(request_id=fx.request_id)
+        assert evidence.outcome == "VERIFIED_ABSENT"
+        assert str(evidence.operation_id) == str(fx.operation_id)
+        assert evidence.scope == {"project": "proj-x", "categories": ["instances"]}
+        assert is_cleanup_verified_absent(fx.request_id) is True
 
 
 class TestFailure:

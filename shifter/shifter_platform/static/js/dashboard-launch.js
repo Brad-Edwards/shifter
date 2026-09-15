@@ -181,7 +181,7 @@ class DashboardLaunchBase extends DashboardTilesBaseClass {
         }
 
         const data = await this._fetchJson(scenariosUrl, 'Failed to load scenarios');
-        if (!data || !data.scenarios) {
+        if (!data?.scenarios) {
             return;
         }
 

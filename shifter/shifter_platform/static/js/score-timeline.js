@@ -98,3 +98,8 @@ function initScoreTimeline(canvasId, apiUrl) {
             console.error("Failed to load score timeline:", err);
         });
 }
+
+// Expose for testing (browsers ignore this; module is undefined there).
+if (typeof module !== 'undefined' && module.exports) { // eslint-disable-line no-undef
+    module.exports = { initScoreTimeline: initScoreTimeline }; // eslint-disable-line no-undef
+}

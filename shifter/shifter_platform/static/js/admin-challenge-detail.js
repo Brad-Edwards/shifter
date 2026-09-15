@@ -107,8 +107,8 @@ function removePrerequisite(prereqId) {
 
 function addHint() {
     const text = document.getElementById('new-hint-text').value.trim();
-    const penalty = parseInt(document.getElementById('new-hint-penalty').value, 10) || 0;
-    const order = parseInt(document.getElementById('new-hint-order').value, 10) || 0;
+    const penalty = Number.parseInt(document.getElementById('new-hint-penalty').value, 10) || 0;
+    const order = Number.parseInt(document.getElementById('new-hint-order').value, 10) || 0;
     if (!text) { alert('Hint text is required.'); return; }
     postJson(config.addHintUrl, { text: text, penalty: penalty, order: order })
         .then(function (r) { return r.json(); })

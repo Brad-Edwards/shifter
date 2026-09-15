@@ -12,6 +12,12 @@ var solveHistoryUrl = "";
 var scoreboardUrl = "";
 var participantId = "";
 
+function clearChildren(el) {
+    while (el.firstChild) {
+        el.firstChild.remove();
+    }
+}
+
 function refreshScoreboard() {
     var btn = document.getElementById('refresh-btn');
 
@@ -35,126 +41,146 @@ function refreshScoreboard() {
     fetchScoreboard();
 }
 
+// Organizer hid the scoreboard mid-event: stop polling, clear the table,
+// and show a placeholder banner.
+function showHiddenBanner() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+    var tbody = document.getElementById('scoreboard-body');
+    if (tbody) { clearChildren(tbody); }
+    var table = document.getElementById('scoreboard-table');
+    if (table) { table.style.display = 'none'; }
+    if (!document.getElementById('hidden-banner')) {
+        var container = document.querySelector('.container-fluid');
+        var hiddenDiv = document.createElement('div');
+        hiddenDiv.id = 'hidden-banner';
+        hiddenDiv.className = 'card';
+        var body = document.createElement('div');
+        body.className = 'card-body text-center py-5';
+        var h5 = document.createElement('h5');
+        h5.className = 'text-muted mb-2';
+        h5.textContent = 'Scoreboard Hidden';
+        var p = document.createElement('p');
+        p.className = 'text-muted mb-0';
+        p.textContent = 'The scoreboard is not yet available. The organizer will make it visible when ready.';
+        body.appendChild(h5);
+        body.appendChild(p);
+        hiddenDiv.appendChild(body);
+        container.appendChild(hiddenDiv);
+    }
+    var btn = document.getElementById('refresh-btn');
+    if (btn) btn.style.display = 'none';
+}
+
+function updateFreezeBanner(frozen) {
+    var banner = document.getElementById('freeze-banner');
+    if (frozen && !banner) {
+        banner = document.createElement('div');
+        banner.id = 'freeze-banner';
+        banner.className = 'alert alert-info mb-4';
+        banner.textContent = 'Scoreboard is now frozen. Your own score continues to update.';
+        var container = document.querySelector('.container-fluid');
+        var card = container.querySelector('.card');
+        card.before(banner);
+    }
+    if (banner) {
+        banner.style.display = frozen ? '' : 'none';
+    }
+}
+
 function fetchScoreboard() {
-    var url = scoreboardUrl;
-    fetch(url)
+    return fetch(scoreboardUrl)
     .then(function(response) { return response.json(); })
     .then(function(data) {
         if (data.scoreboard_hidden) {
-            // Organizer hid the scoreboard mid-event — stop polling and show message
-            if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; }
-            var tbody = document.getElementById('scoreboard-body');
-            if (tbody) { while (tbody.firstChild) { tbody.removeChild(tbody.firstChild); } }
-            var table = document.getElementById('scoreboard-table');
-            if (table) { table.style.display = 'none'; }
-            var container = document.querySelector('.container-fluid');
-            if (!document.getElementById('hidden-banner')) {
-                var hiddenDiv = document.createElement('div');
-                hiddenDiv.id = 'hidden-banner';
-                hiddenDiv.className = 'card';
-                var body = document.createElement('div');
-                body.className = 'card-body text-center py-5';
-                var h5 = document.createElement('h5');
-                h5.className = 'text-muted mb-2';
-                h5.textContent = 'Scoreboard Hidden';
-                var p = document.createElement('p');
-                p.className = 'text-muted mb-0';
-                p.textContent = 'The scoreboard is not yet available. The organizer will make it visible when ready.';
-                body.appendChild(h5);
-                body.appendChild(p);
-                hiddenDiv.appendChild(body);
-                container.appendChild(hiddenDiv);
-            }
-            var btn = document.getElementById('refresh-btn');
-            if (btn) btn.style.display = 'none';
+            showHiddenBanner();
             return;
         }
         if (data.rankings) {
             rebuildScoreboardTable(data.rankings, data.team_mode);
         }
-        var banner = document.getElementById('freeze-banner');
-        if (data.frozen && !banner) {
-            banner = document.createElement('div');
-            banner.id = 'freeze-banner';
-            banner.className = 'alert alert-info mb-4';
-            banner.textContent = 'Scoreboard is now frozen. Your own score continues to update.';
-            container = document.querySelector('.container-fluid');
-            var card = container.querySelector('.card');
-            container.insertBefore(banner, card);
-        }
-        if (banner) {
-            banner.style.display = data.frozen ? '' : 'none';
-        }
+        updateFreezeBanner(data.frozen);
     })
     .catch(function(err) {
         console.error('Failed to refresh scoreboard:', err);
     });
 }
 
+function buildRankCell(entry) {
+    var tdRank = document.createElement('td');
+    if (entry.rank <= 3) {
+        var strong = document.createElement('strong');
+        strong.textContent = entry.rank;
+        tdRank.appendChild(strong);
+    } else {
+        tdRank.textContent = entry.rank;
+    }
+    return tdRank;
+}
+
+function buildNameCell(entry, isCurrentUser) {
+    var tdName = document.createElement('td');
+    var nameStrong = document.createElement('strong');
+    nameStrong.textContent = entry.name;
+    if (isCurrentUser && solveHistoryUrl) {
+        var nameLink = document.createElement('a');
+        nameLink.href = solveHistoryUrl;
+        nameLink.appendChild(nameStrong);
+        tdName.appendChild(nameLink);
+    } else {
+        tdName.appendChild(nameStrong);
+    }
+    if (isCurrentUser) {
+        var badge = document.createElement('span');
+        badge.className = 'badge bg-primary ms-1';
+        badge.textContent = 'You';
+        tdName.appendChild(badge);
+    }
+    return tdName;
+}
+
+function buildTextCell(value) {
+    var td = document.createElement('td');
+    td.textContent = value;
+    return td;
+}
+
+function buildStrongCell(value) {
+    var td = document.createElement('td');
+    var strong = document.createElement('strong');
+    strong.textContent = value;
+    td.appendChild(strong);
+    return td;
+}
+
+function buildScoreboardRow(entry, teamMode) {
+    var isCurrentUser = !teamMode && (String(entry.participant_id) === String(participantId));
+
+    var tr = document.createElement('tr');
+    if (isCurrentUser) tr.className = 'table-active';
+
+    tr.appendChild(buildRankCell(entry));
+    tr.appendChild(buildNameCell(entry, isCurrentUser));
+    if (teamMode) {
+        tr.appendChild(buildTextCell(entry.member_count));
+    }
+    tr.appendChild(buildStrongCell(entry.score));
+    tr.appendChild(buildTextCell(entry.solve_count));
+    tr.appendChild(buildTextCell(entry.last_solve || '-'));
+
+    return tr;
+}
+
 function rebuildScoreboardTable(rankings, teamMode) {
     var tbody = document.getElementById('scoreboard-body');
     if (!tbody) return;
 
-    while (tbody.firstChild) {
-        tbody.removeChild(tbody.firstChild);
-    }
+    clearChildren(tbody);
 
     rankings.forEach(function (entry) {
-        var isCurrentUser = !teamMode && (String(entry.participant_id) === String(participantId));
-
-        var tr = document.createElement('tr');
-        if (isCurrentUser) tr.className = 'table-active';
-
-        var tdRank = document.createElement('td');
-        if (entry.rank <= 3) {
-            var strong = document.createElement('strong');
-            strong.textContent = entry.rank;
-            tdRank.appendChild(strong);
-        } else {
-            tdRank.textContent = entry.rank;
-        }
-        tr.appendChild(tdRank);
-
-        var tdName = document.createElement('td');
-        var nameStrong = document.createElement('strong');
-        nameStrong.textContent = entry.name;
-        if (isCurrentUser && solveHistoryUrl) {
-            var nameLink = document.createElement('a');
-            nameLink.href = solveHistoryUrl;
-            nameLink.appendChild(nameStrong);
-            tdName.appendChild(nameLink);
-        } else {
-            tdName.appendChild(nameStrong);
-        }
-        if (isCurrentUser) {
-            var badge = document.createElement('span');
-            badge.className = 'badge bg-primary ms-1';
-            badge.textContent = 'You';
-            tdName.appendChild(badge);
-        }
-        tr.appendChild(tdName);
-
-        if (teamMode) {
-            var tdMembers = document.createElement('td');
-            tdMembers.textContent = entry.member_count;
-            tr.appendChild(tdMembers);
-        }
-
-        var tdScore = document.createElement('td');
-        var scoreStrong = document.createElement('strong');
-        scoreStrong.textContent = entry.score;
-        tdScore.appendChild(scoreStrong);
-        tr.appendChild(tdScore);
-
-        var tdSolves = document.createElement('td');
-        tdSolves.textContent = entry.solve_count;
-        tr.appendChild(tdSolves);
-
-        var tdLastSolve = document.createElement('td');
-        tdLastSolve.textContent = entry.last_solve || '-';
-        tr.appendChild(tdLastSolve);
-
-        tbody.appendChild(tr);
+        tbody.appendChild(buildScoreboardRow(entry, teamMode));
     });
 }
 
@@ -173,3 +199,15 @@ if (document.readyState === 'loading') {
 }
 
 globalThis.refreshScoreboard = refreshScoreboard;
+
+// Expose for testing
+if (typeof module !== 'undefined' && module.exports) { // eslint-disable-line no-undef
+    module.exports = { // eslint-disable-line no-undef
+        refreshScoreboard: refreshScoreboard,
+        fetchScoreboard: fetchScoreboard,
+        rebuildScoreboardTable: rebuildScoreboardTable,
+        showHiddenBanner: showHiddenBanner,
+        updateFreezeBanner: updateFreezeBanner,
+        initScoreboard: initScoreboard,
+    };
+}

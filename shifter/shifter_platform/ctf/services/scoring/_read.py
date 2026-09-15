@@ -32,8 +32,10 @@ from django.db.models import (
     F,
     IntegerField,
     Max,
+    Model,
     OuterRef,
     Q,
+    QuerySet,
     Subquery,
     Sum,
     Value,
@@ -322,7 +324,13 @@ def _materialized_team_scoreboard(event_id: UUID, limit: int | None) -> list[dic
     return _build_team_scoreboard_rows(teams)
 
 
-def _apply_freeze_bracket(qs, *, freeze_at, bracket_id, timestamp_field):
+def _apply_freeze_bracket[ModelT: Model](
+    qs: QuerySet[ModelT],
+    *,
+    freeze_at: datetime | None,
+    bracket_id: UUID | None,
+    timestamp_field: str,
+) -> QuerySet[ModelT]:
     """Apply the frozen-time and bracket filters shared by the scoreboard subqueries.
 
     ``timestamp_field`` is the model's own submission/award timestamp column the

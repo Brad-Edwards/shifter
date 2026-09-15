@@ -26,6 +26,9 @@ function readConfig() {
 
 const config = readConfig();
 
+const ALERT_DANGER_CLASS = 'alert alert-danger mb-3';
+const GENERIC_ERROR = 'An error occurred. Please try again.';
+
 function submitFlag(e) {
     e.preventDefault();
     const flag = document.getElementById('flag-input').value;
@@ -68,7 +71,7 @@ function submitFlag(e) {
             document.getElementById('flag-form').style.display = 'none';
             setTimeout(function () { location.reload(); }, 1500);
         } else if (response.ok) {
-            resultDiv.className = 'alert alert-danger mb-3';
+            resultDiv.className = ALERT_DANGER_CLASS;
             let msg = '<strong>Incorrect.</strong>';
             if (data.message) {
                 msg += ' ' + data.message;
@@ -78,16 +81,16 @@ function submitFlag(e) {
             btn.textContent = 'Submit';
             document.getElementById('flag-input').value = '';
         } else {
-            resultDiv.className = 'alert alert-danger mb-3';
-            resultDiv.textContent = data.error || 'An error occurred. Please try again.';
+            resultDiv.className = ALERT_DANGER_CLASS;
+            resultDiv.textContent = data.error || GENERIC_ERROR;
             btn.disabled = false;
             btn.textContent = 'Submit';
         }
     })
     .catch(function () {
         resultDiv.classList.remove('d-none');
-        resultDiv.className = 'alert alert-danger mb-3';
-        resultDiv.textContent = 'An error occurred. Please try again.';
+        resultDiv.className = ALERT_DANGER_CLASS;
+        resultDiv.textContent = GENERIC_ERROR;
         btn.disabled = false;
         btn.textContent = 'Submit';
     });
@@ -135,7 +138,7 @@ function useHint(hintId, hintPenalty) {
         }
     })
     .catch(function () {
-        alert('An error occurred. Please try again.');
+        alert(GENERIC_ERROR);
     });
 }
 
@@ -143,7 +146,7 @@ function downloadFile(apiUrl) {
     fetch(apiUrl, { headers: { 'X-CSRFToken': getCookie('csrftoken') } })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            if (data.url) { window.location.href = data.url; }
+            if (data.url) { globalThis.location.href = data.url; }
             else if (data.error) { alert(data.error); }
         })
         .catch(function () { alert('Download failed.'); });
@@ -171,7 +174,7 @@ function rateChallenge(value) {
     .then(function (data) {
         if (data.error) {
             resultDiv.classList.remove('d-none');
-            resultDiv.className = 'alert alert-danger mb-3';
+            resultDiv.className = ALERT_DANGER_CLASS;
             resultDiv.textContent = data.error;
         } else {
             resultDiv.classList.remove('d-none');
@@ -186,7 +189,7 @@ function rateChallenge(value) {
     })
     .catch(function () {
         resultDiv.classList.remove('d-none');
-        resultDiv.className = 'alert alert-danger mb-3';
+        resultDiv.className = ALERT_DANGER_CLASS;
         resultDiv.textContent = 'Rating failed. Please try again.';
     });
 }

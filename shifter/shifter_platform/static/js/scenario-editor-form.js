@@ -295,3 +295,26 @@ globalThis.updateDCConfig = updateDCConfig;
 // Initial render
 renderInstances();
 renderSubnets();
+
+// Expose for testing
+if (typeof module !== 'undefined' && module.exports) { // eslint-disable-line no-undef
+    module.exports = { // eslint-disable-line no-undef
+        escapeHtml: escapeHtml,
+        parseNameList: parseNameList,
+        buildInstanceRoleOptions: buildInstanceRoleOptions,
+        buildInstanceOsOptions: buildInstanceOsOptions,
+        buildInstanceFieldsHtml: buildInstanceFieldsHtml,
+        buildInstanceCheckboxesHtml: buildInstanceCheckboxesHtml,
+        buildInstanceDcConfigHtml: buildInstanceDcConfigHtml,
+        buildInstanceCardHtml: buildInstanceCardHtml,
+        renderInstances: renderInstances,
+        buildSubnetCardHtml: buildSubnetCardHtml,
+        renderSubnets: renderSubnets,
+        addInstance: addInstance,
+        removeInstance: removeInstance,
+        addSubnet: addSubnet,
+        removeSubnet: removeSubnet,
+        handleDCChange: handleDCChange,
+        updateDCConfig: updateDCConfig,
+    };
+}
