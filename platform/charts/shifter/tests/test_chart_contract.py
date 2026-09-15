@@ -40,9 +40,11 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #2098 after adding the CTF communication delivery-worker Deployment.
 # Regenerated for #2083 after admitting the deployment-scoped dynamic-secret project id.
 # Regenerated for #1583 after qualifying portal memory headroom and maintenance-worker startup capacity.
+# Regenerated for #2179 after adding the GKE metadata-server egress NetworkPolicy
+# (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "ae2aed26e7019d54a82da86df0a993044c7a41fb614b4b5652aa5ccb28dff592",
-    "gcp-prod": "418a98d66d8d4808153d28f0dcc02bbabcf0b3e7d65ed7744bc8fead2b39ae2f",
+    "gcp-dev": "dd50c4107538fe50f899160bb8cbb02bf17ed7d0041e8261e8f4ab2d4caf0c9e",
+    "gcp-prod": "c92cfb146e141c1acfe4e7b2ef6d2f4738250dc84331465cbade25cf4474d885",
 }
 
 

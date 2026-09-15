@@ -417,22 +417,18 @@ resource "google_storage_bucket_iam_member" "deploy_evidence_writer" {
   }
 }
 
-# `gcloud storage cp` issues a pre-flight object GET to pick its upload strategy,
-# so each evidence writer also needs storage.objects.get on the exact prefix it
-# writes; create-only alone makes the cp fail with 403 on get. objectViewer here
-# is scoped to the writer's own prefix, and objectCreator still blocks
+# `gcloud storage cp` issues a pre-flight object GET plus a bucket-level object
+# LIST to choose its upload strategy; create-only (objectCreator) alone makes the
+# evidence cp fail (403 on get, then on the bucket list). A bucket-level list
+# cannot be scoped by an object-name condition, so each evidence writer gets an
+# unconditioned objectViewer (get+list) on the release-evidence bucket. This only
+# grants read over provenance metadata; objectCreator still blocks
 # overwrite/deletion, so evidence immutability is preserved.
 resource "google_storage_bucket_iam_member" "packer_build_evidence_reader" {
   count  = local.build_enabled ? 1 : 0
   bucket = google_storage_bucket.release_evidence.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.packer_build.email}"
-
-  condition {
-    title       = "packer-build-evidence-read-own"
-    description = "Build identity may read the source-binding records it creates."
-    expression  = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.release_evidence.name}/objects/packer-builds/')"
-  }
 }
 
 resource "google_storage_bucket_iam_member" "validate_evidence_reader" {
@@ -440,12 +436,6 @@ resource "google_storage_bucket_iam_member" "validate_evidence_reader" {
   bucket = google_storage_bucket.release_evidence.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.validate[0].email}"
-
-  condition {
-    title       = "packer-validation-evidence-read-own"
-    description = "Validation identity may read the validation records it creates."
-    expression  = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.release_evidence.name}/objects/packer-validation/')"
-  }
 }
 
 resource "google_storage_bucket_iam_member" "release_scan_evidence_reader" {
@@ -453,12 +443,6 @@ resource "google_storage_bucket_iam_member" "release_scan_evidence_reader" {
   bucket = google_storage_bucket.release_evidence.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.release_scan[0].email}"
-
-  condition {
-    title       = "release-scan-evidence-read-own"
-    description = "Release scanner may read the scan records it creates."
-    expression  = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.release_evidence.name}/objects/release-scans/')"
-  }
 }
 
 resource "google_storage_bucket_iam_member" "deploy_evidence_reader" {
@@ -466,12 +450,6 @@ resource "google_storage_bucket_iam_member" "deploy_evidence_reader" {
   bucket = google_storage_bucket.release_evidence.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.deploy[0].email}"
-
-  condition {
-    title       = "deployment-evidence-read-own"
-    description = "Deploy identity may read the running-image records it creates."
-    expression  = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.release_evidence.name}/objects/deployments/')"
-  }
 }
 
 resource "google_storage_bucket_iam_member" "promotion_evidence_reader" {
