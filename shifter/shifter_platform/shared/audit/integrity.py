@@ -82,7 +82,7 @@ def _validate_json_value(value: object, *, path: str, depth: int) -> None:
     if depth > MAX_STATE_DEPTH:
         raise ValueError(f"{path} exceeds maximum nesting depth")
     if value is None or isinstance(value, bool | int):
-        pass
+        return
     elif isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError(f"{path} contains a non-finite number")
