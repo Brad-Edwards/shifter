@@ -30,7 +30,6 @@ beforeEach(() => mockApi.mockReset());
 describe("ScoreboardPage", () => {
   it("renders rankings", async () => {
     mockScoreboard({
-      scoreboard_hidden: false,
       event_id: "e1",
       team_mode: false,
       frozen: false,
@@ -45,7 +44,6 @@ describe("ScoreboardPage", () => {
 
   it("shows a freeze indicator when the board is frozen", async () => {
     mockScoreboard({
-      scoreboard_hidden: false,
       event_id: "e1",
       team_mode: false,
       frozen: true,
@@ -65,7 +63,6 @@ describe("ScoreboardPage", () => {
 
   it("has no axe violations when loaded", async () => {
     mockScoreboard({
-      scoreboard_hidden: false,
       event_id: "e1",
       team_mode: false,
       frozen: false,

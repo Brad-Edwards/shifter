@@ -11215,7 +11215,7 @@
             },
             "description": ""
           },
-          "401": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
@@ -11223,7 +11223,7 @@
                 }
               }
             },
-            "description": "Authentication failed."
+            "description": "Request validation failed."
           },
           "403": {
             "content": {
@@ -11233,7 +11233,17 @@
                 }
               }
             },
-            "description": "Permission denied."
+            "description": "Workspace or range launch access denied."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Launch conflict, including workspace_range_quota_exceeded."
           },
           "429": {
             "content": {
@@ -11244,6 +11254,16 @@
               }
             },
             "description": "Request was throttled."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
           }
         },
         "x-required-scopes": [
@@ -13403,9 +13423,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -13463,9 +13480,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -13522,9 +13536,6 @@
           "workspaces"
         ],
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -13599,9 +13610,6 @@
           }
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -16928,7 +16936,7 @@
       },
       "OrganizerScoreboardResponse": {
         "type": "object",
-        "description": "Organizer monitoring scoreboard — always the full ranking payload.\n\nUnlike :class:`PublicScoreboardResponseSerializer`, this projection never\ncarries the ``scoreboard_hidden`` sentinel and never withholds rows: an\norganizer sees every ranking regardless of the event's ``scoreboard_visible``\nflag or freeze window. ``frozen`` is reported for display only; the rankings\nare computed as of now (``freeze_at=None``).",
+        "description": "Organizer monitoring scoreboard — always the full ranking payload.\n\nUnlike the public scoreboard response union, this projection never\ncarries the ``scoreboard_hidden`` sentinel and never withholds rows: an\norganizer sees every ranking regardless of the event's ``scoreboard_visible``\nflag or freeze window. ``frozen`` is reported for display only; the rankings\nare computed as of now (``freeze_at=None``).",
         "properties": {
           "event_id": {
             "type": "string",
@@ -18743,14 +18751,23 @@
           "total"
         ]
       },
-      "PublicScoreboardResponse": {
+      "PublicScoreboardHiddenResponse": {
         "type": "object",
-        "description": "Public scoreboard read surface.\n\nThe runtime returns one of two shapes: the ``{\"scoreboard_hidden\": true}``\nsentinel when the event hides its scoreboard, or the full ranking payload\n(``event_id``, ``team_mode``, ``frozen``, ``rankings``, ``bracket_rankings``,\n``brackets``). Every field is optional so this one serializer documents the\nunion without changing the view's runtime ``JsonResponse``.",
+        "description": "Sentinel returned when the public scoreboard is unavailable.",
         "properties": {
           "scoreboard_hidden": {
             "type": "boolean",
             "readOnly": true
-          },
+          }
+        },
+        "required": [
+          "scoreboard_hidden"
+        ]
+      },
+      "PublicScoreboardRankingResponse": {
+        "type": "object",
+        "description": "Complete public scoreboard ranking payload.",
+        "properties": {
           "event_id": {
             "type": "string",
             "readOnly": true
@@ -18794,8 +18811,17 @@
           "event_id",
           "frozen",
           "rankings",
-          "scoreboard_hidden",
           "team_mode"
+        ]
+      },
+      "PublicScoreboardResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PublicScoreboardHiddenResponse"
+          },
+          {
+            "$ref": "#/components/schemas/PublicScoreboardRankingResponse"
+          }
         ]
       },
       "RaesCatalogFields": {

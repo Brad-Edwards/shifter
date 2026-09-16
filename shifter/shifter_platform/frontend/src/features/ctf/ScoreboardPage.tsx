@@ -53,7 +53,7 @@ function ScoreboardContent({
   bracket,
   onBracketChange,
 }: Readonly<{ data: CtfScoreboard; bracket: string; onBracketChange: (value: string) => void }>) {
-  if (data.scoreboard_hidden) {
+  if ("scoreboard_hidden" in data) {
     return (
       <Alert>
         <AlertTitle>Scoreboard hidden</AlertTitle>

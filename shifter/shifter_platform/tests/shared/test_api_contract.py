@@ -141,6 +141,59 @@ class TestPublishedContract:
         for operation in (collection["get"], collection["post"], resend["post"], revoke["post"]):
             assert operation["security"] == [{"cookieAuth": []}]
 
+    def test_workspace_session_operations_advertise_only_session_auth(self, openapi_document: dict[str, Any]) -> None:
+        paths = openapi_document["paths"]
+        operations = (
+            paths["/api/v1/workspaces/context/"]["get"],
+            paths["/api/v1/workspaces/organizations/"]["get"],
+            paths["/api/v1/workspaces/organizations/{organization_uuid}/"]["get"],
+            paths["/api/v1/workspaces/organizations/{organization_uuid}/"]["patch"],
+        )
+
+        for operation in operations:
+            assert operation["security"] == [{"cookieAuth": []}]
+
+    def test_range_launch_declares_validation_denial_and_quota_conflict(self, openapi_document: dict[str, Any]) -> None:
+        responses = openapi_document["paths"]["/api/v1/mission-control/range/launch/"]["post"]["responses"]
+
+        for status in ("400", "403", "409"):
+            schema = responses[status]["content"]["application/json"]["schema"]
+            assert schema["$ref"].endswith("/ApiError")
+        assert "workspace_range_quota_exceeded" in responses["409"]["description"]
+
+    def test_public_scoreboard_contract_accepts_both_runtime_shapes(self, openapi_document: dict[str, Any]) -> None:
+        schema = openapi_document["paths"]["/api/v1/ctf/events/{event_id}/scoreboard/"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]
+
+        def resolve(value: dict[str, Any]) -> dict[str, Any]:
+            if "$ref" not in value:
+                return value
+            name = value["$ref"].rsplit("/", 1)[-1]
+            return openapi_document["components"]["schemas"][name]
+
+        alternatives = [resolve(alternative) for alternative in resolve(schema)["oneOf"]]
+        runtime_shapes = (
+            {"scoreboard_hidden": True},
+            {
+                "event_id": "synthetic-event",
+                "team_mode": False,
+                "frozen": False,
+                "rankings": [],
+                "bracket_rankings": [],
+                "brackets": [],
+            },
+        )
+
+        for payload in runtime_shapes:
+            matching = [
+                alternative
+                for alternative in alternatives
+                if set(alternative.get("required", ())) <= payload.keys()
+                and payload.keys() <= alternative["properties"].keys()
+            ]
+            assert len(matching) == 1
+
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
         ngfw = openapi_document["paths"]["/api/v1/mission-control/ngfw/"]["post"]

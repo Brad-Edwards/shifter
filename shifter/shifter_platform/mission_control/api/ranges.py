@@ -7,7 +7,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from django.contrib.auth.models import User
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -188,7 +188,16 @@ class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
                 ),
             )
         ],
-        responses=LaunchRangeResponseSerializer,
+        responses={
+            200: LaunchRangeResponseSerializer,
+            400: OpenApiResponse(ApiErrorSerializer, description="Request validation failed."),
+            403: OpenApiResponse(ApiErrorSerializer, description="Workspace or range launch access denied."),
+            409: OpenApiResponse(
+                ApiErrorSerializer,
+                description="Launch conflict, including workspace_range_quota_exceeded.",
+            ),
+            429: OpenApiResponse(ApiErrorSerializer, description="Request was throttled."),
+        },
         operation_id="api_v1_mission_control_range_launch",
     )
     def post(self, request: Request) -> Response:

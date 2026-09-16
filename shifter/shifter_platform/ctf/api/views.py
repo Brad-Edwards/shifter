@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from django.http import JsonResponse
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from ctf.api._base import _canonical_error_response
-from ctf.api.serializers import PublicScoreboardResponseSerializer
+from ctf.api.serializers import PublicScoreboardHiddenResponseSerializer, PublicScoreboardRankingResponseSerializer
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -54,7 +54,13 @@ class PublicScoreboardView(APIView):
     versioning_class = None
     permission_classes = [permissions.AllowAny]
 
-    @extend_schema(responses=PublicScoreboardResponseSerializer)
+    @extend_schema(
+        responses=PolymorphicProxySerializer(
+            component_name="PublicScoreboardResponse",
+            serializers=[PublicScoreboardHiddenResponseSerializer, PublicScoreboardRankingResponseSerializer],
+            resource_type_field_name=None,
+        )
+    )
     def get(self, request: Request, event_id: UUID) -> JsonResponse:
         """Return the public scoreboard payload for an event."""
         from ctf.exceptions import CTFNotFoundError
