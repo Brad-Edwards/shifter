@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, BinaryIO
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -44,6 +45,22 @@ class AWSObjectStorage(BaseAWSAdapter):
 
     _service_name = "s3"
 
+    @staticmethod
+    def _owner_kwargs() -> dict[str, str]:
+        """Return ``{"ExpectedBucketOwner": account_id}`` when the AWS account id is configured.
+
+        AWS S3 honours ``ExpectedBucketOwner`` on every Get/Put/Head/Delete/Copy/
+        Tagging request and fails the call with ``AccessDenied`` if the bucket's
+        owner account does not match. This defends against bucket-squatting and
+        against operator misconfiguration that swaps the deployment's bucket out
+        from under us. Sourced from the ``AWS_S3_EXPECTED_BUCKET_OWNER`` env var
+        (wired from the provisioner module's ``local.account_id`` at deploy time)
+        so dev/test environments without a fixed account id continue to work.
+        Mirrors ``shifter_platform/shared/cloud/aws/storage.py``.
+        """
+        owner = os.environ.get("AWS_S3_EXPECTED_BUCKET_OWNER", "")
+        return {"ExpectedBucketOwner": owner} if owner else {}
+
     def generate_presigned_download_url(
         self,
         bucket: str,
@@ -74,7 +91,7 @@ class AWSObjectStorage(BaseAWSAdapter):
         logger.debug("object_exists: bucket=%s key=%s", bucket, key)
         try:
             client = self._get_client()
-            client.head_object(Bucket=bucket, Key=key)
+            client.head_object(Bucket=bucket, Key=key, **self._owner_kwargs())
             return True
         except ClientError as e:
             if e.response.get("Error", {}).get("Code") == "404":
@@ -89,7 +106,7 @@ class AWSObjectStorage(BaseAWSAdapter):
         logger.debug("delete_object: bucket=%s key=%s", bucket, key)
         try:
             client = self._get_client()
-            client.delete_object(Bucket=bucket, Key=key)
+            client.delete_object(Bucket=bucket, Key=key, **self._owner_kwargs())
         except (ClientError, BotoCoreError) as e:
             logger.exception("delete_object: failed bucket=%s key=%s error=%s", bucket, key, e)
             raise CloudStorageError(f"Failed to delete object: {e}") from e
@@ -99,7 +116,7 @@ class AWSObjectStorage(BaseAWSAdapter):
         logger.debug("head_object: bucket=%s key=%s", bucket, safe_key)
         try:
             client = self._get_client()
-            response: dict[str, Any] = client.head_object(Bucket=bucket, Key=key)
+            response: dict[str, Any] = client.head_object(Bucket=bucket, Key=key, **self._owner_kwargs())
             return {
                 "content_length": response["ContentLength"],
                 "etag": response["ETag"].strip('"'),
@@ -131,7 +148,7 @@ class AWSObjectStorage(BaseAWSAdapter):
             raise ValueError("max_bytes must be positive")
         safe_key = safe_log_value(key)
         logger.debug("download_object: bucket=%s key=%s max_bytes=%d", bucket, safe_key, max_bytes)
-        get_kwargs: dict[str, Any] = {"Bucket": bucket, "Key": key}
+        get_kwargs: dict[str, Any] = {"Bucket": bucket, "Key": key, **self._owner_kwargs()}
         etag = (expected_identity or {}).get("etag")
         if etag:
             get_kwargs["IfMatch"] = etag
