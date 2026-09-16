@@ -6,6 +6,7 @@
 # - CI/CD workflow inline deploy script
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 locals {
   common_tags = merge(var.tags, {
@@ -26,6 +27,7 @@ locals {
     var.environment == "prod" ? "production" :
     var.environment
   )
+  audit_deployment_scope = "aws:${data.aws_caller_identity.current.account_id}:${data.aws_region.current.name}:${var.environment}"
 }
 
 # ------------------------------------------------------------------------------
@@ -46,6 +48,15 @@ resource "aws_ssm_parameter" "cloud_provider" {
   description = "Backend identity for the portal container's CLOUD_PROVIDER env var (config._cloud.resolve_cloud_provider)"
   type        = "String"
   value       = var.cloud_provider
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "audit_deployment_scope" {
+  name        = "${local.ps_prefix}/audit-deployment-scope"
+  description = "Stable AWS deployment identity for the tamper-evident audit chain"
+  type        = "String"
+  value       = local.audit_deployment_scope
 
   tags = local.common_tags
 }

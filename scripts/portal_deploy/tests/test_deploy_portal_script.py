@@ -71,6 +71,8 @@ class DeployPortalScriptTests(unittest.TestCase):
                   fi
                   ;;
                 */environment) printf 'development\\n' ;;
+                */cloud-provider) printf 'aws\\n' ;;
+                */audit-deployment-scope) printf 'aws:123456789012:us-east-2:dev\\n' ;;
                 */image-tag) printf 'abc123\\n' ;;
                 */ecr-registry) printf '123456789012.dkr.ecr.us-east-2.amazonaws.com\\n' ;;
                 */ecr-repository) printf 'shifter-dev-portal\\n' ;;
@@ -290,9 +292,7 @@ class DeployPortalScriptTests(unittest.TestCase):
             env["ZERO_TERMINAL_CAP"] = "1"
         return env
 
-    def _script_args(
-        self, root: Path, *, ps_prefix: str = "/shifter/dev/portal"
-    ) -> list[str]:
+    def _script_args(self, root: Path, *, ps_prefix: str = "/shifter/dev/portal") -> list[str]:
         return [
             str(SCRIPT_PATH),
             "--aws-region",
@@ -377,25 +377,17 @@ class DeployPortalScriptTests(unittest.TestCase):
             env = self._install_stubs(root)
             args = self._script_args(root)
 
-            first = subprocess.run(
-                args, check=False, capture_output=True, text=True, env=env
-            )
-            second = subprocess.run(
-                args, check=False, capture_output=True, text=True, env=env
-            )
+            first = subprocess.run(args, check=False, capture_output=True, text=True, env=env)
+            second = subprocess.run(args, check=False, capture_output=True, text=True, env=env)
 
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(
-                (root / "usr" / "local" / "bin" / "shifter-worker-health.sh").read_text(
-                    encoding="utf-8"
-                ),
+                (root / "usr" / "local" / "bin" / "shifter-worker-health.sh").read_text(encoding="utf-8"),
                 "monitor-v1\n",
             )
             self.assertEqual(
-                (root / "etc" / "shifter-worker-health.env").read_text(
-                    encoding="utf-8"
-                ),
+                (root / "etc" / "shifter-worker-health.env").read_text(encoding="utf-8"),
                 "WH_NAME_PREFIX=dev-portal\n",
             )
             log = (root / "calls.log").read_text(encoding="utf-8")
@@ -407,19 +399,21 @@ class DeployPortalScriptTests(unittest.TestCase):
                     "docker stop --time 35 portal worker-cms worker-engine worker-mc "
                     "worker-outbox-drainer worker-reconciler worker-provisioner-launcher "
                     "worker-operation-result-applier ctf-scheduler "
-                    "guacamole-bootstrap-prune raes-operation-record-prune"
+                    "ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune"
                 ),
             )
             self.assertIn("python manage.py migrate --noinput", log)
             self.assertIn("SKIP_MIGRATIONS=1", log)
-            self.assertIn(
-                "-e SHIFTER_CTF_CONTENT_BUCKET=shifter-private-ctf-content", log
-            )
+            self.assertIn("-e SHIFTER_CTF_CONTENT_BUCKET=shifter-private-ctf-content", log)
             self.assertIn("-e SHIFTER_CTF_CONTENT_PREFIX=ctf/content-bundles/", log)
             self.assertIn("-e SHIFTER_CTF_CONTENT_MAX_BYTES=8388608", log)
             # ENVIRONMENT must reach the container (config.settings
             # require_environment() fails closed when it is blank, #948).
             self.assertIn("-e ENVIRONMENT=development", log)
+            self.assertIn(
+                "-e AUDIT_DEPLOYMENT_SCOPE=aws:123456789012:us-east-2:dev",
+                log,
+            )
             for name in ("worker-cms", "worker-engine", "worker-mc", "ctf-scheduler"):
                 self.assertIn(f"docker run -d --name {name}", log)
             self.assertIn("run_worker --queue cms", log)
@@ -430,7 +424,7 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "docker stop --time 35 portal worker-cms worker-engine worker-mc "
                 "worker-outbox-drainer worker-reconciler worker-provisioner-launcher "
                 "worker-operation-result-applier ctf-scheduler "
-                "guacamole-bootstrap-prune raes-operation-record-prune",
+                "ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune",
                 log,
             )
             self.assertIn(
@@ -511,9 +505,7 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "SHIFTER_CTF_CONTENT_MAX_BYTES",
             ):
                 self.assertNotIn(f"{name}=", log)
-            self.assertIn(
-                "EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend", log
-            )
+            self.assertIn("EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend", log)
 
     def test_terminal_capacity_params_emitted_as_docker_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

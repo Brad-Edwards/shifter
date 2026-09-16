@@ -83,6 +83,7 @@ def test_install_audit_uses_canonical_vocabulary_and_token_attribution(administr
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
     assert client.post(URL, body(grant), format="json").status_code == 201
     event = AuditLog.objects.get(entity_type="preparation_adapter")
+    assert event.entity_ref == str(PreparationAdapter.objects.get().id)
     assert event.actor_type == "apikey"
     assert event.actor_id == token.id
     assert event.request_id

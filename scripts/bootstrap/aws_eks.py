@@ -191,8 +191,8 @@ def _runtime_environment(profile: str) -> str:
     return {"dev": "development", "prod": "production"}.get(profile, profile)
 
 
-def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str, str]:
-    """Build the complete canonical runtime environment for AWS EKS."""
+def _validated_runtime_env(outputs: Mapping[str, object]) -> dict[str, str]:
+    """Return validated Terraform-owned runtime variables."""
     raw = _output(outputs, "runtime_env")
     if not isinstance(raw, Mapping) or not all(
         isinstance(key, str) and isinstance(value, str) and value for key, value in raw.items()
@@ -204,24 +204,42 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
     missing = sorted(AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS.difference(raw))
     if missing:
         raise ValueError("runtime_env is missing required keys: " + ", ".join(missing))
+    return dict(raw)
+
+
+def _rendered_env_values(rendered: str) -> dict[str, str]:
+    """Parse newline-delimited key-value output from a trusted renderer."""
+    values = {}
+    for line in rendered.splitlines():
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
+
+
+def _aws_account_id(outputs: Mapping[str, object]) -> str:
+    """Extract the account identifier from the cluster access role ARN."""
+    access_role_arn = str(_output(outputs, "cluster_access_role_arn"))
+    arn_parts = access_role_arn.split(":")
+    if len(arn_parts) < 6 or arn_parts[0:3] != ["arn", "aws", "iam"] or not arn_parts[4]:
+        raise ValueError("cluster_access_role_arn must be an AWS IAM ARN with an account id")
+    return arn_parts[4]
+
+
+def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str, str]:
+    """Build the complete canonical runtime environment for AWS EKS."""
     domain = config.deployment.domain
-    model_access_env = {}
-    for line in render_model_access_env(config).splitlines():
-        key, value = line.split("=", 1)
-        model_access_env[key] = value
-    mission_control_lease_env = {}
-    for line in render_mission_control_lease_env(config).splitlines():
-        key, value = line.split("=", 1)
-        mission_control_lease_env[key] = value
     return {
-        **dict(raw),
+        **_validated_runtime_env(outputs),
+        "AUDIT_DEPLOYMENT_SCOPE": (
+            f"aws:{_aws_account_id(outputs)}:{config.settings['region']}:{config.deployment.profile}"
+        ),
         "AUTH_PROVIDER": "oidc",
         "CLOUD_PROVIDER": "aws",
         "DJANGO_ALLOWED_HOSTS": f"{domain},localhost,127.0.0.1",
         "DJANGO_CSRF_TRUSTED_ORIGINS": f"https://{domain}",
         "ENVIRONMENT": _runtime_environment(config.deployment.profile),
-        **model_access_env,
-        **mission_control_lease_env,
+        **_rendered_env_values(render_model_access_env(config)),
+        **_rendered_env_values(render_mission_control_lease_env(config)),
         "SITE_URL": f"https://{domain}",
     }
 

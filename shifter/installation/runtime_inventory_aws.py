@@ -76,6 +76,7 @@ AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
 # and the published contract cannot drift.
 AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "AUDIT_DEPLOYMENT_SCOPE",
         "AUTH_PROVIDER",
         "CLOUD_PROVIDER",
         "DJANGO_ALLOWED_HOSTS",

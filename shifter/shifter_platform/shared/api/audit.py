@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from shared.api.permissions import IsStaffSession
 from shared.api_tokens.authentication import ApiTokenAuthentication
-from shared.audit import AuditAction, AuditEntityType, audit_log_from_request
+from shared.audit import AuditAction, AuditEntityType, AuditTarget, audit_log_from_request
 from shared.models import AuditLog
 
 logger = logging.getLogger(__name__)
@@ -117,8 +117,7 @@ class IsStaffAuditSession(permissions.BasePermission):
             try:
                 audit_log_from_request(
                     request,
-                    entity_type=AuditEntityType.CONFIG,
-                    entity_id=0,
+                    AuditTarget(AuditEntityType.CONFIG, 0, type(view).__name__),
                     action=AuditAction.ACCESS_DENIED,
                     context=f"Permission denied: {type(view).__name__} - audit read requires staff session",
                 )

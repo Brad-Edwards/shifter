@@ -2641,6 +2641,11 @@
         "id": "ADR-045-R4",
         "description": "Database upgrades rename the existing audit table in place and preserve all audit rows; clean installs create the shared audit table directly. Retired product tables are dropped and no compatibility views or aliases are created.",
         "checks": []
+      },
+      {
+        "id": "ADR-045-R5",
+        "description": "Every shared audit row belongs to one deployment-bound, versioned SHA-256 chain allocated under a database-owned transactional head. New events pass the shared bounded JSON and secret-minimization validator; opaque targets retain entity_ref. PostgreSQL rejects committed evidence mutation, constrains head advances to a matching append, and denies portal_runtime direct update/delete. Deployment surfaces render a stable audit scope, and long-lived GCP workloads use a database principal distinct from the schema owner exposed only to the one-off migrator. Verification fails closed without repair. Export is deterministic and cannot delete hot rows until an independently verified write-once checkpoint exists.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2653,16 +2658,26 @@
       "https://github.com/Brad-Edwards/shifter/issues/1374",
       "docs/architecture/risk-register-removal-preflight-1374.md",
       "docs/architecture/audit-system-architecture.md",
+      "docs/architecture/audit-tamper-detection-preflight-327.md",
       "shifter/shifter_platform/shared/models.py",
       "shifter/shifter_platform/shared/audit",
       "shifter/shifter_platform/shared/audit_adapter.py",
+      "shifter/shifter_platform/shared/management/commands/audit_verify.py",
       "shifter/shifter_platform/shared/api/audit.py",
       "shifter/shifter_platform/shared/migrations/0006_rehome_audit_log.py",
+      "shifter/shifter_platform/shared/migrations/0020_audit_integrity_chain.py",
+      ".github/workflows/_gcp-dev.yml",
+      "platform/terraform/gcp/modules/portal/cloud-sql/main.tf",
+      "platform/terraform/gcp/modules/portal/iam/main.tf",
+      "scripts/bootstrap/gcp_control_plane.py",
       "shifter/shifter_platform/openapi/v1.retirements.json",
       "shifter/shifter_platform/tests/shared/test_removed_feature_surface.py",
       "shifter/shifter_platform/tests/shared/test_audit_migration.py",
       "shifter/shifter_platform/tests/shared/test_audit_policy.py",
-      "shifter/shifter_platform/tests/shared/test_audit_store.py"
+      "shifter/shifter_platform/tests/shared/test_audit_store.py",
+      "shifter/shifter_platform/tests/shared/test_audit_integrity.py",
+      "shifter/shifter_platform/tests/shared/test_audit_integrity_migration.py",
+      "shifter/shifter_platform/tests/shared/test_audit_integrity_postgres.py"
     ]
   },
   {
