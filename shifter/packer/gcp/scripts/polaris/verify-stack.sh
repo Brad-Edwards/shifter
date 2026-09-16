@@ -213,6 +213,14 @@ while :; do
   done
   [[ -z "${notready}" ]] && break
   if (( SECONDS >= deadline )); then
+    # Surface why the laggards never reached running (their container logs go to
+    # the docker daemon, not this provisioner's stdout) so a bake failure is
+    # diagnosable from the build log instead of the builder VM serial console.
+    for entry in ${notready}; do
+      svc="${entry%%(*}"
+      echo "polaris verify-stack: --- last logs for not-running service '${svc}' ---" >&2
+      docker compose logs --tail=50 --no-color "${svc}" >&2 2>&1 || true
+    done
     fail_stack "compose services not running before image capture:${notready}"
   fi
   echo "polaris verify-stack: waiting for services to reach running:${notready}"
