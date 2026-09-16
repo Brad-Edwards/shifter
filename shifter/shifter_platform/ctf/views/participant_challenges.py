@@ -47,6 +47,48 @@ def _category_sort_key(category: str) -> tuple[int, int, str]:
     return (2, 0, normalized.casefold())
 
 
+def _filter_query(*pairs: tuple[str, str | None]) -> str:
+    """Build a relative ``?k=v&...`` query string, dropping empty values (empty if none)."""
+    present = [(key, value) for key, value in pairs if value]
+    return "?" + urlencode(present) if present else ""
+
+
+def _build_challenge_filter_links(
+    event_tags: Any,
+    event_topics: Any,
+    *,
+    category_filter: str | None,
+    tag_filter: str | None,
+    topic_filter: str | None,
+) -> dict[str, Any]:
+    """Relative filter-link URLs for the challenge-list tag/topic buttons.
+
+    Returns the two "All" URLs plus per-tag/per-topic ``{name, url, active}`` lists
+    so the template renders one short ``<a href>`` per button (no inline query
+    building, no duplicate mutually-exclusive link branches).
+    """
+    return {
+        "tags_all_url": _filter_query(("category", category_filter)),
+        "tag_filters": [
+            {
+                "name": tag.name,
+                "url": _filter_query(("tag", tag.name), ("category", category_filter)),
+                "active": tag_filter == tag.name,
+            }
+            for tag in event_tags
+        ],
+        "topics_all_url": _filter_query(("category", category_filter), ("tag", tag_filter)),
+        "topic_filters": [
+            {
+                "name": topic.name,
+                "url": _filter_query(("topic", topic.name), ("category", category_filter), ("tag", tag_filter)),
+                "active": topic_filter == topic.name,
+            }
+            for topic in event_topics
+        ],
+    }
+
+
 @login_required
 @ctf_participant_required
 def participant_challenges(request: HttpRequest) -> HttpResponse:
@@ -156,32 +198,6 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         .order_by("name")
     )
 
-    # Precompute the filter-link relative URLs server-side so the template renders
-    # a single short <a href> per tag/topic (no long inline query-building lines,
-    # and no duplicate mutually-exclusive link branches).
-    def _filter_query(*pairs: tuple[str, Any]) -> str:
-        present = [(key, value) for key, value in pairs if value]
-        return "?" + urlencode(present) if present else ""
-
-    tags_all_url = _filter_query(("category", category_filter))
-    tag_filters = [
-        {
-            "name": tag.name,
-            "url": _filter_query(("tag", tag.name), ("category", category_filter)),
-            "active": tag_filter == tag.name,
-        }
-        for tag in event_tags
-    ]
-    topics_all_url = _filter_query(("category", category_filter), ("tag", tag_filter))
-    topic_filters = [
-        {
-            "name": topic.name,
-            "url": _filter_query(("topic", topic.name), ("category", category_filter), ("tag", tag_filter)),
-            "active": topic_filter == topic.name,
-        }
-        for topic in event_topics
-    ]
-
     context = {
         "participant": participant,
         "event": event,
@@ -193,12 +209,17 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         "categories": categories,
         "event_tags": event_tags,
         "event_topics": event_topics,
-        "tags_all_url": tags_all_url,
-        "tag_filters": tag_filters,
-        "topics_all_url": topics_all_url,
-        "topic_filters": topic_filters,
         "solved_ids": solved_ids,
         "locked_ids": locked_ids,
+        # Precomputed filter-link URLs so the template renders one short <a href>
+        # per tag/topic button (see _build_challenge_filter_links).
+        **_build_challenge_filter_links(
+            event_tags,
+            event_topics,
+            category_filter=category_filter,
+            tag_filter=tag_filter,
+            topic_filter=topic_filter,
+        ),
     }
     return render(request, "ctf/participant/challenges.html", context)
 
