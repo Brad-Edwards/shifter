@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from config import (
+    GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCERangeCellConfig,
     GCERangeImageProfile,
@@ -67,6 +68,15 @@ from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 #: participant-facing user is a later participant-runtime concern (not provisioning).
 _DEFAULT_SSH_USERNAME = "raes"
 _DEFAULT_SSH_PORT = 22
+
+#: A polaris-docker-host guest is a pre-baked Docker host: its compose stack owns
+#: :22 and the host management sshd is moved to ``config.host_mgmt_ssh_port`` (the
+#: bake's ``Port 2222``), reachable as the image's default OS user "ubuntu" (the
+#: GCE guest agent creates it from the injected ssh-keys). Provisioner guest setup
+#: must drive that host channel, not the standard raes@22 native-node default, or
+#: it lands on the container's sshd / a closed port. Mirrors the legacy
+#: gcp_range_cell_scenario docker-host access model on the RAES-native path.
+_DOCKER_HOST_SSH_USERNAME = "ubuntu"
 
 
 class RaesGcePlanError(RuntimeError):
@@ -138,7 +148,9 @@ def build_raes_range_cell_plan(
         subnet = subnet_by_address[network.address]
         for node in nodes_by_network.get(network.address, ()):
             instance_plans.extend(
-                _instance_plans_for_node(node, subnet, range_id, resolve_image, access_by_node.get(node.address, ()))
+                _instance_plans_for_node(
+                    node, subnet, range_id, resolve_image, resolved_config, access_by_node.get(node.address, ())
+                )
             )
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
@@ -372,6 +384,7 @@ def _instance_plans_for_node(
     subnet: SubnetPlan,
     range_id: int,
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
+    config: GCERangeCellConfig,
     access_bindings: Sequence[RealizedAccessBinding] = (),
 ) -> list[InstancePlan]:
     """Render one InstancePlan per ``count`` for a node placed on ``subnet``.
@@ -383,6 +396,19 @@ def _instance_plans_for_node(
     profile = resolve_image(node)
     if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
         raise RaesGcePlanError("RAES GCE does not support preconfigured-machine-host participant readiness")
+    # A pre-baked Docker host (Polaris) exposes its management sshd on the bake's
+    # mgmt port as "ubuntu"; :22 belongs to the published container. Every other
+    # RAES-native guest is driven as raes@22. The whole guest-setup SSH path
+    # (host-key install/verify, polaris post-provision, composition verify, OS
+    # observation) reads these host_ssh fields via instance_output ->
+    # build_guest_execution_context, so setting them here is the single point that
+    # routes the docker-host management channel correctly.
+    if profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST:
+        host_ssh_username = _DOCKER_HOST_SSH_USERNAME
+        host_ssh_port = config.host_mgmt_ssh_port
+    else:
+        host_ssh_username = _DEFAULT_SSH_USERNAME
+        host_ssh_port = _DEFAULT_SSH_PORT
     os_type = node.os_family or "linux"
     plans: list[InstancePlan] = []
     for index in range(node.count):
@@ -409,8 +435,8 @@ def _instance_plans_for_node(
                 "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
                 "source": {},
                 "ssh_username": _DEFAULT_SSH_USERNAME,
-                "host_ssh_username": _DEFAULT_SSH_USERNAME,
-                "ssh_port": _DEFAULT_SSH_PORT,
+                "host_ssh_username": host_ssh_username,
+                "ssh_port": host_ssh_port,
                 # The closed realized access binding the portal authorizes
                 # against (#1349), sourced only from the authored RAES
                 # interactive_access declarations joined to this plan (#1710).
