@@ -77,6 +77,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
             "value": {
                 "app": f"projects/{project_id}/secrets/shifter-gcp-dev-app",
                 "db": f"projects/{project_id}/secrets/shifter-gcp-dev-db",
+                "db-migration": f"projects/{project_id}/secrets/shifter-gcp-dev-db-migration",
                 "guacamole-db": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-db",
                 "guacamole-json-auth": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-json-auth",
                 # ADR-008-R6 (#963): the GCP runtime renderer fails closed
@@ -99,7 +100,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "private_ip": "10.40.0.10",
                 "port": 5432,
                 "database_name": "shifter",
-                "user_name": "shifter",
+                "user_name": "portal_runtime",
             }
         },
         # ADR-008-R6 (#963): Memorystore runs with TLS on the GCP runtime,
@@ -130,6 +131,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
                 "workers": f"shiftergcpdev-workers@{project_id}.iam.gserviceaccount.com",
                 "ctf-scheduler": f"shiftergcpdev-ctf-scheduler@{project_id}.iam.gserviceaccount.com",
+                "migrator": f"shiftergcpdev-migrator@{project_id}.iam.gserviceaccount.com",
                 # account_id is bounded to <=30 chars, so provisioner-launcher's SA
                 # localpart is shortened to prov-launcher (#1719).
                 "provisioner-launcher": (f"shiftergcpdev-prov-launcher@{project_id}.iam.gserviceaccount.com"),
@@ -1036,6 +1038,28 @@ class TestGdcControlPlaneHelmValues:
             values["serviceAccounts"]["provisioner"]["annotations"]["iam.gke.io/gcp-service-account"]
             == "shiftergcpdev-provisioner@prod-rwctxzl6shxk.iam.gserviceaccount.com"
         )
+
+    def test_migration_job_uses_the_dedicated_identity_and_owner_secret(self):
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+
+        prerequisites, job = deploy.render_gcp_migration_manifests(outputs, values)
+
+        service_account, runtime_config = prerequisites["items"]
+        assert service_account["metadata"]["name"] == "migrator"
+        assert (
+            service_account["metadata"]["annotations"]["iam.gke.io/gcp-service-account"]
+            == outputs["workload_service_accounts"]["value"]["migrator"]
+        )
+        assert runtime_config["data"]["DB_SECRET_ID"].endswith("-db")
+        assert runtime_config["data"]["DB_MIGRATION_SECRET_ID"].endswith("-db-migration")
+        pod = job["spec"]["template"]["spec"]
+        assert pod["serviceAccountName"] == "migrator"
+        container = pod["containers"][0]
+        db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
+        assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
+        assert container["image"] == values["images"]["platform"]
         assert (
             values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]
             == "shiftergcpdev-ctf-scheduler@prod-rwctxzl6shxk.iam.gserviceaccount.com"
@@ -2321,6 +2345,12 @@ class TestProvisionerLauncherDeploymentParity:
                 "iam.gke.io/gcp-service-account": service_accounts["provisioner-launcher"],
             },
         }
+        assert values["migrator"] == {
+            "name": "migrator",
+            "annotations": {
+                "iam.gke.io/gcp-service-account": service_accounts["migrator"],
+            },
+        }
         assert values["provisioner"]["annotations"]["iam.gke.io/gcp-service-account"] == service_accounts["provisioner"]
         assert service_accounts["provisioner-launcher"] != service_accounts["provisioner"]
 
@@ -2338,10 +2368,9 @@ class TestProvisionerLauncherDeploymentParity:
         assert '"provisioner-launcher"' in terraform_iam
         assert "shifter-platform/provisioner-launcher" in terraform_iam
         assert "provisioner-launcher = toset([])" in terraform_iam
-        assert (
-            'secret_reader_workloads    = toset(["portal", "workers", "ctf-scheduler", "provisioner-launcher"])'
-            in terraform_iam
-        )
+        assert "secret_reader_workloads = toset(" in terraform_iam
+        for workload in ("portal", "workers", "ctf-scheduler", "provisioner-launcher"):
+            assert f'"{workload}"' in terraform_iam
 
 
 class TestGcpIdentityAdminApi:

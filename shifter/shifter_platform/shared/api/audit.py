@@ -119,6 +119,7 @@ class IsStaffAuditSession(permissions.BasePermission):
                     request,
                     entity_type=AuditEntityType.CONFIG,
                     entity_id=0,
+                    entity_ref=type(view).__name__,
                     action=AuditAction.ACCESS_DENIED,
                     context=f"Permission denied: {type(view).__name__} - audit read requires staff session",
                 )

@@ -43,8 +43,8 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #2179 after adding the GKE metadata-server egress NetworkPolicy
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "dd50c4107538fe50f899160bb8cbb02bf17ed7d0041e8261e8f4ab2d4caf0c9e",
-    "gcp-prod": "c92cfb146e141c1acfe4e7b2ef6d2f4738250dc84331465cbade25cf4474d885",
+    "gcp-dev": "d776ddac24998a73c2e8b62baa70588b7bb625032782b9d3008c4e133b2fa271",
+    "gcp-prod": "22a86be62f03e4929874b60c4847ccca7f0fadf0e7af21d12d8ca8ae782049f3",
 }
 
 

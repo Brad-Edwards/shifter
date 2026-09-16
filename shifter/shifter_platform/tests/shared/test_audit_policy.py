@@ -11,8 +11,10 @@ from shared.audit import (
     AuditActorType,
     AuditEntityType,
     AuditEvent,
+    SessionInfo,
     audit_log,
     audit_log_from_request,
+    audit_session_event,
     get_audit_health_snapshot,
     reset_audit_health,
 )
@@ -74,6 +76,7 @@ def test_request_writer_preserves_trusted_attribution():
         request,
         entity_type=AuditEntityType.RANGE,
         entity_id=42,
+        entity_ref="range-external-42",
         action=AuditAction.UPDATE,
     )
 
@@ -83,3 +86,16 @@ def test_request_writer_preserves_trusted_attribution():
     assert stored.source_ip == "198.51.100.7"
     assert stored.user_agent == "audit-policy-test"
     assert stored.request_id == "req-audit-policy"
+    assert stored.entity_ref == "range-external-42"
+
+
+def test_session_writer_uses_the_opaque_session_id_as_its_target():
+    assert audit_session_event(
+        AuditAction.CONNECT,
+        user_id=42,
+        session=SessionInfo(session_id="session-opaque-1", range_id=7, session_type="terminal"),
+    )
+
+    stored = AuditLog.objects.get(entity_type=AuditEntityType.SESSION)
+    assert stored.entity_id == 0
+    assert stored.entity_ref == "session-opaque-1"

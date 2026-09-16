@@ -36,15 +36,12 @@ def _handle_ngfw_event(event: NGFWEventPayload) -> None:
     app_id = event.get("app_id")
     status = event.get("status")
 
-    # Audit log the NGFW status change. AuditLog.entity_id is a
-    # PositiveIntegerField, but an NGFW is identified by UUIDs (app_id /
-    # instance_id), not an integer PK. Use 0 as the "no integer entity id"
-    # sentinel and record the UUID identifiers in the audit state. (Passing the
-    # UUID app_id as entity_id makes the audit write raise ValueError, so the
-    # NGFW audit row is lost — see tests/engine/test_handlers.py.)
+    # NGFWs use opaque UUID identities, so retain the integer sentinel and bind
+    # the durable audit target to the application UUID.
     audit_log_system_event(
         entity_type=AuditEntityType.NGFW,
         entity_id=0,
+        entity_ref=str(app_id or instance_id or event_id),
         action=_status_to_action(status) if status else AuditAction.UPDATE,
         source="engine.handlers",
         state=StateChange(

@@ -213,8 +213,13 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
     for line in render_mission_control_lease_env(config).splitlines():
         key, value = line.split("=", 1)
         mission_control_lease_env[key] = value
+    access_role_arn = str(_output(outputs, "cluster_access_role_arn"))
+    arn_parts = access_role_arn.split(":")
+    if len(arn_parts) < 6 or arn_parts[0:3] != ["arn", "aws", "iam"] or not arn_parts[4]:
+        raise ValueError("cluster_access_role_arn must be an AWS IAM ARN with an account id")
     return {
         **dict(raw),
+        "AUDIT_DEPLOYMENT_SCOPE": (f"aws:{arn_parts[4]}:{config.settings['region']}:{config.deployment.profile}"),
         "AUTH_PROVIDER": "oidc",
         "CLOUD_PROVIDER": "aws",
         "DJANGO_ALLOWED_HOSTS": f"{domain},localhost,127.0.0.1",

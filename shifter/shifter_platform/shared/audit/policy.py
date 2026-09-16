@@ -137,6 +137,7 @@ def audit_log_from_request(
     entity_id: int,
     action: str,
     *,
+    entity_ref: str = "",
     previous_state: dict[str, Any] | None = None,
     new_state: dict[str, Any] | None = None,
     context: str = "",
@@ -151,6 +152,7 @@ def audit_log_from_request(
         entity_type: Type of entity (use AuditEntityType values)
         entity_id: ID of the entity being acted upon
         action: Action performed (use AuditAction values)
+        entity_ref: Stable opaque identity when the entity has no integer ID
         previous_state: Entity state before the action
         new_state: Entity state after the action
         context: Additional context or reason
@@ -164,6 +166,7 @@ def audit_log_from_request(
         AuditEvent(
             entity_type=entity_type,
             entity_id=entity_id,
+            entity_ref=entity_ref,
             action=action,
             actor_type=actor_type,
             actor_id=actor_id,
@@ -183,6 +186,7 @@ def audit_log_system_event(
     action: str,
     source: str,
     *,
+    entity_ref: str = "",
     state: StateChange | None = None,
     context: str = "",
     request_id: str = "",
@@ -197,6 +201,7 @@ def audit_log_system_event(
         entity_id: ID of the entity
         action: Action performed
         source: Source of the event (e.g., "engine.handlers", "provisioner")
+        entity_ref: Stable opaque identity when the entity has no integer ID
         state: Before/after entity state (see :class:`StateChange`)
         context: Additional context
         request_id: Optional request ID for correlation
@@ -211,6 +216,7 @@ def audit_log_system_event(
         AuditEvent(
             entity_type=entity_type,
             entity_id=entity_id,
+            entity_ref=entity_ref,
             action=action,
             actor_type=AuditActorType.SYSTEM,
             actor_id=None,
@@ -299,11 +305,12 @@ def audit_session_event(
     if session.email:
         new_state["email"] = session.email
 
-    # Sessions don't have persistent IDs
+    # Sessions use an opaque stable ID rather than an integer primary key.
     return audit_log(
         AuditEvent(
             entity_type=AuditEntityType.SESSION,
             entity_id=0,
+            entity_ref=session.session_id,
             action=action,
             actor_type=AuditActorType.USER,
             actor_id=user_id,
