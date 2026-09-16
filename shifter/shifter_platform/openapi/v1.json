@@ -16936,7 +16936,7 @@
       },
       "OrganizerScoreboardResponse": {
         "type": "object",
-        "description": "Organizer monitoring scoreboard — always the full ranking payload.\n\nUnlike the public scoreboard response union, this projection never\ncarries the ``scoreboard_hidden`` sentinel and never withholds rows: an\norganizer sees every ranking regardless of the event's ``scoreboard_visible``\nflag or freeze window. ``frozen`` is reported for display only; the rankings\nare computed as of now (``freeze_at=None``).",
+        "description": "Organizer monitoring scoreboard — always the full ranking payload.\n\nUnlike :class:`PublicScoreboardResponseSerializer`, this projection never\ncarries the ``scoreboard_hidden`` state and never withholds rows: an\norganizer sees every ranking regardless of the event's ``scoreboard_visible``\nflag or freeze window. ``frozen`` is reported for display only; the rankings\nare computed as of now (``freeze_at=None``).",
         "properties": {
           "event_id": {
             "type": "string",
@@ -18751,23 +18751,14 @@
           "total"
         ]
       },
-      "PublicScoreboardHiddenResponse": {
+      "PublicScoreboardResponse": {
         "type": "object",
-        "description": "Sentinel returned when the public scoreboard is unavailable.",
+        "description": "Stable public scoreboard response for both visible and hidden boards.",
         "properties": {
           "scoreboard_hidden": {
             "type": "boolean",
             "readOnly": true
-          }
-        },
-        "required": [
-          "scoreboard_hidden"
-        ]
-      },
-      "PublicScoreboardRankingResponse": {
-        "type": "object",
-        "description": "Complete public scoreboard ranking payload.",
-        "properties": {
+          },
           "event_id": {
             "type": "string",
             "readOnly": true
@@ -18811,17 +18802,8 @@
           "event_id",
           "frozen",
           "rankings",
+          "scoreboard_hidden",
           "team_mode"
-        ]
-      },
-      "PublicScoreboardResponse": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/PublicScoreboardHiddenResponse"
-          },
-          {
-            "$ref": "#/components/schemas/PublicScoreboardRankingResponse"
-          }
         ]
       },
       "RaesCatalogFields": {

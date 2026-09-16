@@ -409,15 +409,10 @@ class ScoreTimelineResponseSerializer(serializers.Serializer):
     timeline = serializers.ListField(child=serializers.DictField(), read_only=True)
 
 
-class PublicScoreboardHiddenResponseSerializer(serializers.Serializer):
-    """Sentinel returned when the public scoreboard is unavailable."""
+class PublicScoreboardResponseSerializer(serializers.Serializer):
+    """Stable public scoreboard response for both visible and hidden boards."""
 
     scoreboard_hidden = serializers.BooleanField(read_only=True)
-
-
-class PublicScoreboardRankingResponseSerializer(serializers.Serializer):
-    """Complete public scoreboard ranking payload."""
-
     event_id = serializers.CharField(read_only=True)
     team_mode = serializers.BooleanField(read_only=True)
     frozen = serializers.BooleanField(read_only=True)
@@ -429,8 +424,8 @@ class PublicScoreboardRankingResponseSerializer(serializers.Serializer):
 class OrganizerScoreboardResponseSerializer(serializers.Serializer):
     """Organizer monitoring scoreboard — always the full ranking payload.
 
-    Unlike the public scoreboard response union, this projection never
-    carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+    Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
+    carries the ``scoreboard_hidden`` state and never withholds rows: an
     organizer sees every ranking regardless of the event's ``scoreboard_visible``
     flag or freeze window. ``frozen`` is reported for display only; the rankings
     are computed as of now (``freeze_at=None``).

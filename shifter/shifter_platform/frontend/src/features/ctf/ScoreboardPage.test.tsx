@@ -30,6 +30,7 @@ beforeEach(() => mockApi.mockReset());
 describe("ScoreboardPage", () => {
   it("renders rankings", async () => {
     mockScoreboard({
+      scoreboard_hidden: false,
       event_id: "e1",
       team_mode: false,
       frozen: false,
@@ -44,6 +45,7 @@ describe("ScoreboardPage", () => {
 
   it("shows a freeze indicator when the board is frozen", async () => {
     mockScoreboard({
+      scoreboard_hidden: false,
       event_id: "e1",
       team_mode: false,
       frozen: true,
@@ -56,13 +58,22 @@ describe("ScoreboardPage", () => {
   });
 
   it("shows the hidden sentinel when the scoreboard is hidden", async () => {
-    mockScoreboard({ scoreboard_hidden: true });
+    mockScoreboard({
+      scoreboard_hidden: true,
+      event_id: "e1",
+      team_mode: false,
+      frozen: false,
+      rankings: [],
+      bracket_rankings: null,
+      brackets: [],
+    });
     renderRoute(<ScoreboardPage />);
     expect(await screen.findByText("Scoreboard hidden")).toBeInTheDocument();
   });
 
   it("has no axe violations when loaded", async () => {
     mockScoreboard({
+      scoreboard_hidden: false,
       event_id: "e1",
       team_mode: false,
       frozen: false,

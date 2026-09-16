@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from django.http import JsonResponse
-from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema
+from drf_spectacular.utils import extend_schema
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from ctf.api._base import _canonical_error_response
-from ctf.api.serializers import PublicScoreboardHiddenResponseSerializer, PublicScoreboardRankingResponseSerializer
+from ctf.api.serializers import PublicScoreboardResponseSerializer
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -54,13 +54,7 @@ class PublicScoreboardView(APIView):
     versioning_class = None
     permission_classes = [permissions.AllowAny]
 
-    @extend_schema(
-        responses=PolymorphicProxySerializer(
-            component_name="PublicScoreboardResponse",
-            serializers=[PublicScoreboardHiddenResponseSerializer, PublicScoreboardRankingResponseSerializer],
-            resource_type_field_name=None,
-        )
-    )
+    @extend_schema(responses=PublicScoreboardResponseSerializer)
     def get(self, request: Request, event_id: UUID) -> JsonResponse:
         """Return the public scoreboard payload for an event."""
         from ctf.exceptions import CTFNotFoundError
@@ -75,7 +69,17 @@ class PublicScoreboardView(APIView):
             return _canonical_error_response(request, response) or response
 
         if not _scoreboard_access_allowed(event, request):
-            return JsonResponse({"scoreboard_hidden": True})
+            return JsonResponse(
+                {
+                    "scoreboard_hidden": True,
+                    "event_id": str(event.id),
+                    "team_mode": event.team_mode,
+                    "frozen": event.is_scoreboard_frozen,
+                    "rankings": [],
+                    "bracket_rankings": None,
+                    "brackets": [],
+                }
+            )
 
         freeze_at = event.scoreboard_freeze_at if event.is_scoreboard_frozen else None
         bracket_param = request.query_params.get("bracket")
@@ -95,6 +99,7 @@ class PublicScoreboardView(APIView):
 
         return JsonResponse(
             {
+                "scoreboard_hidden": False,
                 "event_id": str(event.id),
                 "team_mode": event.team_mode,
                 "frozen": event.is_scoreboard_frozen,

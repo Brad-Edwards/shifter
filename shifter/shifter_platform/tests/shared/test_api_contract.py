@@ -161,38 +161,26 @@ class TestPublishedContract:
             assert schema["$ref"].endswith("/ApiError")
         assert "workspace_range_quota_exceeded" in responses["409"]["description"]
 
-    def test_public_scoreboard_contract_accepts_both_runtime_shapes(self, openapi_document: dict[str, Any]) -> None:
+    def test_public_scoreboard_contract_matches_the_stable_runtime_shape(
+        self, openapi_document: dict[str, Any]
+    ) -> None:
         schema = openapi_document["paths"]["/api/v1/ctf/events/{event_id}/scoreboard/"]["get"]["responses"]["200"][
             "content"
         ]["application/json"]["schema"]
+        name = schema["$ref"].rsplit("/", 1)[-1]
+        scoreboard = openapi_document["components"]["schemas"][name]
 
-        def resolve(value: dict[str, Any]) -> dict[str, Any]:
-            if "$ref" not in value:
-                return value
-            name = value["$ref"].rsplit("/", 1)[-1]
-            return openapi_document["components"]["schemas"][name]
-
-        alternatives = [resolve(alternative) for alternative in resolve(schema)["oneOf"]]
-        runtime_shapes = (
-            {"scoreboard_hidden": True},
-            {
-                "event_id": "synthetic-event",
-                "team_mode": False,
-                "frozen": False,
-                "rankings": [],
-                "bracket_rankings": [],
-                "brackets": [],
-            },
-        )
-
-        for payload in runtime_shapes:
-            matching = [
-                alternative
-                for alternative in alternatives
-                if set(alternative.get("required", ())) <= payload.keys()
-                and payload.keys() <= alternative["properties"].keys()
-            ]
-            assert len(matching) == 1
+        expected = {
+            "scoreboard_hidden",
+            "event_id",
+            "team_mode",
+            "frozen",
+            "rankings",
+            "bracket_rankings",
+            "brackets",
+        }
+        assert set(scoreboard["required"]) == expected
+        assert set(scoreboard["properties"]) == expected
 
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.

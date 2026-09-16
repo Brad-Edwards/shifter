@@ -4133,8 +4133,8 @@ export interface components {
         /**
          * @description Organizer monitoring scoreboard — always the full ranking payload.
          *
-         *     Unlike the public scoreboard response union, this projection never
-         *     carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+         *     Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
+         *     carries the ``scoreboard_hidden`` state and never withholds rows: an
          *     organizer sees every ranking regardless of the event's ``scoreboard_visible``
          *     flag or freeze window. ``frozen`` is reported for display only; the rankings
          *     are computed as of now (``freeze_at=None``).
@@ -4691,12 +4691,9 @@ export interface components {
             readonly requests: components["schemas"]["PublicRegistrationRequest"][];
             readonly total: number;
         };
-        /** @description Sentinel returned when the public scoreboard is unavailable. */
-        PublicScoreboardHiddenResponse: {
+        /** @description Stable public scoreboard response for both visible and hidden boards. */
+        PublicScoreboardResponse: {
             readonly scoreboard_hidden: boolean;
-        };
-        /** @description Complete public scoreboard ranking payload. */
-        PublicScoreboardRankingResponse: {
             readonly event_id: string;
             readonly team_mode: boolean;
             readonly frozen: boolean;
@@ -4708,7 +4705,6 @@ export interface components {
             }[] | null;
             readonly brackets: components["schemas"]["_NamedRef"][];
         };
-        PublicScoreboardResponse: components["schemas"]["PublicScoreboardHiddenResponse"] | components["schemas"]["PublicScoreboardRankingResponse"];
         /**
          * @description Read-only, allowlisted RAES package-source presentation fields.
          *
