@@ -17,7 +17,6 @@ from cms.services import (
     get_active_range,
     get_mission_control_range_lease,
     has_mission_control_openvpn_profile,
-    list_mission_control_range_history,
 )
 from cms.services import (
     create_range_dispatch as cms_create_range,
@@ -52,8 +51,6 @@ from mission_control.api.serializers import (
     CurrentRangeResponseSerializer,
     LaunchRangeResponseSerializer,
     LaunchRangeSerializer,
-    RangeHistoryResponseSerializer,
-    RangeHistorySerializer,
     RangeLeaseResponseSerializer,
     RangeLifecycleSerializer,
     ScenarioListResponseSerializer,
@@ -461,45 +458,3 @@ class ScenarioListView(MissionControlReadAPIView):
         """Return scenarios available to the authenticated actor."""
         scenarios = cms_list_launchable_scenarios(self.actor_user(), "range_launch")
         return Response({"scenarios": scenarios})
-
-
-class RangeHistoryView(MissionControlReadAPIView):
-    """Return the authenticated user's range history (#1370).
-
-    Backed by ``cms.services.list_mission_control_range_history``, the
-    product-scoped history query: it reads through ``all_objects`` so
-    soft-deleted terminal ranges (DESTROYED/FAILED, the rows a history view
-    exists to show) are INCLUDED, and scopes to
-    ``range_source == MISSION_CONTROL`` so CTF-sourced ranges never leak into
-    this Mission Control surface. It returns raw ``RangeInstance`` rows
-    (newest first), which are projected into ``RangeHistorySerializer``
-    explicitly here rather than reusing ``RangePresentationSerializer`` — a
-    history row has no hydrated ``instances``/``agent_name``/computed-status
-    fields, only the durable identifiers, status, provenance, and timestamps.
-    """
-
-    @extend_schema(responses=RangeHistoryResponseSerializer, operation_id="api_v1_mission_control_ranges_list")
-    def get(self, request: Request) -> Response:
-        """Return the authenticated actor's Mission Control range history, newest first."""
-        ranges = list_mission_control_range_history(self.actor_user())
-        serializer = RangeHistorySerializer(
-            [
-                {
-                    # ``range_instance.request_id`` is the Django FK shadow
-                    # attribute (the related ``Request`` row's integer pk) —
-                    # NOT the durable UUID correlation key. That key lives on
-                    # the related row as ``Request.request_id``.
-                    "request_id": range_instance.request.request_id if range_instance.request else None,
-                    "range_id": range_instance.range_id,
-                    "scenario_id": range_instance.scenario_id,
-                    "status": range_instance.status,
-                    "range_source": range_instance.range_source,
-                    "created_at": range_instance.created_at,
-                    "updated_at": range_instance.updated_at,
-                    "deleted_at": range_instance.deleted_at,
-                }
-                for range_instance in ranges
-            ],
-            many=True,
-        )
-        return Response({"ranges": serializer.data})
