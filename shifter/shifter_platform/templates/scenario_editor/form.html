@@ -153,12 +153,11 @@
                 {% endif %}
             </button>
             {% if mode == 'edit' %}
-                <a href="{% url 'scenario_editor:detail' scenario_id=scenario.id %}"
-                   class="btn btn-secondary">{% trans "Cancel" %}</a>
+                {% url 'scenario_editor:detail' scenario_id=scenario.id as cancel_url %}
             {% else %}
-                <a href="{% url 'scenario_editor:list' %}"
-                   class="btn btn-secondary">{% trans "Cancel" %}</a>
+                {% url 'scenario_editor:list' as cancel_url %}
             {% endif %}
+            <a href="{{ cancel_url }}" class="btn btn-secondary">{% trans "Cancel" %}</a>
         </div>
     </form>
     {% if scenario and scenario.instances %}
