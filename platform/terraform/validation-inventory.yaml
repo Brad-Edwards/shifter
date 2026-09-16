@@ -140,6 +140,7 @@ roots:
   # state prefix, separate from the gcp-dev platform root, so a platform destroy
   # never removes the runner (dev-tenant containment).
   - id: gcp-global-github-runner
+    test: tests/inventory.tftest.hcl
     path: platform/terraform/gcp/global/github-runner
     owner: "@Brad-Edwards"
     toolchain: gcp-1.16.1
@@ -150,6 +151,7 @@ roots:
   # gcp-dev platform root, so a platform destroy never removes the credentials CI
   # authenticates as (mirrors the github-runner containment).
   - id: gcp-global-cicd-oidc
+    test: tests/inventory.tftest.hcl
     path: platform/terraform/gcp/global/cicd-oidc
     owner: "@Brad-Edwards"
     toolchain: gcp-1.16.1

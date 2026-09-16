@@ -1,45 +1,40 @@
 # GitHub Actions -> GCP federation for purpose-scoped CI identities.
 
 locals {
-  image_environment    = var.environment == "gcp-dev" ? "dev" : var.environment
-  build_enabled        = contains(["gcp-dev", "proof", "nazgul"], var.environment)
-  validate_enabled     = contains(["gcp-dev", "proof", "nazgul"], var.environment)
-  promote_enabled      = var.environment == "prod"
-  release_scan_enabled = contains(["gcp-dev", "nazgul"], var.environment)
-  deploy_enabled       = contains(["gcp-dev", "nazgul"], var.environment)
-  destroy_enabled      = contains(["gcp-dev", "nazgul"], var.environment)
+  build_enabled        = contains(keys(var.purpose_contexts), "build")
+  validate_enabled     = contains(keys(var.purpose_contexts), "validate")
+  promote_enabled      = contains(keys(var.purpose_contexts), "promote")
+  release_scan_enabled = contains(keys(var.purpose_contexts), "release_scan")
+  deploy_enabled       = contains(keys(var.purpose_contexts), "deploy")
+  destroy_enabled      = contains(keys(var.purpose_contexts), "destroy")
 
-  # Default GitHub Environment subjects do not include a workflow path. Each
-  # purpose therefore has a distinct Environment and a pairwise-disjoint sub.
+  service_account_ids = {
+    build        = "${replace(var.name_prefix, "-", "")}-packer"
+    validate     = "${replace(var.name_prefix, "-", "")}-validate"
+    promote      = "${replace(var.name_prefix, "-", "")}-promote"
+    release_scan = "${replace(var.name_prefix, "-", "")}-scan"
+    deploy       = "${replace(var.name_prefix, "-", "")}-deploy"
+    destroy      = "${replace(var.name_prefix, "-", "")}-destroy"
+  }
+  service_account_emails = {
+    for purpose, account_id in local.service_account_ids : purpose => "${account_id}@${var.project_id}.iam.gserviceaccount.com"
+  }
+  service_account_names = {
+    for purpose, email in local.service_account_emails : purpose => "projects/${var.project_id}/serviceAccounts/${email}"
+  }
+  subject_prefix = var.github_subject_format == "immutable" ? "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repository_id}" : "repo:${var.github_org}/${var.github_repo}"
   purpose_subjects = {
-    build = local.build_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:gcp-build-${local.image_environment}",
-    ] : []
-    validate = local.validate_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-${local.image_environment}",
-    ] : []
-    promote = local.promote_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:gcp-promote-prod",
-    ] : []
-    release_scan = local.release_scan_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:gcp-release-scan-${local.image_environment}",
-    ] : []
-    deploy = local.deploy_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:${var.environment}",
-    ] : []
-    destroy = local.destroy_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:${var.environment}-destroy",
-    ] : []
+    for purpose in ["build", "validate", "promote", "release_scan", "deploy", "destroy"] :
+    purpose => distinct([for context in lookup(var.purpose_contexts, purpose, []) : "${local.subject_prefix}:environment:${context.environment}"])
   }
   federated_subjects = toset(flatten(values(local.purpose_subjects)))
   purpose_subject_principals = {
     for purpose, subjects in local.purpose_subjects : purpose => {
       for sub in subjects :
-      sub => "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/${sub}"
+      sub => "principal://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${var.name_prefix}-github/subject/${sub}"
     }
   }
-  ref_condition               = join(" || ", [for ref in var.allowed_workflow_refs : "assertion.ref == '${ref}'"])
-  terraform_state_bucket_name = var.terraform_state_bucket_name == "" ? "${var.project_id}-terraform-state" : var.terraform_state_bucket_name
+  terraform_state_bucket_name = var.terraform_state_bucket_name
   platform_storage_bucket_names = toset([
     lower("${var.project_id}-${replace(var.environment, "_", "-")}-assets"),
     lower("${var.project_id}-${replace(var.environment, "_", "-")}-audit-logs"),
@@ -62,9 +57,8 @@ resource "google_iam_workload_identity_pool" "github" {
   description               = "Purpose-scoped federation for ${var.github_org}/${var.github_repo}."
 }
 
-# Keep the original resource address so existing pools update their trust
-# condition in place. Checkov requires literal assertion.sub equality clauses,
-# so the profile selector chooses between explicit static CEL strings.
+# Preserve the provider address during migration. Bootstrap validates the
+# resolved plan against the common inventory and scans that exact saved plan.
 resource "google_iam_workload_identity_pool_provider" "github" {
   project                            = var.project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
@@ -75,12 +69,11 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository" = "assertion.repository"
     "attribute.ref"        = "assertion.ref"
   }
-  attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && ${
-    var.environment == "gcp-dev" ? "((assertion.ref == 'refs/heads/gcp-dev' && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev') || ((${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-release-scan-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev-destroy')))" :
-    var.environment == "nazgul" ? "((assertion.ref == 'refs/heads/nazgul' && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:nazgul') || ((${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-release-scan-nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:nazgul-destroy')))" :
-    var.environment == "proof" ? "(${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-proof' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-proof')" :
-    "(${local.ref_condition}) && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-promote-prod'"
-  }"
+  attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && assertion.repository_id == '${var.github_repository_id}' && assertion.repository_owner_id == '${var.github_owner_id}' && assertion.event_name == 'workflow_dispatch' && (${join(" || ", flatten([
+    for purpose, contexts in var.purpose_contexts : [
+      for context in contexts : "(assertion.sub == '${local.subject_prefix}:environment:${context.environment}' && assertion.ref == '${context.ref}' && assertion.workflow_ref == '${context.workflow_ref}'${context.reusable_workflow_ref == "" ? "" : " && assertion.job_workflow_ref == '${context.reusable_workflow_ref}'"})"
+    ]
+  ]))})"
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
@@ -128,73 +121,85 @@ resource "google_service_account" "destroy" {
 }
 
 resource "google_service_account_iam_member" "packer_build_wif" {
+  depends_on         = [google_service_account.packer_build, google_iam_workload_identity_pool_provider.github]
   for_each           = local.purpose_subject_principals.build
-  service_account_id = google_service_account.packer_build.name
+  service_account_id = local.service_account_names.build
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
 
 resource "google_service_account_iam_member" "validate_wif" {
+  depends_on         = [google_service_account.validate, google_iam_workload_identity_pool_provider.github]
   for_each           = local.purpose_subject_principals.validate
-  service_account_id = google_service_account.validate[0].name
+  service_account_id = local.service_account_names.validate
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
 
 resource "google_service_account_iam_member" "promote_wif" {
+  depends_on         = [google_service_account.promote, google_iam_workload_identity_pool_provider.github]
   for_each           = local.purpose_subject_principals.promote
-  service_account_id = google_service_account.promote[0].name
+  service_account_id = local.service_account_names.promote
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
 
 resource "google_service_account_iam_member" "deploy_wif" {
+  depends_on         = [google_service_account.deploy, google_iam_workload_identity_pool_provider.github]
   for_each           = local.purpose_subject_principals.deploy
-  service_account_id = google_service_account.deploy[0].name
+  service_account_id = local.service_account_names.deploy
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
 
 resource "google_service_account_iam_member" "release_scan_wif" {
+  depends_on         = [google_service_account.release_scan, google_iam_workload_identity_pool_provider.github]
   for_each           = local.purpose_subject_principals.release_scan
-  service_account_id = google_service_account.release_scan[0].name
+  service_account_id = local.service_account_names.release_scan
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
 
 resource "google_service_account_iam_member" "destroy_wif" {
+  depends_on         = [google_service_account.destroy, google_iam_workload_identity_pool_provider.github]
   for_each           = local.purpose_subject_principals.destroy
-  service_account_id = google_service_account.destroy[0].name
+  service_account_id = local.service_account_names.destroy
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
 
 resource "google_service_account_iam_member" "packer_build_act_as_self" {
-  service_account_id = google_service_account.packer_build.name
+  count              = local.build_enabled ? 1 : 0
+  depends_on         = [google_service_account.packer_build]
+  service_account_id = local.service_account_names.build
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.packer_build.email}"
+  member             = "serviceAccount:${local.service_account_emails.build}"
 }
 
 resource "google_service_account_iam_member" "packer_build_token_creator_self" {
-  service_account_id = google_service_account.packer_build.name
+  count              = local.build_enabled ? 1 : 0
+  depends_on         = [google_service_account.packer_build]
+  service_account_id = local.service_account_names.build
   role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "serviceAccount:${google_service_account.packer_build.email}"
+  member             = "serviceAccount:${local.service_account_emails.build}"
 }
 
 resource "google_project_iam_member" "packer_build_roles" {
-  for_each = local.build_enabled ? toset(var.build_roles) : toset([])
-  project  = var.project_id
-  role     = each.value
-  member   = "serviceAccount:${google_service_account.packer_build.email}"
+  depends_on = [google_service_account.packer_build]
+  for_each   = local.build_enabled ? toset(var.build_roles) : toset([])
+  project    = var.project_id
+  role       = each.value
+  member     = "serviceAccount:${local.service_account_emails.build}"
 }
 
 # Build inputs are granted by their owning bucket, not through project-wide
 # Storage Admin. The exported-image bucket writer lives in packer-build-infra.
 resource "google_storage_bucket_iam_member" "packer_build_reader" {
-  for_each = local.build_enabled ? var.build_read_bucket_names : toset([])
-  bucket   = each.value
-  role     = "roles/storage.objectViewer"
-  member   = "serviceAccount:${google_service_account.packer_build.email}"
+  depends_on = [google_service_account.packer_build]
+  for_each   = local.build_enabled ? var.build_read_bucket_names : toset([])
+  bucket     = each.value
+  role       = "roles/storage.objectViewer"
+  member     = "serviceAccount:${local.service_account_emails.build}"
 }
 
 resource "google_project_iam_custom_role" "validate" {
@@ -207,10 +212,11 @@ resource "google_project_iam_custom_role" "validate" {
 }
 
 resource "google_project_iam_member" "validate_roles" {
-  for_each = local.validate_enabled ? toset(concat(var.validate_roles, [google_project_iam_custom_role.validate[0].name])) : toset([])
-  project  = var.project_id
-  role     = each.value
-  member   = "serviceAccount:${google_service_account.validate[0].email}"
+  depends_on = [google_service_account.validate, google_project_iam_custom_role.validate]
+  for_each   = local.validate_enabled ? toset(concat(var.validate_roles, ["projects/${var.project_id}/roles/${replace(var.name_prefix, "-", "_")}_validate"])) : toset([])
+  project    = var.project_id
+  role       = each.value
+  member     = "serviceAccount:${local.service_account_emails.validate}"
 }
 
 resource "google_project_iam_custom_role" "promote" {
@@ -223,10 +229,11 @@ resource "google_project_iam_custom_role" "promote" {
 }
 
 resource "google_project_iam_member" "promote_role" {
-  count   = local.promote_enabled ? 1 : 0
-  project = var.project_id
-  role    = google_project_iam_custom_role.promote[0].name
-  member  = "serviceAccount:${google_service_account.promote[0].email}"
+  depends_on = [google_service_account.promote, google_project_iam_custom_role.promote]
+  count      = local.promote_enabled ? 1 : 0
+  project    = var.project_id
+  role       = "projects/${var.project_id}/roles/${replace(var.name_prefix, "-", "_")}_promote"
+  member     = "serviceAccount:${local.service_account_emails.promote}"
 }
 
 resource "google_project_iam_member" "promotion_source_image_reader" {
@@ -237,17 +244,19 @@ resource "google_project_iam_member" "promotion_source_image_reader" {
 }
 
 resource "google_project_iam_member" "deploy_roles" {
-  for_each = local.deploy_enabled ? toset(var.deploy_roles) : toset([])
-  project  = var.project_id
-  role     = each.value
-  member   = "serviceAccount:${google_service_account.deploy[0].email}"
+  depends_on = [google_service_account.deploy]
+  for_each   = local.deploy_enabled ? toset(var.deploy_roles) : toset([])
+  project    = var.project_id
+  role       = each.value
+  member     = "serviceAccount:${local.service_account_emails.deploy}"
 }
 
 resource "google_project_iam_member" "destroy_roles" {
-  for_each = local.destroy_enabled ? toset(var.destroy_roles) : toset([])
-  project  = var.project_id
-  role     = each.value
-  member   = "serviceAccount:${google_service_account.destroy[0].email}"
+  depends_on = [google_service_account.destroy]
+  for_each   = local.destroy_enabled ? toset(var.destroy_roles) : toset([])
+  project    = var.project_id
+  role       = each.value
+  member     = "serviceAccount:${local.service_account_emails.destroy}"
 }
 
 # Bucket lifecycle and object access are limited to the three deterministic
@@ -263,10 +272,11 @@ resource "google_project_iam_custom_role" "deploy_storage" {
 }
 
 resource "google_project_iam_member" "deploy_storage" {
-  count   = local.deploy_enabled ? 1 : 0
-  project = var.project_id
-  role    = google_project_iam_custom_role.deploy_storage[0].name
-  member  = "serviceAccount:${google_service_account.deploy[0].email}"
+  depends_on = [google_service_account.deploy, google_project_iam_custom_role.deploy_storage]
+  count      = local.deploy_enabled ? 1 : 0
+  project    = var.project_id
+  role       = "projects/${var.project_id}/roles/${replace(var.name_prefix, "-", "_")}_deploy_storage"
+  member     = "serviceAccount:${local.service_account_emails.deploy}"
 
   condition {
     title       = "platform-buckets-only"
@@ -285,10 +295,11 @@ resource "google_project_iam_custom_role" "destroy_storage" {
 }
 
 resource "google_project_iam_member" "destroy_storage" {
-  count   = local.destroy_enabled ? 1 : 0
-  project = var.project_id
-  role    = google_project_iam_custom_role.destroy_storage[0].name
-  member  = "serviceAccount:${google_service_account.destroy[0].email}"
+  depends_on = [google_service_account.destroy, google_project_iam_custom_role.destroy_storage]
+  count      = local.destroy_enabled ? 1 : 0
+  project    = var.project_id
+  role       = "projects/${var.project_id}/roles/${replace(var.name_prefix, "-", "_")}_destroy_storage"
+  member     = "serviceAccount:${local.service_account_emails.destroy}"
 
   condition {
     title       = "platform-buckets-only"
@@ -302,17 +313,19 @@ resource "google_project_iam_member" "destroy_storage" {
 # bucket resource, never inherited from the project and never applied to the
 # release-evidence bucket.
 resource "google_storage_bucket_iam_member" "deploy_bucket_iam_admin" {
-  for_each = local.deploy_enabled ? local.lifecycle_iam_bucket_names : toset([])
-  bucket   = each.value
-  role     = "roles/storage.legacyBucketOwner"
-  member   = "serviceAccount:${google_service_account.deploy[0].email}"
+  depends_on = [google_service_account.deploy]
+  for_each   = local.deploy_enabled ? local.lifecycle_iam_bucket_names : toset([])
+  bucket     = each.value
+  role       = "roles/storage.legacyBucketOwner"
+  member     = "serviceAccount:${local.service_account_emails.deploy}"
 }
 
 resource "google_storage_bucket_iam_member" "destroy_bucket_iam_admin" {
-  for_each = local.destroy_enabled ? local.lifecycle_iam_bucket_names : toset([])
-  bucket   = each.value
-  role     = "roles/storage.legacyBucketOwner"
-  member   = "serviceAccount:${google_service_account.destroy[0].email}"
+  depends_on = [google_service_account.destroy]
+  for_each   = local.destroy_enabled ? local.lifecycle_iam_bucket_names : toset([])
+  bucket     = each.value
+  role       = "roles/storage.legacyBucketOwner"
+  member     = "serviceAccount:${local.service_account_emails.destroy}"
 }
 
 # Raw release evidence never enters public Actions artifacts. This foundational
@@ -321,7 +334,7 @@ resource "google_storage_bucket_iam_member" "destroy_bucket_iam_admin" {
 # retention and versioning make the evidence independently auditable.
 resource "google_storage_bucket" "release_evidence" {
   # checkov:skip=CKV_GCP_62:This foundational bucket must exist before and outlive platform-core, including its audit-log sink. Pointing it at that sink creates a bootstrap/destroy dependency; self-logging recurses. See the time-bounded ADR-004-R11 exception (#2084).
-  name                        = lower("${var.project_id}-release-evidence")
+  name                        = var.release_evidence_bucket_name
   project                     = var.project_id
   location                    = var.region
   uniform_bucket_level_access = true
@@ -353,10 +366,11 @@ resource "google_storage_bucket" "release_evidence" {
 }
 
 resource "google_storage_bucket_iam_member" "packer_build_evidence_writer" {
-  count  = local.build_enabled ? 1 : 0
-  bucket = google_storage_bucket.release_evidence.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.packer_build.email}"
+  depends_on = [google_service_account.packer_build]
+  count      = local.build_enabled ? 1 : 0
+  bucket     = google_storage_bucket.release_evidence.name
+  role       = "roles/storage.objectCreator"
+  member     = "serviceAccount:${local.service_account_emails.build}"
 
   condition {
     title       = "packer-build-evidence-only"
@@ -366,10 +380,11 @@ resource "google_storage_bucket_iam_member" "packer_build_evidence_writer" {
 }
 
 resource "google_storage_bucket_iam_member" "validate_build_evidence_reader" {
-  count  = local.validate_enabled ? 1 : 0
-  bucket = google_storage_bucket.release_evidence.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.validate[0].email}"
+  depends_on = [google_service_account.validate]
+  count      = local.validate_enabled ? 1 : 0
+  bucket     = google_storage_bucket.release_evidence.name
+  role       = "roles/storage.objectViewer"
+  member     = "serviceAccount:${local.service_account_emails.validate}"
 
   condition {
     title       = "packer-build-evidence-read-only"
@@ -379,10 +394,11 @@ resource "google_storage_bucket_iam_member" "validate_build_evidence_reader" {
 }
 
 resource "google_storage_bucket_iam_member" "validate_evidence_writer" {
-  count  = local.validate_enabled ? 1 : 0
-  bucket = google_storage_bucket.release_evidence.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.validate[0].email}"
+  depends_on = [google_service_account.validate]
+  count      = local.validate_enabled ? 1 : 0
+  bucket     = google_storage_bucket.release_evidence.name
+  role       = "roles/storage.objectCreator"
+  member     = "serviceAccount:${local.service_account_emails.validate}"
 
   condition {
     title       = "packer-validation-evidence-only"
@@ -392,10 +408,11 @@ resource "google_storage_bucket_iam_member" "validate_evidence_writer" {
 }
 
 resource "google_storage_bucket_iam_member" "release_scan_evidence_writer" {
-  count  = local.release_scan_enabled ? 1 : 0
-  bucket = google_storage_bucket.release_evidence.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.release_scan[0].email}"
+  depends_on = [google_service_account.release_scan]
+  count      = local.release_scan_enabled ? 1 : 0
+  bucket     = google_storage_bucket.release_evidence.name
+  role       = "roles/storage.objectCreator"
+  member     = "serviceAccount:${local.service_account_emails.release_scan}"
 
   condition {
     title       = "release-scan-evidence-only"
@@ -405,10 +422,11 @@ resource "google_storage_bucket_iam_member" "release_scan_evidence_writer" {
 }
 
 resource "google_storage_bucket_iam_member" "deploy_evidence_writer" {
-  count  = local.deploy_enabled ? 1 : 0
-  bucket = google_storage_bucket.release_evidence.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${google_service_account.deploy[0].email}"
+  depends_on = [google_service_account.deploy]
+  count      = local.deploy_enabled ? 1 : 0
+  bucket     = google_storage_bucket.release_evidence.name
+  role       = "roles/storage.objectCreator"
+  member     = "serviceAccount:${local.service_account_emails.deploy}"
 
   condition {
     title       = "deployment-evidence-only"
@@ -469,29 +487,33 @@ resource "google_storage_bucket_iam_member" "promotion_evidence_reader" {
 # The foundational root owns CI access to its pre-existing backend bucket.
 # These bindings outlive platform-core and replace workflow-time self-grants.
 resource "google_storage_bucket_iam_member" "deploy_state_object_admin" {
-  count  = local.deploy_enabled ? 1 : 0
-  bucket = local.terraform_state_bucket_name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.deploy[0].email}"
+  depends_on = [google_service_account.deploy]
+  count      = local.deploy_enabled ? 1 : 0
+  bucket     = local.terraform_state_bucket_name
+  role       = "roles/storage.objectAdmin"
+  member     = "serviceAccount:${local.service_account_emails.deploy}"
 }
 
 resource "google_storage_bucket_iam_member" "deploy_state_bucket_reader" {
-  count  = local.deploy_enabled ? 1 : 0
-  bucket = local.terraform_state_bucket_name
-  role   = "roles/storage.legacyBucketReader"
-  member = "serviceAccount:${google_service_account.deploy[0].email}"
+  depends_on = [google_service_account.deploy]
+  count      = local.deploy_enabled ? 1 : 0
+  bucket     = local.terraform_state_bucket_name
+  role       = "roles/storage.legacyBucketReader"
+  member     = "serviceAccount:${local.service_account_emails.deploy}"
 }
 
 resource "google_storage_bucket_iam_member" "destroy_state_object_admin" {
-  count  = local.destroy_enabled ? 1 : 0
-  bucket = local.terraform_state_bucket_name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.destroy[0].email}"
+  depends_on = [google_service_account.destroy]
+  count      = local.destroy_enabled ? 1 : 0
+  bucket     = local.terraform_state_bucket_name
+  role       = "roles/storage.objectAdmin"
+  member     = "serviceAccount:${local.service_account_emails.destroy}"
 }
 
 resource "google_storage_bucket_iam_member" "destroy_state_bucket_reader" {
-  count  = local.destroy_enabled ? 1 : 0
-  bucket = local.terraform_state_bucket_name
-  role   = "roles/storage.legacyBucketReader"
-  member = "serviceAccount:${google_service_account.destroy[0].email}"
+  depends_on = [google_service_account.destroy]
+  count      = local.destroy_enabled ? 1 : 0
+  bucket     = local.terraform_state_bucket_name
+  role       = "roles/storage.legacyBucketReader"
+  member     = "serviceAccount:${local.service_account_emails.destroy}"
 }
