@@ -23,6 +23,18 @@ on:
         required: false
         type: boolean
         default: false
+      skip_sonar:
+        description: >-
+          Skip the SonarCloud scan for this run. Set true ONLY by the caller for
+          the gcp-dev deploy dispatch: gcp-dev is a disposable test environment
+          that ships code already analyzed and gated on dev/PR, and SonarCloud
+          Cloud does not honour the org's reference-branch New Code period on a
+          full-branch deploy analysis (it hard-errors). The quality gate that
+          guards dev and every PR is unchanged; this only drops the redundant
+          re-scan on the sandbox deploy path.
+        required: false
+        type: boolean
+        default: false
     secrets:
       SONAR_TOKEN:
         description: 'SonarCloud analysis token (sonarcloud job)'
@@ -2590,7 +2602,8 @@ jobs:
         # every canonical-repo PR (#1310). `push` events (dev branch runs) carry
         # no pull_request payload and always scan.
         if: >-
-          ${{ github.repository == 'Brad-Edwards/shifter'
+          ${{ inputs.skip_sonar != true
+          && github.repository == 'Brad-Edwards/shifter'
           && (github.event_name != 'pull_request'
           || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0

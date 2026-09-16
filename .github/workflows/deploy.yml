@@ -366,6 +366,13 @@ jobs:
       # workflow_dispatch is the deliberate full-validation path. Engine-only /
       # docs-only PRs never pay the image build.
       run_stack_smoke: ${{ needs.changes.outputs.portal_image == 'true' || needs.changes.outputs.shifter_platform == 'true' || needs.changes.outputs.stack_smoke == 'true' || github.event_name == 'workflow_dispatch' }}
+      # Skip the SonarCloud scan ONLY for the manual gcp-dev deploy dispatch.
+      # gcp-dev is a disposable test environment that deploys code already
+      # analyzed and gated on dev/PR; SonarCloud Cloud also hard-errors on a
+      # gcp-dev full-branch analysis because the org's New Code period is a
+      # reference-branch definition Cloud does not honour. Dev pushes, main, and
+      # every PR still run and gate on SonarCloud unchanged.
+      skip_sonar: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'gcp-dev' }}
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
