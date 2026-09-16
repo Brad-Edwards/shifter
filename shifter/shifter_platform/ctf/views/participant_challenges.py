@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -36,6 +37,12 @@ logger = logging.getLogger(__name__)
 _MISSION_CATEGORY = re.compile(r"^Mission\s+(\d+)\b", re.IGNORECASE)
 
 
+class _NamedItem(Protocol):
+    """Minimal shape the filter-link builder needs from a tag/topic: a ``name``."""
+
+    name: str
+
+
 def _category_sort_key(category: str) -> tuple[int, int, str]:
     """Put onboarding first, then authored missions in numeric order."""
     normalized = category.strip()
@@ -54,8 +61,8 @@ def _filter_query(*pairs: tuple[str, str | None]) -> str:
 
 
 def _build_challenge_filter_links(
-    event_tags: Any,
-    event_topics: Any,
+    event_tags: Iterable[_NamedItem],
+    event_topics: Iterable[_NamedItem],
     *,
     category_filter: str | None,
     tag_filter: str | None,
