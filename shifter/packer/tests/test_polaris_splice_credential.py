@@ -142,6 +142,10 @@ def test_entrypoint_repairs_before_exact_image_handoff(
         helper.main(["entrypoint"])
 
     assert calls == [(helper.ORIGINAL_ENTRYPOINT, [helper.ORIGINAL_ENTRYPOINT])]
+    # Pin the literal path: the authoritative polaris a14-kali image installs its
+    # entrypoint at /usr/local/bin/entrypoint.sh; execv of a nonexistent path
+    # kills PID 1 and crash-loops the container. Guard against a silent revert.
+    assert helper.ORIGINAL_ENTRYPOINT == "/usr/local/bin/entrypoint.sh"
 
 
 def test_entrypoint_does_not_handoff_when_repair_fails(helper, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1066,6 +1066,22 @@ class TestGcpPolarisVerifyStackBehavior:
         )
         assert r.returncode != 0, r.stdout
 
+    def test_not_running_service_dumps_its_logs_before_failing(self, tmp_path):
+        import hashlib
+
+        # A service that never reaches running must have its container logs dumped
+        # to the build log so the failure is diagnosable without the builder VM
+        # serial console.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            running_services="svc-a running\n",
+        )
+        assert r.returncode != 0, r.stdout
+        assert "compose logs --tail=50 --no-color svc-b" in (tmp_path / "docker.log").read_text()
+
     def test_failed_compose_up_fails_before_capture(self, tmp_path):
         import hashlib
 
