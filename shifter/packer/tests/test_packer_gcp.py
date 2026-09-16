@@ -943,6 +943,36 @@ class TestGcpPolarisVerifyStackBehavior:
         )
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
 
+    @staticmethod
+    def _stub_tar_nested(tmp_path):
+        # Canonical build-v1.tar.gz layout (aws-range/repack_build_artifact.sh):
+        # docker-compose.yml under polaris/build/ with flags/ in the polaris/ parent,
+        # so a0-website's `context: ..` resolves inside the extracted tree.
+        stub = tmp_path / "bin"
+        stub.mkdir(exist_ok=True)
+        (stub / "tar").write_text(
+            "#!/bin/bash\n"
+            'd="";prev="";for a in "$@";do [ "$prev" = "-C" ] && d="$a";prev="$a";done\n'
+            'mkdir -p "$d/polaris/build" "$d/polaris/flags"\n'
+            'printf "services: {}\\n" > "$d/polaris/build/docker-compose.yml"\n'
+            'printf "placement\\n" > "$d/polaris/flags/placement.yaml"\n'
+        )
+        (stub / "tar").chmod(0o755)
+
+    def test_valid_stack_build_v1_nested_layout_passes(self, tmp_path):
+        import hashlib
+
+        # The build-v1.tar.gz layout (docker-compose.yml under polaris/build/) must
+        # be accepted, not just the flat layout.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar_nested(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            docker_ok=True,
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+
     def test_valid_stack_starts_all_declared_services_before_capture(self, tmp_path):
         import hashlib
 
@@ -983,6 +1013,25 @@ class TestGcpPolarisVerifyStackBehavior:
         assert "iptables -I OUTPUT 1 -d 169.254.169.254/32 -j DROP" in commands
         assert "iptables -I DOCKER-USER 1 -d 169.254.169.254/32 -j DROP" in commands
         assert commands.index("iptables -I OUTPUT") < commands.index("docker compose up -d")
+
+    def test_supplies_bake_time_dc01_ip_so_dns_starts(self, tmp_path):
+        import hashlib
+
+        # The dns service's entrypoint exits non-zero without DC01_IP (a per-range
+        # value only known at deploy time), which crash-loops dns and cascades to
+        # a14-kali (which uses dns as its resolver). verify-stack must supply a
+        # throwaway bake-time DC01_IP in the splice-credential override layer so
+        # the full stack can reach running for capture.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        override = (tmp_path / "polaris" / "build" / "docker-compose.splice-credential.yml").read_text()
+        assert "dns:" in override
+        assert "DC01_IP:" in override
 
     @pytest.mark.parametrize(
         "config_json,error",

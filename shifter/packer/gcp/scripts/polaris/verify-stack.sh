@@ -82,16 +82,36 @@ mkdir -p "${COMPOSE_DIR}"
 tar xzf "${STACK_TARBALL}" -C "${COMPOSE_DIR}"
 rm -f "${STACK_TARBALL}"
 
-if [[ ! -f "${COMPOSE_DIR}/docker-compose.yml" ]]; then
-  fail_stack "no docker-compose.yml at ${COMPOSE_DIR} after extracting the stack tarball."
+# Locate the compose file in the extracted tree. Two supported layouts:
+#   * flat: docker-compose.yml at the extraction root; or
+#   * canonical build-v1.tar.gz (aws-range/repack_build_artifact.sh), which keeps
+#     the polaris/build/ prefix and ships polaris/flags/ + polaris/contract_source.py
+#     in the parent so a0-website's `context: ..` resolves. Build from that nested
+#     dir so the parent (with flags/) is inside the extracted tree.
+if [[ -f "${COMPOSE_DIR}/docker-compose.yml" ]]; then
+  compose_dir="${COMPOSE_DIR}"
+elif [[ -f "${COMPOSE_DIR}/polaris/build/docker-compose.yml" ]]; then
+  compose_dir="${COMPOSE_DIR}/polaris/build"
+else
+  fail_stack "no docker-compose.yml at ${COMPOSE_DIR} or ${COMPOSE_DIR}/polaris/build after extracting the stack tarball."
 fi
 
-echo "polaris verify-stack: validating and building compose stack in ${COMPOSE_DIR}"
-cd "${COMPOSE_DIR}"
+echo "polaris verify-stack: validating and building compose stack in ${compose_dir}"
+cd "${compose_dir}"
 
-# Supply a throwaway bake-only pair and the reviewed entrypoint wrapper as a
-# separate Compose layer. Range bootstrap later replaces this with a per-range
-# pair in docker-compose.override.yml.
+# Supply throwaway bake-only values and the reviewed entrypoint wrapper as a
+# separate Compose layer. Range bootstrap later replaces these with per-range
+# values in docker-compose.override.yml.
+#
+# The dns service's entrypoint hard-requires DC01_IP (it substitutes the
+# __DC01_IP__ placeholder in the boreas.local zone file) and exits non-zero
+# without it; that value is only known per-range at deploy time. Without a
+# bake-time DC01_IP the dns container crash-loops here, and a14-kali (which uses
+# dns as its resolver) cascades. Supply a throwaway placeholder so the full
+# stack reaches running for capture; the baked dns container is recreated from
+# its image with the real per-range DC01_IP when range bootstrap applies its
+# override, re-running the entrypoint against a fresh __DC01_IP__ zone file.
+DC01_IP_BAKE_PLACEHOLDER="172.20.10.11"
 SPLICE_KEY_DIR="$(mktemp -d)"
 chmod 0700 "${SPLICE_KEY_DIR}"
 ssh-keygen -q -t ed25519 -N "" -f "${SPLICE_KEY_DIR}/splice_relay"
@@ -102,6 +122,9 @@ shred -u "${SPLICE_KEY_DIR}/splice_relay" "${SPLICE_KEY_DIR}/splice_relay.pub" 2
 rmdir "${SPLICE_KEY_DIR}"
 cat > docker-compose.splice-credential.yml <<COMPOSE_EOF
 services:
+  dns:
+    environment:
+      DC01_IP: "${DC01_IP_BAKE_PLACEHOLDER}"
   a9-splice:
     environment:
       A9_AUTHORIZED_KEY: "${SPLICE_PUBLIC_KEY}"

@@ -98,6 +98,15 @@ resource "google_storage_bucket_iam_member" "packer_build_image_writer" {
   member = "serviceAccount:${var.packer_service_account_email}"
 }
 
+# `gcloud compute images export` (qcow2 to this bucket) and the polaris-vm stack
+# fetch require bucket-level storage.buckets.get, which objectAdmin does not
+# include; grant the bucket-metadata reader alongside the object write.
+resource "google_storage_bucket_iam_member" "packer_build_image_bucket_reader" {
+  bucket = google_storage_bucket.gdc_vm_images.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${var.packer_service_account_email}"
+}
+
 # The GDC VM Runtime reads the gs:// disk images using the bare-metal GCR
 # service account key (carried in GDC_VM_IMAGE_GCS_SECRET_ID).
 resource "google_storage_bucket_iam_member" "vm_runtime_image_reader" {

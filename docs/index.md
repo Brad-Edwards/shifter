@@ -28,6 +28,7 @@ enforces the prerequisites documented here before any Terraform apply.
 | [AWS AMI seeding](dev/aws-ami-seeding-runbook.md) | You are seeding the range guest AMIs the portal stack reads. |
 | [AWS runner provisioning](dev/aws-runner-provisioning-runbook.md) | You are provisioning and registering the self-hosted CI runners. |
 | [AWS environment teardown](dev/aws-teardown-runbook.md) | You are tearing an AWS environment down. |
+| [GCP inventory bootstrap](dev/gcp-inventory-bootstrap.md) | You are onboarding or migrating CI identities and runners from private inventory. |
 | [GCP range-cell deploy](dev/gcp-range-cell-deploy.md) | You are deploying the GCP GCE range-cell backend. |
 | [Native CTF scenario content](dev/ctf-scenario-content.md) | You are publishing and binding private, digest-pinned native challenges to a scenario. |
 | [Polaris on the GCP range-cell](dev/polaris-gcp-range-cell.md) | You are running the Polaris scenario on the GCP range-cell backend. |

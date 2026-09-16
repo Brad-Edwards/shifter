@@ -1,593 +1,246 @@
-"""Tests for check_tf_gcp_wif_trust.py."""
+"""Regression checks for generic source enforcement and resolved apply policy."""
 
-from __future__ import annotations
-
+import json
+import re
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
 from .check_tf_gcp_wif_trust import check_file
+from .test_resolved_plan import ResolvedPlanTests  # noqa: F401 - existing CI entry point
 
-# The exact-subject federation shape this guard requires (ADR-004-R23, #1690):
-# a single-source subject list, an exact-subject for_each WIF binding, and a
-# static condition (repo + protected ref + literal assertion.sub ==) that matches
-# the list. Single-quoted CEL literals so Checkov's regex matches.
-GOOD_MODULE = """
-locals {
-  purpose_subjects = {
-    build    = ["repo:Brad-Edwards/shifter:environment:gcp-build-dev"]
-    validate = ["repo:Brad-Edwards/shifter:environment:gcp-validate-dev"]
-    promote  = ["repo:Brad-Edwards/shifter:environment:gcp-promote-prod"]
-    release_scan = ["repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev"]
-    deploy   = ["repo:Brad-Edwards/shifter:environment:gcp-dev"]
-    destroy  = ["repo:Brad-Edwards/shifter:environment:gcp-dev-destroy"]
-  }
-  federated_subjects = toset(flatten(values(local.purpose_subjects)))
-  purpose_subject_principals = {
-    for purpose, subjects in local.purpose_subjects : purpose => {
-      for sub in subjects : sub => "principal://iam.googleapis.com/pool/subject/${sub}"
-    }
-  }
-  ref_condition = join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == '${r}'"])
-}
-
-resource "google_iam_workload_identity_pool_provider" "github" {
-  attribute_condition = "assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')"
-}
-
-resource "google_service_account" "packer_build" { account_id = "build" }
-resource "google_service_account" "validate" { account_id = "validate" }
-resource "google_service_account" "promote" { account_id = "promote" }
-resource "google_service_account" "release_scan" { account_id = "scan" }
-resource "google_service_account" "deploy" { account_id = "deploy" }
-resource "google_service_account" "destroy" { account_id = "destroy" }
-
-resource "google_service_account_iam_member" "packer_build_wif" {
-  for_each           = local.purpose_subject_principals.build
-  service_account_id = google_service_account.packer_build.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = each.value
-}
-resource "google_service_account_iam_member" "validate_wif" {
-  for_each           = local.purpose_subject_principals.validate
-  service_account_id = google_service_account.validate.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = each.value
-}
-resource "google_service_account_iam_member" "promote_wif" {
-  for_each           = local.purpose_subject_principals.promote
-  service_account_id = google_service_account.promote.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = each.value
-}
-resource "google_service_account_iam_member" "release_scan_wif" {
-  for_each           = local.purpose_subject_principals.release_scan
-  service_account_id = google_service_account.release_scan.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = each.value
-}
-resource "google_service_account_iam_member" "deploy_wif" {
-  for_each           = local.purpose_subject_principals.deploy
-  service_account_id = google_service_account.deploy.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = each.value
-}
-resource "google_service_account_iam_member" "destroy_wif" {
-  for_each           = local.purpose_subject_principals.destroy
-  service_account_id = google_service_account.destroy.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = each.value
-}
-
-resource "google_project_iam_custom_role" "validate" {
-  permissions = ["compute.images.get", "compute.images.setLabels"]
-}
-resource "google_project_iam_custom_role" "promote" {
-  permissions = ["compute.images.create", "compute.images.deprecate", "compute.images.get"]
-}
-
-variable "build_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/cloudbuild.builds.editor"] }
-variable "validate_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/iap.tunnelResourceAccessor"] }
-variable "validate_permissions" { default = ["compute.images.get", "compute.images.setLabels"] }
-variable "promote_permissions" { default = ["compute.images.create", "compute.images.deprecate", "compute.images.get"] }
-variable "deploy_roles" {
-  description = "Roles for the deployment lifecycle identity."
-  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]
-}
-variable "destroy_roles" {
-  description = "A deliberately different description for teardown."
-  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]
-}
-"""
-
-# Repository-only condition + repository-wide principalSet + surviving waiver.
-BAD_MODULE = """
-locals {
-  repo_principal = "principalSet://iam.googleapis.com/pool/attribute.repository/Brad-Edwards/shifter"
-}
-
-resource "google_iam_workload_identity_pool_provider" "github" {
-  # checkov:skip=CKV_GCP_125:Federation is repository-scoped the recommended way.
-  attribute_condition = "assertion.repository == 'Brad-Edwards/shifter'"
-}
-
-resource "google_service_account_iam_member" "packer_build_wif" {
-  service_account_id = google_service_account.packer_build.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = local.repo_principal
-}
-"""
-
-
-# A repository-only condition whose attribute_mapping DOES map assertion.ref /
-# assertion.sub. A block-wide token scan would pass this (the tokens appear in
-# the mapping); the condition-scoped checks must still reject it (codex #1690).
-MAPPED_REPO_ONLY = """
-resource "google_iam_workload_identity_pool_provider" "github" {
-  attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.repository" = "assertion.repository"
-    "attribute.ref"        = "assertion.ref"
-  }
-  attribute_condition = "assertion.repository == 'Brad-Edwards/shifter'"
-}
-
-resource "google_service_account_iam_member" "wif" {
-  role   = "roles/iam.workloadIdentityUser"
-  member = "principal://iam.googleapis.com/pool/subject/repo:Brad-Edwards/shifter:ref:refs/heads/dev"
-}
-"""
-
-
-_REPO = "Brad-Edwards/shifter"
-
-# GOOD_MODULE's single static attribute_condition line, reused as the replace
-# target when swapping in a per-profile (multi-arm) condition.
-_STATIC_CONDITION_LINE = (
-    "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && "
-    "(${local.ref_condition}) && "
-    "(assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || "
-    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || "
-    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || "
-    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || "
-    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || "
-    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\""
+MODULE = (
+    Path(__file__).resolve().parents[2]
+    / "platform/terraform/gcp/modules/cicd-oidc-identity"
 )
 
 
-def _sub(ctx: str) -> str:
-    return f"assertion.sub == 'repo:{_REPO}:environment:{ctx}'"
+class GenericSourceTests(unittest.TestCase):
+    def check_changed(self, before, after, filename="main.tf"):
+        sources = {path.name: path.read_text() for path in MODULE.glob("*.tf")}
+        self.assertIn(before, "\n".join(sources.values()))
+        with tempfile.TemporaryDirectory() as directory:
+            module = Path(directory) / MODULE.name
+            module.mkdir()
+            for name, source in sources.items():
+                (module / name).write_text(source.replace(before, after))
+            return check_file(module / filename)
 
+    def variable_block(self, name):
+        source = (MODULE / "variables.tf").read_text()
+        match = re.search(r'variable "' + name + r'" \{.*?^\}', source, re.S | re.M)
+        self.assertIsNotNone(match)
+        return match.group()
 
-def _deploy_tenant_arm(env: str, image_env: str) -> str:
-    """A deploy-tenant CEL arm mirroring the module's gcp-dev / nazgul shape."""
-    return (
-        f"assertion.repository == '{_REPO}' && "
-        f"((assertion.ref == 'refs/heads/{env}' && {_sub(env)}) || "
-        f"((${{local.ref_condition}}) && ({_sub(f'gcp-build-{image_env}')} || "
-        f"{_sub(f'gcp-validate-{image_env}')} || {_sub(f'gcp-release-scan-{image_env}')} || "
-        f"{_sub(env)} || {_sub(f'{env}-destroy')})))"
-    )
-
-
-def _four_arm_condition(nazgul_arm: str | None = None) -> str:
-    """gcp-dev + nazgul + proof + prod selector, mirroring the real module."""
-    gcp_dev_arm = _deploy_tenant_arm("gcp-dev", "dev")
-    nazgul = nazgul_arm if nazgul_arm is not None else _deploy_tenant_arm("nazgul", "nazgul")
-    proof_arm = (
-        f"assertion.repository == '{_REPO}' && (${{local.ref_condition}}) && "
-        f"({_sub('gcp-build-proof')} || {_sub('gcp-validate-proof')})"
-    )
-    prod_arm = (
-        f"assertion.repository == '{_REPO}' && (${{local.ref_condition}}) && {_sub('gcp-promote-prod')}"
-    )
-    return (
-        f'  attribute_condition = var.environment == "gcp-dev" ? "{gcp_dev_arm}" : '
-        f'var.environment == "nazgul" ? "{nazgul}" : '
-        f'var.environment == "proof" ? "{proof_arm}" : "{prod_arm}"'
-    )
-
-
-def _write(tmp_path: Path, name: str, body: str) -> Path:
-    path = tmp_path / name
-    path.write_text(textwrap.dedent(body).lstrip())
-    return path
-
-
-class CheckTfGcpWifTrustTest(unittest.TestCase):
-    def test_exact_subject_module_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", GOOD_MODULE)
-            self.assertEqual(check_file(tf), [])
-
-    def test_profile_conditional_static_conditions_pass(self) -> None:
-        conditional = GOOD_MODULE.replace(
-            "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\"",
-            "  attribute_condition = var.environment == \"gcp-dev\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\" : var.environment == \"proof\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-proof' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-proof')\" : \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod'\"",
+    def check_default_changed(self, name, values):
+        block = self.variable_block(name)
+        changed, count = re.subn(
+            r"default\s*=\s*\[.*?]",
+            "default = " + json.dumps(values),
+            block,
+            flags=re.S,
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", conditional)
-            self.assertEqual(check_file(tf), [])
+        self.assertEqual(count, 1)
+        return self.check_changed(block, changed)
 
-    def test_one_weakened_profile_condition_is_rejected(self) -> None:
-        conditional = GOOD_MODULE.replace(
-            "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\"",
-            "  attribute_condition = var.environment == \"gcp-dev\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\" : var.environment == \"proof\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-proof' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-proof')\" : \"assertion.repository == 'Brad-Edwards/shifter' && assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod'\"",
+    def assert_violation(self, violations, reason):
+        self.assertTrue(
+            any(reason in violation.reason for violation in violations),
+            [v.reason for v in violations],
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", conditional)
-            reasons = [violation.reason for violation in check_file(tf)]
-        self.assertTrue(any("every profile arm" in reason for reason in reasons))
 
-    def test_repository_only_condition_is_rejected(self) -> None:
-        missing_ref = GOOD_MODULE.replace(
-            " && (${local.ref_condition})",
-            "",
+    def test_current_generic_module_passes(self):
+        self.assertEqual(
+            [error for path in MODULE.glob("*.tf") for error in check_file(path)], []
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", missing_ref)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("exact protected assertion.ref" in reason for reason in reasons))
-        self.assertFalse(any("literal assertion.sub" in reason for reason in reasons))
 
-    def test_missing_static_attribute_condition_is_rejected(self) -> None:
-        unguarded = GOOD_MODULE.replace(
-            "  attribute_condition = ",
-            "  dynamic_condition = ",
-            1,
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", unguarded)
-            reasons = [violation.reason for violation in check_file(tf)]
-        self.assertTrue(any("must define static attribute_condition strings" in reason for reason in reasons))
+    def test_immutable_subject_ids_cannot_be_substituted(self):
+        self.assertTrue(self.check_changed(
+            "${var.github_org}@${var.github_owner_id}", "${var.github_org}@999"
+        ))
+        self.assertTrue(self.check_changed(
+            "${var.github_repo}@${var.github_repository_id}", "${var.github_repo}@999"
+        ))
 
-    def test_condition_without_repository_scope_is_rejected(self) -> None:
-        missing_repository = GOOD_MODULE.replace(
-            "assertion.repository == 'Brad-Edwards/shifter' && ",
-            "",
-            1,
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", missing_repository)
-            reasons = [violation.reason for violation in check_file(tf)]
-        self.assertTrue(any("assertion.repository" in reason for reason in reasons))
-
-    def test_missing_assertion_sub_clause_is_rejected(self) -> None:
-        missing_sub = GOOD_MODULE.replace(
-            " && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || "
-            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || "
-            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || "
-            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || "
-            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || "
-            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')",
-            "",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", missing_sub)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("literal assertion.sub" in reason for reason in reasons))
-        self.assertFalse(any("exact protected assertion.ref" in reason for reason in reasons))
-
-    def test_profile_arm_with_wrong_exact_subject_set_is_rejected(self) -> None:
-        conditional = GOOD_MODULE.replace(
-            "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\"",
-            "  attribute_condition = var.environment == \"gcp-dev\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\" : var.environment == \"proof\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-proof' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-proof')\" : \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev')\"",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", conditional)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("wrong exact Environment subjects" in reason for reason in reasons))
-
-    def test_repository_wide_principalset_binding_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", BAD_MODULE)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("principalSet" in reason for reason in reasons))
-
-    def test_surviving_ckv_gcp_125_waiver_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", BAD_MODULE)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("CKV_GCP_125" in reason for reason in reasons))
-
-    def test_condition_binding_drift_is_rejected(self) -> None:
-        # local.purpose_subjects lists a subject the static condition omits.
-        drift = GOOD_MODULE.replace(
-            '    build    = ["repo:Brad-Edwards/shifter:environment:gcp-build-dev"]\n',
-            '    build    = ["repo:Brad-Edwards/shifter:environment:gcp-build-dev", '
-            '"repo:Brad-Edwards/shifter:environment:gcp-build-stage"]\n',
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", drift)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("must equal local.purpose_subjects" in r for r in reasons))
-
-    def test_unpaired_gcp_dev_ref_is_rejected(self) -> None:
-        widened = GOOD_MODULE.replace(
-            "(${local.ref_condition})",
-            "(assertion.ref == 'refs/heads/gcp-dev' || ${local.ref_condition})",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", widened)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("paired directly" in reason for reason in reasons))
-
-    def test_gcp_dev_ref_paired_with_environment_subject_passes(self) -> None:
-        paired = GOOD_MODULE.replace(
-            "(${local.ref_condition}) &&",
-            "((assertion.ref == 'refs/heads/gcp-dev' && "
-            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev') "
-            "|| ((${local.ref_condition}) &&",
-        ).replace(
-            "'repo:Brad-Edwards/shifter:ref:refs/heads/dev'))",
-            "'repo:Brad-Edwards/shifter:ref:refs/heads/dev')))",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", paired)
-            self.assertEqual(check_file(tf), [])
-
-    def test_prose_mentioning_ckv_gcp_125_does_not_false_positive(self) -> None:
-        # Non-false-positive counterpart to the waiver-rejection test: a comment
-        # that NAMES the rule (not a checkov:skip directive) must not trip the
-        # CKV_GCP_125 guard, mirroring the real module's explanatory comment.
-        module = GOOD_MODULE.replace(
-            'resource "google_iam_workload_identity_pool_provider" "github" {',
-            'resource "google_iam_workload_identity_pool_provider" "github" {\n'
-            "  # Replaces the repository-only condition and the CKV_GCP_125 waiver.",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", module)
-            self.assertEqual(check_file(tf), [])
-
-    def test_exact_principal_member_not_confused_with_principalset(self) -> None:
-        # Non-false-positive counterpart to the principalSet-rejection test: an
-        # exact `principal://.../subject/` member contains `//` but is NOT a
-        # repository-wide principalSet, and `//` must not be stripped as a comment.
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", GOOD_MODULE)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertFalse(any("principalSet" in reason for reason in reasons))
-
-    def test_condition_checks_are_scoped_to_condition_value(self) -> None:
-        # attribute_mapping maps assertion.ref/sub, but the condition is repo-only;
-        # the checks must fire on the CONDITION, not the block (codex #1690).
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", MAPPED_REPO_ONLY)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("assertion.ref" in r for r in reasons))
-        self.assertTrue(any("assertion.sub" in r for r in reasons))
-
-    def test_module_without_wif_resources_is_ignored(self) -> None:
-        module = """
-        resource "google_storage_bucket" "b" {
-          name = "x"
-        }
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", module)
-            self.assertEqual(check_file(tf), [])
-
-    def test_overlapping_purpose_subject_is_rejected(self) -> None:
-        overlap = GOOD_MODULE.replace(
-            "environment:gcp-validate-dev",
-            "environment:gcp-build-dev",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", overlap)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("pairwise disjoint" in reason for reason in reasons))
-
-    def test_legacy_service_account_without_purpose_map_is_rejected(self) -> None:
-        legacy = MAPPED_REPO_ONLY + '\nresource "google_service_account" "packer_build" { account_id = "build" }\n'
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", legacy)
-            reasons = [violation.reason for violation in check_file(tf)]
-        self.assertTrue(any("six purpose-specific" in reason for reason in reasons))
-
-    def test_cross_purpose_wif_binding_is_rejected(self) -> None:
-        crossed = GOOD_MODULE.replace(
-            "local.purpose_subject_principals.validate",
-            "local.purpose_subject_principals.build",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", crossed)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("validate WIF binding" in reason for reason in reasons))
-
-    def test_validate_broad_roles_are_rejected(self) -> None:
-        broad = GOOD_MODULE.replace(
-            'variable "validate_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/iap.tunnelResourceAccessor"] }',
-            'variable "validate_roles" { default = ["roles/compute.admin", "roles/storage.admin"] }',
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", broad)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("validate role set" in reason for reason in reasons))
-
-    def test_validate_permissions_cannot_create_images(self) -> None:
-        broad = GOOD_MODULE.replace(
-            'variable "validate_permissions" { default = ["compute.images.get", "compute.images.setLabels"] }',
-            'variable "validate_permissions" { default = ["compute.images.get", "compute.images.create"] }',
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", broad)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("validate permission set" in reason for reason in reasons))
-
-    def test_promote_permissions_cannot_manage_instances(self) -> None:
-        broad = GOOD_MODULE.replace(
-            'variable "promote_permissions" { default = ["compute.images.create", "compute.images.deprecate", "compute.images.get"] }',
-            'variable "promote_permissions" { default = ["compute.images.create", "compute.instances.create"] }',
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", broad)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("promote permission set" in reason for reason in reasons))
-
-    def test_deploy_and_destroy_cannot_share_one_broad_role_variable(self) -> None:
-        shared = GOOD_MODULE.replace(
-            """variable "deploy_roles" {
-  description = "Roles for the deployment lifecycle identity."
-  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]
-}
-variable "destroy_roles" {
-  description = "A deliberately different description for teardown."
-  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]
-}""",
-            'variable "platform_roles" { default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"] }\n'
-            'resource "google_project_iam_member" "deploy_roles" { for_each = toset(var.platform_roles) }\n'
-            'resource "google_project_iam_member" "destroy_roles" { for_each = toset(var.platform_roles) }',
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", shared)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("separate deploy_roles and destroy_roles" in reason for reason in reasons))
-
-    def test_deploy_and_destroy_role_sets_must_be_independently_derived(self) -> None:
-        identical = GOOD_MODULE.replace(
-            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]',
-            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]',
-            1,
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", identical)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("independently derived" in reason for reason in reasons))
-
-    def test_destroy_role_set_cannot_manage_project_services(self) -> None:
-        broad = GOOD_MODULE.replace(
-            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]',
-            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]',
-            1,
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", broad)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("must not enable or disable project services" in reason for reason in reasons))
-
-    def test_missing_both_lifecycle_role_variables_is_rejected(self) -> None:
-        missing = GOOD_MODULE.replace(
-            """variable "deploy_roles" {
-  description = "Roles for the deployment lifecycle identity."
-  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]
-}
-variable "destroy_roles" {
-  description = "A deliberately different description for teardown."
-  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]
-}""",
-            "",
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", missing)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("separate deploy_roles and destroy_roles" in reason for reason in reasons))
-
-    def test_lifecycle_roles_cannot_mutate_release_images_or_evidence(self) -> None:
-        for purpose, broad_role in (
-            ("deploy", "roles/compute.admin"),
-            ("destroy", "roles/storage.admin"),
+    def test_bypassing_a_claim_gate_is_rejected(self):
+        for claim in (
+            "sub",
+            "ref",
+            "workflow_ref",
+            "repository_id",
+            "repository_owner_id",
         ):
-            with self.subTest(purpose=purpose, broad_role=broad_role):
-                narrow = (
-                    '["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]'
-                    if purpose == "deploy"
-                    else '["roles/compute.networkAdmin", "roles/compute.securityAdmin"]'
+            with self.subTest(claim=claim):
+                self.assertTrue(
+                    self.check_changed(
+                        f"assertion.{claim} ==", f"true || assertion.{claim} =="
+                    )
                 )
-                broad = GOOD_MODULE.replace(narrow, f'["{broad_role}"]', 1)
-                with tempfile.TemporaryDirectory() as tmp:
-                    tf = _write(Path(tmp), "main.tf", broad)
-                    reasons = [v.reason for v in check_file(tf)]
-                self.assertTrue(any("release-evidence-bypassing broad roles" in reason for reason in reasons))
 
-    def test_split_module_resolves_lifecycle_role_variables_across_files(self) -> None:
-        main_body, separator, variables_body = GOOD_MODULE.partition('variable "build_roles"')
-        self.assertTrue(separator)
-        with tempfile.TemporaryDirectory() as tmp:
-            module_dir = Path(tmp) / "cicd-oidc-identity"
-            module_dir.mkdir()
-            main = _write(module_dir, "main.tf", main_body)
-            variables = _write(module_dir, "variables.tf", separator + variables_body)
+    def test_issuer_or_principal_widening_is_rejected(self):
+        for before, after in [
+            ("https://token.actions.githubusercontent.com", "https://attacker.example"),
+            (
+                "principal://iam.googleapis.com/projects/",
+                "principalSet://iam.googleapis.com/projects/",
+            ),
+            (
+                "local.purpose_subject_principals.deploy",
+                "local.purpose_subject_principals.build",
+            ),
+            (
+                "local.service_account_names.destroy",
+                "local.service_account_names.deploy",
+            ),
+        ]:
+            with self.subTest(after=after):
+                self.assertTrue(self.check_changed(before, after))
 
-            self.assertEqual(check_file(main), [])
-            self.assertEqual(check_file(variables), [])
-
-    def test_build_roles_cannot_have_project_wide_storage_admin(self) -> None:
-        broad = GOOD_MODULE.replace(
-            'variable "build_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/cloudbuild.builds.editor"] }',
-            'variable "build_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/storage.admin"] }',
+    def test_project_iam_requires_the_configured_project(self):
+        self.assertTrue(
+            self.check_changed("= var.project_id", "= var.unapproved_project_id")
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", broad)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("build role set" in reason for reason in reasons))
 
-    def test_release_scan_cannot_have_a_project_wide_role(self) -> None:
-        broad = (
-            GOOD_MODULE
-            + """
-        resource "google_project_iam_member" "release_scan_reader" {
-          project = "example"
-          role    = "roles/artifactregistry.reader"
-          member  = "serviceAccount:${google_service_account.release_scan.email}"
-        }
-        """
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", broad)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("no project-wide IAM role" in reason for reason in reasons))
-
-    def test_non_tf_inputs_are_ignored(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            artifact = Path(tmp) / "image.tar"
-            artifact.write_bytes(b"\x00\x8a\xff")
-            self.assertEqual(check_file(artifact), [])
-
-    def test_purpose_module_missing_explicit_output_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            module_dir = Path(tmp) / "cicd-oidc-identity"
-            module_dir.mkdir()
-            outputs = _write(
-                module_dir,
-                "outputs.tf",
-                'output "workload_identity_provider" { value = "provider" }\n',
+    def test_checkov_waiver_is_rejected(self):
+        self.assertTrue(
+            self.check_changed(
+                "# GitHub Actions",
+                "# checkov:skip=CKV_GCP_125:waiver\n# GitHub Actions",
             )
-            reasons = [violation.reason for violation in check_file(outputs)]
-        self.assertTrue(any("explicit purpose outputs" in reason for reason in reasons))
-
-    # ------------------------------------------------------------------
-    # nazgul deploy-tenant peer (added the same way gcp-dev was; see #2182
-    # for the generic, non-enumerated onboarding follow-up).
-    # ------------------------------------------------------------------
-    def test_nazgul_deploy_tenant_profile_passes(self) -> None:
-        module = GOOD_MODULE.replace(_STATIC_CONDITION_LINE, _four_arm_condition())
-        self.assertNotIn(_STATIC_CONDITION_LINE, module)  # replace matched
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", module)
-            self.assertEqual(check_file(tf), [])
-
-    def test_nazgul_profile_arm_with_wrong_subjects_is_rejected(self) -> None:
-        # The nazgul arm drops its own destroy Environment subject.
-        bad_nazgul = _deploy_tenant_arm("nazgul", "nazgul").replace(
-            " || " + _sub("nazgul-destroy"), ""
         )
-        module = GOOD_MODULE.replace(_STATIC_CONDITION_LINE, _four_arm_condition(bad_nazgul))
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", module)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("wrong exact Environment subjects" in r for r in reasons))
 
-    def test_unpaired_nazgul_ref_is_rejected(self) -> None:
-        widened_nazgul = _deploy_tenant_arm("nazgul", "nazgul").replace(
-            "(${local.ref_condition})",
-            "(assertion.ref == 'refs/heads/nazgul' || ${local.ref_condition})",
+    def test_broad_roles_are_rejected(self):
+        for purpose in ("deploy", "destroy"):
+            for role in (
+                "roles/compute.admin",
+                "roles/compute.imageAdmin",
+                "roles/compute.instanceAdmin.v1",
+                "roles/compute.storageAdmin",
+                "roles/storage.admin",
+                "roles/editor",
+                "roles/owner",
+            ):
+                with self.subTest(purpose=purpose, role=role):
+                    self.assert_violation(
+                        self.check_default_changed(purpose + "_roles", [role]),
+                        purpose
+                        + " role set contains release-evidence-bypassing broad roles",
+                    )
+
+    def test_validation_cannot_create_delete_or_promote_images(self):
+        for permission in (
+            "compute.images.create",
+            "compute.images.delete",
+            "compute.images.deprecate",
+        ):
+            with self.subTest(permission=permission):
+                self.assert_violation(
+                    self.check_default_changed("validate_permissions", [permission]),
+                    "validate permission set crosses image-build/promotion authority",
+                )
+
+    def test_shared_legacy_platform_roles_are_rejected(self):
+        source = (MODULE / "variables.tf").read_text()
+        addition = '\nvariable "platform_roles" {\n  default = ["roles/viewer"]\n}\n'
+        self.assert_violation(
+            self.check_changed(source, source + addition),
+            "platform lifecycle identities must use separate deploy_roles and destroy_roles",
         )
-        module = GOOD_MODULE.replace(_STATIC_CONDITION_LINE, _four_arm_condition(widened_nazgul))
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), "main.tf", module)
-            reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(any("paired directly" in reason for reason in reasons))
+
+    def test_validate_broad_roles_are_rejected(self):
+        for role in (
+            "roles/compute.admin",
+            "roles/storage.admin",
+            "roles/cloudbuild.builds.editor",
+            "roles/iam.serviceAccountAdmin",
+            "roles/resourcemanager.projectIamAdmin",
+        ):
+            with self.subTest(role=role):
+                self.assert_violation(
+                    self.check_default_changed("validate_roles", [role]),
+                    "validate role set contains forbidden broad roles",
+                )
+
+    def test_build_roles_cannot_have_project_wide_storage_admin(self):
+        self.assert_violation(
+            self.check_default_changed("build_roles", ["roles/storage.admin"]),
+            "build role set must use resource-scoped GCS grants",
+        )
+
+    def test_promote_permissions_cannot_manage_other_capabilities(self):
+        for permission in (
+            "compute.instances.create",
+            "storage.objects.get",
+            "cloudbuild.builds.create",
+            "iam.serviceAccounts.actAs",
+        ):
+            with self.subTest(permission=permission):
+                self.assert_violation(
+                    self.check_default_changed("promote_permissions", [permission]),
+                    "promote permission set crosses instance/storage/build/IAM authority",
+                )
+
+    def test_release_scan_cannot_have_a_project_wide_role(self):
+        resource = (MODULE / "main.tf").read_text()
+        addition = '\nresource "google_project_iam_member" "invalid_scan_role" {\n  project = var.project_id\n  role = "roles/viewer"\n  member = "serviceAccount:${local.service_account_emails.release_scan}"\n}\n'
+        self.assert_violation(
+            self.check_changed(resource, resource + addition),
+            "release-scan identity must have no project-wide IAM role",
+        )
+
+    def test_deploy_and_destroy_role_sets_must_be_independently_derived(self):
+        default = re.search(
+            r"default\s*=\s*(\[.*?])", self.variable_block("destroy_roles"), re.S
+        ).group(1)
+        values = json.loads(default.replace(",\n  ]", "\n  ]"))
+        self.assert_violation(
+            self.check_default_changed("deploy_roles", values),
+            "deploy and destroy role sets must be independently derived",
+        )
+
+    def test_destroy_role_set_cannot_manage_project_services(self):
+        self.assert_violation(
+            self.check_default_changed(
+                "destroy_roles", ["roles/serviceusage.serviceUsageAdmin"]
+            ),
+            "destroy role set must not enable or disable project services",
+        )
+
+    def test_missing_lifecycle_role_variables_is_rejected(self):
+        for names in (
+            ("deploy_roles",),
+            ("destroy_roles",),
+            ("deploy_roles", "destroy_roles"),
+        ):
+            with self.subTest(names=names):
+                before = (MODULE / "variables.tf").read_text()
+                after = before
+                for name in names:
+                    after = after.replace(
+                        f'variable "{name}"', f'variable "unused_{name}"'
+                    )
+                self.assert_violation(
+                    self.check_changed(before, after),
+                    "platform lifecycle identities must use separate deploy_roles and destroy_roles",
+                )
+
+    def test_purpose_module_missing_explicit_output_is_rejected(self):
+        for name in (
+            "workload_identity_provider",
+            "packer_build_service_account_email",
+            "packer_validate_service_account_email",
+            "packer_promote_service_account_email",
+            "release_scan_service_account_email",
+            "deploy_service_account_email",
+            "destroy_service_account_email",
+        ):
+            with self.subTest(name=name):
+                self.assert_violation(
+                    self.check_changed(
+                        f'output "{name}"', f'output "removed_{name}"', "outputs.tf"
+                    ),
+                    "GCP CI identity module must publish explicit purpose outputs; missing",
+                )
 
 
 if __name__ == "__main__":
