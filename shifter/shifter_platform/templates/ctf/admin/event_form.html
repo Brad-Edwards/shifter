@@ -365,14 +365,11 @@
         <!-- Actions -->
         <div class="form-actions">
             {% if is_edit %}
-                <a id="cancel-link"
-                   href="{% url 'ctf:admin_event_detail' event_id=event_id %}"
-                   class="btn btn-cancel">{% trans "Cancel" %}</a>
+                {% url 'ctf:admin_event_detail' event_id=event_id as cancel_url %}
             {% else %}
-                <a id="cancel-link"
-                   href="{% url 'ctf:admin_event_list' %}"
-                   class="btn btn-cancel">{% trans "Cancel" %}</a>
+                {% url 'ctf:admin_event_list' as cancel_url %}
             {% endif %}
+            <a id="cancel-link" href="{{ cancel_url }}" class="btn btn-cancel">{% trans "Cancel" %}</a>
             <button type="button" class="btn btn-primary" id="submit-btn">
                 {% if is_edit %}
                     {% trans "Save Changes" %}

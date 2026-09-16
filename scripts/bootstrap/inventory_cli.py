@@ -17,6 +17,21 @@ from inventory_cloud import bootstrap_lock, ensure_services, ensure_state_bucket
 from inventory_github import publish_execution_bindings, reconcile_environments, reconcile_subject, verify_github_actor
 
 
+def _safe_output_path(raw: Path, option: str) -> Path:
+    """Resolve a CLI output path, confined to the current working directory.
+
+    The value is an untrusted CLI argument (SonarCloud S8707: path traversal via
+    agent-supplied CLI arguments). Resolving and confining it to the working tree
+    stops ``--plan-output ../../etc`` (or an absolute path outside it) from
+    creating files beyond the directory the bootstrap is run from.
+    """
+    base = Path.cwd().resolve()
+    candidate = (base / raw).resolve()
+    if candidate != base and base not in candidate.parents:
+        raise invalid(f"{option} must stay within {base}")
+    return candidate
+
+
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register inventory validation, planning and bootstrap commands."""
     parser = subparsers.add_parser(
@@ -120,12 +135,13 @@ def _resolve_secret(record: DeploymentRecord, args: argparse.Namespace) -> None:
         or not args.execution_environment
     ):
         raise invalid("secret resolution requires a binding, output file and exact execution scope")
+    output = _safe_output_path(args.secret_output, "--secret-output")
     value = resolve_secret(
         record.secrets[args.secret_name],
         repository=args.execution_repository,
         environment=args.execution_environment,
     )
-    write_private(args.secret_output, value)
+    write_private(output, value)
 
 
 def _authorize_bootstrap(record: DeploymentRecord, args: argparse.Namespace) -> None:
@@ -165,7 +181,7 @@ def _bootstrap(record: DeploymentRecord, args: argparse.Namespace) -> None:
 
     _authorize_bootstrap(record, args)
     product_root = get_repo_root()
-    plan_output = create_plan_directory(args.plan_output)
+    plan_output = create_plan_directory(_safe_output_path(args.plan_output, "--plan-output"))
     write_private(
         plan_output / "provenance.json",
         json.dumps(
@@ -229,7 +245,7 @@ def handle(args: argparse.Namespace) -> None:
 
             if not args.output:
                 raise invalid("scaffold requires a new output directory")
-            scaffold_checks(record, args.output)
+            scaffold_checks(record, _safe_output_path(args.output, "--output"))
         elif args.action == "resolve-secret":
             _resolve_secret(record, args)
         else:
