@@ -2475,8 +2475,12 @@ jobs:
     name: SonarCloud
     # Runs after the test jobs so their coverage reports can feed the scan.
     # success() keeps the implicit needs-passed guard that a custom if:
-    # would otherwise drop; skipped when tests are skipped.
-    if: ${{ always() && !cancelled() && !inputs.skip_tests && needs.paths.outputs.run_sonar == 'true' }}
+    # would otherwise drop; skipped when tests are skipped. Also skipped on the
+    # gcp-dev deploy dispatch (inputs.skip_sonar): that sandbox ships code
+    # already scanned and gated on dev/PR, and SonarCloud Cloud hard-errors on a
+    # gcp-dev full-branch analysis under the org's reference-branch New Code
+    # period. dev pushes, main, and PRs are unaffected (skip_sonar stays false).
+    if: ${{ always() && !cancelled() && !inputs.skip_tests && !inputs.skip_sonar && needs.paths.outputs.run_sonar == 'true' }}
     needs:
       - paths
       - shifter-platform-tests
@@ -2602,8 +2606,7 @@ jobs:
         # every canonical-repo PR (#1310). `push` events (dev branch runs) carry
         # no pull_request payload and always scan.
         if: >-
-          ${{ inputs.skip_sonar != true
-          && github.repository == 'Brad-Edwards/shifter'
+          ${{ github.repository == 'Brad-Edwards/shifter'
           && (github.event_name != 'pull_request'
           || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
