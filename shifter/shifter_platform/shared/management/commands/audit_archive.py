@@ -174,24 +174,53 @@ class Command(BaseCommand):
             error_code = str(e.response.get("Error", {}).get("Code", ""))
             if error_code not in {"PreconditionFailed", "412"}:
                 self.stdout.write(self.style.ERROR(f"  Batch {batch_num}: S3 upload failed"))
-                return 0, 0, False
-            try:
-                head_kwargs = {"Bucket": bucket_name, "Key": s3_key, "ChecksumMode": "ENABLED"}
-                if expected_bucket_owner:
-                    head_kwargs["ExpectedBucketOwner"] = expected_bucket_owner
-                existing = s3_client.head_object(**head_kwargs)
-            except ClientError:
-                self.stdout.write(self.style.ERROR(f"  Batch {batch_num}: existing object could not be verified"))
-                return 0, 0, False
-            if existing.get("ChecksumSHA256") != checksum:
-                self.stdout.write(self.style.ERROR(f"  Batch {batch_num}: immutable object checksum mismatch"))
-                return 0, 0, False
-        self.stdout.write(f"  Batch {batch_num}: Uploaded {len(batch)} records to s3://{bucket_name}/{s3_key}")
-        if not no_delete:
-            self.stdout.write(
-                self.style.WARNING("  Hot-ledger deletion disabled: no verified write-once checkpoint is configured")
-            )
-        return len(batch), 0, True
+                upload_ok = False
+            else:
+                upload_ok = self._existing_archive_matches(
+                    s3_client,
+                    bucket_name,
+                    s3_key,
+                    expected_bucket_owner,
+                    checksum,
+                    batch_num,
+                )
+        else:
+            upload_ok = True
+
+        if upload_ok:
+            self.stdout.write(f"  Batch {batch_num}: Uploaded {len(batch)} records to s3://{bucket_name}/{s3_key}")
+            if not no_delete:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "  Hot-ledger deletion disabled: no verified write-once checkpoint is configured"
+                    )
+                )
+        return (len(batch), 0, True) if upload_ok else (0, 0, False)
+
+    def _existing_archive_matches(
+        self,
+        s3_client: BaseClient,
+        bucket_name: str,
+        s3_key: str,
+        expected_bucket_owner: str,
+        checksum: str,
+        batch_num: int,
+    ) -> bool:
+        """Verify that an immutable pre-existing object has the expected bytes."""
+        from botocore.exceptions import ClientError
+
+        head_kwargs = {"Bucket": bucket_name, "Key": s3_key, "ChecksumMode": "ENABLED"}
+        if expected_bucket_owner:
+            head_kwargs["ExpectedBucketOwner"] = expected_bucket_owner
+        try:
+            existing = s3_client.head_object(**head_kwargs)
+        except ClientError:
+            self.stdout.write(self.style.ERROR(f"  Batch {batch_num}: existing object could not be verified"))
+            return False
+        matches = existing.get("ChecksumSHA256") == checksum
+        if not matches:
+            self.stdout.write(self.style.ERROR(f"  Batch {batch_num}: immutable object checksum mismatch"))
+        return matches
 
     def _prepare_upload(self) -> tuple[BaseClient, str, str] | None:
         """Resolve the bucket, import boto3, and build the S3 client + owner check.

@@ -72,7 +72,7 @@ def _create_historical_audit_log(*, entity_type: str, action: str) -> AuditLog:
             "user_agent": "",
             "request_id": "",
         }
-        digest = canonical_record_digest(**record)
+        digest = canonical_record_digest(record)
         row = AuditLog.objects.create(
             event_id=event_id,
             deployment_scope=deployment_scope,

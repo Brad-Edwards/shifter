@@ -8,6 +8,8 @@ from shared.audit.integrity import AuditIntegrityError, verify_audit_chain
 
 
 class Command(BaseCommand):
+    """Verify the stored audit chain and report its terminal digest."""
+
     help = "Verify audit sequence and digest continuity without repairing evidence"
 
     def handle(self, *args, **options) -> None:

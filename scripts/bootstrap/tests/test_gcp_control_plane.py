@@ -1059,6 +1059,9 @@ class TestGdcControlPlaneHelmValues:
         container = pod["containers"][0]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
+        temp_dir = next(item for item in container["env"] if item["name"] == "TMPDIR")["value"]
+        assert temp_dir == "/var/run/shifter-migrate"
+        assert container["volumeMounts"] == [{"name": "tmp", "mountPath": temp_dir}]
         assert container["image"] == values["images"]["platform"]
         assert (
             values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]

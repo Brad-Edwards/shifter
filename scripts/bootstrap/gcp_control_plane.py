@@ -62,6 +62,9 @@ from gdc_cluster import (
 )
 
 _GUACAMOLE_RUNTIME_RESOURCE_NAME = "guacamole-runtime"
+_GCP_MIGRATION_JOB_REF = "job/platform-migrate"
+_GCP_MIGRATION_TMP_DIR = "/var/run/shifter-migrate"
+_K8S_COMPONENT_LABEL = "app.kubernetes.io/component"
 _K8S_PART_OF_LABEL = "app.kubernetes.io/part-of"
 
 
@@ -1881,26 +1884,11 @@ def ensure_gcp_control_plane_namespaces(dry_run: bool = False) -> None:
         _wait_for_namespace_active(namespace_name)
 
 
-def render_gcp_migration_manifests(
-    outputs: dict[str, dict[str, object]], values: Mapping[str, object]
-) -> tuple[dict[str, object], dict[str, object]]:
-    """Render Helm-owned prerequisites and the one-off schema migration Job."""
-    runtime_env = values.get("runtimeEnv")
-    images = values.get("images")
-    if not isinstance(runtime_env, Mapping) or not isinstance(images, Mapping):
-        raise ValueError("GCP migration requires rendered runtimeEnv and images mappings")
-    platform_image = str(images.get("platform", ""))
-    if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", platform_image):
-        raise ValueError("GCP migration platform image must be repository@sha256:<64 lowercase hex>")
-    if not str(runtime_env.get("DB_MIGRATION_SECRET_ID", "")).strip():
-        raise ValueError("GCP migration requires DB_MIGRATION_SECRET_ID")
-
-    service_accounts = _get_string_mapping_output(outputs, "workload_service_accounts")
-    runtime_data = {str(key): str(value) for key, value in runtime_env.items()}
-    capabilities = values.get("capabilities")
-    if isinstance(capabilities, Mapping) and capabilities.get("kubernetesJobLauncher"):
-        runtime_data["ENGINE_TASK_NAMESPACE"] = "shifter-jobs"
-        runtime_data["ENGINE_TASK_SERVICE_ACCOUNT_NAME"] = "provisioner"
+def _gcp_migration_prerequisites(
+    service_account: str,
+    runtime_data: dict[str, str],
+) -> dict[str, object]:
+    """Build the Helm-owned service account and runtime configuration."""
     helm_labels = {
         _K8S_PART_OF_LABEL: "shifter",
         "app.kubernetes.io/managed-by": "Helm",
@@ -1909,7 +1897,7 @@ def render_gcp_migration_manifests(
         "meta.helm.sh/release-name": "shifter",
         "meta.helm.sh/release-namespace": "shifter-system",
     }
-    prerequisites = {
+    return {
         "apiVersion": "v1",
         "kind": "List",
         "items": [
@@ -1919,10 +1907,10 @@ def render_gcp_migration_manifests(
                 "metadata": {
                     "name": "migrator",
                     "namespace": "shifter-platform",
-                    "labels": {**helm_labels, "app.kubernetes.io/component": "migrator"},
+                    "labels": {**helm_labels, _K8S_COMPONENT_LABEL: "migrator"},
                     "annotations": {
                         **helm_annotations,
-                        _GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["migrator"],
+                        _GKE_WORKLOAD_IDENTITY_ANNOTATION: service_account,
                     },
                 },
             },
@@ -1939,19 +1927,24 @@ def render_gcp_migration_manifests(
             },
         ],
     }
-    job = {
+
+
+def _gcp_migration_job(platform_image: str) -> dict[str, object]:
+    """Build the hardened one-off schema migration Job."""
+    labels = {_K8S_PART_OF_LABEL: "shifter", _K8S_COMPONENT_LABEL: "migrator"}
+    return {
         "apiVersion": "batch/v1",
         "kind": "Job",
         "metadata": {
             "name": "platform-migrate",
             "namespace": "shifter-platform",
-            "labels": {_K8S_PART_OF_LABEL: "shifter", "app.kubernetes.io/component": "migrator"},
+            "labels": labels,
         },
         "spec": {
             "backoffLimit": 0,
             "activeDeadlineSeconds": 900,
             "template": {
-                "metadata": {"labels": {_K8S_PART_OF_LABEL: "shifter", "app.kubernetes.io/component": "migrator"}},
+                "metadata": {"labels": labels},
                 "spec": {
                     "serviceAccountName": "migrator",
                     "automountServiceAccountToken": True,
@@ -1974,6 +1967,7 @@ def render_gcp_migration_manifests(
                                         }
                                     },
                                 },
+                                {"name": "TMPDIR", "value": _GCP_MIGRATION_TMP_DIR},
                                 {"name": "SKIP_MIGRATIONS", "value": ""},
                                 {"name": "GUACAMOLE_SECRET_ID", "value": ""},
                                 {"name": "DC_DOMAIN_PASSWORD_SECRET_ID", "value": ""},
@@ -1986,9 +1980,7 @@ def render_gcp_migration_manifests(
                                 "readOnlyRootFilesystem": True,
                                 "runAsNonRoot": True,
                             },
-                            "volumeMounts": [
-                                {"name": "tmp", "mountPath": "/tmp"}  # noqa: S108  # nosec B108
-                            ],
+                            "volumeMounts": [{"name": "tmp", "mountPath": _GCP_MIGRATION_TMP_DIR}],
                         }
                     ],
                     "volumes": [{"name": "tmp", "emptyDir": {}}],
@@ -1996,7 +1988,29 @@ def render_gcp_migration_manifests(
             },
         },
     }
-    return prerequisites, job
+
+
+def render_gcp_migration_manifests(
+    outputs: dict[str, dict[str, object]], values: Mapping[str, object]
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Render Helm-owned prerequisites and the one-off schema migration Job."""
+    runtime_env = values.get("runtimeEnv")
+    images = values.get("images")
+    if not isinstance(runtime_env, Mapping) or not isinstance(images, Mapping):
+        raise ValueError("GCP migration requires rendered runtimeEnv and images mappings")
+    platform_image = str(images.get("platform", ""))
+    if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", platform_image):
+        raise ValueError("GCP migration platform image must be repository@sha256:<64 lowercase hex>")
+    if not str(runtime_env.get("DB_MIGRATION_SECRET_ID", "")).strip():
+        raise ValueError("GCP migration requires DB_MIGRATION_SECRET_ID")
+
+    service_accounts = _get_string_mapping_output(outputs, "workload_service_accounts")
+    runtime_data = {str(key): str(value) for key, value in runtime_env.items()}
+    capabilities = values.get("capabilities")
+    if isinstance(capabilities, Mapping) and capabilities.get("kubernetesJobLauncher"):
+        runtime_data["ENGINE_TASK_NAMESPACE"] = "shifter-jobs"
+        runtime_data["ENGINE_TASK_SERVICE_ACCOUNT_NAME"] = "provisioner"
+    return _gcp_migration_prerequisites(service_accounts["migrator"], runtime_data), _gcp_migration_job(platform_image)
 
 
 def run_gcp_database_migrations(
@@ -2013,7 +2027,7 @@ def run_gcp_database_migrations(
         [
             "kubectl",
             "delete",
-            "job/platform-migrate",
+            _GCP_MIGRATION_JOB_REF,
             "--namespace",
             "shifter-platform",
             "--ignore-not-found",
@@ -2041,7 +2055,7 @@ def run_gcp_database_migrations(
                 "kubectl",
                 "wait",
                 "--for=condition=complete",
-                "job/platform-migrate",
+                _GCP_MIGRATION_JOB_REF,
                 "--namespace",
                 "shifter-platform",
                 "--timeout=15m",
@@ -2051,7 +2065,7 @@ def run_gcp_database_migrations(
             check=False,
         )
         logs = subprocess.run(  # nosec B603 B607
-            ["kubectl", "logs", "job/platform-migrate", "--namespace", "shifter-platform", "--all-containers=true"],
+            ["kubectl", "logs", _GCP_MIGRATION_JOB_REF, "--namespace", "shifter-platform", "--all-containers=true"],
             capture_output=True,
             text=True,
             check=False,
@@ -2065,7 +2079,7 @@ def run_gcp_database_migrations(
             [
                 "kubectl",
                 "delete",
-                "job/platform-migrate",
+                _GCP_MIGRATION_JOB_REF,
                 "--namespace",
                 "shifter-platform",
                 "--ignore-not-found",

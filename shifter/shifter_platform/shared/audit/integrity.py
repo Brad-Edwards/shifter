@@ -20,7 +20,7 @@ from shared.audit.events import AuditEvent
 from shared.audit.vocabulary import AuditAction, AuditActorType, AuditEntityType
 
 if TYPE_CHECKING:
-    from shared.models import AuditLog
+    from shared.models import AuditChainHead, AuditLog
 
 CANONICALIZATION_VERSION = 1
 CHAIN_GENERATION = 1
@@ -67,6 +67,7 @@ class AuditVerificationResult:
 
 
 def _validate_scalar_text(name: str, value: object, *, maximum: int, single_line: bool = True) -> str:
+    """Validate bounded text and return it with a narrowed type."""
     if not isinstance(value, str):
         raise TypeError(f"{name} must be a string")
     if len(value) > maximum:
@@ -77,36 +78,40 @@ def _validate_scalar_text(name: str, value: object, *, maximum: int, single_line
 
 
 def _validate_json_value(value: object, *, path: str, depth: int) -> None:
+    """Validate one value in a bounded, secret-free JSON tree."""
     if depth > MAX_STATE_DEPTH:
         raise ValueError(f"{path} exceeds maximum nesting depth")
     if value is None or isinstance(value, bool | int):
-        return
-    if isinstance(value, float):
+        pass
+    elif isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError(f"{path} contains a non-finite number")
-        return
-    if isinstance(value, str):
+    elif isinstance(value, str):
         if len(value) > MAX_STATE_STRING_LENGTH:
             raise ValueError(f"{path} contains an oversized string")
-        return
-    if isinstance(value, list):
+    elif isinstance(value, list):
         for index, item in enumerate(value):
             _validate_json_value(item, path=f"{path}[{index}]", depth=depth + 1)
-        return
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise TypeError(f"{path} contains a non-string object key")
-            normalized_key = key.lower().replace("-", "_")
-            is_secret_key = normalized_key in _SECRET_KEYS or normalized_key.endswith(_SECRET_KEY_SUFFIXES)
-            if is_secret_key and item not in (None, "", False, [], {}):
-                raise ValueError(f"{path} contains prohibited secret-bearing field {key!r}")
-            _validate_json_value(item, path=f"{path}.{key}", depth=depth + 1)
-        return
-    raise TypeError(f"{path} contains non-JSON value {type(value).__name__}")
+    elif isinstance(value, dict):
+        _validate_json_object(value, path=path, depth=depth)
+    else:
+        raise TypeError(f"{path} contains non-JSON value {type(value).__name__}")
+
+
+def _validate_json_object(value: dict[object, object], *, path: str, depth: int) -> None:
+    """Validate keys and child values in a JSON object."""
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise TypeError(f"{path} contains a non-string object key")
+        normalized_key = key.lower().replace("-", "_")
+        is_secret_key = normalized_key in _SECRET_KEYS or normalized_key.endswith(_SECRET_KEY_SUFFIXES)
+        if is_secret_key and item not in (None, "", False, [], {}):
+            raise ValueError(f"{path} contains prohibited secret-bearing field {key!r}")
+        _validate_json_value(item, path=f"{path}.{key}", depth=depth + 1)
 
 
 def _validate_state(name: str, value: object) -> None:
+    """Validate and size one optional audit state object."""
     if value is None:
         return
     if not isinstance(value, dict):
@@ -125,17 +130,9 @@ def validate_audit_event(event: AuditEvent) -> None:
         raise ValueError("action is not active audit vocabulary")
     if event.actor_type not in AuditActorType.values:
         raise ValueError("actor_type is not active audit vocabulary")
-    if (
-        isinstance(event.entity_id, bool)
-        or not isinstance(event.entity_id, int)
-        or not 0 <= event.entity_id <= MAX_POSITIVE_INTEGER
-    ):
+    if not _is_database_integer(event.entity_id):
         raise ValueError("entity_id must fit a non-negative database integer")
-    if event.actor_id is not None and (
-        isinstance(event.actor_id, bool)
-        or not isinstance(event.actor_id, int)
-        or not 0 <= event.actor_id <= MAX_POSITIVE_INTEGER
-    ):
+    if event.actor_id is not None and not _is_database_integer(event.actor_id):
         raise ValueError("actor_id must fit a non-negative database integer or null")
     _validate_scalar_text("entity_ref", event.entity_ref, maximum=MAX_ENTITY_REF_LENGTH)
     _validate_scalar_text("context", event.context, maximum=MAX_CONTEXT_LENGTH)
@@ -146,13 +143,20 @@ def validate_audit_event(event: AuditEvent) -> None:
     _validate_state("new_state", event.new_state)
 
 
+def _is_database_integer(value: object) -> bool:
+    """Return whether a value fits the audit table's non-negative integer fields."""
+    return not isinstance(value, bool) and isinstance(value, int) and 0 <= value <= MAX_POSITIVE_INTEGER
+
+
 def _normalized_time(value: datetime) -> str:
+    """Render a timezone-aware timestamp in the canonical UTC form."""
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("recorded_at must be timezone-aware")
     return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _normalized_source_ip(value: object) -> str | None:
+    """Render an optional IPv4 or IPv6 address in compressed form."""
     if value is None:
         return None
     if not isinstance(value, str):
@@ -163,57 +167,37 @@ def _normalized_source_ip(value: object) -> str | None:
         raise ValueError("source_ip must be a valid IP address") from exc
 
 
-def canonical_record_payload(
-    *,
-    event_id: object,
-    deployment_scope: str,
-    chain_generation: int,
-    sequence: int,
-    canonicalization_version: int,
-    recorded_at: datetime,
-    previous_digest: str,
-    entity_type: str,
-    entity_id: int,
-    entity_ref: str,
-    action: str,
-    actor_type: str,
-    actor_id: int | None,
-    previous_state: Mapping[str, Any] | None,
-    new_state: Mapping[str, Any] | None,
-    context: str,
-    source_ip: object,
-    user_agent: str,
-    request_id: str,
-) -> dict[str, object]:
+def canonical_record_payload(record: Mapping[str, Any]) -> dict[str, object]:
     """Return the exact version-1 evidence object."""
+    canonicalization_version = int(record["canonicalization_version"])
     if canonicalization_version != CANONICALIZATION_VERSION:
         raise ValueError(f"unsupported canonicalization version {canonicalization_version}")
     return {
-        "action": action,
-        "actor_id": actor_id,
-        "actor_type": actor_type,
+        "action": record["action"],
+        "actor_id": record["actor_id"],
+        "actor_type": record["actor_type"],
         "canonicalization_version": canonicalization_version,
-        "chain_generation": chain_generation,
-        "context": context,
-        "deployment_scope": deployment_scope,
-        "entity_id": entity_id,
-        "entity_ref": entity_ref,
-        "entity_type": entity_type,
-        "event_id": str(event_id),
-        "new_state": new_state,
-        "previous_digest": previous_digest,
-        "previous_state": previous_state,
-        "recorded_at": _normalized_time(recorded_at),
-        "request_id": request_id,
-        "sequence": sequence,
-        "source_ip": _normalized_source_ip(source_ip),
-        "user_agent": user_agent,
+        "chain_generation": record["chain_generation"],
+        "context": record["context"],
+        "deployment_scope": record["deployment_scope"],
+        "entity_id": record["entity_id"],
+        "entity_ref": record["entity_ref"],
+        "entity_type": record["entity_type"],
+        "event_id": str(record["event_id"]),
+        "new_state": record["new_state"],
+        "previous_digest": record["previous_digest"],
+        "previous_state": record["previous_state"],
+        "recorded_at": _normalized_time(record["recorded_at"]),
+        "request_id": record["request_id"],
+        "sequence": record["sequence"],
+        "source_ip": _normalized_source_ip(record["source_ip"]),
+        "user_agent": record["user_agent"],
     }
 
 
-def canonical_record_digest(**record: object) -> str:
+def canonical_record_digest(record: Mapping[str, Any]) -> str:
     """Hash one record using the explicit canonical JSON profile."""
-    payload = canonical_record_payload(**record)  # type: ignore[arg-type]
+    payload = canonical_record_payload(record)
     encoded = json.dumps(
         payload,
         allow_nan=False,
@@ -227,26 +211,50 @@ def canonical_record_digest(**record: object) -> str:
 def digest_for_row(row: AuditLog) -> str:
     """Recompute one persisted row's expected digest."""
     return canonical_record_digest(
-        event_id=row.event_id,
-        deployment_scope=row.deployment_scope,
-        chain_generation=row.chain_generation,
-        sequence=row.sequence,
-        canonicalization_version=row.canonicalization_version,
-        recorded_at=row.timestamp,
-        previous_digest=row.previous_digest,
-        entity_type=row.entity_type,
-        entity_id=row.entity_id,
-        entity_ref=row.entity_ref,
-        action=row.action,
-        actor_type=row.actor_type,
-        actor_id=row.actor_id,
-        previous_state=row.previous_state,
-        new_state=row.new_state,
-        context=row.context,
-        source_ip=row.source_ip,
-        user_agent=row.user_agent,
-        request_id=row.request_id,
+        {
+            "event_id": row.event_id,
+            "deployment_scope": row.deployment_scope,
+            "chain_generation": row.chain_generation,
+            "sequence": row.sequence,
+            "canonicalization_version": row.canonicalization_version,
+            "recorded_at": row.timestamp,
+            "previous_digest": row.previous_digest,
+            "entity_type": row.entity_type,
+            "entity_id": row.entity_id,
+            "entity_ref": row.entity_ref,
+            "action": row.action,
+            "actor_type": row.actor_type,
+            "actor_id": row.actor_id,
+            "previous_state": row.previous_state,
+            "new_state": row.new_state,
+            "context": row.context,
+            "source_ip": row.source_ip,
+            "user_agent": row.user_agent,
+            "request_id": row.request_id,
+        }
     )
+
+
+def _verify_row(
+    row: AuditLog,
+    head: AuditChainHead,
+    *,
+    expected_sequence: int,
+    expected_previous: str,
+) -> None:
+    """Verify one row against its chain position and locked head metadata."""
+    if row.sequence != expected_sequence:
+        raise AuditIntegrityError(f"expected sequence {expected_sequence}, observed {row.sequence}")
+    if row.deployment_scope != head.deployment_scope:
+        raise AuditIntegrityError(f"deployment scope mismatch at sequence {row.sequence}")
+    if row.chain_generation != head.chain_generation:
+        raise AuditIntegrityError(f"chain generation mismatch at sequence {row.sequence}")
+    if row.canonicalization_version != head.canonicalization_version:
+        raise AuditIntegrityError(f"canonicalization version mismatch at sequence {row.sequence}")
+    if row.previous_digest != expected_previous:
+        raise AuditIntegrityError(f"predecessor mismatch at sequence {row.sequence}")
+    if digest_for_row(row) != row.record_digest:
+        raise AuditIntegrityError(f"digest mismatch at sequence {row.sequence}")
 
 
 def verify_audit_chain() -> AuditVerificationResult:
@@ -265,18 +273,12 @@ def verify_audit_chain() -> AuditVerificationResult:
         expected_previous = ""
         count = 0
         for row in AuditLog.objects.order_by("sequence").iterator():
-            if row.sequence != expected_sequence:
-                raise AuditIntegrityError(f"expected sequence {expected_sequence}, observed {row.sequence}")
-            if row.deployment_scope != head.deployment_scope:
-                raise AuditIntegrityError(f"deployment scope mismatch at sequence {row.sequence}")
-            if row.chain_generation != head.chain_generation:
-                raise AuditIntegrityError(f"chain generation mismatch at sequence {row.sequence}")
-            if row.canonicalization_version != head.canonicalization_version:
-                raise AuditIntegrityError(f"canonicalization version mismatch at sequence {row.sequence}")
-            if row.previous_digest != expected_previous:
-                raise AuditIntegrityError(f"predecessor mismatch at sequence {row.sequence}")
-            if digest_for_row(row) != row.record_digest:
-                raise AuditIntegrityError(f"digest mismatch at sequence {row.sequence}")
+            _verify_row(
+                row,
+                head,
+                expected_sequence=expected_sequence,
+                expected_previous=expected_previous,
+            )
             expected_previous = row.record_digest
             expected_sequence += 1
             count += 1

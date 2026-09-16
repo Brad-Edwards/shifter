@@ -101,7 +101,7 @@ def append_audit_event(
             "user_agent": event.user_agent,
             "request_id": event.request_id,
         }
-        record_digest = canonical_record_digest(**record)
+        record_digest = canonical_record_digest(record)
         row = AuditLog.objects.create(
             event_id=event_id,
             deployment_scope=deployment_scope,

@@ -11,6 +11,7 @@ from shared.audit import (
     AuditActorType,
     AuditEntityType,
     AuditEvent,
+    AuditTarget,
     SessionInfo,
     audit_log,
     audit_log_from_request,
@@ -74,9 +75,7 @@ def test_request_writer_preserves_trusted_attribution():
 
     assert audit_log_from_request(
         request,
-        entity_type=AuditEntityType.RANGE,
-        entity_id=42,
-        entity_ref="range-external-42",
+        AuditTarget(AuditEntityType.RANGE, 42, "range-external-42"),
         action=AuditAction.UPDATE,
     )
 

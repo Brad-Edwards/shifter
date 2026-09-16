@@ -40,20 +40,9 @@ def audit_platform_admin_event_action(
 ) -> None:
     """Strictly audit a successful platform-admin override mutation on an event (ADR-052-R4).
 
-    Records bounded identifiers and safe outcome metadata only: the closed
-    ``authority_source=platform_admin``, the event id, the operation, the
-    effective actor user id whose superuser authority was evaluated, and optional
-    changed field names / outcome marker. Never records event content, participant
-    data, flags, solutions, credentials, secrets, signed URLs, provider payloads,
-    or raw exception text.
-
-    Request attribution (actor type/id, source IP, request id, user agent) is read
-    at the HTTP boundary; for an API-token call the token is the ``apikey`` actor
-    while ``effective_actor_id`` separately names the user whose live authority was
-    evaluated. ``strict=True`` so a persistence failure raises: a database-only
-    caller runs this inside the mutation transaction and rolls the mutation back,
-    while a non-rollbackable caller records bounded intent before its first side
-    effect and a correlated outcome after (both share the request id).
+    Records bounded identifiers and safe outcome metadata only. Request
+    attribution comes from the HTTP boundary, and strict persistence lets the
+    caller roll back a related database mutation if audit storage fails.
     """
     actor_type, actor_id = get_actor_from_request(request)
     new_state: dict[str, Any] = {

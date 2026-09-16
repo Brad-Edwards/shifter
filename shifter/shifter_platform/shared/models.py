@@ -352,6 +352,8 @@ class AuditChainHead(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Keep the chain serialization row in its stable database table."""
+
         db_table = "shared_audit_chain_head"
         verbose_name = "Audit Chain Head"
         constraints = [
