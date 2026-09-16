@@ -16,7 +16,8 @@ from django.apps import apps as global_apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from shared.audit import AuditAction
+from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent
+from shared.audit_adapter import append_audit_event
 from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP
 from shared.models import AuditLog
 
@@ -26,7 +27,7 @@ _MIGRATION = importlib.import_module("management.migrations.0008_revoke_self_ser
 
 
 @pytest.mark.django_db
-def test_migration_revokes_and_audits_existing_organizers():
+def test_migration_revokes_and_audits_existing_organizers(monkeypatch):
     organizer = Group.objects.get_or_create(name=CTF_ORGANIZER_GROUP)[0]
     participant = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)[0]
 
@@ -34,6 +35,25 @@ def test_migration_revokes_and_audits_existing_organizers():
     org_user.groups.add(organizer, participant)
     plain_participant = User.objects.create_user(username="p@example.com", email="p@example.com")
     plain_participant.groups.add(participant)
+
+    # This unit test replays a historical migration function against the current
+    # schema. The migration's raw insert is correct at its real graph position,
+    # before shared.0020 adds the integrity chain; adapt only this replay to the
+    # current schema so it obeys the same append invariant as runtime writes.
+    def append_current_schema(_connection, _table, *, user_id, previous, new):
+        append_audit_event(
+            AuditEvent(
+                entity_type=AuditEntityType.USER,
+                entity_id=user_id,
+                action=AuditAction.ROLE_SYNC,
+                actor_type=AuditActorType.SYSTEM,
+                previous_state={"groups": previous},
+                new_state={"groups": new},
+                context="CTF Organizer revoked: authority separated from self-service identity (issue #1516)",
+            )
+        )
+
+    monkeypatch.setattr(_MIGRATION, "_insert_audit_row", append_current_schema)
 
     _MIGRATION.revoke_self_service_organizers(global_apps, None)
 

@@ -49,6 +49,7 @@ locals {
     "portal",
     "workers",
     "ctf-scheduler",
+    "migrator",
     "provisioner-launcher",
     "provisioner",
   ])
@@ -69,6 +70,7 @@ locals {
     portal               = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"
     workers              = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"
     ctf-scheduler        = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/ctf-scheduler]"
+    migrator             = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/migrator]"
     provisioner-launcher = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/provisioner-launcher]"
     provisioner          = "serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"
   }
@@ -104,6 +106,7 @@ locals {
     "ctf-scheduler" = toset([
       "roles/pubsub.publisher",
     ])
+    migrator = toset([])
     # The launch worker reaches Postgres and Kubernetes only. It receives no
     # project-scoped cloud role and is deliberately distinct from provisioner.
     provisioner-launcher = toset([])
@@ -132,13 +135,22 @@ locals {
   # from Secret Manager by these identities. The provisioner is absent: it
   # receives DB / field-key / DC-password values through its per-Job ephemeral
   # Kubernetes Secret and does not read runtime bundles from Secret Manager.
-  secret_reader_workloads    = toset(["portal", "workers", "ctf-scheduler", "provisioner-launcher"])
-  runtime_secret_reader_keys = [for key in keys(var.runtime_secret_ids) : key if key != "guacamole-db"]
+  secret_reader_workloads = toset(["portal", "workers", "ctf-scheduler", "provisioner-launcher"])
+  runtime_secret_reader_keys = [
+    for key in keys(var.runtime_secret_ids) : key
+    if key != "guacamole-db" && key != "db-migration"
+  ]
   workload_secret_bindings = {
     for pair in setproduct(tolist(local.secret_reader_workloads), local.runtime_secret_reader_keys) :
     "${pair[0]}:${pair[1]}" => {
       workload  = pair[0]
       secret_id = var.runtime_secret_ids[pair[1]]
+    }
+  }
+  migration_secret_bindings = {
+    for key in toset(["app", "db-migration"]) : "migrator:${key}" => {
+      workload  = "migrator"
+      secret_id = var.runtime_secret_ids[key]
     }
   }
 
@@ -229,7 +241,7 @@ resource "google_project_iam_member" "workload_roles" {
 # former project-level roles/secretmanager.secretAccessor grant on portal,
 # workers, and ctf-scheduler.
 resource "google_secret_manager_secret_iam_member" "workload_secret_readers" {
-  for_each = local.workload_secret_bindings
+  for_each = merge(local.workload_secret_bindings, local.migration_secret_bindings)
 
   secret_id = each.value.secret_id
   role      = "roles/secretmanager.secretAccessor"

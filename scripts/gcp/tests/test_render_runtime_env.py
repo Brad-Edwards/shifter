@@ -139,6 +139,7 @@ def _outputs(
             "value": {
                 "app": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-app",
                 "db": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db",
+                "db-migration": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-migration",
                 "guacamole-json-auth": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-guacamole-json-auth",
                 "redis": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-redis",
             }
@@ -158,7 +159,7 @@ def _outputs(
                 "private_ip": "10.0.0.10",
                 "port": 5432,
                 "database_name": "shifter",
-                "user_name": "shifter",
+                "user_name": "portal_runtime",
             }
         },
         "control_plane_cache": {
@@ -226,7 +227,10 @@ def test_render_env_emits_production_security_profile():
     # platform-runtime ConfigMap, so they MUST be rendered here or every GCP range
     # Job is denied.
     assert "DB_NAME=shifter\n" in rendered
-    assert "DB_USER=shifter\n" in rendered
+    assert "DB_USER=portal_runtime\n" in rendered
+    assert "DB_MIGRATION_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-migration\n" in rendered
+    assert "AUDIT_DEPLOYMENT_SCOPE=gcp:shifter-gcp-dev\n" in rendered
+    assert "SKIP_MIGRATIONS=1\n" in rendered
     assert "CLOUD_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_AUTH_DOMAIN=shifter-gcp-dev.firebaseapp.com\n" in rendered
@@ -619,6 +623,7 @@ def test_render_env_fails_closed_when_redis_secret_id_missing():
         "value": {
             "app": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-app",
             "db": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db",
+            "db-migration": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-migration",
             "guacamole-json-auth": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-guacamole-json-auth",
         }
     }

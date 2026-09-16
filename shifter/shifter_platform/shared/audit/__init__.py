@@ -29,6 +29,7 @@ from shared.audit.health import (
     reset_audit_health,
 )
 from shared.audit.policy import (
+    AuditTarget,
     audit_auth_event,
     audit_log,
     audit_log_from_request,
@@ -57,6 +58,7 @@ __all__ = [
     "AuditEntityType",
     "AuditEvent",
     "AuditHealthSnapshot",
+    "AuditTarget",
     "AuditWriter",
     "AuditWriterBindingError",
     "AuthPrincipal",

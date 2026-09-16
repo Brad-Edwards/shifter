@@ -12,6 +12,7 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "ACCESS_NETWORK_CIDRS",
         "APP_SECRET_ID",
+        "AUDIT_DEPLOYMENT_SCOPE",
         "AGENT_STORAGE_BUCKET",
         "AUTH_PROVIDER",
         # Renderer-owned selected-backend identity (PLAT-2005): the GCP backend
@@ -21,6 +22,7 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "CLOUD_PROVIDER",
         "CSRF_COOKIE_SECURE",
         "DB_HOST",
+        "DB_MIGRATION_SECRET_ID",
         "DB_NAME",
         "DB_PORT",
         "DB_SECRET_ID",
@@ -73,6 +75,7 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "REDIS_SECRET_ID",
         "REDIS_TLS",
         "SESSION_COOKIE_SECURE",
+        "SKIP_MIGRATIONS",
         "SITE_URL",
         "STORAGE_BUCKET_NAME",
         "TF_STATE_BUCKET",

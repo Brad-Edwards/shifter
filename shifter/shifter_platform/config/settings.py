@@ -43,6 +43,10 @@ from config._terminal_assets import *  # NOSONAR  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Stable cloud/account deployment identity for the tamper-evident audit chain.
+# Cloud renderers set this explicitly; local development may leave it blank.
+AUDIT_DEPLOYMENT_SCOPE = os.environ.get("AUDIT_DEPLOYMENT_SCOPE", "").strip()
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     """Parse boolean environment variables using explicit true/false strings."""
