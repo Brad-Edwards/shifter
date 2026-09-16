@@ -109,8 +109,9 @@ reused; failed registration removes its temporary token file. Only bounded stage
 exit status and remediation reach errors; child payloads remain private.
 
 Existing resource addresses and naming derivation are preserved. Destructive
-foundation updates and same-project runtime/foundation authority are rejected.
-This is a safety gate, not a claim that unsafe legacy topology has already migrated.
+identity updates are rejected. Application resources, runners and automation
+identities share the deployment project, with separate state ownership as described
+above. This gate does not establish that an existing deployment has migrated.
 See the [operator migration procedure](../dev/gcp-inventory-bootstrap.md).
 
 The shared secret resolver retrieves references only at the consumer. GCP uses

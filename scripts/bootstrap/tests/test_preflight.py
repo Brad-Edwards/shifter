@@ -15,15 +15,15 @@ DEPLOY_SECRETS_DOC = REPO_ROOT / "docs" / "dev" / "deploy-secrets.md"
 
 # Full set of GCP secrets present in a healthy CI environment.
 GCP_CI_ENV = {
-    "GCP_PROJECT_ID": "prod-ksqdkj",
+    "GCP_PROJECT_ID": "example-gcp-project",
     "SHIFTER_CONFIG_GCP_DEV": "backend: gcp\nsettings: {}\n",
     "GCP_PUBLIC_HOSTNAME": "gcp.example.test",
     "GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN": "example.test",
-    "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@prod-ksqdkj.iam.gserviceaccount.com",
-    "GCP_RELEASE_SCAN_SERVICE_ACCOUNT": "scan@prod-ksqdkj.iam.gserviceaccount.com",
+    "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@example-gcp-project.iam.gserviceaccount.com",
+    "GCP_RELEASE_SCAN_SERVICE_ACCOUNT": "scan@example-gcp-project.iam.gserviceaccount.com",
     "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
     "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@example.test",
-    "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
+    "GCP_BOOTSTRAP_ADMIN_PASSWORD": "example-admin-password",
 }
 
 
@@ -93,7 +93,7 @@ class TestRunPreflightGcpCi:
     def test_shared_gcp_service_account_does_not_satisfy_deploy_preflight(self):
         env = dict(GCP_CI_ENV)
         del env["GCP_DEPLOY_SERVICE_ACCOUNT"]
-        env["GCP_SERVICE_ACCOUNT"] = "legacy@prod-ksqdkj.iam.gserviceaccount.com"
+        env["GCP_SERVICE_ACCOUNT"] = "legacy@example-gcp-project.iam.gserviceaccount.com"
         report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
         assert not report.ok
         assert any("GCP_DEPLOY_SERVICE_ACCOUNT" in check.message for check in report.failures)

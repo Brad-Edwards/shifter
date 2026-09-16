@@ -435,6 +435,41 @@ resource "google_storage_bucket_iam_member" "deploy_evidence_writer" {
   }
 }
 
+# `gcloud storage cp` issues a pre-flight object GET plus a bucket-level object
+# LIST to choose its upload strategy; create-only (objectCreator) alone makes the
+# evidence cp fail (403 on get, then on the bucket list). A bucket-level list
+# cannot be scoped by an object-name condition, so each evidence writer gets an
+# unconditioned objectViewer (get+list) on the release-evidence bucket. This only
+# grants read over provenance metadata; objectCreator still blocks
+# overwrite/deletion, so evidence immutability is preserved.
+resource "google_storage_bucket_iam_member" "packer_build_evidence_reader" {
+  count  = local.build_enabled ? 1 : 0
+  bucket = google_storage_bucket.release_evidence.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.packer_build.email}"
+}
+
+resource "google_storage_bucket_iam_member" "validate_evidence_reader" {
+  count  = local.validate_enabled ? 1 : 0
+  bucket = google_storage_bucket.release_evidence.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.validate[0].email}"
+}
+
+resource "google_storage_bucket_iam_member" "release_scan_evidence_reader" {
+  count  = local.release_scan_enabled ? 1 : 0
+  bucket = google_storage_bucket.release_evidence.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.release_scan[0].email}"
+}
+
+resource "google_storage_bucket_iam_member" "deploy_evidence_reader" {
+  count  = local.deploy_enabled ? 1 : 0
+  bucket = google_storage_bucket.release_evidence.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.deploy[0].email}"
+}
+
 resource "google_storage_bucket_iam_member" "promotion_evidence_reader" {
   count  = var.promotion_reader_service_account_email == "" ? 0 : 1
   bucket = google_storage_bucket.release_evidence.name

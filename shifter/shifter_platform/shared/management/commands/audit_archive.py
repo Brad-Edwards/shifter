@@ -1,15 +1,21 @@
 """Management command to archive old audit logs to S3."""
 
+from __future__ import annotations
+
 import gzip
 import json
 import os
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
 from django.utils import timezone
 
 from shared.models import AuditLog
+
+if TYPE_CHECKING:
+    from botocore.client import BaseClient
 
 
 class Command(BaseCommand):
@@ -27,7 +33,7 @@ class Command(BaseCommand):
 
     help = "Archive old audit logs to S3"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -89,7 +95,7 @@ class Command(BaseCommand):
             return ""
 
     @staticmethod
-    def _serialize_batch(batch) -> tuple[bytes, list[int]]:
+    def _serialize_batch(batch: list[AuditLog]) -> tuple[bytes, list[int]]:
         """Render a batch into compressed JSONL bytes; also return the record ids."""
         lines = []
         record_ids = []
@@ -119,8 +125,8 @@ class Command(BaseCommand):
 
     def _archive_one_batch(
         self,
-        s3_client,
-        batch,
+        s3_client: BaseClient,
+        batch: list[AuditLog],
         bucket_name: str,
         expected_bucket_owner: str,
         batch_num: int,
@@ -163,7 +169,26 @@ class Command(BaseCommand):
             self.stdout.write(f"  Batch {batch_num}: Deleted {deleted} records from database")
         return len(batch), deleted, True
 
-    def handle(self, *args, **options):
+    def _prepare_upload(self) -> tuple[BaseClient, str, str] | None:
+        """Resolve the bucket, import boto3, and build the S3 client + owner check.
+
+        Returns ``(s3_client, bucket_name, expected_bucket_owner)`` or ``None`` when
+        the archive cannot proceed (bucket unset or boto3 unavailable).
+        """
+        bucket_name = self._resolve_archive_bucket()
+        if not bucket_name:
+            return None
+
+        try:
+            import boto3
+        except ImportError:
+            self.stdout.write(self.style.ERROR("boto3 not installed. Install with: pip install boto3"))
+            return None
+        s3_client = boto3.client("s3")
+        expected_bucket_owner = self._resolve_expected_bucket_owner()
+        return s3_client, bucket_name, expected_bucket_owner
+
+    def handle(self, *args, **options) -> None:
         dry_run = options["dry_run"]
         retention_days = options["retention_days"]
         no_delete = options["no_delete"]
@@ -194,17 +219,10 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("\nDry run - no changes made"))
             return
 
-        bucket_name = self._resolve_archive_bucket()
-        if not bucket_name:
+        prepared = self._prepare_upload()
+        if prepared is None:
             return
-
-        try:
-            import boto3
-        except ImportError:
-            self.stdout.write(self.style.ERROR("boto3 not installed. Install with: pip install boto3"))
-            return
-        s3_client = boto3.client("s3")
-        expected_bucket_owner = self._resolve_expected_bucket_owner()
+        s3_client, bucket_name, expected_bucket_owner = prepared
 
         archived_count = 0
         deleted_count = 0

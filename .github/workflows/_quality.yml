@@ -684,7 +684,7 @@ jobs:
       # against the raes-strict new-code gate (#1526). Fail closed: a missing
       # report means the coverage producer did not run.
       - name: Upload SPA coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-shifter-platform-spa
           path: shifter/shifter_platform/frontend/coverage/lcov.info
@@ -1560,7 +1560,7 @@ jobs:
           uv run pytest tests/integration/asgi -m redis -n0 -p no:cacheprovider
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-shifter-platform
           path: shifter/shifter_platform/coverage.xml
@@ -1673,7 +1673,7 @@ jobs:
 
       - name: Upload PostgreSQL lane JUnit (failure evidence)
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: postgres-lane-junit
           path: shifter/shifter_platform/postgres-junit.xml
@@ -1704,7 +1704,7 @@ jobs:
         run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-provisioner
           path: shifter/engine/provisioner/coverage.xml
@@ -1735,7 +1735,7 @@ jobs:
         run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-packer
           path: shifter/packer/coverage.xml
@@ -1764,7 +1764,7 @@ jobs:
         run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-bootstrap
           path: scripts/bootstrap/coverage.xml
@@ -1890,7 +1890,7 @@ jobs:
         run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-check-layer-imports
           path: scripts/check_layer_imports/coverage.xml
@@ -1982,7 +1982,7 @@ jobs:
         run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-installation
           path: shifter/installation/coverage.xml
@@ -2079,7 +2079,7 @@ jobs:
           uv run --python 3.11 --with coverage coverage xml -o scripts/adr_guard/coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-adr-guard
           path: scripts/adr_guard/coverage.xml
@@ -2114,7 +2114,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-shifter-platform-js
           path: shifter/shifter_platform/coverage/lcov.info
@@ -2294,7 +2294,7 @@ jobs:
             platform/terraform/
 
       - name: Upload Trivy SARIF artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trivy-advisory-sarif
           path: ${{ runner.temp }}/trivy-results/*.sarif
@@ -2357,7 +2357,7 @@ jobs:
 
       - name: Upload OSV-Scanner SARIF artifact
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: osv-scanner-sarif
           path: ${{ runner.temp }}/osv-results/*.sarif

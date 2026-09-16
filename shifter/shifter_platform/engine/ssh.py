@@ -178,7 +178,8 @@ class SSHConnection:
             raise SSHConnectionError("Not connected")
 
         try:
-            data = await asyncio.wait_for(self._process.stdout.read(4096), timeout=timeout)
+            async with asyncio.timeout(timeout):
+                data = await self._process.stdout.read(4096)
             return data if data else b""
         except TimeoutError:
             return b""

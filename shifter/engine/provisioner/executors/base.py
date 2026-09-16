@@ -34,7 +34,7 @@ class ExecutorConnectionError(ExecutorError):
 class ExecutorCommandError(ExecutorError):
     """Raised when a command fails (non-zero exit code)."""
 
-    def __init__(self, message: str, exit_code: int = -1, stderr: str = ""):
+    def __init__(self, message: str, exit_code: int = -1, stderr: str = "") -> None:
         self.exit_code = exit_code
         self.stderr = stderr
         super().__init__(f"{message} (exit_code={exit_code})")

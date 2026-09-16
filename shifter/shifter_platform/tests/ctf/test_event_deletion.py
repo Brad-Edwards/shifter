@@ -222,19 +222,20 @@ class TestForceDeleteEvent:
         return mock_part_qs, mock_file_qs
 
     @pytest.mark.django_db
-    def test_force_delete_success(self, ctf_event, organizer_user):
-        """force_delete_event hard-deletes the event and counts the destroyed range.
+    def test_force_delete_success(self, ctf_event, organizer_user, monkeypatch):
+        """force_delete_event hard-deletes the event and counts the teardown dispatched.
 
-        DB-backed: a participant whose range has no linked user makes
-        ``_destroy_single_range`` a no-op (still counted as destroyed), so the
-        cleanup tally is exercised without crossing the CMS/network boundary.
+        DB-backed: the destroy is dispatched (``cms_destroy_range`` mocked so no
+        network boundary is crossed) and counted as a dispatch, not verified
+        destruction. A no-op skip (no owner) is not counted (#2086, ADR-063-R4).
         """
         from ctf.models import CTFEvent, CTFParticipant
         from ctf.services.event import force_delete_event
 
+        monkeypatch.setattr("ctf.bridges.cms_destroy_range", lambda user, range_instance_id: None)
         CTFParticipant.objects.create(
             event=ctf_event,
-            user=None,
+            user=organizer_user,
             email="ranged@test.com",
             name="Ranged Participant",
             status=ParticipantStatus.REGISTERED.value,
@@ -245,7 +246,7 @@ class TestForceDeleteEvent:
         result = force_delete_event(ctf_event.pk, organizer_user, ctf_event.name)
 
         assert result["event_name"] == ctf_event.name
-        assert result["ranges_destroyed"] == 1
+        assert result["ranges_destroyed"] == 1  # dispatched
         assert result["ranges_failed"] == 0
         # Hard delete: gone even from all_objects (which still sees soft-deletes).
         assert not CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
@@ -272,20 +273,25 @@ class TestForceDeleteEvent:
             force_delete_event(missing_id, organizer_user, "Whatever")
 
     @pytest.mark.django_db
-    def test_force_delete_range_cleanup_partial_failure(self, ctf_event, organizer_user, participant_user):
-        """force_delete_event proceeds and tallies destroyed vs failed when a destroy fails.
+    def test_force_delete_range_cleanup_partial_failure(self, ctf_event, organizer_user, participant_user, monkeypatch):
+        """force_delete_event proceeds and tallies dispatched vs failed when a destroy fails.
 
-        DB-backed: the no-user range is a no-op (destroyed); the range pointing at
-        a nonexistent RangeInstance raises ``CMSError`` inside
-        ``_destroy_single_range`` (counted as failed) -- a real cross-domain
-        failure, not a mocked one. The event is still hard-deleted.
+        DB-backed: one range dispatches its destroy (counted), the other raises
+        ``CMSError`` inside ``_destroy_single_range`` (counted as failed). The event
+        is still hard-deleted. Counts are dispatches, not verified destroys.
         """
         from ctf.models import CTFEvent, CTFParticipant
         from ctf.services.event import force_delete_event
+        from shared.exceptions import CMSError
 
+        def _destroy(user, range_instance_id):
+            if range_instance_id == 999999:
+                raise CMSError("no such range")
+
+        monkeypatch.setattr("ctf.bridges.cms_destroy_range", _destroy)
         CTFParticipant.objects.create(
             event=ctf_event,
-            user=None,
+            user=organizer_user,
             email="ok@test.com",
             name="OK",
             status=ParticipantStatus.REGISTERED.value,
@@ -305,7 +311,7 @@ class TestForceDeleteEvent:
 
         result = force_delete_event(ctf_event.pk, organizer_user, ctf_event.name)
 
-        assert result["ranges_destroyed"] == 1
+        assert result["ranges_destroyed"] == 1  # dispatched
         assert result["ranges_failed"] == 1
         assert not CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
 

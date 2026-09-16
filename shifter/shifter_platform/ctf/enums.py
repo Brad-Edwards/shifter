@@ -134,9 +134,12 @@ class ChallengeVisibility(StrEnum):
     submissions are accepted.
     """
 
-    VISIBLE = "visible"  # Shown to participants, submittable
-    HIDDEN = "hidden"  # Not shown, not submittable (organizer-only)
-    LOCKED = "locked"  # Shown but not submittable
+    # Shown to participants, submittable
+    VISIBLE = "visible"
+    # Not shown, not submittable (organizer-only)
+    HIDDEN = "hidden"
+    # Shown but not submittable
+    LOCKED = "locked"
 
     def __str__(self) -> str:
         return self.value

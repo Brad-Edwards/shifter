@@ -33,7 +33,7 @@ CTF_PARTICIPANT_GROUP = "CTF Participant"
 _GROUP_NAMES_CACHE_ATTR = "_shifter_request_group_names"
 
 
-def get_user_group_names(user: User) -> frozenset[str]:
+def get_user_group_names(user: AbstractBaseUser | AnonymousUser) -> frozenset[str]:
     """Return the user's group names, memoized on the user instance.
 
     The portal context processors evaluate group membership up to five times per
@@ -50,28 +50,31 @@ def get_user_group_names(user: User) -> frozenset[str]:
     cached = getattr(user, _GROUP_NAMES_CACHE_ATTR, None)
     if isinstance(cached, frozenset):
         return cached
-    names = frozenset(user.groups.values_list("name", flat=True))
+    # ``groups`` lives on PermissionsMixin/AnonymousUser, not the AbstractBaseUser
+    # branch of the annotation; resolve it defensively without narrowing.
+    groups = getattr(user, "groups", None)
+    names = frozenset(groups.values_list("name", flat=True)) if groups is not None else frozenset()
     # Some user-like objects reject attribute writes; recompute next time if so.
     with contextlib.suppress(AttributeError, TypeError):
         setattr(user, _GROUP_NAMES_CACHE_ATTR, names)
     return names
 
 
-def is_ctf_organizer(user) -> bool:
+def is_ctf_organizer(user: User) -> bool:
     """Return True if the user is in the CTF Organizer group."""
     if not user.is_active:
         return False
     return CTF_ORGANIZER_GROUP in get_user_group_names(user)
 
 
-def is_ctf_participant(user) -> bool:
+def is_ctf_participant(user: User) -> bool:
     """Return True if the user is in the CTF Participant group."""
     if not user.is_active:
         return False
     return CTF_PARTICIPANT_GROUP in get_user_group_names(user)
 
 
-def is_ctf_participant_only(user) -> bool:
+def is_ctf_participant_only(user: AbstractBaseUser | AnonymousUser) -> bool:
     """Return True if the user has no platform role that grants Launch Range.
 
     CTF roles (Participant, Organizer) do NOT grant Launch Range access.
@@ -86,15 +89,11 @@ def is_ctf_participant_only(user) -> bool:
     # drift must never make a temporary account appear to be a platform user.
     if is_temporary_ctf_account(user):
         return True
-    if not user.is_active:
-        return False
-    if user.is_staff or user.is_superuser:
+    if not user.is_active or getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
         return False
     user_groups = get_user_group_names(user)
     has_ctf_role = bool(user_groups & {CTF_PARTICIPANT_GROUP, CTF_ORGANIZER_GROUP})
-    if not has_ctf_role:
-        return False
-    return THREAT_RESEARCH_GROUP not in user_groups
+    return has_ctf_role and THREAT_RESEARCH_GROUP not in user_groups
 
 
 def is_temporary_ctf_account(user: AbstractBaseUser | AnonymousUser) -> bool:
@@ -102,7 +101,7 @@ def is_temporary_ctf_account(user: AbstractBaseUser | AnonymousUser) -> bool:
     return getattr(getattr(user, "profile", None), "is_ctf_account", False) is True
 
 
-def can_edit_cms_authoring(user) -> bool:
+def can_edit_cms_authoring(user: User) -> bool:
     """Return True if the user may use the CMS authoring surfaces.
 
     Canonical policy for the experiment and scenario editor: an active user
@@ -118,7 +117,7 @@ def can_edit_cms_authoring(user) -> bool:
     return THREAT_RESEARCH_GROUP in get_user_group_names(user)
 
 
-def validate_cms_authoring_user(user, func_name: str) -> None:
+def validate_cms_authoring_user(user: User | None, func_name: str) -> None:
     """Validate user shape and CMS authoring authorization in one step.
 
     Combines the structural user-presence checks (None / instance / saved)
@@ -208,6 +207,7 @@ def threat_research_required(view_func: Callable[..., HttpResponse]) -> Callable
 
     @functools.wraps(view_func)
     def _wrapped(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        """Redirect unauthenticated or unauthorized callers, else delegate to the view."""
         if not request.user.is_authenticated:
             logger.debug("threat_research_required: unauthenticated user, redirecting to login")
             return redirect(settings.LOGIN_URL)

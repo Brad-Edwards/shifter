@@ -23,6 +23,7 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import TextIO
 
 import yaml
 
@@ -263,7 +264,7 @@ def analyze_private_facade_imports(base_path: Path, allowed: dict[str, list[str]
     return result
 
 
-def analyze_imports(base_path: Path) -> dict:
+def analyze_imports(base_path: Path) -> dict[str, dict[str, list[str]]]:
     """Analyze all cross-layer imports and return structured result."""
     result = {}
 
@@ -383,7 +384,7 @@ def compute_stats(
     return stats
 
 
-def print_summary(stats: dict, file=sys.stderr) -> None:
+def print_summary(stats: dict[str, object], file: TextIO = sys.stderr) -> None:
     """Print human-readable summary."""
     print("\n" + "=" * 50, file=file)
     print("LAYER IMPORT SUMMARY", file=file)
@@ -404,7 +405,22 @@ def print_summary(stats: dict, file=sys.stderr) -> None:
     print("=" * 50 + "\n", file=file)
 
 
-def main():
+def _safe_output_path(raw: str) -> Path:
+    """Resolve a CLI ``--output`` path, confined to the current working directory.
+
+    The value is an untrusted CLI argument (SonarCloud S8707: path traversal via
+    agent-supplied CLI arguments). Resolving and confining it to the working tree
+    stops ``--output ../../etc/passwd`` (or an absolute path) from writing outside
+    the repo the tool is run against.
+    """
+    base = Path.cwd().resolve()
+    candidate = (base / raw).resolve()
+    if candidate != base and base not in candidate.parents:
+        raise SystemExit(f"--output must stay within {base}, got: {raw!r}")
+    return candidate
+
+
+def main() -> int:
     """Check cross-layer imports and output JSON with summary stats."""
     parser = argparse.ArgumentParser(description="Check cross-layer imports between service layers")
     parser.add_argument("-o", "--output", metavar="FILE", help="Save JSON output to file instead of stdout")
@@ -449,8 +465,9 @@ def main():
 
     # Output JSON
     if args.output:
-        Path(args.output).write_text(json_output)
-        print(f"Output saved to {args.output}", file=sys.stderr)
+        output_path = _safe_output_path(args.output)
+        output_path.write_text(json_output)
+        print(f"Output saved to {output_path}", file=sys.stderr)
         # Print summary to stderr when saving to file
         if not args.quiet:
             print_summary(stats, file=sys.stderr)

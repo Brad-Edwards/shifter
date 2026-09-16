@@ -5,6 +5,8 @@ is the agent-installer registry; size and extension checks remain here because
 they depend on Django settings and Django UploadedFile semantics.
 """
 
+from typing import IO
+
 from django.conf import settings
 
 from shared.uploads.inspection import (
@@ -106,7 +108,7 @@ def enforce_max_file_size_bytes(size: int) -> None:
         )
 
 
-def validate_file_size(file_obj) -> None:
+def validate_file_size(file_obj: IO[bytes]) -> None:
     """Validate file size is within limits.
 
     Raises:
@@ -136,7 +138,7 @@ def validate_file_extension(filename: str) -> FileFormat:
     return fmt
 
 
-def validate_magic_bytes(file_obj, expected_format: FileFormat) -> None:
+def validate_magic_bytes(file_obj: IO[bytes], expected_format: FileFormat) -> None:
     """Validate file content matches every magic-byte signature on the format.
 
     Wraps the pure-bytes inspector in `shared.uploads.inspection` with the
@@ -162,7 +164,7 @@ def validate_magic_bytes(file_obj, expected_format: FileFormat) -> None:
         raise ValidationError(message) from exc
 
 
-def validate_agent_file(file_obj, filename: str) -> FileFormat:
+def validate_agent_file(file_obj: IO[bytes], filename: str) -> FileFormat:
     """Perform full validation of an agent upload file.
 
     Order: size first (cheapest), then extension, then magic bytes.

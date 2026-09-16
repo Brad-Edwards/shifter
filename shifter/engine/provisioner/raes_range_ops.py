@@ -52,6 +52,7 @@ from provisioner_db_operation_input import (
 )
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
+from raes_gcp_inventory import inventory_raes_range_cell
 from raes_gcp_network_allocation import (
     GceNetworkAllocation,
     RaesRealizationError,
@@ -62,7 +63,7 @@ from raes_gcp_network_allocation import (
 from raes_gcp_network_allocation import (
     allocated_open_network_for_provision as _allocated_open_network_for_provision,
 )
-from raes_plan import RaesPlanNode, parse_plan
+from raes_plan import RaesPlan, RaesPlanNode, parse_plan
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
 from range_subnet_allocation import _release_subnet_allocations_best_effort
@@ -418,6 +419,21 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
     )
 
 
+def _raes_cleanup_inventory(
+    request_id: str, range_id: int, raes_plan: RaesPlan, config: GCERangeCellConfig
+) -> dict[str, Any]:
+    """Inventory owned resources after a successful destroy; never fail the terminal report.
+
+    A failed inventory yields ``INCOMPLETE`` (unknown, never an empty success), so
+    the destroy still terminalizes but no consumer treats it as verified cleanup.
+    """
+    try:
+        return inventory_raes_range_cell(request_id, range_id, raes_plan, config=config)
+    except Exception:
+        logger.exception("RAES cleanup inventory failed for request_id=%s", request_id)
+        return {"outcome": "INCOMPLETE", "residual_categories": [], "scope": {}}
+
+
 def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) -> None:
     """Tear down every GCE resource owned by an RAES range cell for a generation."""
     operation = "destroy"
@@ -457,4 +473,13 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
         raise
     if network_allocation.cidr is not None:
         _release_subnet_allocations_best_effort(request_id, operation_id=generation)
-    _report(ref, operation, ResultStep.RAES_TERMINAL_DESTROYED, {"raes_status": "succeeded"})
+    # Independent inventory/readback of owned resources -- verified cleanup requires
+    # this evidence, not the delete loop completing (#2086, ADR-063-R4/R5). Run after
+    # subnet release so the readback reflects the true final state.
+    cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config)
+    _report(
+        ref,
+        operation,
+        ResultStep.RAES_TERMINAL_DESTROYED,
+        {"raes_status": "succeeded", "cleanup_inventory": cleanup_inventory},
+    )
