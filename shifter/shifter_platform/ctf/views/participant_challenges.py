@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Protocol
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.urls import reverse
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -34,6 +37,12 @@ logger = logging.getLogger(__name__)
 _MISSION_CATEGORY = re.compile(r"^Mission\s+(\d+)\b", re.IGNORECASE)
 
 
+class _NamedItem(Protocol):
+    """Minimal shape the filter-link builder needs from a tag/topic: a ``name``."""
+
+    name: str
+
+
 def _category_sort_key(category: str) -> tuple[int, int, str]:
     """Put onboarding first, then authored missions in numeric order."""
     normalized = category.strip()
@@ -43,6 +52,48 @@ def _category_sort_key(category: str) -> tuple[int, int, str]:
     if mission:
         return (1, int(mission.group(1)), normalized.casefold())
     return (2, 0, normalized.casefold())
+
+
+def _filter_query(*pairs: tuple[str, str | None]) -> str:
+    """Build a relative ``?k=v&...`` query string, dropping empty values (empty if none)."""
+    present = [(key, value) for key, value in pairs if value]
+    return "?" + urlencode(present) if present else ""
+
+
+def _build_challenge_filter_links(
+    event_tags: Iterable[_NamedItem],
+    event_topics: Iterable[_NamedItem],
+    *,
+    category_filter: str | None,
+    tag_filter: str | None,
+    topic_filter: str | None,
+) -> dict[str, Any]:
+    """Relative filter-link URLs for the challenge-list tag/topic buttons.
+
+    Returns the two "All" URLs plus per-tag/per-topic ``{name, url, active}`` lists
+    so the template renders one short ``<a href>`` per button (no inline query
+    building, no duplicate mutually-exclusive link branches).
+    """
+    return {
+        "tags_all_url": _filter_query(("category", category_filter)),
+        "tag_filters": [
+            {
+                "name": tag.name,
+                "url": _filter_query(("tag", tag.name), ("category", category_filter)),
+                "active": tag_filter == tag.name,
+            }
+            for tag in event_tags
+        ],
+        "topics_all_url": _filter_query(("category", category_filter), ("tag", tag_filter)),
+        "topic_filters": [
+            {
+                "name": topic.name,
+                "url": _filter_query(("topic", topic.name), ("category", category_filter), ("tag", tag_filter)),
+                "active": topic_filter == topic.name,
+            }
+            for topic in event_topics
+        ],
+    }
 
 
 @login_required
@@ -167,6 +218,15 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         "event_topics": event_topics,
         "solved_ids": solved_ids,
         "locked_ids": locked_ids,
+        # Precomputed filter-link URLs so the template renders one short <a href>
+        # per tag/topic button (see _build_challenge_filter_links).
+        **_build_challenge_filter_links(
+            event_tags,
+            event_topics,
+            category_filter=category_filter,
+            tag_filter=tag_filter,
+            topic_filter=topic_filter,
+        ),
     }
     return render(request, "ctf/participant/challenges.html", context)
 
@@ -263,6 +323,16 @@ def challenge_detail(request: HttpRequest, challenge_id: UUID) -> HttpResponse:
         "attempt_limit_mode": participant.event.attempt_limit_mode,
         "timeout_retry_after": timeout_retry_after,
         "show_solution": bool(challenge.solution and participant.event.status in ("ended", "archived")),
+        # Client bootstrap payload rendered via ``json_script`` so the template
+        # stays within SonarCloud's inline-JS length limit; ctf-challenge-detail.js
+        # reads it from the ``#ctf-challenge-detail-config`` element.
+        "challenge_detail_config": {
+            "submitFlagUrl": reverse("v1:ctf:api_submit_flag", kwargs={"challenge_id": challenge.pk}),
+            "useHintUrl": reverse("v1:ctf:api_use_hint", kwargs={"challenge_id": challenge.pk}),
+            "rateChallengeUrl": reverse("v1:ctf:api_rate_challenge", kwargs={"challenge_id": challenge.pk}),
+            "challengePoints": challenge.points or 0,
+            "totalHintPenalty": total_hint_penalty or 0,
+        },
     }
 
     # Add rating context

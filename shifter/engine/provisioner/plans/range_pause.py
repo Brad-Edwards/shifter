@@ -50,7 +50,8 @@ class RangePausePlan:
         ),
     ]
 
-    def get_context(self, instance_id: str) -> dict[str, Any]:
+    @staticmethod
+    def get_context(instance_id: str) -> dict[str, Any]:
         """Get context variables for range pause.
 
         Args:

@@ -410,31 +410,22 @@ class ScoreTimelineResponseSerializer(serializers.Serializer):
 
 
 class PublicScoreboardResponseSerializer(serializers.Serializer):
-    """Public scoreboard read surface.
+    """Stable public scoreboard response for both visible and hidden boards."""
 
-    The runtime returns one of two shapes: the ``{"scoreboard_hidden": true}``
-    sentinel when the event hides its scoreboard, or the full ranking payload
-    (``event_id``, ``team_mode``, ``frozen``, ``rankings``, ``bracket_rankings``,
-    ``brackets``). Every field is optional so this one serializer documents the
-    union without changing the view's runtime ``JsonResponse``.
-    """
-
-    scoreboard_hidden = serializers.BooleanField(read_only=True, required=False)
-    event_id = serializers.CharField(read_only=True, required=False)
-    team_mode = serializers.BooleanField(read_only=True, required=False)
-    frozen = serializers.BooleanField(read_only=True, required=False)
-    rankings = serializers.ListField(child=serializers.DictField(), read_only=True, required=False)
-    bracket_rankings = serializers.ListField(
-        child=serializers.DictField(), read_only=True, required=False, allow_null=True
-    )
-    brackets = _NamedRefSerializer(many=True, read_only=True, required=False)
+    scoreboard_hidden = serializers.BooleanField(read_only=True)
+    event_id = serializers.CharField(read_only=True)
+    team_mode = serializers.BooleanField(read_only=True)
+    frozen = serializers.BooleanField(read_only=True)
+    rankings = serializers.ListField(child=serializers.DictField(), read_only=True)
+    bracket_rankings = serializers.ListField(child=serializers.DictField(), read_only=True, allow_null=True)
+    brackets = _NamedRefSerializer(many=True, read_only=True)
 
 
 class OrganizerScoreboardResponseSerializer(serializers.Serializer):
     """Organizer monitoring scoreboard — always the full ranking payload.
 
     Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
-    carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+    carries the ``scoreboard_hidden`` state and never withholds rows: an
     organizer sees every ranking regardless of the event's ``scoreboard_visible``
     flag or freeze window. ``frozen`` is reported for display only; the rankings
     are computed as of now (``freeze_at=None``).

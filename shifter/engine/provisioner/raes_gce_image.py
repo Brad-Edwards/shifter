@@ -28,6 +28,7 @@ passed in); the candidates arrive on the operation-input projection
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from shared.raes.image_policy import is_concrete_image_ref, resolve_from_candidates
@@ -84,13 +85,14 @@ def resolve_gce_image_from_binding(node: RaesPlanNode, binding: ArtifactBinding)
     falls back. Sizing gaps still fill from authored resources then profile
     defaults, exactly as for a registry-resolved image.
     """
-    return _profile(
+    profile = _profile(
         node,
         binding.image_ref,
         binding.machine_type or None,
         binding.disk_size_gb,
         binding.disk_type or None,
     )
+    return replace(profile, source_image_id=binding.image_id)
 
 
 def _resolve_base_os(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) -> GCERangeImageProfile:

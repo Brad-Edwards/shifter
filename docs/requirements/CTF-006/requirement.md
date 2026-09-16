@@ -21,7 +21,7 @@ Participant management is the gatekeeping layer for CTF events. Shifter consulta
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums.py` (ParticipantStatus enum - lifecycle states (invited/registered/active/completed/disqualified))
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums_registration.py` (ParticipantStatus enum - registered/active/completed/disqualified/banned lifecycle states)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/admin_people.py` (CTF views - organizer participant CRUD, magic link registration, role-based access control)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/lifecycle.py` (Participant lifecycle service - organizer add via immediate provisioning, resend login info, delete)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/accounts.py` (Isolated participant account provisioning - provision_participant_seat seam shared by add/import/generated-seat creation)

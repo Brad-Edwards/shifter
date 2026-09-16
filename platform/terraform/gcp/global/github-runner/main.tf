@@ -33,7 +33,7 @@ provider "google" {
 }
 
 locals {
-  name_prefix = "shifter-${var.environment}"
+  name_prefix = var.name_prefix == null ? "shifter-${var.environment}" : var.name_prefix
 }
 
 # Dedicated, least-privilege runner VM service account: host logging/monitoring

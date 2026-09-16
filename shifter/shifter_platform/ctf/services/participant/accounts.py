@@ -342,8 +342,16 @@ def anonymize_participant_account(participant_id: UUID) -> bool:
 
 
 def purge_expired_participant_accounts() -> int:
-    """Anonymize marked accounts whose event retention period elapsed."""
+    """Anonymize marked accounts whose event retention period elapsed.
+
+    Purging an account also fences that participation's scoped communications
+    (coordinate erased, unclaimed delivery stopped), so a purged account leaves no
+    deliverable communication behind (#2099, AC3). The communication hook is
+    idempotent, so a participant later hard-removed re-runs it harmlessly.
+    """
     from datetime import timedelta
+
+    from ctf.services.communication import on_participant_removed
 
     retention = max(0, int(getattr(settings, "CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS", 24)))
     cutoff = timezone.now() - timedelta(hours=retention)
@@ -354,7 +362,18 @@ def purge_expired_participant_accounts() -> int:
             event__event_end__lte=cutoff,
         ).values_list("pk", flat=True)
     )
-    return sum(anonymize_participant_account(participant_id) for participant_id in participant_ids)
+    purged = 0
+    for participant_id in participant_ids:
+        # Anonymize and fence communications in ONE transaction per participant, so a
+        # crash cannot leave the account anonymized (and thus skipped by the next
+        # sweep) while its communications were never fenced (#2099).
+        with transaction.atomic():
+            if anonymize_participant_account(participant_id):
+                purged += 1
+                participant = CTFParticipant.objects.filter(pk=participant_id).first()
+                if participant is not None:
+                    on_participant_removed(participant)
+    return purged
 
 
 def _eligible_ctf_user(user: User | AnonymousUser) -> User | None:

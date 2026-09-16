@@ -106,14 +106,44 @@ class TestClaimOrchestration:
             lambda **kwargs: generation,
         )
 
-    def test_hit_rehomes_and_enqueues(self, monkeypatch):
-        user = SimpleNamespace(id=99)
+    def _unleased_system_range(self, user):
+        from cms.models import RangeInstance, Request
+        from shared.enums import ResourceStatus
+
+        request = Request.objects.create(workspace_id=1, request_id=uuid4(), request_type="raes-range", user=user)
+        return RangeInstance.objects.create(
+            workspace_id=1,
+            request=request,
+            scenario_id="polaris",
+            user_id=user.id,
+            range_source=RangeSource.MISSION_CONTROL.value,
+            status=ResourceStatus.PROVISIONING.value,
+        )
+
+    def test_hit_rehomes_enqueues_and_first_assigns_the_user_lease(self, monkeypatch):
+        from django.contrib.auth import get_user_model
+        from django.contrib.auth.models import Group
+
+        from cms.models import MissionControlGroupLeasePolicy
+
+        user = get_user_model().objects.create_user(username="warm-claimant@example.com")
+        group = Group.objects.create(name="Warm Claim Policy")
+        user.groups.add(group)
+        MissionControlGroupLeasePolicy.objects.create(
+            group=group,
+            initial_days=7,
+            extension_days=3,
+            maximum_days=90,
+            extensions_enabled=True,
+        )
+        system_row = self._unleased_system_range(user)
+        assert system_row.maximum_expires_at is None  # warm-prepared rows are unleased
         claimed_request_id = uuid4()
         generation = SimpleNamespace(request_id=claimed_request_id, uuid=uuid4(), bucket_id="gce-polaris")
         self._patch_claim(monkeypatch, generation)
         monkeypatch.setattr(
             "cms.services._warm_pool_claim._system_range_instance_for",
-            lambda request_id: SimpleNamespace(pk=4242),
+            lambda request_id: system_row,
         )
         rehomed: list = []
         monkeypatch.setattr(
@@ -124,10 +154,51 @@ class TestClaimOrchestration:
         result = attempt_warm_claim(_request("gce", "polaris", user=user))
 
         assert result == claimed_request_id
-        assert rehomed == [(4242, user, True)]
+        assert rehomed == [(system_row.pk, user, True)]
         assert self.enqueued == [claimed_request_id]
-        assert self.outcomes
         assert self.outcomes[-1]["outcome"] == "hit"
+        # The warm hit now carries automatic-expiry bounds and the generation increment.
+        system_row.refresh_from_db()
+        assert system_row.extension_days == 3
+        assert system_row.lease_initial_days == 7
+        assert system_row.lease_maximum_days == 90
+        assert system_row.lease_policy_source == "group"
+        assert system_row.lease_policy_group_revisions == [{"group_id": group.pk, "revision": 1}]
+        assert (system_row.maximum_expires_at - system_row.expires_at).days == 90 - 7
+
+    def test_hit_does_not_reset_an_already_leased_generation(self, monkeypatch):
+        from datetime import timedelta
+
+        from django.contrib.auth import get_user_model
+        from django.utils import timezone
+
+        user = get_user_model().objects.create_user(username="warm-preleased@example.com")
+        system_row = self._unleased_system_range(user)
+        # Simulate a row that already carries a lease (e.g. a handover that is not an
+        # unleased warm row); rehoming must not reset its ceiling.
+        existing_expires = timezone.now() + timedelta(days=2)
+        existing_maximum = timezone.now() + timedelta(days=2)
+        system_row.expires_at = existing_expires
+        system_row.maximum_expires_at = existing_maximum
+        system_row.extension_days = 0
+        system_row.save(update_fields=["expires_at", "maximum_expires_at", "extension_days"])
+        generation = SimpleNamespace(request_id=uuid4(), uuid=uuid4(), bucket_id="gce-polaris")
+        self._patch_claim(monkeypatch, generation)
+        monkeypatch.setattr(
+            "cms.services._warm_pool_claim._system_range_instance_for",
+            lambda request_id: system_row,
+        )
+        monkeypatch.setattr(
+            "cms.services._range_reassign.reassign_range_owner",
+            lambda pk, new_user, *, rehome=False: None,
+        )
+
+        attempt_warm_claim(_request("gce", "polaris", user=user))
+
+        system_row.refresh_from_db()
+        assert system_row.expires_at == existing_expires
+        assert system_row.maximum_expires_at == existing_maximum
+        assert system_row.extension_days == 0
 
     def test_miss_cold_falls_back(self, monkeypatch):
         self._patch_claim(monkeypatch, None)

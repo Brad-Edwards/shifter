@@ -17,7 +17,15 @@ if TYPE_CHECKING:
 
     from django.contrib.auth.models import User
 
+    from ctf.models import CTFEvent
     from shared.capacity import CapacityAssessmentResult
+    from shared.model_access import (
+        AuthorityInvalidation,
+        ModelAccessRangeInstanceView,
+        ModelAccessRangeView,
+        OwnedReference,
+    )
+    from shared.receipt_validation import ReceiptVerifierBinding
     from shared.remote_access import OpenVpnProfile
 
 logger = logging.getLogger(__name__)
@@ -29,7 +37,7 @@ class UserRole:
 
     is_ctf_organizer: bool
     is_ctf_participant: bool
-    active_ctf_event: Any  # CTFEvent | None
+    active_ctf_event: CTFEvent | None
 
 
 def get_user_role(user: User) -> UserRole:
@@ -61,7 +69,7 @@ def get_user_role(user: User) -> UserRole:
 class RangeProvisionResult:
     """Result of a range provisioning request."""
 
-    request_id: Any  # UUID
+    request_id: UUID
 
 
 def cms_declare_event_capacity(
@@ -148,6 +156,7 @@ def cms_create_range(
     agents_by_os: dict[str, int],
     ngfw_enabled: bool,
     remote_access_teardown_at: datetime | None,
+    model_admission_subject: OwnedReference | None = None,
 ) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
@@ -155,47 +164,92 @@ def cms_create_range(
     to CTF ranges, allowing the user to hold both a Mission Control range and a
     CTF range simultaneously (#450). The source is server-derived here and is
     never caller-supplied.
+
+    ``model_admission_subject`` is the CTF draw reference (PLAT-202) used to
+    resolve the sharing overlap for required-model admission against the real
+    launch subject rather than the launcher identity.
     """
     import cms.services as cms_services
     from shared.enums import RangeSource
 
+    # RAES packages own topology; agents_by_os is accepted for caller back-compat
+    # but does not shape the plan.
+    del agents_by_os
     result = cms_services.create_range_dispatch(
         user=user,
         scenario=scenario,
-        agents_by_os=agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=RangeSource.CTF,
         remote_access_teardown_at=remote_access_teardown_at,
+        model_admission_subject=model_admission_subject,
     )
     return RangeProvisionResult(request_id=result.request_id)
 
 
-def cms_destroy_range(user, range_instance_id: int) -> None:
+def cms_destroy_range(user: User, range_instance_id: int) -> None:
     """Destroy a range via CMS."""
     import cms.services as cms_services
 
     cms_services.destroy_range(user, range_instance_id)
 
 
-def cms_stop_range(user, range_instance_id: int) -> None:
+def cms_stop_range(user: User | None, range_instance_id: int) -> None:
     """Stop (pause) a range via CMS."""
     import cms.services as cms_services
 
+    # CTFParticipant.user is a nullable SET_NULL FK; a range operation needs its
+    # owning user, so require one at the boundary.
+    assert user is not None
     cms_services.pause_range(user, range_instance_id)
 
 
-def cms_start_range(user, range_instance_id: int) -> None:
+def cms_start_range(user: User | None, range_instance_id: int) -> None:
     """Start (resume) a range via CMS."""
     import cms.services as cms_services
 
+    # CTFParticipant.user is a nullable SET_NULL FK; a range operation needs its
+    # owning user, so require one at the boundary.
+    assert user is not None
     cms_services.resume_range(user, range_instance_id)
 
 
-def cms_find_range_instance_id(request_id) -> int | None:
+def cms_find_range_instance_id(request_id: str | UUID) -> int | None:
     """Find RangeInstance PK by provisioning request ID."""
     import cms.services as cms_services
 
     return cms_services.find_range_instance_id_by_request(request_id)
+
+
+def cms_resolve_model_access_range_instances(range_instance_ids: tuple[int, ...]) -> tuple[ModelAccessRangeView, ...]:
+    """Resolve CTF-owned CMS instance PKs to canonical Engine range subjects."""
+    import cms.services as cms_services
+
+    return cms_services.resolve_model_access_range_instances(range_instance_ids)
+
+
+def cms_find_model_access_selected_ranges(
+    range_uuids: tuple[UUID, ...],
+) -> tuple[ModelAccessRangeInstanceView, ...]:
+    """Find the CMS instance correlations that exist for Engine range UUIDs."""
+    import cms.services as cms_services
+
+    return cms_services.find_model_access_selected_ranges(range_uuids)
+
+
+def cms_resolve_model_access_selected_ranges(
+    range_uuids: tuple[UUID, ...],
+) -> tuple[ModelAccessRangeInstanceView, ...]:
+    """Correlate explicit Engine range UUIDs to CMS instance identities."""
+    import cms.services as cms_services
+
+    return cms_services.resolve_model_access_selected_ranges(range_uuids)
+
+
+def cms_invalidate_model_access_authority(command: AuthorityInvalidation) -> int:
+    """Advance Engine's synchronous authority fence through the CMS boundary."""
+    import cms.services as cms_services
+
+    return cms_services.engine_invalidate_sharing_authority(command)
 
 
 def cms_get_range_status(range_instance_id: int) -> str:
@@ -203,6 +257,46 @@ def cms_get_range_status(range_instance_id: int) -> str:
     import cms.services as cms_services
 
     return cms_services.get_range_status_by_id(range_instance_id)
+
+
+def cms_project_ctf_receipt_binding(
+    range_instance_id: int,
+    *,
+    owner_user_id: int,
+    event_id: UUID,
+    participant_id: UUID,
+    profile_id: str,
+    objective_id: str,
+) -> ReceiptVerifierBinding:
+    """Resolve the exact receipt registration through the public CMS boundary."""
+    import cms.services as cms_services
+
+    return cms_services.project_ctf_receipt_binding(
+        range_instance_id,
+        owner_user_id=owner_user_id,
+        event_id=event_id,
+        participant_id=participant_id,
+        profile_id=profile_id,
+        objective_id=objective_id,
+    )
+
+
+def cms_confirm_ctf_receipt_binding(
+    range_instance_id: int,
+    *,
+    owner_user_id: int,
+    objective_id: str,
+    expected: ReceiptVerifierBinding,
+) -> None:
+    """Confirm an exact binding under CMS/Engine locks before scoring."""
+    import cms.services as cms_services
+
+    cms_services.confirm_ctf_receipt_binding(
+        range_instance_id,
+        owner_user_id=owner_user_id,
+        objective_id=objective_id,
+        expected=expected,
+    )
 
 
 def cms_get_range_target_instances(user: User) -> list[dict[str, str]]:

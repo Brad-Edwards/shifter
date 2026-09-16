@@ -106,6 +106,7 @@ class PackRegisterView(APIView):
                     package_ref=data["package_ref"],
                     package_version=data["package_version"],
                     package_digest=data["package_digest"],
+                    expected_package_digest=data["expected_package_digest"],
                     lock_ref=data["lock_ref"],
                     lock_digest=data["lock_digest"],
                     provenance=data["provenance"],

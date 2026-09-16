@@ -65,6 +65,82 @@ def test_launch_persists_bookkeeping_and_dispatches(user, monkeypatch):
     assert instance.scenario_id == "raes-launch"
     assert instance.range_spec is None  # no cyberscript RangeSpec for RAES
     assert instance.status == ResourceStatus.PROVISIONING.value
+    # New Mission Control ranges persist deadlines + the increment from the effective
+    # lease policy (default 30/30/365) as a per-generation snapshot (#27).
+    assert instance.expires_at is not None
+    assert instance.maximum_expires_at is not None
+    assert instance.extension_days == 30
+    # Deadlines derive from the default policy durations: maximum 365d, initial 30d.
+    assert (instance.maximum_expires_at - instance.expires_at).days == 365 - 30
+
+
+@pytest.mark.django_db
+def test_launch_snapshots_the_configured_lease_policy_onto_the_generation(user, monkeypatch):
+    from django.test import override_settings
+
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    _make_source(user)
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
+    policy = MissionControlLeasePolicy(initial_days=7, extension_days=3, maximum_days=90)
+    with override_settings(MISSION_CONTROL_LEASE_POLICY=policy):
+        ctx = create_raes_native_range(user, "raes-launch")
+
+    instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
+    # The generation snapshots the increment; deadlines derive from the policy durations.
+    assert instance.extension_days == 3
+    delta_days = (instance.maximum_expires_at - instance.expires_at).days
+    assert delta_days == 90 - 7
+
+
+@pytest.mark.django_db
+def test_launch_resolves_group_policy_inside_reservation_and_records_provenance(user, monkeypatch):
+    from django.contrib.auth.models import Group
+    from django.db import connection
+
+    from cms.models import MissionControlGroupLeasePolicy
+    from shared.audit import AuditAction, AuditEntityType
+    from shared.models import AuditLog
+
+    _make_source(user)
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
+    group = Group.objects.create(name="Short Lease")
+    user.groups.add(group)
+    MissionControlGroupLeasePolicy.objects.create(
+        group=group,
+        initial_days=7,
+        extension_days=3,
+        maximum_days=90,
+        extensions_enabled=True,
+    )
+    from cms.services import _range_lease as lease_module
+
+    original = lease_module.resolve_mission_control_lease_policy
+
+    def assert_transaction(owner, *, for_update=False):
+        assert connection.in_atomic_block
+        assert for_update is True
+        return original(owner, for_update=for_update)
+
+    monkeypatch.setattr(lease_module, "resolve_mission_control_lease_policy", assert_transaction)
+
+    ctx = create_raes_native_range(user, "raes-launch")
+
+    instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
+    assert instance.extension_days == 3
+    assert instance.lease_initial_days == 7
+    assert instance.lease_maximum_days == 90
+    assert instance.lease_policy_source == "group"
+    assert instance.lease_policy_tenant_revision == 0
+    assert instance.lease_policy_group_revisions == [{"group_id": group.pk, "revision": 1}]
+    audit = AuditLog.objects.get(
+        entity_type=AuditEntityType.RANGE,
+        action=AuditAction.PROVISION,
+        entity_id=instance.pk,
+    )
+    assert audit.new_state["lease_policy_source"] == "group"
+    assert audit.new_state["lease_initial_days"] == 7
+    assert audit.new_state["lease_maximum_days"] == 90
 
 
 @pytest.mark.django_db
@@ -86,8 +162,10 @@ def test_dispatch_failure_marks_failed_and_raises(user, monkeypatch):
 def test_non_launchable_pending_refused(user, monkeypatch):
     _make_source(user, conformance_status="pending")
     monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
-    with pytest.raises(CMSError):
+    with pytest.raises(CMSError, match="not available for launch"):
         create_raes_native_range(user, "raes-launch")
+    # Refused before any range row is created.
+    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
 
 
 @pytest.mark.django_db
@@ -95,8 +173,10 @@ def test_active_range_refused(user, monkeypatch):
     _make_source(user)
     monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
     create_raes_native_range(user, "raes-launch")
-    with pytest.raises(CMSError):
+    with pytest.raises(CMSError, match="already have an active range"):
         create_raes_native_range(user, "raes-launch")
+    # The second launch is refused; only the first range remains.
+    assert RangeInstance.objects.filter(user_id=user.id).count() == 1
 
 
 @pytest.mark.django_db
@@ -163,11 +243,9 @@ def test_dispatch_routes_registered_raes_source(user, monkeypatch):
     routed = {}
     monkeypatch.setattr(
         "cms.services._raes_range_create._create_raes_native_range_impl",
-        lambda u, s, *, range_source=None, instantiation_purpose=None, workspace_uuid=None, enforced_deadline=None: (
-            routed.update(scenario=s, purpose=instantiation_purpose)
-        ),
+        lambda u, s, **kwargs: routed.update(scenario=s, purpose=kwargs.get("instantiation_purpose")),
     )
-    create_range_dispatch(user, "raes-x", {})
+    create_range_dispatch(user, "raes-x")
     assert routed["scenario"] == "raes-x"
     # The product router always mints live-fire authority (#1354, ADR-030-R6).
     assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE
@@ -401,5 +479,7 @@ class TestObjectPackageLaunch:
         root = make_pack(tmp_path / "raes-launch", name="raes-launch")
         _make_object_source(user, pack_digest(root))
 
-        with pytest.raises(CMSError):
+        with pytest.raises(CMSError, match="not available for launch"):
             create_raes_native_range(user, "raes-launch")
+        # Refused at admission, before any range row is created.
+        assert not RangeInstance.all_objects.filter(user_id=user.id).exists()

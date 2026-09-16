@@ -240,6 +240,8 @@ class TestGcpPolarisVerifyStackWiring:
         # host-setup installs docker/sdk; verify-stack (fail-closed) runs next.
         assert "scripts/polaris/verify-stack.sh" in content
         assert content.index("host-setup.sh") < content.index("verify-stack.sh")
+        assert 'source      = "../files/polaris_splice_credential.py"' in content
+        assert 'destination = "/tmp/polaris-splice-credential.py"' in content
 
 
 class TestGcpBuildEvidenceBinding:
@@ -856,6 +858,11 @@ class TestGcpPolarisVerifyStackBehavior:
                 '  printf "%s\\n" $DOCKER_STUB_SERVICES; exit 0\nfi\n'
                 'if [ "$1" = "compose" ] && [ "$2" = "ps" ]; then\n'
                 '  printf "%b" "$DOCKER_STUB_RUNNING_SERVICES"; exit 0\nfi\n'
+                'if [ "$1" = "exec" ] && [ "$3" = "ssh-keygen" ]; then\n'
+                '  printf "ssh-ed25519 AAAATEST\\n"; exit 0\nfi\n'
+                'if [ "$1" = "exec" ] && [ "$2" = "a9-splice" ] && [ "$3" = "cat" ]; then\n'
+                '  printf "ssh-ed25519 AAAATEST bake\\n"; exit 0\nfi\n'
+                'if [ "$1" = "inspect" ]; then printf "{}\\n"; exit 0; fi\n'
                 'if [ "$1" = "compose" ] && [ "$2" = "up" ] && [ "$DOCKER_STUB_FAIL_UP" = "1" ]; then\n'
                 "  exit 1\nfi\n"
                 f"exit {docker_rc}\n"
@@ -867,6 +874,11 @@ class TestGcpPolarisVerifyStackBehavior:
         run_env["PATH"] = f"{stub}:{run_env['PATH']}"
         run_env["POLARIS_ROOT"] = str(tmp_path / "polaris")
         run_env["COMPOSE_DIR"] = str(tmp_path / "polaris" / "build")
+        helper_copy = tmp_path / "polaris-splice-credential.py"
+        helper_copy.write_text('#!/bin/bash\nprintf "helper %s\\n" "$*" >> "$DOCKER_LOG"\n')
+        helper_copy.chmod(0o755)
+        run_env["POLARIS_SPLICE_HELPER_SOURCE"] = str(helper_copy)
+        run_env["POLARIS_LIBEXEC_DIR"] = str(tmp_path / "polaris" / "libexec")
         run_env["DOCKER_LOG"] = str(tmp_path / "docker.log")
         run_env["DOCKER_STUB_SERVICES"] = services
         run_env["DOCKER_STUB_RUNNING_SERVICES"] = running_services
@@ -931,6 +943,36 @@ class TestGcpPolarisVerifyStackBehavior:
         )
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
 
+    @staticmethod
+    def _stub_tar_nested(tmp_path):
+        # Canonical build-v1.tar.gz layout (aws-range/repack_build_artifact.sh):
+        # docker-compose.yml under polaris/build/ with flags/ in the polaris/ parent,
+        # so a0-website's `context: ..` resolves inside the extracted tree.
+        stub = tmp_path / "bin"
+        stub.mkdir(exist_ok=True)
+        (stub / "tar").write_text(
+            "#!/bin/bash\n"
+            'd="";prev="";for a in "$@";do [ "$prev" = "-C" ] && d="$a";prev="$a";done\n'
+            'mkdir -p "$d/polaris/build" "$d/polaris/flags"\n'
+            'printf "services: {}\\n" > "$d/polaris/build/docker-compose.yml"\n'
+            'printf "placement\\n" > "$d/polaris/flags/placement.yaml"\n'
+        )
+        (stub / "tar").chmod(0o755)
+
+    def test_valid_stack_build_v1_nested_layout_passes(self, tmp_path):
+        import hashlib
+
+        # The build-v1.tar.gz layout (docker-compose.yml under polaris/build/) must
+        # be accepted, not just the flat layout.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar_nested(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            docker_ok=True,
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+
     def test_valid_stack_starts_all_declared_services_before_capture(self, tmp_path):
         import hashlib
 
@@ -942,6 +984,20 @@ class TestGcpPolarisVerifyStackBehavior:
         )
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
         assert "docker compose up -d" in (tmp_path / "docker.log").read_text()
+
+    def test_valid_stack_force_recreates_only_a14_twice_and_checks_each_time(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        commands = (tmp_path / "docker.log").read_text()
+        assert commands.count("docker compose up -d --force-recreate a14-kali") == 2
+        assert "--force-recreate a9-splice" not in commands
 
     def test_installs_metadata_isolation_before_starting_services(self, tmp_path):
         import hashlib
@@ -957,6 +1013,25 @@ class TestGcpPolarisVerifyStackBehavior:
         assert "iptables -I OUTPUT 1 -d 169.254.169.254/32 -j DROP" in commands
         assert "iptables -I DOCKER-USER 1 -d 169.254.169.254/32 -j DROP" in commands
         assert commands.index("iptables -I OUTPUT") < commands.index("docker compose up -d")
+
+    def test_supplies_bake_time_dc01_ip_so_dns_starts(self, tmp_path):
+        import hashlib
+
+        # The dns service's entrypoint exits non-zero without DC01_IP (a per-range
+        # value only known at deploy time), which crash-loops dns and cascades to
+        # a14-kali (which uses dns as its resolver). verify-stack must supply a
+        # throwaway bake-time DC01_IP in the splice-credential override layer so
+        # the full stack can reach running for capture.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        override = (tmp_path / "polaris" / "build" / "docker-compose.splice-credential.yml").read_text()
+        assert "dns:" in override
+        assert "DC01_IP:" in override
 
     @pytest.mark.parametrize(
         "config_json,error",
@@ -990,6 +1065,22 @@ class TestGcpPolarisVerifyStackBehavior:
             running_services="svc-a running\n",
         )
         assert r.returncode != 0, r.stdout
+
+    def test_not_running_service_dumps_its_logs_before_failing(self, tmp_path):
+        import hashlib
+
+        # A service that never reaches running must have its container logs dumped
+        # to the build log so the failure is diagnosable without the builder VM
+        # serial console.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            running_services="svc-a running\n",
+        )
+        assert r.returncode != 0, r.stdout
+        assert "compose logs --tail=50 --no-color svc-b" in (tmp_path / "docker.log").read_text()
 
     def test_failed_compose_up_fails_before_capture(self, tmp_path):
         import hashlib

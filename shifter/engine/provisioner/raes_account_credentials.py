@@ -158,7 +158,7 @@ def install_instance_account_credentials(
                     secret_ref = _run_password_strategy(
                         orchestrator, execution, range_id, instance_key, platform, account, secret_ops
                     )
-                elif account.auth_method == "publickey":
+                elif account.auth_method == "key":
                     secret_ref = _run_public_key_strategy(
                         orchestrator, execution, range_id, instance_key, platform, account, secret_ops
                     )

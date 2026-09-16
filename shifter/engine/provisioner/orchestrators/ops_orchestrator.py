@@ -55,10 +55,17 @@ class OpsStep(Protocol):
 
 @runtime_checkable
 class OpsPlan(Protocol):
-    """Protocol for operations plans."""
+    """Protocol for operations plans.
 
-    steps: list[Any]
-    name: str
+    ``steps`` is a read-only property so implementations may expose it as a
+    ``ClassVar`` constant (the ops plans), an instance attribute, or a property
+    (``SetupPlan``) and still conform. ``name`` is intentionally not required:
+    ``orchestrate`` reads it via ``getattr(plan, "name", type(plan).__name__)``,
+    so plans that omit it still work.
+    """
+
+    @property
+    def steps(self) -> list[Any]: ...
 
     def get_context(self, target: Any) -> dict[str, Any]: ...
 
@@ -91,7 +98,7 @@ class OpsOrchestrator:
     def orchestrate(
         self,
         instance_id: str,
-        plan: Any,
+        plan: OpsPlan,
         context: dict[str, Any],
         **kwargs: Any,
     ) -> OpsResult:
@@ -138,7 +145,7 @@ class OpsOrchestrator:
 
     def _execute_step(
         self,
-        step: Any,
+        step: OpsStep,
         context: dict[str, Any],
     ) -> StepResult:
         """Execute a single operations step.

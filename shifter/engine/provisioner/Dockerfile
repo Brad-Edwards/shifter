@@ -34,7 +34,10 @@ ARG VIRTCTL_SHA256=ebc167273e40a295721c61d04c4458fa8f037c5a00b347dbb4f5456a02ce4
 # create the writable Terraform workspace mount point.
 # Keeping these in one layer satisfies docker:S7031 (no consecutive RUNs).
 # --create-home gives Terraform/Pulumi a writable HOME for plugin caches.
-RUN apt-get update && apt-get install -y curl openssh-client unzip && \
+# --no-install-recommends keeps the image lean (docker:S6500); ca-certificates is
+# listed explicitly because it is only a curl "recommends", and the HTTPS
+# downloads below need the trust store.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client unzip && \
     # Install Terraform, integrity-verified against HashiCorp's published
     # SHA256SUMS before extraction (ADR-037-R3). The archive is saved under the
     # exact name the checksum manifest references so `sha256sum -c` matches.
@@ -125,6 +128,7 @@ COPY shifter_platform/shared /opt/shifter-libs/shared
 # (terraform_base._stage_workspace) so a process compromise cannot tamper
 # with application code at runtime (issue #1103, follow-up to #950).
 COPY engine/provisioner/ .
+COPY packer/files/polaris_splice_credential.py /app/assets/polaris-splice-credential.py
 
 # Bake the Terraform provider packages needed by the runtime range/NGFW
 # modules. Provisioner tasks run in private subnets without public Terraform

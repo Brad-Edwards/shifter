@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -43,6 +44,7 @@ from shared.warm_pool.policy import (
 
 if TYPE_CHECKING:
     from cms.models import RangeInstance
+    from cms.services._range_lease import RangeLease
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,9 @@ class WarmClaimRequest:
     workspace_id: int
     egress_mode: str
     request_id: UUID
+    #: Trusted event deadline for a CTF-owned generation. Mission Control policy is
+    #: resolved only after a warm generation is claimed inside this transaction.
+    enforced_deadline: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -185,6 +190,14 @@ def _run_atomic_claim(request: WarmClaimRequest, candidates: list[tuple[str, str
                 logger.error("warm claim: generation %s has no CMS range instance; rolling back", generation.uuid)
                 raise _WarmClaimRollback
             reassign_range_owner(range_instance.pk, request.user, rehome=True)
+            from cms.services._range_lease import build_range_lease, build_resolved_mission_control_range_lease
+
+            lease = (
+                build_resolved_mission_control_range_lease(request.user, for_update=True)
+                if request.range_source is RangeSource.MISSION_CONTROL
+                else build_range_lease(request.range_source, enforced_deadline=request.enforced_deadline)
+            )
+            _assign_initial_user_lease(range_instance, lease)
             audit_log(
                 AuditEvent(
                     entity_type=AuditEntityType.RANGE.value,
@@ -247,3 +260,41 @@ def _system_range_instance_for(request_id: UUID) -> RangeInstance | None:
     from cms.models import RangeInstance
 
     return RangeInstance.objects.filter(request__request_id=request_id).select_related("request").first()
+
+
+def _assign_initial_user_lease(range_instance: RangeInstance, lease: RangeLease) -> None:
+    """First-assign the claimant's user lease onto an unleased warm generation (#27).
+
+    A warm-prepared generation is system-owned and unleased, so the user lifetime
+    starts at this claim -- persisting the deadline (the sole automatic-cleanup
+    authority) and the generation's extension increment inside the same claim/ownership
+    transaction, before activation. Guard on an unleased row (``maximum_expires_at is
+    None``) so rehoming never resets an already-leased generation's ceiling (e.g. a CTF
+    spare keeps its event deadline). The separate warm idle ledger continues to own
+    pre-claim pool cost and retirement.
+    """
+    if range_instance.maximum_expires_at is not None:
+        return
+    range_instance.expires_at = lease.expires_at
+    range_instance.maximum_expires_at = lease.maximum_expires_at
+    range_instance.extension_days = lease.extension_days
+    range_instance.lease_initial_days = lease.initial_days
+    range_instance.lease_maximum_days = lease.maximum_days
+    range_instance.lease_policy_source = lease.policy_source
+    range_instance.lease_policy_tenant_revision = lease.tenant_revision
+    range_instance.lease_policy_group_revisions = [
+        {"group_id": group_id, "revision": revision} for group_id, revision in lease.group_revisions
+    ]
+    range_instance.save(
+        update_fields=[
+            "expires_at",
+            "maximum_expires_at",
+            "extension_days",
+            "lease_initial_days",
+            "lease_maximum_days",
+            "lease_policy_source",
+            "lease_policy_tenant_revision",
+            "lease_policy_group_revisions",
+            "updated_at",
+        ]
+    )

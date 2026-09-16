@@ -69,7 +69,7 @@ time-bounded exception.
 | `shifter/installation` | 97% | 96 |
 | `scripts/bootstrap` | 86% | 85 |
 | `scripts/check_layer_imports` | 96% | 95 |
-| `shifter/packer` | n/a (Packer HCL; no owned production Python) | not a coverage publisher |
+| `shifter/packer` | 76% | 75 |
 
 **SPA (frontend) floor.** The Django-hosted React SPA
 (`shifter/shifter_platform/frontend`) enforces its own absolute floors in
@@ -88,8 +88,8 @@ which fails a PR when `new_coverage < 80` (80% coverage on changed lines), plus
 `new_violations > 0`, new duplicated-lines density > 3%, any new rating worse than
 A, and new security hotspots not fully reviewed. PR analysis waits for the gate
 (`sonar.qualitygate.wait=true`). The conditions are recorded in
-`sonar-project.properties`; the platform SQLite lane is the sole coverage report
-Sonar consumes.
+`sonar-project.properties`; each owned Python package publishes its configured
+coverage report for Sonar to consume.
 
 ## Warning policy
 

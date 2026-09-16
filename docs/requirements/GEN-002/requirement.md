@@ -21,6 +21,18 @@ The repo now has guardrail enforcement in ADR registry, adr_guard, CI, hooks, an
 
 ## Traceability
 
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#1583` (In-tenant artifact preparation and dependency compatibility)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/cloud/preparation_policy.py` (Executable preparation Job authority and exact-image admission)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/cloud/preparation_installation_readback.py` (Fail-closed verification of installed Kubernetes authority)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/cloud/preparation_cloud_readback.py` (Independent installed cloud IAM and isolation verification)
+- TESTS → TEST `shifter/shifter_platform/tests/shared/cloud/test_preparation_installation_readback.py` (Reject unapproved execution, RBAC, network policy and unconverged installations)
+- TESTS → TEST `shifter/shifter_platform/tests/shared/cloud/test_preparation_cloud_readback.py` (Reject cloud authority and network drift)
+- TESTS → TEST `shifter/shifter_platform/tests/shared/cloud/test_preparation_runtime.py` (Exact worker image, identity, command and Secret-backed transport policy)
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_preparation_postgres.py` (Real concurrent request serialization, idempotency and capacity across grant versions)
+- DOCUMENTS → DOCUMENTATION `docs/ops/artifact-preparation.md` (Operator installation and enforced responsibility boundaries)
+- IMPLEMENTS → CODE_FILE `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` (Closed dynamic-secret name and participant-version conditions verified in the tenant)
+- TESTS → TEST `scripts/check_tf_gcp_iam_resource_scope/test_check_tf_gcp_iam_resource_scope.py` (Reject widened prefixes, participant classes, permissions and invalid condition compositions)
+
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#689` (Refactor CI and guardrail automation god files)
 - CONSTRAINS → ADR `ADR-001` (Cross-layer access goes through service boundaries)
 - CONSTRAINS → ADR `ADR-002` (Guardrail changes must remain documented)
@@ -65,3 +77,7 @@ The repo now has guardrail enforcement in ADR registry, adr_guard, CI, hooks, an
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2084` (GCP exact-release security gate reconciliation)
 - IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/documentation.py` (`lilrae-identity-boundary` check enforcing ADR-024-R6 identity and scenario-pack terminology)
 - TESTS → TEST `scripts/adr_guard/tests/test_adr_guard.py` (LilraeIdentityBoundaryTests for rename continuity, TechVault role, false pairing, and historical evidence boundaries)
+- IMPLEMENTS → CONFIG `.github/workflows/iam-drift-check.yml` (Out-of-band global/iam CI drift-check gating on `terraform plan -detailed-exitcode` (ADR-004-R26, #247))
+- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/_deploy_workflow_iam_drift.py` (`global-iam-drift-check` guard pinning the global/iam drift-check workflow (ADR-004-R26, #247))
+- TESTS → TEST `scripts/adr_guard/tests/test_global_iam_drift.py` (global/iam drift-check guard regression tests (#247))
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#247` (Audit and scope down OIDC IAM permissions)

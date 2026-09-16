@@ -244,6 +244,33 @@ class LaunchRangeResponseSerializer(serializers.Serializer):
 
     success = serializers.BooleanField()
     range = RangePresentationSerializer()
+    # Retry-safe launch (#2086, ADR-063): present only when an Idempotency-Key was
+    # supplied. True when this response recovered a prior launch rather than
+    # dispatching a new one; additive optional field (ADR-040-R3).
+    recovered = serializers.BooleanField(required=False)
+
+
+class CleanupObligationSerializer(serializers.Serializer):
+    """One retained cleanup obligation (#2086, ADR-063-R4)."""
+
+    code = serializers.CharField()
+    detail = serializers.CharField()
+
+
+class RangeCleanupOutcomeResponseSerializer(serializers.Serializer):
+    """Truthful range cleanup-outcome projection (#2086, ADR-063-R4)."""
+
+    request_id = serializers.UUIDField()
+    found = serializers.BooleanField()
+    operation_status = serializers.CharField()
+    dispatch_status = serializers.CharField()
+    cancel_state = serializers.CharField()
+    # not_applicable | pending | unknown | verified_terminal
+    cleanup = serializers.CharField()
+    residual_obligations = CleanupObligationSerializer(many=True)
+    # Present only when scoped provider inventory/readback evidence exists.
+    verification_observed_at = serializers.DateTimeField(required=False, allow_null=True)
+    verification_scope = serializers.DictField(required=False, allow_null=True)
 
 
 class SuccessResponseSerializer(serializers.Serializer):

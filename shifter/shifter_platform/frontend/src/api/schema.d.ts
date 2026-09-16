@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/v1/administer/mission-control/lease-policy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read fallback, runtime tenant state, and policy-eligible groups. */
+        get: operations["api_v1_administer_mission_control_lease_policy_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace one policy-eligible RBAC group's complete lease policy. */
+        put: operations["api_v1_administer_mission_control_lease_policy_group_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove one group policy so the group inherits tenant policy. */
+        post: operations["api_v1_administer_mission_control_lease_policy_group_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace the complete runtime tenant policy under revision CAS. */
+        put: operations["api_v1_administer_mission_control_lease_policy_tenant_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove the runtime tenant replacement. */
+        post: operations["api_v1_administer_mission_control_lease_policy_tenant_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/administer/users/": {
         parameters: {
             query?: never;
@@ -236,6 +321,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/artifact-preparation/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description The CMS loads the selected private pack and the engine owns the job. */
+        post: operations["cms_artifact_preparation_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/artifact-preparation/{operation_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Status does not expose worker credentials or private manifests. */
+        get: operations["cms_artifact_preparation_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/artifact-preparation/{operation_id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Cancellation cannot supply resource names or deletion instructions. */
+        post: operations["cms_artifact_preparation_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/artifact-preparation/{operation_id}/retry/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description A retry supplies no new code, cloud grant, identities or resource names. */
+        post: operations["cms_artifact_preparation_retry_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/catalog/": {
         parameters: {
             query?: never;
@@ -281,6 +434,41 @@ export interface paths {
         put?: never;
         /** @description Register an untrusted pack through the uniform ingestion service. */
         post: operations["cms_catalog_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/preparation-adapters/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List private registrations only for authorized administrators. */
+        get: operations["cms_preparation_adapters_list"];
+        put?: never;
+        /** @description Register another compatible private image without changing platform code. */
+        post: operations["cms_preparation_adapters_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/preparation-adapters/{adapter_id}/state/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Lifecycle authority remains independent of cloud-grant administration. */
+        post: operations["cms_preparation_adapters_state_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -912,6 +1100,23 @@ export interface paths {
         put?: never;
         /** @description Enqueue (or coalesce onto) a background spin-up task and return 202 immediately. */
         post: operations["ctf_events_ranges_provision_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/registration-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the bounded pending queue for one authorized event. */
+        get: operations["ctf_events_registration_requests_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1888,6 +2093,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/registration-requests/{request_id}/disposition/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate authority and apply exactly one terminal disposition. */
+        post: operations["ctf_registration_requests_disposition_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/scenarios/": {
         parameters: {
             query?: never;
@@ -2152,6 +2374,23 @@ export interface paths {
         };
         /** @description Return the active range and connection URLs for the request user. */
         get: operations["api_v1_mission_control_range_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/{request_id}/cleanup-outcome/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the cleanup outcome for the owned range's request_id. */
+        get: operations["api_v1_mission_control_range_cleanup_outcome"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2818,6 +3057,27 @@ export interface components {
          * @enum {string}
          */
         ActorTypeEnum: "user" | "apikey" | "system" | "cognito";
+        /** @description Only an existing grant and the closed versioned manifest enter installation. */
+        AdapterInstall: {
+            /** Format: uuid */
+            grant_id: string;
+            manifest: unknown;
+        };
+        /** @description Lifecycle changes retain immutable registration and cleanup references. */
+        AdapterState: {
+            state: components["schemas"]["StateEnum"];
+        };
+        /** @description Private administrative detail, never a public discovery/catalog response. */
+        AdapterView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            grant_id: string;
+            scope_digest: string;
+            manifest_digest: string;
+            manifest: unknown;
+            state: string;
+        };
         /** @description Add-existing-account command. */
         AddWorkspaceMember: {
             /** Format: email */
@@ -3173,6 +3433,11 @@ export interface components {
          * @enum {string}
          */
         CleanupControlRequestActionEnum: "defer" | "cancel";
+        /** @description One retained cleanup obligation (#2086, ADR-063-R4). */
+        CleanupObligation: {
+            code: string;
+            detail: string;
+        };
         /** @description One entry from ``mission_control.utils.build_connection_urls``. */
         ConnectionUrl: {
             uuid: string | null;
@@ -3255,6 +3520,12 @@ export interface components {
             readonly success: boolean;
         };
         /**
+         * @description * `deployment` - deployment
+         *     * `runtime` - runtime
+         * @enum {string}
+         */
+        EffectiveSourceEnum: "deployment" | "runtime";
+        /**
          * @description * `status-quo` - Inherit deployment baseline
          *     * `none` - Zero egress (no outbound NAT path)
          * @enum {string}
@@ -3315,6 +3586,9 @@ export interface components {
             readonly id: string;
             readonly name: string;
             readonly description: string;
+            readonly public_registration_enabled: boolean;
+            /** Format: uri */
+            readonly public_registration_url: string | null;
             readonly status: string;
             /** Format: date-time */
             readonly event_start: string;
@@ -3347,6 +3621,9 @@ export interface components {
             readonly capacity_hints: {
                 [key: string]: unknown;
             };
+            readonly model_demand: {
+                [key: string]: unknown;
+            }[];
             readonly logo_url: string;
             readonly visible_os_types: string[];
             readonly theme_color: string;
@@ -3450,6 +3727,7 @@ export interface components {
         EventWrite: {
             name: string;
             description?: string;
+            public_registration_enabled?: boolean;
             /** Format: date-time */
             event_start: string;
             /** Format: date-time */
@@ -3480,6 +3758,9 @@ export interface components {
             capacity_hints?: {
                 [key: string]: unknown;
             };
+            model_demand?: {
+                [key: string]: unknown;
+            }[];
             /** Format: uri */
             logo_url?: string;
             visible_os_types?: string[];
@@ -3623,6 +3904,26 @@ export interface components {
         LaunchRangeResponse: {
             success: boolean;
             range: components["schemas"]["RangePresentation"];
+            recovered?: boolean;
+        };
+        /** @description The canonical four-field policy projection. */
+        LeasePolicy: {
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
+        /** @description Serialize one eligible group and its optional runtime override. */
+        LeasePolicyGroupSettings: {
+            id: number;
+            name: string;
+            revision: number;
+            override: components["schemas"]["LeasePolicyOverride"] | null;
+        };
+        /** @description Serialize one complete runtime override and its revision. */
+        LeasePolicyOverride: {
+            policy: components["schemas"]["LeasePolicy"];
+            revision: number;
         };
         /**
          * @description Schema-only description of the flat ``{"error": "<message>"}`` body some
@@ -3664,6 +3965,15 @@ export interface components {
             readonly declared_digest: string;
             readonly state: string;
             readonly is_refreshable: boolean;
+        };
+        /** @description Serialize the complete administrator settings projection. */
+        MissionControlLeasePolicySettings: {
+            baseline: components["schemas"]["LeasePolicy"];
+            tenant_revision: number;
+            tenant_override: components["schemas"]["LeasePolicyOverride"] | null;
+            effective_tenant: components["schemas"]["LeasePolicy"];
+            effective_source: components["schemas"]["EffectiveSourceEnum"];
+            groups: components["schemas"]["LeasePolicyGroupSettings"][];
         };
         /**
          * @description * `advisory` - Advisory (soft cap)
@@ -3824,7 +4134,7 @@ export interface components {
          * @description Organizer monitoring scoreboard — always the full ranking payload.
          *
          *     Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
-         *     carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+         *     carries the ``scoreboard_hidden`` state and never withholds rows: an
          *     organizer sees every ranking regardless of the event's ``scoreboard_visible``
          *     flag or freeze window. ``frozen`` is reported for display only; the rankings
          *     are computed as of now (``freeze_at=None``).
@@ -3884,6 +4194,8 @@ export interface components {
             package_ref: string;
             package_version: string;
             package_digest: string;
+            /** @default  */
+            expected_package_digest: string;
             /** @default  */
             lock_ref: string;
             /** @default  */
@@ -4289,6 +4601,23 @@ export interface components {
             enabled?: boolean;
             staff_only?: boolean;
         };
+        /** @description Identify authored intent, never cloud configuration or executable overrides. */
+        PreparationRequest: {
+            scenario_id: string;
+            requirement_address: string;
+            /** Format: uuid */
+            adapter_id: string;
+            specification_id: string;
+        };
+        /** @description Bounded progress without private recipe or worker evidence payloads. */
+        PreparationView: {
+            /** Format: uuid */
+            id: string | null;
+            state: string;
+            failure_code: string;
+            cleanup_pending: boolean;
+            reused: boolean;
+        };
         /** @description List projection of one challenge prerequisite. */
         Prerequisite: {
             readonly id: string;
@@ -4328,15 +4657,41 @@ export interface components {
             readonly role: components["schemas"]["WorkspaceRoleEnum"];
             readonly capabilities: string[];
         };
+        /** @description Closed organizer decision vocabulary. */
+        PublicRegistrationDisposition: {
+            action: components["schemas"]["PublicRegistrationDispositionActionEnum"];
+        };
         /**
-         * @description Public scoreboard read surface.
-         *
-         *     The runtime returns one of two shapes: the ``{"scoreboard_hidden": true}``
-         *     sentinel when the event hides its scoreboard, or the full ranking payload
-         *     (``event_id``, ``team_mode``, ``frozen``, ``rankings``, ``bracket_rankings``,
-         *     ``brackets``). Every field is optional so this one serializer documents the
-         *     union without changing the view's runtime ``JsonResponse``.
+         * @description * `approve` - approve
+         *     * `reject` - reject
+         * @enum {string}
          */
+        PublicRegistrationDispositionActionEnum: "approve" | "reject";
+        /** @description Terminal disposition result. */
+        PublicRegistrationDispositionResult: {
+            /** Format: uuid */
+            readonly request_id: string;
+            readonly disposition: string;
+            /** Format: uuid */
+            readonly participant_id: string | null;
+        };
+        /** @description One pending request visible only to an authorized event organizer. */
+        PublicRegistrationRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+            /** Format: email */
+            readonly email: string;
+            readonly disposition: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Paginated pending-request queue. */
+        PublicRegistrationRequestListResponse: {
+            readonly requests: components["schemas"]["PublicRegistrationRequest"][];
+            readonly total: number;
+        };
+        /** @description Stable public scoreboard response for both visible and hidden boards. */
         PublicScoreboardResponse: {
             readonly scoreboard_hidden: boolean;
             readonly event_id: string;
@@ -4527,6 +4882,22 @@ export interface components {
         RangeAccessResponse: {
             readonly redirect: string;
             readonly message: string;
+        };
+        /** @description Truthful range cleanup-outcome projection (#2086, ADR-063-R4). */
+        RangeCleanupOutcomeResponse: {
+            /** Format: uuid */
+            request_id: string;
+            found: boolean;
+            operation_status: string;
+            dispatch_status: string;
+            cancel_state: string;
+            cleanup: string;
+            residual_obligations: components["schemas"]["CleanupObligation"][];
+            /** Format: date-time */
+            verification_observed_at?: string | null;
+            verification_scope?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * @description One entry in the range-history list (``GET .../ranges/``, #1370).
@@ -4730,10 +5101,22 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
+        /** @description Strict full replacement plus expected revision. */
+        ReplaceLeasePolicy: {
+            expected_revision: number;
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
         /** @description Confirmation returned after resending non-secret login information. */
         ResendLoginInfoResult: {
             readonly success: boolean;
             readonly id: string;
+        };
+        /** @description Strict explicit reset command. */
+        ResetLeasePolicy: {
+            expected_revision: number;
         };
         /**
          * @description * `concurrent_ranges` - Concurrent ranges
@@ -4881,6 +5264,13 @@ export interface components {
             readonly existing: number;
             readonly created: number;
         };
+        /**
+         * @description * `enabled` - enabled
+         *     * `disabled` - disabled
+         *     * `retired` - retired
+         * @enum {string}
+         */
+        StateEnum: "enabled" | "disabled" | "retired";
         /** @description One of the requesting participant's own submissions. */
         SubmissionListItem: {
             readonly id: string;
@@ -5163,6 +5553,219 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    api_v1_administer_mission_control_lease_policy_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_administer_users_list: {
         parameters: {
             query?: {
@@ -5636,6 +6239,166 @@ export interface operations {
             };
         };
     };
+    cms_artifact_preparation_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparationRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PreparationRequest"];
+                "multipart/form-data": components["schemas"]["PreparationRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_artifact_preparation_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_artifact_preparation_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_artifact_preparation_retry_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     cms_catalog_list: {
         parameters: {
             query?: never;
@@ -5733,6 +6496,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackRegistrationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapters_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterView"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapters_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdapterInstall"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdapterInstall"];
+                "multipart/form-data": components["schemas"]["AdapterInstall"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapters_state_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdapterState"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdapterState"];
+                "multipart/form-data": components["schemas"]["AdapterState"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterView"];
                 };
             };
             /** @description Authentication failed. */
@@ -7851,6 +8739,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RangeProvisionQueued"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_registration_requests_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationRequestListResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -10422,6 +11349,51 @@ export interface operations {
             };
         };
     };
+    ctf_registration_requests_disposition_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicRegistrationDisposition"];
+                "application/x-www-form-urlencoded": components["schemas"]["PublicRegistrationDisposition"];
+                "multipart/form-data": components["schemas"]["PublicRegistrationDisposition"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationDispositionResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_scenarios_retrieve: {
         parameters: {
             query?: never;
@@ -11168,6 +12140,45 @@ export interface operations {
             };
         };
     };
+    api_v1_mission_control_range_cleanup_outcome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeCleanupOutcomeResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_mission_control_raes_operation_receipts_list: {
         parameters: {
             query?: never;
@@ -11513,7 +12524,10 @@ export interface operations {
     api_v1_mission_control_range_launch: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional caller retry key (max 200 characters; leading/trailing whitespace trimmed, empty treated as absent). When supplied the launch is idempotent: a retry with the same key and the same launch selections recovers the original range instead of dispatching a duplicate; the same key with different selections returns 409. */
+                "Idempotency-Key"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -11533,6 +12547,15 @@ export interface operations {
                     "application/json": components["schemas"]["LaunchRangeResponse"];
                 };
             };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -11542,8 +12565,17 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Permission denied. */
+            /** @description Workspace or range launch access denied. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Launch conflict, including workspace_range_quota_exceeded. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

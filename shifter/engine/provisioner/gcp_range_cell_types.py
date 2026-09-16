@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import NotRequired, TypedDict
 
 from config import GCERangeImageProfile
@@ -9,6 +10,21 @@ from config import GCERangeImageProfile
 ResourceDict = dict[str, object]
 ComputeResource = dict[str, object]
 ScenarioInstance = ResourceDict
+
+
+@dataclass(frozen=True)
+class GceEgressPolicy:
+    """Pinned egress posture and separately admitted broker capability.
+
+    Mode uses the existing range-egress vocabulary. The broker capability is
+    never inferred from deployment enablement or a configured VIP.
+    """
+
+    mode: str = "status-quo"
+    model_broker: dict[str, object] | None = None
+
+
+DEFAULT_GCE_EGRESS_POLICY = GceEgressPolicy()
 
 
 class NetworkPlan(TypedDict):

@@ -19,6 +19,7 @@ provisioning path.
 
 | Group | Prefix | Audience |
 |-------|--------|----------|
+| Public registration | `/ctf/public/events/<event-uuid>/` | Unauthenticated, explicitly published event projection and CSRF-protected request intake |
 | Participant | `/ctf/` | Competitors: dedicated login, password change, dashboard, challenges, range, scoreboard, team |
 | Organizer/Admin | `/ctf/admin/` | Organizers: events, challenges, participants, teams, brackets, ranges, notifications, analytics |
 | API | `/ctf/api/` | JSON endpoints for events, challenges, scenarios |
@@ -36,11 +37,12 @@ inherit `CTFBaseModel` with a `SoftDeleteManager` (soft delete by default).
 | Model | Purpose |
 |-------|---------|
 | `CTFEvent` | Competition: window, scenario, capacity, team mode, throttles, scoreboard policy, cleanup policy |
+| `CTFPublicRegistrationRequest` | Minimal event-scoped name/email intake with pending, approved, or rejected disposition; never participant authority |
 | `CTFChallenge` | Scored task: category, points, difficulty, release time, prerequisite, target instance/port, tags/topics |
 | `CTFFlag` | The sole source of flag truth: one or more flags per challenge, each stored as a hash (static), pattern (regex), or sentinel (programmable/http) with type, case sensitivity, and validator config |
 | `CTFTopic`, `CTFChallengeTag`, `CTFChallengeFile`, `CTFChallengePrerequisite` | Challenge taxonomy, attachments, and unlock graph |
 | `CTFBracket`, `CTFTeam`, `CTFParticipant` | Cohorts, teams, and per-user participation |
-| `CTFSubmission`, `CTFAward` | Flag attempts (correctness, points, attempt number, source IP) and manual point awards |
+| `CTFSubmission`, `CTFReceiptConsumption`, `CTFAward` | Flag attempts, durable issuer-scoped signed-receipt replay evidence, and manual point awards |
 | `CTFChallengeRating` | Participant difficulty ratings |
 | `CTFHint`, `CTFHintUsage` | Optional, point-reducing hints and usage tracking |
 | `CTFNotification`, `CTFEmailTemplate`, `CTFScheduledTask` | Announcements, reminder templates, and scheduled work (legacy aggregate evidence; see Scoped communications) |
@@ -59,6 +61,16 @@ against the `CTFFlag` records. A single plaintext `flag` on challenge create/upd
 is normalized into one static `CTFFlag`; a challenge with no flag rows is
 unverifiable (every submission is rejected).
 
+Receipt-capable validators use an immutable server-derived CTF → CMS → Engine
+binding and an installation-owned authenticated verifier profile. Verification
+runs outside locks; the exact registration and objective mapping are rechecked
+inside the scoring transaction, where a durable issuer-scoped consumption row
+enforces one-shot use. The generic platform never interprets scenario proof
+claims or receives symmetric signing bytes. Receipt attempts persist only a
+fixed redaction marker in submission history; legacy flag types preserve their
+existing history behavior. See the
+[operator and extension contract](../../dev/ctf-signed-receipt-validators.md).
+
 ## Services
 
 Business logic lives under `ctf.services` (views stay thin):
@@ -70,6 +82,8 @@ Business logic lives under `ctf.services` (views stay thin):
   fallback (`get_scoreboard`, `calculate_score`, ranks, stats, timeline, and the
   `recompute_*` maintenance helpers).
 - `authorization`, `audit`: access checks and audit trail.
+- `public_registration`: closed public projection, event-locked pending intake,
+  participant-capability review/disposition, and bounded PII retention.
 - `communication/`: the scoped-communications domain (see below): `audience`,
   `campaigns`, `release`, `lifecycle`, `retention`.
 
@@ -229,12 +243,27 @@ audience resolver without a second long-lived notification model.
 Two management commands operate the event runtime:
 
 - `run_ctf_scheduler`: long-running scheduler that drives batch range provisioning,
-  cleanup, reminders, and scheduled tasks, writing a liveness heartbeat.
+  cleanup, reminders, scheduled tasks, participant-account anonymization, and bounded
+  public-registration-request deletion, writing a liveness heartbeat.
 - `ctf_recompute_leaderboard`: recomputes materialized leaderboard columns
   authoritatively when reconciliation is needed.
 
 ## Boundaries
 
+- Public registration is a server-rendered, exact route ahead of the authenticated
+  SPA catch-all. Visibility requires an explicit per-event flag, a live workspace
+  scope, and `registration` status. The service allowlists event metadata and uses
+  `effective_registration_deadline`; the page does not project arbitrary event pages
+  or organizer/participant state.
+- Anonymous POSTs use Django form validation and CSRF, body/field bounds, shared
+  source/event/fleet rate budgets, generic duplicate success, fixed public errors,
+  no-store/no-referrer/noindex response controls, and an event-row lock. Intake has
+  no account, invitation, seat, range, webhook, or mail side effect.
+- Organizer listing and disposition use the existing `participants` event
+  capability and exact event API scopes. Approval delegates to
+  `ctf.services.participant.lifecycle.add_participant`; it does not duplicate
+  capacity, account, or provisioning policy. Publication and disposition audits
+  contain identifiers and closed state only, never submitted PII.
 - CTF reaches the range system through CMS/engine **service calls**, consistent with
   ADR-001 (cross-layer access goes through service boundaries). `ctf` is one of the
   recognized layers in the import policy.

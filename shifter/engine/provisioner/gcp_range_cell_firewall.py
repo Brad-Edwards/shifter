@@ -6,8 +6,16 @@ import ipaddress
 import os
 
 from config import GCERangeCellConfig
+from gcp_range_cell_model_broker import admitted_broker_destination
 from gcp_range_cell_naming import _network_tag, _short_resource_name
-from gcp_range_cell_types import FirewallPlan, InstancePlan, OpenVpnGatewayPlan, SubnetPlan
+from gcp_range_cell_types import (
+    DEFAULT_GCE_EGRESS_POLICY,
+    FirewallPlan,
+    GceEgressPolicy,
+    InstancePlan,
+    OpenVpnGatewayPlan,
+    SubnetPlan,
+)
 
 # private.googleapis.com VIP range. Private Google Access on the range subnet,
 # the range VPC's private-googleapis DNS zone, and a route for this /30 (all in
@@ -364,6 +372,19 @@ def _vpn_gateway_rules(
     ]
 
 
+def _public_web_egress(
+    deny_general_egress: bool,
+    instances: list[InstancePlan],
+    include_optional_cleanup: bool,
+    denied_networks: list[ipaddress.IPv4Network],
+) -> tuple[bool, list[str]]:
+    """Resolve the existing web lane while retaining the denied-network complement."""
+    enabled = not deny_general_egress and (
+        include_optional_cleanup or any(instance["profile"].allow_public_web_egress for instance in instances)
+    )
+    return enabled, _ipv4_complement(denied_networks) if enabled else []
+
+
 def build_firewall_plan(
     range_id: int,
     subnet_plans: list[SubnetPlan],
@@ -372,11 +393,11 @@ def build_firewall_plan(
     *,
     instance_plans: list[InstancePlan] | None = None,
     include_optional_cleanup: bool = False,
-    egress_mode: str = "status-quo",
+    egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY,
 ) -> list[FirewallPlan]:
     """Render the firewall plan for internal range traffic and management.
 
-    ``egress_mode`` is the effective posture pinned on the range (PLAT-238). Both
+    ``egress_policy.mode`` is the posture pinned on the range (PLAT-238). Both
     ``none`` (ADR-026 zero egress) and ``deny-all`` forbid general outbound egress:
     each forces the public-web-egress lane off and drops any configured allow-CIDR
     lane, so only the default egress-deny (and intra-range + Private Google Access
@@ -385,9 +406,18 @@ def build_firewall_plan(
     ``deny-all`` keeps a routed path behind the firewall deny). Firewall denial is
     defense in depth; it is not, by itself, the ``none`` no-NAT guarantee.
     """
-    if os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}:
+    bypass = os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}
+    broker_destination = admitted_broker_destination(
+        egress_policy,
+        config,
+        subnet_plans,
+        instance_plans or [],
+        vpn_gateway,
+        bypass,
+    )
+    if bypass:
         return []
-    deny_general_egress = (egress_mode or "status-quo").strip().lower() in {"none", "deny-all"}
+    deny_general_egress = (egress_policy.mode or "status-quo").strip().lower() in {"none", "deny-all"}
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
@@ -405,11 +435,12 @@ def build_firewall_plan(
     # destination.
     denied_networks = _denied_egress_networks(config)
     _reject_denied_egress_overlap(egress_allow_cidrs, denied_networks)
-    allow_public_web_egress = not deny_general_egress and (
-        include_optional_cleanup
-        or any(instance["profile"].allow_public_web_egress for instance in (instance_plans or []))
+    allow_public_web_egress, public_web_destinations = _public_web_egress(
+        deny_general_egress,
+        instance_plans or [],
+        include_optional_cleanup,
+        denied_networks,
     )
-    public_web_destinations = _ipv4_complement(denied_networks) if allow_public_web_egress else []
     firewalls = _subnet_ingress_rules(range_id, subnet_plans)
     firewalls.extend(_boundary_ingress_rules(range_id, range_tag, access_network_cidrs, portal_network_cidrs, config))
     firewalls.extend(
@@ -425,6 +456,17 @@ def build_firewall_plan(
     )
     if vpn_gateway is not None:
         firewalls.extend(_vpn_gateway_rules(range_id, vpn_gateway, portal_network_cidrs))
+    if broker_destination is not None:
+        firewalls.append(
+            {
+                "name": _short_resource_name("shifter-r", range_id, "egress-model-broker"),
+                "direction": "EGRESS",
+                "priority": 900,
+                "target_tags": [range_tag],
+                "destination_ranges": [broker_destination],
+                "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+            }
+        )
     return firewalls
 
 

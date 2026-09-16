@@ -62,6 +62,19 @@ Use four typed inputs, with schema/version and content digest:
    deployment ranges. Select independently which profile, provider identity,
    model assignment, capacity and spend/rate/concurrency resources to share.
 
+The mounted deployment catalog is the closed inventory and portable authoring
+boundary for profiles, shards, pools and binding definitions; it is not a
+second live policy database. Engine-owned published collection, pool and
+binding revisions are the sole runtime authority. A definition sourced from
+installation configuration must pass the same authorized, revision-fenced
+publication transaction as an API-authored definition before it can affect a
+range. Runtime resolution must not merge file-backed bindings with database
+bindings or let a catalog reload activate, withdraw or reinterpret a binding
+implicitly. Every published revision pins the exact catalog digest against
+which its profile, alias, provider-pool and account references were validated;
+a replacement catalog requires explicit validation and publication rather than
+same-name rebinding.
+
 Only deployment operators may add shards, provider identity references,
 regions, model/feature aliases, prices or maxima. Scenario authors and event
 organizers cannot widen that inventory. Effective sets are intersections;
@@ -319,6 +332,68 @@ but their overlapping constraint ledgers are not multiple provider charges.
 Member removal or pool migration keeps prior spend and unresolved liability
 on the original account vector; it never refunds or resets a parent cap.
 
+## Launch-time model admission (M02, #2119)
+
+Before any range launch dispatches, required model access is decided by a
+distinct, fail-closed admission — never the best-effort PLAT-201 capacity path
+whose `None` result means "proceed". This is the M02 admission decision layer;
+the broker/allocation runtime described in the following sections is later work.
+
+**Two lifecycles.** Deployment policy (profiles, shards, quota pools, sharing
+pools/bindings) stays in the operator-owned, deploy-time, digest-bound mounted
+`ModelAccessCatalog`. The per-pack scenario need rides the runtime pack
+lifecycle instead: `ScenarioModelNeeds` is a Shifter-owned, staff-authored
+overlay (sibling to `ScenarioMetadata`, keyed by `scenario_id`) that maps
+`workload_role` to a `shared.model_access.ScenarioNeed`, together with the
+`authored_package_digest` the needs were authored against. It is deliberately
+not on the provenance-only `RaesPackageSource`, and not in the mounted catalog:
+a newly registered model-requiring pack must be admissible without an operator
+catalog redeploy. A `ScenarioNeed.profile_id` references a catalog profile, and
+admission intersects the two (`shared.model_access.policy.intersect_profile`).
+
+**Digest binding.** Admission verifies the registered pack's current
+`package_digest` against the overlay's `authored_package_digest`; a re-registered
+pack (mismatch) fails closed for a required need rather than inheriting a stale
+binding. A scenario with no authored need carries no required-model gate.
+
+**Typed organizer demand.** The CTF-908 event declaration carries typed
+organizer model demand (`CTFEvent.model_demand`: per workload role — expected
+concurrency, per-participant request/input/output demand, allowed strategy),
+validated by `shared.model_access.EventModelDemand` and projected into the
+existing capacity declaration rather than a parallel event contract. It never
+names a provider, account, region, shard, credential, or price.
+
+**The decision.** `shared.model_access.decide_model_admission` is the pure,
+fail-closed core. For a required need it denies on: an unverified pack digest,
+absent deployment policy/profile, a zero-egress posture, an unresolved required
+capability, an empty profile intersection, an unresolvable sharing overlap
+conflict, or a demand strategy outside the effective envelope; it returns
+indeterminate when the sharing authority cannot be consulted. Optional access is
+admitted as an explicit visible absence and never blocks. The Engine service
+`admit_range_model_access` composes the CMS-resolved need projection, the catalog
+profile, and the sharing overlap — folded through the existing
+`compile_effective_policy`/`preview_effective_policy` (#2139/#2140), so overlap
+precedence is resolved once — then delegates to the pure decision.
+
+**Enforcement point.** CMS owns scenario hydration and egress posture; the
+Engine owns the decision. Every launch family (participant, spare, wave,
+standalone, recovery-rebuild, and warm-claim activation) funnels through the CMS
+authoritative launch path, which enforces the gate once, before dispatch. The
+sharing overlap resolves against the canonical membership subject — a CTF
+participant's draw reference (`ctf:draw:<id>`) is threaded from the launch caller
+so a conflicting or stale published binding on that draw refuses the launch; a
+brand-new spare or non-CTF launch has no draw/range membership yet, so no
+range-scoped binding applies pre-dispatch. The admit/deny verdict is a
+deterministic function of its inputs, so a launch retry recomputes the same
+outcome without a persisted decision; immutable allocation and request
+accounting (which do need persistence) are the later milestone below.
+
+**M02 egress rule.** A zero-egress posture (`deny-all`/`none`) is incompatible
+with required external model use. The admitted private-broker exception for a
+zero-egress range is deferred with the broker runtime; when it lands, the egress
+mapping and the demand-strategy/allocation threading are revisited (tracked
+separately).
+
 ## Request admission and accounting
 
 1. The broker checks authentication, trusted ingress binding, path/method,
@@ -544,3 +619,12 @@ conflicting retry, 413 too large, 429 local rate/budget/concurrency exhaustion,
 503 unavailable admission/provider and 504 deadline. Do not disclose whether
 an inaccessible foreign range exists. After SSE headers, emit a bounded
 protocol error and terminate instead of pretending a final success.
+
+### M06 deployment package
+
+The [GCP packaging implementation](gcp-packaging.md) defines the disabled
+infrastructure/process contract supplied by #2123. Its chart and root-config
+projection do not implement M05 authentication/streaming or M08 enrollment,
+and do not mark any grant active. Their consumers must use the exact
+broker-only inventory and the explicit admitted egress seam; setting a global
+broker VIP never enrolls a range.

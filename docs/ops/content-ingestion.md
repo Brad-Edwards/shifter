@@ -10,7 +10,7 @@ A pack is registered as a provenance-only reference: Shifter records where the
 pack lives (`package_ref`), its version and digest, its contract and profile, and
 bounded provenance. It does not copy the pack body into the catalog. Pack content
 is defined by the `raes-env-packs` contract. Shifter pins
-`raes-env-packs==3.1.0` with its required `raes==2.0.0`, and delegates
+`raes-env-packs==5.2.0` with its required `raes==3.5.0`, and delegates
 validation, canonical content identity, and the artifact-requirement publication
 profile to those released libraries. A broken, malformed, or non-conformant pack
 is rejected.
@@ -42,6 +42,15 @@ A `201` returns the registered `scenario_id`, `source_kind`, and
 `conformance_status`. Validation and conflict failures return the standard error
 envelope.
 
+To move a registered scenario to a new package version, include
+`expected_package_digest` with its current digest and supply the new version,
+reference and digest. The CLI accepts the same precondition as
+`--expected-package-digest`. Shifter locks the current registration, rejects a
+stale precondition or a changed identity under the same version, and audits the
+previous and new references together. The replacement starts with pending
+conformance; it must pass the trusted conformance process again. Existing range
+operation inputs remain unchanged.
+
 ## CLI
 
 ```sh
@@ -66,6 +75,11 @@ to run after each deploy. It validates the complete declaration before writing
 and registers the batch atomically: a missing/malformed manifest or any invalid
 or drifted entry fails visibly and leaves no partially installed batch. The
 manifest declares the in-box bootstrap seed.
+
+A shipped revision declares its expected predecessor explicitly. The RAES 3.5
+smoke pack is version `0.2.0`; bootstrap upgrades the known `0.1.0` digest through
+the same registration service, then runs release conformance. A customized or
+unexpected tenant digest remains a visible conflict.
 
 ## Resolution and launchability
 
@@ -95,7 +109,10 @@ files are rejected), then re-runs the upstream pack contract validation, asserts
 the extracted pack identity equals the registered `scenario_id`, and verifies the
 same canonical `package_digest` (the equivalent containment and immutable-identity
 guarantees repo packs get, ADR-034-R5), all before SDL resolution, parsing,
-planning, or dispatch. The staged directory is always removed afterward.
+planning, or dispatch. The pinned env-packs flat export format is staged under
+the registered scenario name; single-directory wrapped archives remain supported.
+Both formats pass the same guards and identity checks. The staged directory is
+always removed afterward.
 
 Object launch requires deployment configuration: set `SHIFTER_RAES_PACKAGE_BUCKET`
 (and optionally `SHIFTER_RAES_PACKAGE_PREFIX`) on the app, and grant the portal
@@ -111,6 +128,25 @@ that a pack has passed conformance: every registration lands non-passed, and
 conformance is promoted out of band by a trusted conformance process. A
 registered pack may remain review-only or non-realizable, and launchability
 continues to be decided by the registry.
+
+Run conformance for a newly registered or replaced pack with the trusted command:
+
+```sh
+python manage.py validate_pack_conformance --actor OPERATOR_USERNAME \
+  --scenario-id example-pack --expected-package-digest 'sha256:<64 hex>'
+```
+
+The command retrieves and verifies the registered bytes, loads the public SDL,
+compiles through the real backend planner and validates the provisioner contract.
+It commits the result only if the entire package reference still matches. The
+caller cannot supply a passing result or report. This works for both repo and
+private object packs after tenant setup, using the same check as in-box packs.
+
+Contract conformance is separate from current artifact availability. A pack may
+pass structural conformance while its explicitly permitted preparation remains
+necessary. Ordinary launch must still resolve its actual artifacts and pass
+backend admission. Follow [artifact preparation](artifact-preparation.md) to
+install private adapters, prepare supported artifacts and inspect cleanup.
 
 ## Artifact requirements, image-optional packs, and parameterized runs
 

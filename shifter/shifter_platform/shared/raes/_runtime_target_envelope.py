@@ -172,6 +172,16 @@ def _capability_envelope_diagnostics(
 ) -> list[Diagnostic]:
     """Return fail-closed diagnostics for every out-of-envelope term in the plan."""
     diagnostics: list[Diagnostic] = []
+    from shared.raes.completion_evidence import MAX_COMPLETION_RESOURCES
+
+    if len(resources) > MAX_COMPLETION_RESOURCES:
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.resource-budget-exceeded",
+                "plan",
+                f"plan requests {len(resources)} resources; backend allows at most {MAX_COMPLETION_RESOURCES}",
+            )
+        )
     node_addresses = {r.address for r in resources if r.resource_type == NODE_RESOURCE_TYPE}
     total_nodes = 0
     for resource in resources:

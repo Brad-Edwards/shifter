@@ -23,7 +23,7 @@ EVENT_TYPE_RAES_SNAPSHOT = "range.raes.snapshot"
 #: provisioner consumer validates it against its own supported set (kept in lockstep
 #: by a parity test, since the provisioner ships without ``shared``). A new transport
 #: envelope shape is a new ``-vN`` value.
-RAES_PROVISIONING_PLAN_CONTRACT_VERSION = "raes-provisioning-plan-v1"
+RAES_PROVISIONING_PLAN_CONTRACT_VERSION = "raes-provisioning-plan-v2"
 
 SHIFTER_SUPPORTED_CONTRACT_VERSIONS = frozenset(
     {
@@ -33,6 +33,12 @@ SHIFTER_SUPPORTED_CONTRACT_VERSIONS = frozenset(
         "runtime-snapshot-v1",
     }
 )
+
+# A generic backend manifest cannot publish one constructive realization
+# envelope for every independently authored scenario.  The runtime adds this
+# contract only after the loaded scenario has configured a target-specific
+# carrier (issue #1583).
+SHIFTER_CONFIGURED_CONTRACT_VERSIONS = SHIFTER_SUPPORTED_CONTRACT_VERSIONS | {"realization-envelope-v1"}
 
 SHIFTER_SUPPORTED_SIDECAR_REFERENCE_VERSIONS = frozenset({"execution-plan-ref-v1"})
 

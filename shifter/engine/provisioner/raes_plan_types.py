@@ -82,6 +82,10 @@ class RaesPlanNode:
     os_family: str
     count: int
     network_addresses: tuple[str, ...]
+    # True only when the portable plan leaves network selection to the
+    # realizer.  An explicitly present, empty network list remains closed and
+    # must not be silently defaulted by a provider adapter.
+    network_selection_open: bool = False
     ram_mib: int | None = None
     vcpus: int | None = None
     image: RaesPlanImage | None = None
@@ -95,6 +99,8 @@ class RaesPlanNode:
     domain_dns_name: str | None = None
     domain_netbios_name: str | None = None
     authority_account_address: str | None = None
+    os_distribution: str | None = None
+    os_version: str | None = None
 
 
 @dataclass(frozen=True)

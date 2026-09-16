@@ -154,18 +154,5 @@
     </div>
 {% endblock %}
 {% block extra_js %}
-    <script>
-function copyPrompt(btn) {
-    var promptBlock = btn.closest('.wt-prompt-block');
-    var text = promptBlock.querySelector('pre').textContent.trim().replace(/\s+/g, ' ');
-    navigator.clipboard.writeText(text).then(function() {
-        btn.textContent = 'Copied!';
-        btn.classList.add('copied');
-        setTimeout(function() {
-            btn.textContent = 'Copy';
-            btn.classList.remove('copied');
-        }, 2000);
-    });
-}
-    </script>
+    <script src="{% static 'js/ctf-walkthrough.js' %}" defer></script>
 {% endblock %}

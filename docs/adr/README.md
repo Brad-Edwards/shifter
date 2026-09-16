@@ -15,7 +15,79 @@ Existing registry, guardrail and import checks validate structure; they do not
 prove the runtime guarantees. Mechanism implementation and real-boundary
 evidence are required before support is advertised.
 
+The [#1583 preparation preflight](../architecture/raes-in-tenant-artifact-preparation-preflight-1583.md)
+applies GEN-002 to ADR-034-R9 and the existing ingestion, authority and worker
+boundaries. Its enforcement/evidence matrix distinguishes registry validation
+from runtime proof and records the required local/CI routing. It introduces no
+new ADR or check. Runtime enforcement now includes exact-image Job admission,
+installed IAM/Kubernetes readback, separate worker identities, and fenced
+inventory admission. Their behavioral tests complement the repository guards;
+the `layer-imports` check scans the separately built preparation worker through
+separate candidate-selection and import-extraction helpers while preserving the
+ADR-031 shared-RAES-facade restriction. This keeps the worker check
+independently maintainable without changing its enforced boundary.
+the [operator procedure](../ops/artifact-preparation.md) and
+[qualification record](../../shifter/packer/preparation/QUALIFICATION.md) describe
+how the deployed boundaries are exercised.
+The documentation coverage manifest links the operator guide and technical
+design from the feature and platform indexes under GEN-001.
+
+The same qualification corrected ADR-008-R7's GCP dynamic-secret conditions.
+The closed roles contain only Secret Manager permissions; fully qualified
+secret-name prefixes constrain their resource access. The conditions omit the
+additional resource-type predicate that rejected real workload calls, and
+participant suffix checks extract the parent secret ID from version names.
+The Terraform guard still rejects expanded prefixes, workload-secret access,
+additional permissions and conditions exceeding Google's complexity limit.
+Live provisioner probes cover absent and present secrets, creation, version
+publication, readback, deletion and denied platform-secret access. Portal probes
+verify both latest and numbered participant versions while rejecting host and
+directory credentials.
+
 ## Runtime Enforcement
+
+ADR-004-R23's [external inventory contract](../architecture/deployment-inventory-contract.md)
+extends the existing installation loader, bootstrap CLI and GCP identity module.
+The source WIF guard enforces a generic template; bootstrap checks the actual
+saved Terraform plan, requires pinned CKV_GCP_125 success, hashes it before apply,
+and verifies installed provider/account policies. Native Terraform tests are
+registered in the root validation inventory. Numeric repository/owner IDs, exact
+workflow/ref/Environment tuples and separately scoped state grants are mandatory.
+One project hosts each deployment, its runner and automation identities; deploy
+and destroy retain trusted project-administration authority. Optional two-project
+support is deferred to #2189.
+No Checkov waiver is introduced. See the [operator guide](../dev/gcp-inventory-bootstrap.md)
+and [preflight](../architecture/gcp-external-inventory-identity-preflight-2182.md).
+Live migration and allowed/denied authentication evidence are recorded per deployment;
+local checks do not establish that an existing deployment has cut over.
+Identity and runner plans retain private operator-review artifacts and print
+value-free action summaries before apply. Environment reconciliation preserves
+and verifies approval settings across case-insensitive name matches. Source-guard
+regression tests mutate the real module defaults and outputs to cover all retained
+role, permission and output restrictions.
+
+ADR-063 records the [signed CTF receipt binding preflight for #1906](../architecture/ctf-signed-receipt-binding-preflight-1906.md).
+It fixes trusted context, protected signer/key registration, lifecycle fencing
+and atomic replay evidence while preserving existing validator contracts.
+The #1906 source implementation supplies runtime, registration, compatibility,
+replay and provider-conformance evidence. Registry and import checks validate
+design structure; fresh deployed two-generation evidence remains the #1910
+composition gate. This ADR adds no exception.
+
+ADR-011-R9 records the [configurable range lease preflight for #27](../architecture/configurable-range-leases-preflight-27.md).
+It binds installation/runtime policy ownership, generation snapshots, extension
+admission and reuse of canonical cleanup. Registry checks validate this guidance;
+configuration, migration, concurrency, warm-claim and deployment behavior still
+require implementation evidence. No runtime check or exception is added here.
+
+Issue #2169's [runtime lease-policy preflight](../architecture/runtime-mission-control-lease-policy-preflight-2169.md)
+extends that rule with a CMS-owned tenant/group overlay, deterministic
+multi-group resolution, the existing per-generation owner extension, and an
+explicit separation from workspace tenancy. The CMS models and resolver,
+revision-checked and strict-audited admin API/UI, cold/warm assignment snapshots,
+generated contract, SQLite behavior tests, and PostgreSQL concurrency test are
+the executable evidence for that rule. Provider paths consume the same persisted
+deadline state and contain no lease-policy branch.
 
 Proposed ADR-059, ADR-060 and ADR-061 record the
 [#681 model-access design](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md): a

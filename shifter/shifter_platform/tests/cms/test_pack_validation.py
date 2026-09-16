@@ -114,6 +114,12 @@ def _pack_with_compatibility(make_pack, root, *, manifest_rel="pack.compatibilit
     if write:
         if manifest is ...:
             manifest = yaml.safe_load(Path(compatibility_example_path()).read_text(encoding="utf-8"))
+            # The released validator now verifies that shipped assets exist.
+            # Materialize the example's declared assets in this fixture pack.
+            for asset in manifest["assets"]:
+                asset_path = built / asset["path"]
+                asset_path.parent.mkdir(parents=True, exist_ok=True)
+                asset_path.write_text("fixture asset\n", encoding="utf-8")
         (built / manifest_rel).write_text(yaml.safe_dump(manifest), encoding="utf-8")
     return built
 

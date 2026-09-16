@@ -851,6 +851,22 @@ The first slice intentionally stays small:
   could land the regression (#1846). The live CI invocation was added to
   close that gap.
 
+- `global-iam-drift-check`
+  ADR guard check (fast + CI, registered in `_registry.py`) pinning the
+  out-of-band `platform/terraform/global/iam` drift-check workflow
+  (`.github/workflows/iam-drift-check.yml`). global/iam owns the GitHub Actions
+  OIDC deploy role and is applied out-of-band, so a merged `github-oidc.tf`
+  change can go un-applied and the live role drifts behind committed config -
+  the recurring "new resource, then next deploy fails with HTTP 403" churn
+  (#247). The check
+  binds the workflow's contract on one designated plan job: a push-only trigger
+  (no `pull_request`/`pull_request_target`, per ADR-003-R5), a `{dev, main}`
+  branch allowlist, a `global/iam` path filter, and a real, global/iam-scoped,
+  non-swallowed `terraform plan -detailed-exitcode` so a drift plan fails the
+  build. The workflow runs `-refresh=false` (comparing committed config to the
+  last-applied state) and is read-only, so it needs no IAM introspection the
+  deploy role lacks. Enforces ADR-004-R26.
+
 ## Local Usage
 
 Run the fast profile on the full repo:
@@ -979,3 +995,12 @@ To add a production path:
 - Prefer explicit exceptions over hidden tolerances.
 - Do not make CI architecture checks skippable through the normal test-skip path.
 - Keep review friction focused on guardrail files, not on ordinary feature code.
+
+## Guardrail maintenance log
+
+- **agent-attribution matcher (`scripts/adr_guard/agent_attribution.py`)**: the
+  attribution-detection regexes were simplified from `\s*.*` to `.*` to remove
+  super-linear backtracking (SonarCloud `python:S8786`, ReDoS). Match behavior is
+  unchanged (`.*` already spans the leading whitespace the redundant `\s*` matched)
+  and is pinned by the existing `tests/test_agent_attribution.py` parity tests. No
+  change to what the guardrail forbids.

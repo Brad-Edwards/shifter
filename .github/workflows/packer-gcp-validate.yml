@@ -43,6 +43,7 @@ on:
         options:
           - dev
           - proof
+          - nazgul
         default: dev
       source_image:
         description: 'Exact candidate image name to validate. Empty resolves the newest image in the image family at validate time and pins it.'

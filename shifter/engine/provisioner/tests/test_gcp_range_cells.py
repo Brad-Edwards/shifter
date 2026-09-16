@@ -25,6 +25,7 @@ from config import (
     GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_BOOTSTRAP_PREPROMOTED_DC,
+    GCE_PARTICIPANT_READINESS_CONTRACT_V1,
     GCERangeCellConfig,
     GCERangeImageProfile,
 )
@@ -344,6 +345,8 @@ def test_render_range_cell_plan_selects_bounded_machine_host_identity():
         participant_username="operator",
         host_ssh_username="hostadmin",
         host_ssh_port=2222,
+        participant_readiness_contract=GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+        participant_readiness_manifest_sha256="a" * 64,
     )
     profiles = {profile_class: dict(entries) for profile_class, entries in base.image_key_profiles.items()}
     profiles["kali"]["nested-host"] = nested_profile
@@ -376,6 +379,10 @@ def test_render_range_cell_plan_selects_bounded_machine_host_identity():
         config,
     )
     assert output["participant_sftp_enabled"] is False
+    assert output["gcp_service_account_email"] == gcp_range_host_pool_service_account_email("test-project", 4)
+    assert output["gcp_participant_username"] == "operator"
+    assert output["gcp_participant_readiness_contract"] == GCE_PARTICIPANT_READINESS_CONTRACT_V1
+    assert output["gcp_participant_readiness_manifest_sha256"] == "a" * 64
 
 
 def test_render_range_cell_plan_shards_machine_hosts_across_bounded_identity_pool():
@@ -1841,6 +1848,8 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     firewall = object()
     address = object()
     instance = object()
+    disk = object()
+    image = object()
     global_operations = object()
     region_operations = object()
     zone_operations = object()
@@ -1851,6 +1860,8 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     compute_module.AddressesClient = mocker.Mock(return_value=address)
     compute_module.RoutersClient = mocker.Mock(return_value=router)
     compute_module.InstancesClient = mocker.Mock(return_value=instance)
+    compute_module.DisksClient = mocker.Mock(return_value=disk)
+    compute_module.ImagesClient = mocker.Mock(return_value=image)
     compute_module.GlobalOperationsClient = mocker.Mock(return_value=global_operations)
     compute_module.RegionOperationsClient = mocker.Mock(return_value=region_operations)
     compute_module.ZoneOperationsClient = mocker.Mock(return_value=zone_operations)
@@ -1870,6 +1881,8 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     assert clients.addresses is address
     assert clients.routers is router
     assert clients.instances is instance
+    assert clients.disks is disk
+    assert clients.images is image
     assert clients.global_operations is global_operations
     assert clients.region_operations is region_operations
     assert clients.zone_operations is zone_operations

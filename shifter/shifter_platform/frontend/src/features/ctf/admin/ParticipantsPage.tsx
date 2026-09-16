@@ -3,7 +3,12 @@ import { Link, useParams } from "react-router";
 
 import { UserPlus } from "lucide-react";
 
-import { useCtfParticipants, useAddCtfParticipant } from "@/api/ctfAdmin";
+import {
+  useAddCtfParticipant,
+  useCtfParticipants,
+  useCtfPublicRegistrationRequests,
+  useDispositionCtfPublicRegistrationRequest,
+} from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -12,7 +17,7 @@ import { Button } from "@/components/ui/button";
 
 import { ParticipantImportDialog } from "./ParticipantImportDialog";
 import { ParticipantPasswordDialog } from "./ParticipantPasswordDialog";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +31,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { titleCase } from "../format";
+import { formatDateTime, titleCase } from "../format";
 import { ctfAdminEventPath, ctfAdminEventsPath, ctfAdminParticipantPath } from "../routes";
 
 function InviteDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: string; open: boolean; onOpenChange: (open: boolean) => void }>) {
@@ -163,6 +168,79 @@ function ParticipantsBody({ query }: Readonly<{ query: ReturnType<typeof useCtfP
   );
 }
 
+function RegistrationRequestsCard({ eventId }: Readonly<{ eventId: string }>) {
+  const query = useCtfPublicRegistrationRequests(eventId);
+  const disposition = useDispositionCtfPublicRegistrationRequest(eventId);
+  const requests = query.data?.requests ?? [];
+
+  if (!query.isLoading && !query.isError && requests.length === 0) return null;
+
+  return (
+    <Card aria-busy={query.isFetching}>
+      <CardHeader>
+        <CardTitle className="text-base">Pending public registration requests</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {query.isLoading ? <Skeleton className="h-16 w-full" /> : null}
+        {query.isError ? (
+          <Alert variant="destructive">
+            <AlertDescription>Could not load public registration requests.</AlertDescription>
+          </Alert>
+        ) : null}
+        {disposition.error ? (
+          <Alert variant="destructive" className="mb-3">
+            <AlertDescription>
+              {describeMutationError(disposition.error, "Could not review the registration request.")}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {requests.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Submitted</TableHead>
+                <TableHead className="text-right">Review</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {requests.map((registration) => (
+                <TableRow key={registration.id}>
+                  <TableCell className="font-medium">{registration.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{registration.email}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDateTime(registration.created_at)}
+                  </TableCell>
+                  <TableCell className="space-x-2 text-right">
+                    <Button
+                      size="sm"
+                      disabled={disposition.isPending}
+                      aria-label={`Approve ${registration.name}`}
+                      onClick={() => disposition.mutate({ requestId: registration.id, action: "approve" })}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={disposition.isPending}
+                      aria-label={`Reject ${registration.name}`}
+                      onClick={() => disposition.mutate({ requestId: registration.id, action: "reject" })}
+                    >
+                      Reject
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ParticipantsPage() {
   const params = useParams();
   const eventId = params.eventId ?? "";
@@ -200,9 +278,12 @@ export function ParticipantsPage() {
           </div>
         }
       />
-      <Card className="overflow-hidden py-0" aria-busy={query.isFetching}>
-        <ParticipantsBody query={query} />
-      </Card>
+      <div className="space-y-6">
+        <RegistrationRequestsCard eventId={eventId} />
+        <Card className="overflow-hidden py-0" aria-busy={query.isFetching}>
+          <ParticipantsBody query={query} />
+        </Card>
+      </div>
 
       <InviteDialog eventId={eventId} open={inviting} onOpenChange={setInviting} />
     </>

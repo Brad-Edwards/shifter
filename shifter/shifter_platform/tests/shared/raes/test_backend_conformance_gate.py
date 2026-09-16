@@ -40,6 +40,10 @@ import json
 import tempfile
 from pathlib import Path
 
+from raes.instantiate import instantiate_scenario
+from raes.parser import parse_sdl
+from raes.realization_envelope import member
+from raes.scenario import Scenario
 from raes_backend_protocols.capabilities import (
     BackendCapabilitySet,
     BackendManifest,
@@ -52,7 +56,15 @@ from raes_conformance.conformance import (
     run_fixture_suite,
     run_target_conformance,
 )
+from raes_conformance.realization import (
+    ExpectedRealizationObservation,
+    RealizationProbeEvidence,
+    RealizationProbeRequest,
+)
 from raes_contracts.contracts import BackendManifestV2Model
+from raes_contracts.realization_envelope import ObservationStrength, RealizationConcern
+from raes_contracts.realization_observation import RealizationObservation
+from raes_contracts.runtime_state import RuntimeSnapshot
 
 from shared import log_sanitize
 from shared.raes.dispatch_port import ShifterDispatchResult
@@ -151,7 +163,12 @@ def run_backend_conformance_gate(
                     f"contracts: {', '.join(missing_contracts)}"
                 )
             )
-        unexpected_contracts = sorted(supported - required)
+        # The separately validated 3.5 realization carrier is an evidenced
+        # extension; all other additional contracts remain rejected.
+        evidenced = {"realization-envelope-v1"} if manifest.realization_envelope is not None else set()
+        if manifest.realization_envelope is not None:
+            type(manifest.realization_envelope).model_validate(manifest.realization_envelope.model_dump(mode="json"))
+        unexpected_contracts = sorted(supported - required - evidenced)
         if unexpected_contracts:
             diagnostics.append(
                 _sanitize_diagnostic(
@@ -190,6 +207,7 @@ def _manifest_with_orchestration_claim() -> BackendManifest:
     return BackendManifest(
         identity=real.identity,
         supported_contract_versions=real.supported_contract_versions,
+        realization_envelope=real.realization_envelope,
         compatibility=real.compatibility,
         realization_support=real.realization_support,
         concept_bindings=real.concept_bindings,
@@ -210,6 +228,7 @@ def _manifest_with_contract_versions(supported_contract_versions: frozenset[str]
     return BackendManifest(
         identity=real.identity,
         supported_contract_versions=supported_contract_versions,
+        realization_envelope=real.realization_envelope,
         compatibility=real.compatibility,
         realization_support=real.realization_support,
         concept_bindings=real.concept_bindings,
@@ -258,6 +277,7 @@ def test_checked_in_artifact_validates_as_provisioning_only_through_raes_tooling
     # and the artifact declares exactly the profile's required contract surface --
     # no missing contract and no unevidenced widening.
     assert set(model.supported_contract_versions) == required_contracts(EXPECTED_PROFILE)
+    assert model.realization_envelope is None
 
 
 def test_conformance_gate_is_not_vacuous_when_capabilities_widen():
@@ -333,19 +353,152 @@ def test_conformance_gate_catches_added_unevidenced_contract():
 
 
 class _ConformanceProbeDispatchPort:
-    """In-process dispatch port for the live conformance probe.
+    """Simulated completed provider boundary for the provisioning protocol probe.
 
-    Accepts every serialized plan without DB/cloud so the RAES live probe
-    exercises the real ShifterProvisioner.apply path (validate -> dispatch ->
-    snapshot) against the reference scenario, proving the backend genuinely
-    realizes a plan (non-empty changed_addresses + a PROVISIONING snapshot entry)
-    rather than passing on schema validation alone.
+    Exercises validation, dispatch, observed completion admission and snapshot
+    projection. It makes no claim about deployment in a cloud tenant.
     """
 
     request_id = "00000000-0000-0000-0000-0000000000ab"
 
+    def __init__(self):
+        self.observations = ()
+
     def realize(self, compiled_plan, participant_access=()) -> ShifterDispatchResult:
-        return ShifterDispatchResult(request_id=self.request_id, accepted=True, status="accepted")
+        from shared.raes.completion_evidence import build_completion_evidence
+
+        # This fake models a completed provider/guest boundary, not a queue.
+        # OS identities are fixed fake guest observations, independent of an
+        # authored distribution/version. Real readback has its own tests.
+        resources, operating_systems, substrates = [], [], []
+        observed = []
+        for address, resource in compiled_plan["resources"].items():
+            kind = resource["resource_type"]
+            if kind != "domain-controller-placement":
+                resources.append(
+                    {
+                        "address": address,
+                        "resource_type": kind,
+                        "status": "provisioned" if kind in {"node", "network"} else "verified",
+                    }
+                )
+            if kind == "node":
+                family = resource["payload"]["os_family"] or "linux"
+                for index in range(resource["payload"].get("count") or 1):
+                    key = f"{address}#{index}"
+                    operating_systems.append(
+                        {
+                            "instance_key": key,
+                            "family": family,
+                            "distribution": "ubuntu" if family == "linux" else "windows-server",
+                            "version": "22.04" if family == "linux" else "2022",
+                        }
+                    )
+                    substrates.append({"instance_key": key, "value": "virtual-machine"})
+        for operation in compiled_plan["operations"]:
+            if operation["resource_type"] != "node" or operation["action"] not in {"create", "update"}:
+                continue
+            for concern in _NODE_CONCERNS:
+                observed.append((operation["address"], concern, f"observed:{concern.value}"))
+        self.observations = tuple(observed)
+        evidence = build_completion_evidence(
+            compiled_plan, resources=resources, operating_systems=operating_systems, compute_substrates=substrates
+        )
+        return ShifterDispatchResult(request_id=self.request_id, accepted=True, status="succeeded", completion=evidence)
+
+
+_NODE_CONCERNS = (
+    RealizationConcern.TOPOLOGY,
+    RealizationConcern.ARCHITECTURE,
+    RealizationConcern.IMAGE,
+    RealizationConcern.RESOURCE_ALLOCATION,
+    RealizationConcern.NETWORK,
+    RealizationConcern.SERVICE,
+    RealizationConcern.ACL,
+)
+
+
+class _ShifterRealizationHarness:
+    """Independent hermetic observer around the ordinary target apply path."""
+
+    observer_version = "shifter-hermetic-observer/v1"
+
+    def __init__(self, target, provider):
+        self.target = target
+        self.provider = provider
+
+    def execute(self, request: RealizationProbeRequest) -> RealizationProbeEvidence:
+        if request.negative:
+            envelope = self.target.manifest.realization_envelope
+            assert envelope is not None
+            membership = member(instantiate_scenario(Scenario.model_validate(request.payload)), envelope.expression)
+            return RealizationProbeEvidence(
+                accepted=membership.holds,
+                portable_state_before="portable:clean",
+                portable_state_after="portable:clean",
+                native_state_before="native:clean",
+                native_state_after="native:clean",
+                cleanup_verified=True,
+                evidence_refs=(f"hermetic:{request.probe_digest}",),
+            )
+
+        assert request.provisioning_plan is not None
+        self.provider.observations = ()
+        result = self.target.provisioner.apply(request.provisioning_plan, RuntimeSnapshot())
+        expected = []
+        observed = []
+        sequence = 1
+        for operation in request.provisioning_plan.actionable_operations:
+            for concern in _NODE_CONCERNS if operation.resource_type == "node" else ():
+                field_path = f"{operation.address}.{concern.value}"
+                value = f"observed:{concern.value}"
+                expected.append(
+                    ExpectedRealizationObservation(
+                        address=operation.address,
+                        field_path=field_path,
+                        concern=concern,
+                        value=value,
+                    )
+                )
+        # The observed half comes from the fake provider's record of the payload
+        # it actually received. It is deliberately not manufactured from the
+        # request used to build the expected side above.
+        for address, concern, value in self.provider.observations:
+            observed.append(
+                RealizationObservation(
+                    address=address,
+                    field_path=f"{address}.{concern.value}",
+                    concern=concern,
+                    source=ObservationStrength.DRIVER_REPORTED,
+                    value=value,
+                    operation_id=address,
+                    probe_digest=request.probe_digest,
+                    envelope_digest=request.envelope_digest,
+                    configuration_digest=request.configuration_digest,
+                    observer_version=request.observer_version,
+                    sequence=sequence,
+                    origin="observed",
+                    binding_verified=True,
+                )
+            )
+            sequence += 1
+        addresses = tuple(operation.address for operation in request.provisioning_plan.actionable_operations)
+        return RealizationProbeEvidence(
+            accepted=result.success,
+            accounted_operations=addresses,
+            changed_addresses=tuple(result.changed_addresses),
+            expected_observations=tuple(expected),
+            observations=tuple(observed),
+            driver_invoked=True,
+            native_mutated=bool(addresses),
+            portable_state_before="portable:clean",
+            portable_state_after="portable:realized",
+            native_state_before="native:clean",
+            native_state_after="native:realized",
+            cleanup_verified=True,
+            evidence_refs=(f"hermetic:{request.probe_digest}",),
+            diagnostics=tuple(result.diagnostics),
+        )
 
 
 def test_live_target_conformance_provisioning_only_is_non_vacuous():
@@ -357,11 +510,30 @@ def test_live_target_conformance_provisioning_only_is_non_vacuous():
     set and a PROVISIONING snapshot entry. This is the primary oracle for the
     RAES-native backend (PLAT-2009), complementing the fixture gate above.
     """
-    target = create_shifter_backend_target(port=_ConformanceProbeDispatchPort())
+    scenario = parse_sdl("""name: shifter-conformance
+nodes:
+  vm:
+    type: compute
+    resources: {ram: 1GiB, cpu: 1}
+    os: linux
+    os_distribution: ubuntu
+    os_version: "22.04"
+""")
+    provider = _ConformanceProbeDispatchPort()
+    target = create_shifter_backend_target(port=provider, scenario=scenario)
 
-    report = run_target_conformance(target, profile=EXPECTED_PROFILE)
+    harness = _ShifterRealizationHarness(target, provider)
+    report = run_target_conformance(
+        target,
+        profile=EXPECTED_PROFILE,
+        realization_harness=harness,
+        observer_version=harness.observer_version,
+        reference_scenario=scenario,
+    )
 
-    assert report.passed, f"live target conformance failed: {[(d.code, d.message) for d in report.diagnostics]}"
+    # Every published contract participates in the aggregate verdict. An
+    # unsupported realization-envelope case must block publication too.
+    assert report.passed, [(case.name, case.diagnostics) for case in report.cases if not case.passed]
     assert report.cases, "live conformance must exercise at least one case"
     assert report.diagnostics == ()
 

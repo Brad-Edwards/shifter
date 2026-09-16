@@ -146,6 +146,16 @@ resource "google_container_cluster" "platform" {
   }
 
   resource_labels = var.common_labels
+
+  # node_config here only templates the initial default pool, which
+  # remove_default_node_pool deletes right after creation; the real workloads run
+  # on the dedicated google_container_node_pool resources below (each with its own
+  # node_config). Post-create drift on this block (e.g. server-defaulted network
+  # tags) cannot be reconciled — an update targets the now-absent "default-pool"
+  # and fails with 400 "Node pool default-pool not found on update" — so ignore it.
+  lifecycle {
+    ignore_changes = [node_config]
+  }
 }
 
 resource "google_container_node_pool" "web" {

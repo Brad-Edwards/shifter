@@ -13,7 +13,7 @@ private reference-backend helpers (ADR-032-R7 / issue #1522). This guards the
 *consumer's own* extraction against regression (editing ``raes_plan.py``'s accessors
 breaks these expectations). It is deliberately not a live differential oracle against
 the reference backend's *private* accessors -- those are not a public contract
-(ADR-032-R7). The consumer accepts the exact pinned ``raes==2.0.0`` producer
+(ADR-032-R7). The consumer accepts the exact pinned ``raes==3.5.0`` producer
 and must be re-validated with this fixture and the RAES conformance gate before
 that exact version changes.
 
@@ -114,8 +114,8 @@ def _domain_plan() -> ProvisioningPlan:
         name: domain-parity-probe
         nodes:
           lan: {type: switch}
-          dc: {type: vm, os: windows}
-          member: {type: vm, os: windows}
+          dc: {type: compute, os: windows}
+          member: {type: compute, os: windows}
         accounts:
           domain-admin: {username: Administrator, node: dc}
           local-operator: {username: local-operator, node: member}
@@ -178,18 +178,18 @@ class TestProvisionerReaderContract:
         assert reader.SUPPORTED_ACCOUNT_AUTH_METHODS == SUPPORTED_ACCOUNT_AUTH_METHODS
 
     def test_supported_raes_release_agrees_with_pin_and_lock(self, reader):
-        assert reader.SUPPORTED_RAES_VERSION == "2.0.0"
+        assert reader.SUPPORTED_RAES_VERSION == "3.5.0"
         assert importlib.metadata.version("raes") == _exact_dependency_pin("raes")
         assert importlib.metadata.version("raes") == reader.SUPPORTED_RAES_VERSION
 
     def test_environment_pack_and_raes_release_pair_is_exact(self):
-        assert importlib.metadata.version("raes") == "2.0.0"
+        assert importlib.metadata.version("raes") == "3.5.0"
         assert importlib.metadata.version("raes") == _exact_dependency_pin("raes")
-        assert importlib.metadata.version("raes-env-packs") == "3.1.0"
+        assert importlib.metadata.version("raes-env-packs") == "5.2.0"
         assert importlib.metadata.version("raes-env-packs") == _exact_dependency_pin("raes-env-packs")
         requirements = importlib.metadata.requires("raes-env-packs") or []
         normalized = {requirement.replace(" ", "").lower() for requirement in requirements}
-        assert "raes==2.0.0" in normalized
+        assert "raes==3.5.0" in normalized
 
     def test_extraction_matches_expected_shifter_fixture(self, reader):
         parsed = reader.parse_plan(serialize_provisioning_plan(_plan()))
@@ -279,10 +279,10 @@ def _plan_with_services(services: list[dict]) -> ProvisioningPlan:
         resource_type="node",
         payload={
             "name": "web",
-            "node_type": "vm",
+            "node_type": "compute",
             "os_family": "linux",
             "spec": {
-                "node": {"type": "vm", "os": "linux", "services": services},
+                "node": {"type": "compute", "os": "linux", "services": services},
                 "infrastructure": {"networks": ["provision.network.lan"]},
             },
         },
@@ -325,3 +325,47 @@ class TestServiceExtractionParity:
         serialized = serialize_provisioning_plan(_plan_with_services([{"name": "x", "port": 80, "protocol": "sctp"}]))
         with pytest.raises(reader.RaesPlanError, match="protocol"):
             reader.parse_plan(serialized)
+
+
+@pytest.mark.parametrize("name", ["web", None])
+def test_released_public_accessors_agree_with_standalone_reader(reader, name):
+    from raes_contracts.planning import (
+        planned_infrastructure_spec,
+        planned_node_resources,
+        planned_node_source,
+        planned_node_spec,
+        planned_resource_name,
+    )
+
+    payload = _node_payload()
+    if name is None:
+        payload.pop("name")
+    resource = PlannedResource("provision.node.web", RuntimeDomain.PROVISIONING, "node", payload)
+    assert reader._resource_name(resource.address, payload) == planned_resource_name(resource)
+    assert reader._node_spec(payload) == planned_node_spec(resource)
+    assert reader._infrastructure_spec(payload) == planned_infrastructure_spec(resource)
+    source = planned_node_source(resource)
+    image = reader._image(payload)
+    assert (image.name, image.version) == (source["name"], source["version"])
+    sizing = planned_node_resources(resource)
+    assert reader._memory_mib(payload) == sizing["ram"] // (1024 * 1024)
+    assert reader._vcpus(payload) == sizing["cpu"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("source", False),
+        ("source", {"name": 3}),
+        ("resources", []),
+        ("resources", {"cpu": "2"}),
+        ("resources", {"ram": False}),
+    ],
+)
+def test_malformed_present_fields_never_become_backend_defaults(reader, field, value):
+    payload = _node_payload()
+    payload["spec"]["node"][field] = value
+    payload["spec"]["infrastructure"] = {}
+    resource = PlannedResource("provision.node.web", RuntimeDomain.PROVISIONING, "node", payload)
+    with pytest.raises(reader.RaesPlanError):
+        reader.parse_plan(serialize_provisioning_plan(ProvisioningPlan(resources={resource.address: resource})))

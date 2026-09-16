@@ -60,6 +60,11 @@ source "googlecompute" "polaris-vm" {
 build {
   sources = ["source.googlecompute.polaris-vm"]
 
+  provisioner "file" {
+    source      = "../files/polaris_splice_credential.py"
+    destination = "/tmp/polaris-splice-credential.py"
+  }
+
   // host-setup.sh installs Docker + the Cloud SDK, moves the host sshd to the
   // management port; verify-stack fetches, builds, and starts the full compose
   // stack from GCS before capture. The compose stack is not in this repo, so it is

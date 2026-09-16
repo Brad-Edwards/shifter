@@ -63,14 +63,88 @@ the selected common routing/capacity/account identities. Multiple bindings
 may deliberately refer to the same pool. Reusing a profile alone does not
 implicitly join a budget or routing pool.
 
+### Publication authority and revision namespaces
+
+Engine persistence is the sole live authority for named collections, sharing
+pools and bindings. The installation catalog supplies validated inventory and
+portable definition shapes; catalog presence alone does not publish a binding.
+Catalog-sourced and management-API drafts use the same Engine validate/preview/
+publish boundary, and a published definition pins the catalog digest used to
+resolve every reference. Do not evaluate mounted-catalog bindings beside
+database bindings, or reinterpret a persisted ID against a replacement catalog.
+
+Keep these fences separate and name them explicitly in persistence, facades,
+provenance and tests:
+
+- a stable collection, pool or binding ID names the logical object;
+- an immutable **definition revision** names one published form of that object
+  and is the optimistic compare-and-set fence for publish/withdraw/drain;
+- a **membership revision** and freshness observation name the authoritative
+  selector result supplied by its owning service;
+- a **routing revision** names the allocation-affinity/routing choice while
+  stable pool and financial-account IDs survive it; and
+- catalog digest, range execution generation and authorization/grant revision
+  retain their existing independent meanings.
+
+Never use `membership_revision` as the binding edit counter, use a definition
+digest as a mutable revision, or increment a routing revision to reset an
+account. Withdrawal publishes a terminal/tombstoned definition revision and
+synchronously advances the checked fence before any asynchronous reassessment.
+
+Publisher identity and authority are server-derived inputs, not trusted members
+of an authoring payload. The owning CTF, identity or workspace service resolves
+membership and delegated authority and projects bounded canonical references
+downward; Engine never calls those domains back. Validation and preview confer
+no authority. Publish rechecks publisher authority, the expected current
+definition revision, catalog digest, membership revision and freshness inside
+the locked transaction. Missing, unknown, foreign-deployment or stale evidence
+denies publication and effective-policy resolution without revealing whether a
+foreign object exists.
+
+M20 realizes this boundary as one closed `SharingAuthorityEvidence` projection.
+Selector membership, per-subject live authorization, per-atom publisher
+authority and per-group funded eligibility retain independent owner-qualified
+references and revisions. Engine stores those facts but never discovers them:
+the composition root resolves each atom through CTF, CMS, Management or
+Workspaces, unions bounded named collections, then projects and publishes in
+one transaction. A conflicting same-revision projection rejects, an exact replay
+is idempotent, and a lower revision cannot replace current evidence. Automatic
+range populations use UUID keyset pages of at most 1,000 rows; every page carries
+the complete assessment count, and publication retains that count with the
+projection and immutable binding revision. A changed count or broken continuation
+fails the assessment instead of publishing a partial collection.
+
+Database writers use one lock hierarchy: pool and binding records when present,
+then the selector's membership projection, then authority fences ordered by the
+complete owner-qualified reference. Projection refresh locks the projection
+before refreshing fences. Publication and drain follow the same order, so a
+concurrent refresh cannot hold a fence while waiting on a projection held by the
+publisher.
+
+CTF cohorts are stable event-owned UUID records, not aliases for brackets,
+capacity `cohort_size`, labels or names. Participants and explicitly assigned
+spares may carry cohort membership; team/cohort `include_spares` includes only
+spares explicitly assigned to that team/cohort, while event `include_spares`
+uses that event's active spare pool. Realized subjects use canonical Engine
+range UUIDs and pre-realization snapshot members retain stable CTF draw UUIDs.
+
 Selectors are closed, typed data. Initial bounds are 32 atomic selectors per
 collection and 1,000 explicit user/range/participant IDs per binding.
 Automatic selectors may match a larger deployment population, resolved with
-bounded pagination and an explicit assessment count. Support bounded union
+bounded keyset pagination and an explicit assessment count; the 1,000 bound is
+per page, not a cap on the automatic result. Support bounded union
 with set semantics; no recursively nested groups, arbitrary query language,
 SQL, executable expression or wildcard provider selector. A user-group
 adapter's canonical membership semantics remain owned by that identity
 system; this feature does not introduce transitive IAM groups.
+
+The 1,000-ID limit is aggregate across the complete selector definition, not
+per union member. `include_spares` is valid only for selector kinds whose owning
+CTF adapter defines spare membership. Canonicalization of UUIDs and typed owner
+references happens at the owning boundary before publication; display names,
+case-folding guesses and labels never become identities. An empty snapshot is
+accepted only when the publish command carries an explicit acknowledgement that
+is retained in publication evidence; it is not inferred from an empty list.
 
 Offer both membership modes:
 
@@ -115,6 +189,17 @@ A range may simultaneously match deployment, user, group, event and explicit
 range bindings. The effective-policy preview lists every match and its
 reason, membership revision and contribution. Do not assume these scopes
 form a single hierarchy or use an undocumented last-match-wins rule.
+
+Keep effective-policy compilation deterministic and free of repository or
+cross-domain I/O. Its input pins the deployment and catalog digest, an explicit
+evaluation instant, canonical range/draw/owner references, and the complete
+set of already-authorized binding and membership revisions. Its output is a
+canonically ordered effective policy plus every contribution/conflict and its
+provenance. Membership projection is the extension seam for another selector
+owner; provider and cloud additions remain catalog data and must not add
+branches to this compiler. Persistence and facade code load and authorize the
+inputs, then call this one policy implementation rather than reproducing its
+precedence rules in ORM queries, serializers, previews or allocation.
 
 All mandatory restrictions apply: intersect capability/model/data-region
 allowlists, take the tightest deadlines/individual ceilings, and enforce

@@ -243,7 +243,7 @@ class TestRealtimeBus:
             "ctf.services.notification.publish_event_notification",
             lambda event, kind, payload, **kw: published.append(kind),
         )
-        monkeypatch.setattr("ctf.services.submission.verify_flag", lambda _c, _f: True)
+        monkeypatch.setattr("ctf.services.submission.verify_flag", lambda _c, _f, **_kwargs: True)
 
         submit_flag(solver_one.pk, challenge.pk, "FLAG{x}")
         submit_flag(solver_two.pk, challenge.pk, "FLAG{x}")

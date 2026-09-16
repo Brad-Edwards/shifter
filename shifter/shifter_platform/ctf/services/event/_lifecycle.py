@@ -235,12 +235,21 @@ def cancel_event(event: CTFEvent) -> bool:
     """
     logger.info("Cancelling CTF event %s", event.id)
 
+    from ctf.models import CTFEvent
     from ctf.services import event as _e
 
     try:
         with transaction.atomic():
-            _transition_event(event, EventStatus.CANCELLED)
-            _e._cancel_event_tasks(event)
+            locked_event = CTFEvent.objects.select_for_update().get(pk=event.pk)
+            _transition_event(locked_event, EventStatus.CANCELLED)
+            _e._cancel_event_tasks(locked_event)
+            # Fence scoped communications in the same transaction as the cancellation
+            # so a scheduled intent can never materialize new work for a cancelled
+            # event and event-qualified unclaimed deliveries stop (#2099, AC3).
+            from ctf.services.communication import on_event_cancelled
+
+            on_event_cancelled(locked_event)
+            event.status = locked_event.status
     except CTFStateError:
         logger.warning(
             "Cannot cancel event %s: in terminal state %s",

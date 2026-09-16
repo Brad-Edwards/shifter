@@ -72,7 +72,7 @@ export function buildGhWorkflowRunArgs({ workflow, repo, ref, inputs = {} }) {
   if (typeof ref !== "string" || ref.trim() === "") {
     throw new TypeError("buildGhWorkflowRunArgs: ref is required");
   }
-  if (inputs === null || typeof inputs !== "object" || Array.isArray(inputs)) {
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) {
     throw new TypeError("buildGhWorkflowRunArgs: inputs must be an object");
   }
   const args = ["workflow", "run", workflow, "--repo", repo, "--ref", ref];
@@ -265,7 +265,7 @@ export const FORBIDDEN_PATTERN =
  * PlatformDetails values: "Linux/UNIX", "Windows", "Windows with SQL Server", etc.
  */
 export function getSsmDocument(platformDetails) {
-  if (platformDetails && platformDetails.toLowerCase().startsWith("windows")) {
+  if (platformDetails?.toLowerCase().startsWith("windows")) {
     return "AWS-RunPowerShellScript";
   }
   return "AWS-RunShellScript";

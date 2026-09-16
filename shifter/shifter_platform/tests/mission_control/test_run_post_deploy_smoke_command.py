@@ -87,8 +87,8 @@ def test_run_post_deploy_smoke_success(
         str(request_id),
     )
     smoke_command_mocks.probe_ssh.assert_called_once_with("10.0.0.1", 22)
-    # Platform smoke: create_range gets empty agents_by_os (no agent fixture).
-    assert smoke_command_mocks.cms.create_range.call_args[0][2] == {}
+    # Platform smoke: RAES packages own topology, so create_range takes no agents.
+    assert smoke_command_mocks.cms.create_range.call_args.kwargs["ngfw_enabled"] is False
 
 
 def test_run_post_deploy_smoke_missing_user_email(monkeypatch) -> None:

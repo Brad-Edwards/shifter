@@ -440,11 +440,13 @@ bootstrap commands below so their confirmation prompts proceed without a termina
    provision **and** auto-register the self-hosted runners (issue #1433). It
    provisions a dedicated, ADR-004-R20-compliant runner VPC by default, applies
    the runner root, and registers each runner over SSM (per-runner single-use
-   token, never persisted). Pass `--use-existing-network` to reuse a
-   non-default `vpc_id`/`subnet_id` (a dedicated runner VPC or the portal VPC
-   private tier) or the `allow_default_vpc` opt-in instead; do not use the
-   account default VPC without that opt-in, and do not commit live VPC/subnet IDs
-   to tracked placeholder tfvars. AWS deploy workflows use `runs-on: self-hosted`.
+   token, never persisted). The dedicated runner VPC is the standard placement
+   (ADR-004-R20, #1437), selected by the tracked runner tfvars. Pass
+   `--use-existing-network` only to place runners in an existing compliant
+   network, such as the portal VPC private tier, whose `vpc_id`/`subnet_id` you
+   keep in a gitignored `local.auto.tfvars`. Never commit live VPC/subnet IDs.
+   The account default VPC isn't a supported placement: `allow_default_vpc` is a
+   documented exception only. AWS deploy workflows use `runs-on: self-hosted`.
 3. Ensure `/shifter/ami/{kali,ubuntu,windows,dc}` exists in SSM Parameter
    Store before portal Terraform plans/applies. The Packer workflow updates
    these parameters after AMI builds; in a moved account, set the builder-network
@@ -696,7 +698,7 @@ fall back to the code defaults in `config.py`. See
 | `DC_DOMAIN_PASSWORD` | DC scenarios | **Sensitive.** Domain Administrator password the provisioner sets on the pre-promoted DC (`set_admin_password`). Must match the password baked into the DC image by `a2_setup.ps1` at bake time (its `-AdminPassword` default). Provide via the GCP deploy config secret so it is rendered into the runtime env and forwarded to the provisioner job (`_GCP_PROVISIONER_ENV_KEYS`); if unset, DC setup fails setting the admin password. |
 | `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed Polaris hosts use the structured map below. |
 | `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image for non-Polaris scenarios. |
-| `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile. Normal images use `source_image`, sizing, disk policy, and a typed capability. Preconfigured hosts use an exact `source_machine_image`, machine type, host login, and participant container/account. Any profile may opt into public TCP 80/443 with `allow_public_web_egress` (default false). Maximum 32,768 bytes and 64 entries. Unknown keys, unsupported capabilities, and malformed profiles fail before cloud mutation. Use an Actions environment secret when resource names or logical selectors are confidential; the deploy workflow prefers that secret over the repository variable. The value is runtime configuration, not a credential, and is emitted into the private platform ConfigMap. See `docs/dev/gcp-range-cell-deploy.md`. |
+| `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile. Normal images use `source_image`, sizing, disk policy, and a typed capability. Preconfigured hosts use an exact `source_machine_image`, machine type, host login, participant container/account, the closed `participant-readiness/v1` contract, and a lowercase SHA-256 readiness-manifest digest. Any profile may opt into public TCP 80/443 with `allow_public_web_egress` (default false). Maximum 32,768 bytes and 64 entries. Unknown keys, unsupported capabilities, and malformed profiles fail before cloud mutation. Use an Actions environment secret when resource names or logical selectors are confidential; the deploy workflow prefers that secret over the repository variable. The value is runtime configuration, not a credential, and is emitted into the private platform ConfigMap. See `docs/dev/gcp-range-cell-deploy.md`. |
 | `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | yes | Service account attached to range guests. Minimal scope: logging and monitoring write. |
 | `GCP_RANGE_HOST_IDENTITY_POOL_SIZE` | machine-image hosts | Number of Terraform-created `sh-range-host-<slot>` identities. Must equal `range_host_identity_pool_size`; zero disables preconfigured machine-image hosts. |
 | `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` | Polaris | Service account whose per-range key the a14-kali agent uses for Vertex AI. Leave empty to disable per-range Vertex credentials. |

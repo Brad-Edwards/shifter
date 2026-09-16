@@ -85,6 +85,9 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # must not supply it.
         "ENGINE_TASK_IMAGE",
         "ENVIRONMENT",
+        # Mission Control lease policy (#27): rendered from the validated
+        # settings.mission_control_leases block, not the Terraform runtime_env.
+        "MISSION_CONTROL_LEASE_POLICY_JSON",
         "MODEL_ACCESS_CATALOG_DIGEST",
         "MODEL_ACCESS_CATALOG_PATH",
         "MODEL_ACCESS_ENABLED",

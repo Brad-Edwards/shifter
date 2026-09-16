@@ -109,6 +109,41 @@ class RangeInstance(SoftDeleteMixin, models.Model):
         blank=True,
         help_text="Immutable generation lifetime ceiling; VPN credentials cannot outlive it.",
     )
+    extension_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Extension increment (days) snapshotted from the deployment lease policy when this "
+            "generation's user lease was first assigned. A later policy change never rewrites it, "
+            "so each generation keeps the increment it launched with (issue #27)."
+        ),
+    )
+    lease_initial_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Initial lease duration snapshotted for this range generation.",
+    )
+    lease_maximum_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum lease duration snapshotted for this range generation.",
+    )
+    lease_policy_source = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Bounded policy source used when this generation's lease was assigned.",
+    )
+    lease_policy_tenant_revision = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Runtime tenant-policy revision used for this generation, or zero for deployment fallback.",
+    )
+    lease_policy_group_revisions = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Bounded group id/revision provenance used for this generation's lease.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -120,6 +155,8 @@ class RangeInstance(SoftDeleteMixin, models.Model):
     all_objects = SoftDeleteQuerySet.as_manager()
 
     class Meta:
+        """Model metadata: verbose names, base manager, and active-range constraints."""
+
         verbose_name = "Range Instance"
         verbose_name_plural = "Range Instances"
         base_manager_name = "all_objects"
@@ -150,10 +187,10 @@ class RangeInstance(SoftDeleteMixin, models.Model):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Range {self.range_id}: {self.scenario_id}"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
         """Save with terminal-status soft-delete invariant enforcement.
 
         Delegates the invariant to

@@ -99,6 +99,12 @@ def _parse_gce_image_key_profile(
     domain_netbios_name = _optional_profile_string(values, "domain_netbios_name", location=location)
     participant_container_name = _optional_profile_string(values, "participant_container_name", location=location)
     participant_username = _optional_profile_string(values, "participant_username", location=location)
+    participant_readiness_contract = _optional_profile_string(
+        values, "participant_readiness_contract", location=location
+    )
+    participant_readiness_manifest_sha256 = _optional_profile_string(
+        values, "participant_readiness_manifest_sha256", location=location
+    )
     host_ssh_username = _optional_profile_string(values, "host_ssh_username", location=location)
     sftp_root_directory = _optional_profile_string(values, "sftp_root_directory", location=location)
     disk_type = _optional_profile_string(values, "disk_type", location=location) or "pd-balanced"
@@ -117,6 +123,8 @@ def _parse_gce_image_key_profile(
         domain_netbios_name=domain_netbios_name,
         participant_container_name=participant_container_name,
         participant_username=participant_username,
+        participant_readiness_contract=participant_readiness_contract,
+        participant_readiness_manifest_sha256=participant_readiness_manifest_sha256,
         host_ssh_username=host_ssh_username,
         host_ssh_port=host_ssh_port,
         allow_public_web_egress=allow_public_web_egress,

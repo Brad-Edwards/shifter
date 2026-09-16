@@ -6,6 +6,7 @@ Detailed guides for each Shifter feature.
 
 - [Agents](agents) - Upload and manage XDR/XSIAM installers
 - [Ranges](ranges) - Launch and manage demo environments
+- [Retry-safe range operations](retry-safe-range-operations) - Idempotent launch with a caller retry key and truthful cleanup outcomes
 - [Terminal](terminal) - Access range instances via SSH and RDP
 
 ## Events
@@ -23,6 +24,7 @@ Detailed guides for each Shifter feature.
 
 ## Advanced Features
 
+- [Artifact preparation](../ops/artifact-preparation.md) - Prepare permitted images and install private packs and adapters in an existing tenant
 - [Credentials](credentials) - Manage SCM and deployment profile credentials
 - [NGFW](ngfw) - Set up persistent firewalls for traffic logging
 - [Per-range model access (planned)](model-access.md) - Proposed organizer, participant, and operator experience under #681

@@ -26,6 +26,7 @@ caught. See ``docs/architecture/workflow-gating-test-suite-preflight-921.md``.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -532,6 +533,11 @@ class TestSonarScannerIdentity(unittest.TestCase):
 class TestGcpReleaseSecurityClosure(unittest.TestCase):
     """#2084: release security checks fail closed and preserve exact evidence."""
 
+    def assert_hcl_assignment(self, text, name, value):
+        """Compare exact assignment values without depending on terraform fmt spacing."""
+        pattern = rf"(?m)^\s*{re.escape(name)}\s*=\s*{re.escape(value)}\s*(?:#.*)?$"
+        self.assertTrue(re.search(pattern, text), f"Expected HCL assignment {name} = {value}")
+
     def test_codeql_analysis_is_not_advisory(self):
         workflow = _load("codeql-analysis.yml")
         jobs = ADR_GUARD._dw_jobs(workflow, "codeql-analysis.yml")
@@ -606,12 +612,12 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             self.assertNotIn("portal-trivy.json", joined)
         identity = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text()
         self.assertIn('resource "google_storage_bucket" "release_evidence"', identity)
-        self.assertIn('role   = "roles/storage.objectCreator"', identity)
-        self.assertIn('role   = "roles/storage.objectViewer"', identity)
-        self.assertIn('public_access_prevention    = "enforced"', identity)
-        self.assertIn("uniform_bucket_level_access = true", identity)
-        self.assertIn("retention_period = 7776000", identity)
-        self.assertIn("is_locked        = true", identity)
+        self.assert_hcl_assignment(identity, "role", '"roles/storage.objectCreator"')
+        self.assert_hcl_assignment(identity, "role", '"roles/storage.objectViewer"')
+        self.assert_hcl_assignment(identity, 'public_access_prevention', '"enforced"')
+        self.assert_hcl_assignment(identity, 'uniform_bucket_level_access', 'true')
+        self.assert_hcl_assignment(identity, 'retention_period', '7776000')
+        self.assert_hcl_assignment(identity, 'is_locked', 'true')
 
     def test_gcp_guest_build_and_sbom_evidence_cross_trust_boundaries(self):
         build = (REPO_ROOT / ".github/workflows/packer-gcp.yml").read_text(encoding="utf-8")
@@ -650,7 +656,7 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             start = identity.index(marker)
             end = identity.find('\nresource "google_storage_bucket_iam_member"', start + 1)
             block = identity[start : end if end != -1 else None]
-            self.assertIn(f'role   = "roles/storage.{role}"', block)
+            self.assert_hcl_assignment(block, "role", f'"roles/storage.{role}"')
             self.assertIn(f"/objects/{prefix}/", block)
             self.assertIn("resource.name.startsWith", block)
 
@@ -673,7 +679,7 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn('resource "google_project_iam_custom_role" "destroy_storage"', identity)
         self.assertIn('resource "google_storage_bucket_iam_member" "deploy_bucket_iam_admin"', identity)
         self.assertIn('resource "google_storage_bucket_iam_member" "destroy_bucket_iam_admin"', identity)
-        self.assertIn('role     = "roles/storage.legacyBucketOwner"', identity)
+        self.assert_hcl_assignment(identity, "role", '"roles/storage.legacyBucketOwner"')
         self.assertIn("platform_external_bucket_names", identity)
         condition_start = identity.index("platform_storage_bucket_names")
         condition_end = identity.index("\n}", condition_start)

@@ -20,10 +20,13 @@ import hashlib
 import ipaddress
 import json
 import re
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
+from ctf.enums import EventStatus
 from ctf.enums_communication import AcknowledgementPolicy, AudienceKind, CommunicationChannel, TriggerKind
 from ctf.exceptions import CTFCommunicationError
 
@@ -33,6 +36,13 @@ MAX_SUBJECT_CODEPOINTS = 200
 MAX_BODY_BYTES = 65_536
 MAX_RENDERED_BYTES = 131_072
 MAX_LINK_CHARS = 2_048
+# Bounded reference-string length; mirrors ``CommunicationIntent`` _REF_MAX without
+# importing the model, so trigger reference refs cannot overflow their columns.
+MAX_REF_CHARS = 255
+# Shape guard on explicit audience id lists. The real per-release fan-out budget is
+# enforced by ``ctf.services.communication.backpressure``; this only rejects an
+# absurd list before it reaches the database.
+MAX_AUDIENCE_IDS = 5_000
 
 _DIGEST_PREFIX = "sha256:"
 
@@ -181,11 +191,15 @@ def validate_message_content(content: object, *, allowed_link_hosts: frozenset[s
 # ---------------------------------------------------------------------------
 
 
-def _require_uuid_list(spec: dict[str, Any], key: str, *, minimum: int, exact: int | None = None) -> list[str]:
+def _require_uuid_list(
+    spec: dict[str, Any], key: str, *, minimum: int, exact: int | None = None, maximum: int = MAX_AUDIENCE_IDS
+) -> list[str]:
     """Return the normalized UUID string list at ``key``, enforcing count bounds."""
     raw = spec.get(key)
     if not isinstance(raw, list) or not raw:
         raise _reject(f"audience {key} must be a non-empty list")
+    if len(raw) > maximum:
+        raise _reject(f"audience {key} must contain at most {maximum} id(s)")
     normalized: list[str] = []
     for value in raw:
         if not isinstance(value, str):
@@ -248,10 +262,57 @@ _TRIGGER_KEYS_BY_KIND: dict[str, frozenset[str]] = {
 }
 
 
+def _normalize_utc_instant(value: str) -> str:
+    """Parse a timezone-aware ISO-8601 instant and return its canonical UTC form.
+
+    A naive datetime is ambiguous, so it is rejected rather than assigned a zone;
+    a malformed string is a bounded domain rejection, never an uncaught error. The
+    returned value normalizes every offset to ``+00:00`` so due-time comparison is
+    caller-offset independent (#2099).
+    """
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise _reject("trigger due_at must be an ISO-8601 timestamp", code="CTF_COMMUNICATION_TRIGGER_INVALID") from exc
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        raise _reject("trigger due_at must be timezone-aware", code="CTF_COMMUNICATION_TRIGGER_INVALID")
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _validate_event_status(value: str) -> str:
+    """Return a known ``EventStatus`` value, rejecting an unknown lifecycle status."""
+    text = value.strip()
+    if text not in {status.value for status in EventStatus}:
+        raise _reject("trigger event_status is not a known event status", code="CTF_COMMUNICATION_TRIGGER_INVALID")
+    return text
+
+
+def _validate_trigger_ref(value: str) -> str:
+    """Return a bounded, trimmed reference string for a source declaration/occurrence."""
+    text = value.strip()
+    if len(text) > MAX_REF_CHARS:
+        raise _reject(f"trigger reference exceeds {MAX_REF_CHARS} characters", code="CTF_COMMUNICATION_TRIGGER_INVALID")
+    return text
+
+
+# Per-field semantic validators applied after the base non-empty-string check. A
+# field without an entry keeps the trimmed string. Adding a new source's fields
+# here keeps semantics in one closed validator, not a separate per-source parser.
+_TRIGGER_FIELD_VALIDATORS: dict[str, Callable[[str], str]] = {
+    "due_at": _normalize_utc_instant,
+    "event_status": _validate_event_status,
+    "declaration_ref": _validate_trigger_ref,
+    "occurrence_ref": _validate_trigger_ref,
+}
+
+
 def validate_trigger_spec(spec: object) -> dict[str, Any]:
     """Validate a closed trigger declaration; return the normalized mapping.
 
     A trigger is data, never code: no callables, webhooks, or plugin entry points.
+    Beyond the closed key set, each field is validated semantically — absolute
+    ``due_at`` is a timezone-aware UTC instant, ``event_status`` is a known event
+    lifecycle status, and reference refs are length-bounded (#2099).
     """
     if not isinstance(spec, dict):
         raise _reject("trigger must be an object")
@@ -268,7 +329,8 @@ def validate_trigger_spec(spec: object) -> dict[str, Any]:
         value = spec.get(key)
         if not isinstance(value, str) or not value.strip():
             raise _reject(f"trigger requires a non-empty '{key}'")
-        normalized[key] = value.strip()
+        field_validator = _TRIGGER_FIELD_VALIDATORS.get(key)
+        normalized[key] = field_validator(value) if field_validator else value.strip()
     return normalized
 
 

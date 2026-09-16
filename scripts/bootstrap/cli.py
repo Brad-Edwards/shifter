@@ -296,8 +296,8 @@ def _add_runners_subparser(subparsers: argparse._SubParsersAction) -> None:
         "--use-existing-network",
         action="store_true",
         help=(
-            "Do not provision a dedicated runner network; use the vpc_id/subnet_id or "
-            "allow_default_vpc opt-in already configured in the runner tfvars."
+            "Do not provision the standard dedicated runner network; use an existing compliant "
+            "network's vpc_id/subnet_id from a gitignored local.auto.tfvars in the runner root."
         ),
     )
     runners_parser.add_argument(
@@ -337,6 +337,16 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
         "--project-id",
         default=get_default_gdc_project_id(),
         help="GCP project ID (defaults to PANW_GCP_DEV or repo-root .env)",
+    )
+    gdc_parser.add_argument(
+        "--environment",
+        default="gcp-dev",
+        help=(
+            "Deployment environment name (default gcp-dev). Selects the Terraform root "
+            "(platform/terraform/gcp/environments/<env>), the state prefix "
+            "(shifter/<env>/platform-core), the Helm values override (values-<env>.yaml), and the "
+            "operator-creds overlay. Use a per-tenant name (e.g. nazgul) to stand up an additional tenant."
+        ),
     )
     gdc_parser.add_argument("--cluster-id", default="cluster1", help="Cluster name / prefix")
     gdc_parser.add_argument("--region", default="us-central1", help="Cluster region")
@@ -515,6 +525,9 @@ Examples:
     _add_preflight_and_recovery_subparsers(subparsers)
     _add_runners_subparser(subparsers)
     _add_gdc_bootstrap_subparser(subparsers)
+    from inventory_cli import add_parser
+
+    add_parser(subparsers)
 
     return parser
 
@@ -523,6 +536,7 @@ def _build_gdc_bootstrap_config(args: argparse.Namespace) -> GDCBootstrapConfig:
     """Build the GDCBootstrapConfig for the `gdc-bootstrap` subcommand from parsed args."""
     return GDCBootstrapConfig(
         project_id=args.project_id,
+        environment=args.environment,
         cluster_id=args.cluster_id,
         region=args.region,
         zone=args.zone,
@@ -653,6 +667,11 @@ _COMMAND_HANDLERS = {
 def main() -> None:
     """Parse CLI arguments, enforce shared gates, and invoke one handler."""
     args = _build_parser().parse_args()
+    if args.command == "inventory":
+        from inventory_cli import handle
+
+        handle(args)
+        return
     if getattr(args, "yes", False):
         set_assume_yes(True)
     check_dependencies(args.command, cloud=getattr(args, "cloud", None))

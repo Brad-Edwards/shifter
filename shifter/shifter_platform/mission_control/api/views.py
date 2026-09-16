@@ -14,11 +14,13 @@ from mission_control.api.raes import (
     RaesOperationReceiptListView,
     RaesOperationStatusListView,
     RaesRuntimeSnapshotListView,
+    RangeCleanupOutcomeView,
 )
 from mission_control.api.raes_participant import (
     RaesParticipantImplementationListView,
     RaesParticipantRuntimeListView,
 )
+from mission_control.api.range_history import RangeHistoryView
 from mission_control.api.ranges import (
     AgentListView,
     CancelRangeView,
@@ -27,7 +29,6 @@ from mission_control.api.ranges import (
     ExtendRangeLeaseView,
     LaunchRangeView,
     PauseRangeView,
-    RangeHistoryView,
     ResumeRangeView,
     ScenarioListView,
 )
@@ -91,6 +92,7 @@ __all__ = (
     "RaesParticipantImplementationListView",
     "RaesParticipantRuntimeListView",
     "RaesRuntimeSnapshotListView",
+    "RangeCleanupOutcomeView",
     "RangeHistoryView",
     "ResumeRangeView",
     "ScenarioListView",

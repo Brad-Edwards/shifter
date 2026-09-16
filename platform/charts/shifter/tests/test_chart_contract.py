@@ -39,9 +39,12 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #28 after adding the warm-pool reconciler worker Deployment.
 # Regenerated for #2098 after adding the CTF communication delivery-worker Deployment.
 # Regenerated for #2083 after admitting the deployment-scoped dynamic-secret project id.
+# Regenerated for #1583 after qualifying portal memory headroom and maintenance-worker startup capacity.
+# Regenerated for #2179 after adding the GKE metadata-server egress NetworkPolicy
+# (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "3354afa2f74b40183b927287a0a307a81b3a58fa117084611fa45e2a7a3ed23e",
-    "gcp-prod": "66fdc5a40b6984c47f81a838ebc44dc9d06340235d42508a7120d9c3a634ae3e",
+    "gcp-dev": "dd50c4107538fe50f899160bb8cbb02bf17ed7d0041e8261e8f4ab2d4caf0c9e",
+    "gcp-prod": "c92cfb146e141c1acfe4e7b2ef6d2f4738250dc84331465cbade25cf4474d885",
 }
 
 
@@ -102,9 +105,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         for profile, values_file in VALUES_FILES.items():
             with self.subTest(profile=profile):
                 _, documents = _render(values_file)
-                for document in documents:
-                    if document.get("kind") != "Deployment":
-                        continue
+                deployments = [
+                    doc for doc in documents if doc.get("kind") == "Deployment"
+                ]
+                self.assertTrue(deployments, f"{profile}: no Deployments rendered")
+                for document in deployments:
                     pod_template = document["spec"]["template"]
                     containers = pod_template["spec"]["containers"]
                     for container in containers:
@@ -343,9 +348,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                 identities = {_identity(document) for document in documents}
                 self.assertIn(("NetworkPolicy", "default-deny-platform"), identities)
                 self.assertIn(("NetworkPolicy", "default-deny-jobs"), identities)
-                for document in documents:
-                    if document.get("kind") != "Deployment":
-                        continue
+                deployments = [
+                    doc for doc in documents if doc.get("kind") == "Deployment"
+                ]
+                self.assertTrue(deployments, f"{profile}: no Deployments rendered")
+                for document in deployments:
                     pod_spec = document["spec"]["template"]["spec"]
                     self.assertEqual(
                         pod_spec["securityContext"]["seccompProfile"]["type"],

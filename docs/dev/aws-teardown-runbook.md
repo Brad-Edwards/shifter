@@ -89,8 +89,15 @@ logic.
   example values. Treat those payloads as sensitive: write them under the
   runner's temporary workspace, never echo them, put them in argv, upload them,
   or enable shell tracing. The runner root must also reproduce its applied
-  network-input shape; `proof.tfvars` contains non-operational VPC placeholders,
-  while the bootstrap path commonly applies `create_runner_network=true`.
+  network topology from positive state evidence, never from absence (#1437).
+  `aws_env_destroy.py` passes `create_runner_network=true` when
+  `module.runner_network` is in state, and `allow_default_vpc=true` when
+  `data.aws_subnets.default` is in state. With neither, it reads the applied
+  `vpc_id` and `subnet_id` back from the runner security group and instances in
+  state. When that VPC appears in the default VPC IDs recorded by
+  `data.aws_vpcs.default`, the default-VPC exception was applied with an
+  explicit subnet, so it also passes `allow_default_vpc=true`. It fails closed
+  before the runner destroy when any of that evidence is missing or ambiguous.
 - Serialize against `deploy.yml` with the same per-environment concurrency key
   and `cancel-in-progress: false`. A deploy, destroy, or second destroy must not
   race the same Terraform state or be cancelled while mutating it. Preserve the
@@ -393,6 +400,13 @@ double-quoted shell string does not trigger backtick command substitution.
 #   sudo -u ec2-user ./config.sh remove --token "$TOKEN"
 ./scripts/runner-deploy.sh --destroy
 ```
+
+`runner-deploy.sh --destroy` uses `dev.tfvars`, which selects the managed runner
+network, so it matches only a fleet applied on that network. For a fleet applied
+with `--use-existing-network`, run `terraform destroy` in
+`platform/terraform/global/github-runner` with `-var=create_runner_network=false`
+and the same `vpc_id`/`subnet_id` it was applied with. The automated teardown
+resolves the applied topology from state for you.
 
 See [`aws-runner-provisioning-runbook.md`](aws-runner-provisioning-runbook.md).
 

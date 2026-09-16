@@ -15,7 +15,7 @@
 # and Cloud NAT; it references this SA by its deterministic email.
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.9.0"
 
   required_providers {
     google = {
@@ -34,12 +34,17 @@ module "cicd_oidc_identity" {
   source = "../../modules/cicd-oidc-identity"
 
   project_id                             = var.project_id
+  project_number                         = var.project_number
+  github_repository_id                   = var.github_repository_id
+  github_owner_id                        = var.github_owner_id
+  github_subject_format                  = var.github_subject_format
+  purpose_contexts                       = var.purpose_contexts
+  release_evidence_bucket_name           = var.release_evidence_bucket_name
   region                                 = var.region
   environment                            = var.environment
-  name_prefix                            = "shifter-${var.environment}"
+  name_prefix                            = var.name_prefix
   github_org                             = var.github_org
   github_repo                            = var.github_repo
-  allowed_workflow_refs                  = var.allowed_workflow_refs
   build_read_bucket_names                = var.build_read_bucket_names
   promotion_reader_service_account_email = var.promotion_reader_service_account_email
   terraform_state_bucket_name            = var.terraform_state_bucket_name
