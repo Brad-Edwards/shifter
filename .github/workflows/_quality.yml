@@ -23,6 +23,18 @@ on:
         required: false
         type: boolean
         default: false
+      skip_sonar:
+        description: >-
+          Skip the SonarCloud scan for this run. Set true ONLY by the caller for
+          the gcp-dev deploy dispatch: gcp-dev is a disposable test environment
+          that ships code already analyzed and gated on dev/PR, and SonarCloud
+          Cloud does not honour the org's reference-branch New Code period on a
+          full-branch deploy analysis (it hard-errors). The quality gate that
+          guards dev and every PR is unchanged; this only drops the redundant
+          re-scan on the sandbox deploy path.
+        required: false
+        type: boolean
+        default: false
     secrets:
       SONAR_TOKEN:
         description: 'SonarCloud analysis token (sonarcloud job)'
@@ -2463,8 +2475,12 @@ jobs:
     name: SonarCloud
     # Runs after the test jobs so their coverage reports can feed the scan.
     # success() keeps the implicit needs-passed guard that a custom if:
-    # would otherwise drop; skipped when tests are skipped.
-    if: ${{ always() && !cancelled() && !inputs.skip_tests && needs.paths.outputs.run_sonar == 'true' }}
+    # would otherwise drop; skipped when tests are skipped. Also skipped on the
+    # gcp-dev deploy dispatch (inputs.skip_sonar): that sandbox ships code
+    # already scanned and gated on dev/PR, and SonarCloud Cloud hard-errors on a
+    # gcp-dev full-branch analysis under the org's reference-branch New Code
+    # period. dev pushes, main, and PRs are unaffected (skip_sonar stays false).
+    if: ${{ always() && !cancelled() && !inputs.skip_tests && !inputs.skip_sonar && needs.paths.outputs.run_sonar == 'true' }}
     needs:
       - paths
       - shifter-platform-tests
