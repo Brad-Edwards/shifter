@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         ModelAccessRangeView,
         OwnedReference,
     )
+    from shared.model_access.reservation import ModelLaunchScope
     from shared.receipt_validation import ReceiptVerifierBinding
     from shared.remote_access import OpenVpnProfile
 
@@ -150,6 +151,13 @@ def cms_release_range_capacity(draw_key: UUID) -> int:
     return cms_services.engine_release_range_capacity(draw_key)
 
 
+def cms_project_model_launch_authority(*, deployment_id, authority_refs):
+    """Publish CTF facts checked under owner locks through the CMS/Engine bridge."""
+    from cms.services import engine_project_model_launch_authority
+
+    return engine_project_model_launch_authority(deployment_id=deployment_id, authority_refs=authority_refs)
+
+
 def cms_create_range(
     user: User,
     scenario: str,
@@ -157,6 +165,7 @@ def cms_create_range(
     ngfw_enabled: bool,
     remote_access_teardown_at: datetime | None,
     model_admission_subject: OwnedReference | None = None,
+    model_launch_scope: ModelLaunchScope | None = None,
 ) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
@@ -182,6 +191,7 @@ def cms_create_range(
         range_source=RangeSource.CTF,
         remote_access_teardown_at=remote_access_teardown_at,
         model_admission_subject=model_admission_subject,
+        model_launch_scope=model_launch_scope,
     )
     return RangeProvisionResult(request_id=result.request_id)
 

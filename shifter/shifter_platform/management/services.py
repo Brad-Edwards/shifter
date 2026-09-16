@@ -33,6 +33,7 @@ ModelAccessIdentityAuthorityError = _model_access_authority.ModelAccessIdentityA
 is_platform_operator = _model_access_authority.is_platform_operator
 resolve_model_access_group = _model_access_authority.resolve_model_access_group
 resolve_model_access_users = _model_access_authority.resolve_model_access_users
+resolve_model_preparation_user = _model_access_authority.resolve_model_preparation_user
 set_model_access_group_eligibility = _model_access_authority.set_model_access_group_eligibility
 
 # SonarCloud S1192: extracted duplicated string literals.

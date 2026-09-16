@@ -41,6 +41,40 @@ _CTF_KINDS = frozenset(
 _SELECTOR_DENIED = "Model-access selector denied"
 
 
+def refresh_model_launch_projections(deployment_id: UUID) -> None:
+    """Re-resolve stale live definitions as their recorded publisher, never as a guest.
+
+    Each owner resolver holds its incumbent mutex through the caller's launch
+    transaction. Publication races are detected again by Engine admission.
+    """
+    from cms.services import engine_list_model_launch_refreshes, engine_project_selector_resolution
+    from management.services import get_admin_user, resolve_model_access_users
+    from shared.model_access import ContractError
+
+    for binding in engine_list_model_launch_refreshes(deployment_id):
+        publisher = binding.authorized_publisher_ref
+        kind, _, identity = publisher.reference.partition(":")
+        if publisher.owner != "management" or kind not in {"user", "operator"} or not identity.isdecimal():
+            raise ContractError("allocation.publisher_unavailable")
+        with transaction.atomic():
+            actor = get_admin_user(int(identity))
+            if actor is None:
+                raise ContractError("allocation.publisher_unavailable")
+            resolve_model_access_users(actor, (actor.pk,))
+            if _publisher_identity(actor) != publisher:
+                raise ContractError("allocation.publisher_unavailable")
+            resolution = resolve_model_access_selector(actor, binding.selector)
+            now = timezone.now()
+            engine_project_selector_resolution(
+                deployment_id=deployment_id,
+                sharing_binding_id=binding.sharing_binding_id,
+                publisher_identity=publisher,
+                resolution=resolution,
+                observed_at=now,
+                freshness_deadline=now + timedelta(minutes=5),
+            )
+
+
 def _uuid_ids(values: tuple[str, ...]) -> tuple[UUID, ...]:
     """Parse canonical UUID strings or fail without enumeration detail."""
     try:
@@ -214,6 +248,7 @@ def publish_model_access_binding(
 ) -> object:
     """Resolve, project, and publish one binding in a single DB transaction."""
     from cms.services import (
+        engine_fence_model_policy_publication,
         engine_project_selector_resolution,
         engine_publish_sharing_binding,
     )
@@ -222,6 +257,7 @@ def publish_model_access_binding(
     now = timezone.now()
     with transaction.atomic():
         resolution = resolve_model_access_selector(actor, binding.selector)
+        engine_fence_model_policy_publication(deployment_id)
         projection = engine_project_selector_resolution(
             deployment_id=deployment_id,
             sharing_binding_id=binding.sharing_binding_id,

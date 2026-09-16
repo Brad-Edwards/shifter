@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from cms.models import RaesPackageSource, Request
     from shared.enums import RangeSource
     from shared.model_access import OwnedReference
+    from shared.model_access.reservation import ModelLaunchScope
     from shared.range_instantiation_policy import BackendAdmission
     from shared.schemas.range import RangeContext
 
@@ -193,6 +194,7 @@ def _create_raes_native_range_impl(
     workspace_uuid: str | UUID | None = None,
     enforced_deadline: datetime | None = None,
     model_admission_subject: OwnedReference | None = None,
+    model_launch_scope: ModelLaunchScope | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -229,6 +231,8 @@ def _create_raes_native_range_impl(
             workspace_id=cms_request.workspace_id,
             range_source=range_source.value,
             range_spec=None,
+            model_launch_scope=model_launch_scope.model_dump(mode="json") if model_launch_scope else None,
+            model_package_digest=source.package_digest,
             expires_at=lease.expires_at,
             maximum_expires_at=lease.maximum_expires_at,
             extension_days=lease.extension_days,
@@ -293,6 +297,7 @@ def _create_raes_native_range_impl(
             egress_mode=egress_mode,
             request_id=request_id,
             enforced_deadline=enforced_deadline,
+            model_launch_scope=model_launch_scope,
         )
     )
     if claimed_request_id is not None:
@@ -343,6 +348,7 @@ def create_range_dispatch(
     remote_access_teardown_at: datetime | None = None,
     workspace_uuid: str | UUID | None = None,
     model_admission_subject: OwnedReference | None = None,
+    model_launch_scope: ModelLaunchScope | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
@@ -364,6 +370,7 @@ def create_range_dispatch(
             remote_access_teardown_at=remote_access_teardown_at,
             workspace_uuid=workspace_uuid,
             model_admission_subject=model_admission_subject,
+            model_launch_scope=model_launch_scope,
         ),
     )
 
@@ -395,4 +402,5 @@ def dispatch_range_launch(
         workspace_uuid=options.workspace_uuid,
         enforced_deadline=options.remote_access_teardown_at,
         model_admission_subject=options.model_admission_subject,
+        model_launch_scope=options.model_launch_scope,
     )

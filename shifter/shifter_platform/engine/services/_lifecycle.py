@@ -47,6 +47,7 @@ def _run_range_lifecycle_op(
     required_status: str,
     target_status: str,
     revert_status: str,
+    defer_dispatch: bool = False,
 ) -> bool:
     """Shared pause/resume transition + ECS-dispatch helper.
 
@@ -80,6 +81,8 @@ def _run_range_lifecycle_op(
         range_obj.status = target_status
         range_obj.save(update_fields=["status", "updated_at"])
 
+    if defer_dispatch:
+        return True
     # Invoke ECS task outside the atomic block (don't hold DB lock during network call)
     return _dispatch_lifecycle_ecs(range_obj, request_id, op_name, revert_status, start_range_operation, CloudTaskError)
 
@@ -147,7 +150,7 @@ def pause_range(request_id: UUID) -> bool:
     )
 
 
-def resume_range(request_id: UUID) -> bool:
+def resume_range(request_id: UUID, *, defer_dispatch: bool = False) -> bool:
     """Resume all instances in a range. Idempotent."""
     return _run_range_lifecycle_op(
         request_id,
@@ -156,4 +159,12 @@ def resume_range(request_id: UUID) -> bool:
         required_status=ResourceStatus.PAUSED.value,
         target_status=ResourceStatus.RESUMING.value,
         revert_status=ResourceStatus.PAUSED.value,
+        defer_dispatch=defer_dispatch,
     )
+
+
+def dispatch_prepared_range_resume(request_id: UUID) -> bool:
+    """Enqueue the existing resume operation after the owner refreshes model authority."""
+    from engine.ecs import start_range_operation
+
+    return bool(start_range_operation(request_id, "resume"))

@@ -100,10 +100,11 @@ class Command(BaseCommand):
         return drained
 
     @staticmethod
-    def _claim_next() -> ProvisionerLaunchIntent | None:
+    def _claim_next(*, intent_id=None) -> ProvisionerLaunchIntent | None:
         with transaction.atomic():
             row = (
                 ProvisionerLaunchIntent.objects.select_for_update(skip_locked=True)
+                .filter(**({"intent_id": intent_id} if intent_id is not None else {}))
                 .filter(
                     Q(status=ProvisionerLaunchStatus.PENDING) | Q(status=ProvisionerLaunchStatus.RUNNING),
                     # Never launch or relaunch an intent whose provision was cancelled

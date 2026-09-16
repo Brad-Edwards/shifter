@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from engine.models import Range
     from shared.range_instantiation_policy import BackendAdmission
 
-__all__ = ["RaesRangeRef", "RangeBindings", "create_raes_range"]
+__all__ = ["RaesRangeRef", "RangeBindings", "create_raes_range", "dispatch_created_raes_range"]
 
 
 @dataclass(frozen=True)
@@ -66,6 +66,9 @@ class RangeBindings:
     delivery: tuple[DeliveryBinding, ...] = ()
     participant_access: tuple[ParticipantAccessBinding, ...] = ()
     artifact: tuple[ArtifactBinding, ...] = ()
+    # CMS may finish downward authorization after Range creation signals, then
+    # dispatch in the same enclosing transaction. No worker sees a partial launch.
+    defer_dispatch: bool = False
 
 
 def create_raes_range(
@@ -166,6 +169,16 @@ def create_raes_range(
         _persist_range_bindings(range_obj, bindings)
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
+    if bindings.defer_dispatch:
+        return RaesRangeRef(str(request_uuid), str(range_obj.uuid), range_obj.status, True)
+    return dispatch_created_raes_range(request_uuid)
+
+
+def dispatch_created_raes_range(request_uuid: UUID) -> RaesRangeRef:
+    """Dispatch an already persisted range through the incumbent launch outbox."""
+    from engine.models import Range
+
+    range_obj = Range.objects.get(request__request_id=request_uuid)
     try:
         task_ref = start_raes_range_provisioning(request_uuid)
     except Exception:

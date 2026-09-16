@@ -31,6 +31,18 @@ from ._capacity import CapacityDeclaration
 from ._capacity_assessment import CapacityAssessment, CapacityDraw, CapacityReservation
 from ._cleanup_verification import CleanupVerificationOutcome, RangeCleanupVerification
 from ._launch import InterruptState, ProvisionerLaunchIntent, ProvisionerLaunchStatus
+from ._model_allocation import (
+    ModelAliasAssignment,
+    ModelAllocation,
+    ModelAllocationAuthority,
+    ModelCapacityDraw,
+    ModelCapacityReservation,
+    ModelLaunchPreparationRecord,
+    ModelOptionalAbsence,
+    ModelPendingGrant,
+    ModelQuotaIdentity,
+    ModelQuotaReading,
+)
 from ._operation_io import (
     OperationInput,
     OperationResultDisposition,
@@ -80,6 +92,16 @@ __all__ = [
     "Instantiation",
     "InterruptState",
     "MembershipProjection",
+    "ModelAliasAssignment",
+    "ModelAllocation",
+    "ModelAllocationAuthority",
+    "ModelCapacityDraw",
+    "ModelCapacityReservation",
+    "ModelLaunchPreparationRecord",
+    "ModelOptionalAbsence",
+    "ModelPendingGrant",
+    "ModelQuotaIdentity",
+    "ModelQuotaReading",
     "OperationInput",
     "OperationResultDisposition",
     "OperationResultInbox",

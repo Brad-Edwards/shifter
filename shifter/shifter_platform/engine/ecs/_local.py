@@ -18,6 +18,16 @@ from django.conf import settings
 logger = logging.getLogger("engine.ecs")
 
 
+def drain_local_intent(intent_id):
+    """Wake the canonical launcher for exactly one committed local intent."""
+    from engine.management.commands.drain_provisioner_launch_outbox import Command
+
+    worker = Command()
+    row = worker._claim_next(intent_id=intent_id)
+    if row is not None:
+        worker._launch(row)
+
+
 def _run_local_provisioner(command: list[str]) -> str | None:
     """Run the provisioner locally as a subprocess.
 
