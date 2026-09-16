@@ -140,7 +140,29 @@ def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> 
     return resolve_range_cell_placement(request_id, config)
 
 
-def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
+def _keyed_image_profile(config: GCERangeCellConfig, source_name: str | None) -> GCERangeImageProfile | None:
+    """Return the tenant's keyed GCE image profile whose logical key is ``source_name``.
+
+    A node whose authored ``source.name`` is a configured logical image key in
+    ``GCP_RANGE_IMAGE_KEY_PROFILES_JSON`` (for example ``polaris-vm`` /
+    ``polaris-dc``) realizes that exact profile -- crucially carrying its
+    ``bootstrap_capability`` (e.g. ``polaris-docker-host``,
+    ``prepromoted-domain-controller``), which the base-registry projection never
+    sets. Logical keys are unique across profile classes, so the first match is
+    unambiguous. Returns ``None`` when the source is not a keyed logical image.
+    """
+    if not source_name:
+        return None
+    for entries in config.image_key_profiles.values():
+        profile = entries.get(source_name)
+        if profile is not None:
+            return profile
+    return None
+
+
+def _registry_resolver(
+    operation_input: RaesOperationInput, config: GCERangeCellConfig
+) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
     """Return an image resolver bound to the projected candidates + GCE policy."""
 
     def resolve(node: RaesPlanNode) -> GCERangeImageProfile:
@@ -153,6 +175,13 @@ def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPla
         binding = operation_input.artifact_binding_for(node.address)
         if binding is not None:
             return resolve_gce_image_from_binding(node, binding)
+        # An authored source that names a tenant keyed image profile (capability-
+        # bearing, e.g. polaris-vm/polaris-dc) realizes that profile verbatim so
+        # its bootstrap_capability reaches the provisioner. This is the RAES-path
+        # counterpart of the legacy range-cell ami_key selection.
+        keyed = _keyed_image_profile(config, node.image.name if node.image else None)
+        if keyed is not None:
+            return keyed
         # The lookup key rule is shared with the Engine that scoped the
         # projection; deriving it separately here is what would make an image
         # silently go missing.
@@ -278,7 +307,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             request_id,
             range_id,
             raes_plan,
-            _registry_resolver(operation_input),
+            _registry_resolver(operation_input, config),
             options=RaesGceApplyOptions(
                 config=config,
                 egress_mode=operation_input.egress_mode,

@@ -33,6 +33,11 @@ _OPERATION_ID = "11111111-2222-3333-4444-555555555555"
 _SHA = "a" * 64
 
 
+def _resolver_config(image_key_profiles=None):
+    """A config exposing only image_key_profiles for the registry resolver."""
+    return SimpleNamespace(image_key_profiles=image_key_profiles or {})
+
+
 def _serialized_plan() -> dict:
     return {
         "kind": "raes_provisioning_plan",
@@ -595,7 +600,7 @@ class TestRegistryResolver:
         monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
 
         node = _node(RaesPlanImage(name="ubuntu"))
-        profile = raes_range_ops._registry_resolver(projection)(node)
+        profile = raes_range_ops._registry_resolver(projection, _resolver_config())(node)
 
         resolve.assert_called_once_with(node, candidates)
         assert profile.source_image == "projects/x/global/images/ubuntu-1"
@@ -608,7 +613,7 @@ class TestRegistryResolver:
         monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
 
         node = _node(None)  # os_family linux, no image
-        raes_range_ops._registry_resolver(projection)(node)
+        raes_range_ops._registry_resolver(projection, _resolver_config())(node)
 
         resolve.assert_called_once_with(node, candidates)
 
@@ -618,7 +623,7 @@ class TestRegistryResolver:
         resolve = MagicMock(return_value=GCERangeImageProfile())
         monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
 
-        raes_range_ops._registry_resolver(_projection())(_node(RaesPlanImage(name="nope")))
+        raes_range_ops._registry_resolver(_projection(), _resolver_config())(_node(RaesPlanImage(name="nope")))
 
         resolve.assert_called_once_with(_node(RaesPlanImage(name="nope")), [])
 
@@ -648,11 +653,32 @@ class TestRegistryResolver:
         legacy = MagicMock()
         monkeypatch.setattr(raes_range_ops, "resolve_gce_image", legacy)
 
-        profile = raes_range_ops._registry_resolver(projection)(_node(RaesPlanImage(name="ubuntu")))
+        profile = raes_range_ops._registry_resolver(projection, _resolver_config())(_node(RaesPlanImage(name="ubuntu")))
 
         legacy.assert_not_called()
         assert profile.source_image == "projects/x/global/images/fenced"
         assert profile.machine_type == "e2-medium"
+
+    def test_resolver_selects_a_keyed_capability_bearing_image_profile(self, monkeypatch):
+        # A node whose authored source names a tenant keyed image profile
+        # (e.g. polaris-vm) realizes that profile verbatim -- carrying its
+        # bootstrap_capability -- instead of the base-registry projection, so the
+        # capability reaches the provisioner (the RAES-path counterpart of the
+        # legacy ami_key selection). Bytes never touch the base resolver here.
+        keyed = GCERangeImageProfile(
+            source_image="projects/x/global/images/family/shifter-polaris-vm",
+            machine_type="e2-standard-8",
+            bootstrap_capability="polaris-docker-host",
+        )
+        config = _resolver_config({"kali": {"polaris-vm": keyed}})
+        legacy = MagicMock()
+        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", legacy)
+
+        profile = raes_range_ops._registry_resolver(_projection(), config)(_node(RaesPlanImage(name="polaris-vm")))
+
+        legacy.assert_not_called()
+        assert profile is keyed
+        assert profile.bootstrap_capability == "polaris-docker-host"
 
 
 class TestMultiRegionZonePoolPlacement:

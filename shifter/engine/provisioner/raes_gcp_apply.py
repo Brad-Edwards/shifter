@@ -30,7 +30,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
+from config import (
+    GCE_BOOTSTRAP_POLARIS_HOST,
+    GCE_BOOTSTRAP_PREPROMOTED_DC,
+    GCERangeCellConfig,
+    GCERangeImageProfile,
+    load_gce_range_cell_config,
+)
+from instance_setup import _set_attacker_container_password_after_bootstrap
+from polaris_bootstrap import _run_polaris_range_bootstrap
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
@@ -393,6 +401,48 @@ def _cleanup_failed_apply(
     )
 
 
+def _run_polaris_post_provision(instance_outputs: list[ResourceDict], range_id: int) -> None:
+    """Materialize the polaris compose stack on any polaris-docker-host guest.
+
+    The RAES-path counterpart of the legacy range-cell polaris post-provision
+    (``instance_orchestrator``): the polaris-vm image ships the a0-a16 docker
+    compose stack baked with a bake-time DC IP and a throwaway kali key, so after
+    the guests exist we reuse the reviewed ``PolarisRangeBootstrapPlan`` to
+    rewrite the compose override with THIS range's actual DC IP (statically
+    assigned at plan time) and per-instance participant key, then force-recreate
+    the dns + a14-kali containers and set the per-range attacker password. A
+    polaris-docker-host guest requires its prepromoted-domain-controller peer to
+    supply the DC IP. A no-op for ranges with no polaris host.
+    """
+    hosts = [out for out in instance_outputs if out.get("gcp_bootstrap_capability") == GCE_BOOTSTRAP_POLARIS_HOST]
+    if not hosts:
+        return
+    dc = next(
+        (out for out in instance_outputs if out.get("gcp_bootstrap_capability") == GCE_BOOTSTRAP_PREPROMOTED_DC),
+        None,
+    )
+    if dc is None:
+        raise RaesGcePlanError(
+            "a polaris-docker-host range requires a prepromoted-domain-controller instance to supply the DC IP"
+        )
+    dc_ip = str(dc.get("private_ip") or "")
+    for host in hosts:
+        instance_id = str(host["instance_id"])
+        _run_polaris_range_bootstrap(
+            instance_data=host,
+            instance_id=instance_id,
+            dc_ip=dc_ip,
+            public_key=str(host.get("public_key") or ""),
+            range_id=range_id,
+        )
+        _set_attacker_container_password_after_bootstrap(
+            instance_data=host,
+            instance_id=instance_id,
+            container_name="a14-kali",
+            ssh_user="kali",
+        )
+
+
 def apply_raes_range_cell(
     request_uuid: str,
     range_id: int,
@@ -448,6 +498,10 @@ def apply_raes_range_cell(
             _accounts_by_node(raes_plan),
             _access_by_node(realized_access),
         )
+        # Per-scenario post-provision: a polaris-docker-host guest needs its baked
+        # compose stack rewired to this range's DC IP + participant key before the
+        # composition is verified. No-op for standard ranges.
+        _run_polaris_post_provision(instance_outputs, range_id)
         verified = set(_realize_directory(plan, raes_plan, instance_outputs, runtime))
         verified.update(_realize_content_delivery(raes_plan, instance_outputs, delivery_bindings, runtime))
         verified.update(runtime.composition_verifier(raes_plan, instance_outputs))
