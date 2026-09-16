@@ -209,8 +209,11 @@ def _validated_runtime_env(outputs: Mapping[str, object]) -> dict[str, str]:
 
 def _rendered_env_values(rendered: str) -> dict[str, str]:
     """Parse newline-delimited key-value output from a trusted renderer."""
-    pairs = (line.split("=", 1) for line in rendered.splitlines())
-    return {key: value for key, value in pairs}  # noqa: C416 - Sonar S7496 requires comprehension form
+    values = {}
+    for line in rendered.splitlines():
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
 
 
 def _aws_account_id(outputs: Mapping[str, object]) -> str:
