@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-concept="a" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Shifter — three identity studies</title>
+  <link rel="icon" href="marks.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="studies.css">
+  <script src="studies.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#workspace">Skip to workspace</a>
+  <header class="review-bar">
+    <span class="review-label">SHIFTER <span>/ IDENTITY STUDIES</span></span>
+    <nav aria-label="Design direction" class="directions">
+      <a href="?concept=a" data-direction="a">A <span>Vector</span></a>
+      <a href="?concept=b" data-direction="b">B <span>Clarity</span></a>
+      <a href="?concept=c" data-direction="c">C <span>Meridian</span></a>
+    </nav>
+    <span class="fiction">Interactive fake · fictional data</span>
+    <button id="theme-toggle" class="review-button" type="button">Light mode</button>
+  </header>
+  <div id="app"></div>
+  <dialog id="demo-dialog" aria-labelledby="dialog-title">
+    <form method="dialog"><button class="close" aria-label="Close dialog">×</button></form>
+    <p class="eyebrow">LOCAL DEMONSTRATION</p>
+    <h2 id="dialog-title">Preview</h2>
+    <div id="dialog-body"></div>
+    <form method="dialog"><button class="primary">Return to workspace</button></form>
+  </dialog>
+  <div id="announcement" class="sr-only" role="status"></div>
+  <noscript>Enable JavaScript to explore the three local design studies.</noscript>
+</body>
+</html>
