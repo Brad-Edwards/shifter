@@ -27,7 +27,12 @@ KALI_UID = _KALI_ACCOUNT.pw_uid if _KALI_ACCOUNT else os.getuid()
 KALI_GID = _KALI_ACCOUNT.pw_gid if _KALI_ACCOUNT else os.getgid()
 CONTAINER_HELPER = "/usr/local/libexec/polaris-splice-credential.py"
 HOST_HELPER = "/opt/polaris/libexec/polaris-splice-credential.py"
-ORIGINAL_ENTRYPOINT = "/entrypoint.sh"
+# Path the authoritative polaris a14-kali image installs its entrypoint at
+# (scenarios repo: `COPY a14/entrypoint.sh /usr/local/bin/entrypoint.sh`). The
+# compose override replaces the image entrypoint with this helper, so after
+# repair() we must hand off to the a14 image's real entrypoint here; an execv of
+# a nonexistent path kills PID 1 and crash-loops the container.
+ORIGINAL_ENTRYPOINT = "/usr/local/bin/entrypoint.sh"
 _CONTAINER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _HELPER_STAGING_FAILED = "helper staging failed"
 _MANAGED_STANZA = """Host splice-relay

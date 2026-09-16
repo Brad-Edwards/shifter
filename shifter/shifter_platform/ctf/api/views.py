@@ -69,7 +69,17 @@ class PublicScoreboardView(APIView):
             return _canonical_error_response(request, response) or response
 
         if not _scoreboard_access_allowed(event, request):
-            return JsonResponse({"scoreboard_hidden": True})
+            return JsonResponse(
+                {
+                    "scoreboard_hidden": True,
+                    "event_id": str(event.id),
+                    "team_mode": event.team_mode,
+                    "frozen": event.is_scoreboard_frozen,
+                    "rankings": [],
+                    "bracket_rankings": None,
+                    "brackets": [],
+                }
+            )
 
         freeze_at = event.scoreboard_freeze_at if event.is_scoreboard_frozen else None
         bracket_param = request.query_params.get("bracket")
@@ -89,6 +99,7 @@ class PublicScoreboardView(APIView):
 
         return JsonResponse(
             {
+                "scoreboard_hidden": False,
                 "event_id": str(event.id),
                 "team_mode": event.team_mode,
                 "frozen": event.is_scoreboard_frozen,

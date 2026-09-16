@@ -19,6 +19,7 @@ from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.audit import get_actor_from_request, get_client_ip, get_request_id
 from workspaces import services
 from workspaces.api.permissions import WORKSPACE_MEMBERSHIP_PERMISSIONS
+from workspaces.api.schema import SESSION_ONLY_SCHEMA_AUTH
 from workspaces.api.serializers import (
     AddWorkspaceMemberSerializer,
     ChangeWorkspaceMemberRoleSerializer,
@@ -184,6 +185,7 @@ class PrincipalWorkspaceContextView(ListAPIView):
     @extend_schema(
         responses={200: PrincipalWorkspaceContextSerializer(many=True), 403: ApiErrorSerializer},
         operation_id="api_v1_workspaces_principal_context",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
@@ -360,6 +362,7 @@ class OrganizationListView(ListAPIView):
     @extend_schema(
         responses={200: OrganizationProfileSerializer(many=True), 403: ApiErrorSerializer},
         operation_id="api_v1_organizations_administrable_list",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
@@ -396,6 +399,7 @@ class OrganizationProfileView(APIView):
     @extend_schema(
         responses={200: OrganizationProfileSerializer, 403: ApiErrorSerializer},
         operation_id="api_v1_organization_retrieve",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request, organization_uuid: UUID) -> Response:
         try:
@@ -408,6 +412,7 @@ class OrganizationProfileView(APIView):
         request=OrganizationProfileUpdateSerializer,
         responses={200: OrganizationProfileSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer},
         operation_id="api_v1_organization_update",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def patch(self, request: Request, organization_uuid: UUID) -> Response:
         command = OrganizationProfileUpdateSerializer(data=request.data)

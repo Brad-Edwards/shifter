@@ -4134,7 +4134,7 @@ export interface components {
          * @description Organizer monitoring scoreboard — always the full ranking payload.
          *
          *     Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
-         *     carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+         *     carries the ``scoreboard_hidden`` state and never withholds rows: an
          *     organizer sees every ranking regardless of the event's ``scoreboard_visible``
          *     flag or freeze window. ``frozen`` is reported for display only; the rankings
          *     are computed as of now (``freeze_at=None``).
@@ -4691,15 +4691,7 @@ export interface components {
             readonly requests: components["schemas"]["PublicRegistrationRequest"][];
             readonly total: number;
         };
-        /**
-         * @description Public scoreboard read surface.
-         *
-         *     The runtime returns one of two shapes: the ``{"scoreboard_hidden": true}``
-         *     sentinel when the event hides its scoreboard, or the full ranking payload
-         *     (``event_id``, ``team_mode``, ``frozen``, ``rankings``, ``bracket_rankings``,
-         *     ``brackets``). Every field is optional so this one serializer documents the
-         *     union without changing the view's runtime ``JsonResponse``.
-         */
+        /** @description Stable public scoreboard response for both visible and hidden boards. */
         PublicScoreboardResponse: {
             readonly scoreboard_hidden: boolean;
             readonly event_id: string;
@@ -12555,6 +12547,15 @@ export interface operations {
                     "application/json": components["schemas"]["LaunchRangeResponse"];
                 };
             };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -12564,8 +12565,17 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Permission denied. */
+            /** @description Workspace or range launch access denied. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Launch conflict, including workspace_range_quota_exceeded. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
