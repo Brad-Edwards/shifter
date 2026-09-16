@@ -1014,6 +1014,25 @@ class TestGcpPolarisVerifyStackBehavior:
         assert "iptables -I DOCKER-USER 1 -d 169.254.169.254/32 -j DROP" in commands
         assert commands.index("iptables -I OUTPUT") < commands.index("docker compose up -d")
 
+    def test_supplies_bake_time_dc01_ip_so_dns_starts(self, tmp_path):
+        import hashlib
+
+        # The dns service's entrypoint exits non-zero without DC01_IP (a per-range
+        # value only known at deploy time), which crash-loops dns and cascades to
+        # a14-kali (which uses dns as its resolver). verify-stack must supply a
+        # throwaway bake-time DC01_IP in the splice-credential override layer so
+        # the full stack can reach running for capture.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        override = (tmp_path / "polaris" / "build" / "docker-compose.splice-credential.yml").read_text()
+        assert "dns:" in override
+        assert "DC01_IP:" in override
+
     @pytest.mark.parametrize(
         "config_json,error",
         [
