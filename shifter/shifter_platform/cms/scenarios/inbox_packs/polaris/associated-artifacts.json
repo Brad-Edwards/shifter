@@ -1,0 +1,81 @@
+{
+  "schema_version": "associated-artifact-manifest/v1",
+  "manifest_id": "polaris-associated-artifacts",
+  "manifest_version": "0.1.0",
+  "canonicalization_profile": "associated-artifact-set/v1",
+  "scope": "scenario",
+  "parent_ref": {
+    "ref_kind": "scenario",
+    "ref_id": "polaris",
+    "ref_version": null,
+    "ref_digest": null,
+    "ref_path": null
+  },
+  "artifacts": {
+    "artifact-0": {
+      "artifact_id": "artifact-0",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/docs/concepts.md",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "fa51a94a49fced269f000bd42dab67abf73fd55bd5afa5fdcccabaad38c4022c"
+      },
+      "size_bytes": 929,
+      "created_at": "2026-09-16T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-1": {
+      "artifact_id": "artifact-1",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/docs/provenance-ledger.yaml",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "fb3b0b968805d3d8a7158f1e0acc7fd50683ad635ad43e5a576e632988e04431"
+      },
+      "size_bytes": 824,
+      "created_at": "2026-09-16T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-2": {
+      "artifact_id": "artifact-2",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/pack.yaml",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "06fc5c9e753830c2ff99555a2b312a6223ec713432df7ca3bf661eb5d08bd7c9"
+      },
+      "size_bytes": 679,
+      "created_at": "2026-09-16T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-3": {
+      "artifact_id": "artifact-3",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/sdl/polaris.sdl.yaml",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "7b6be5a13b40684f02c30ef86a6e69ba92e0872d5d7c196571052c6514ec2dbd"
+      },
+      "size_bytes": 2323,
+      "created_at": "2026-09-16T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    }
+  },
+  "set_digest": "sha256:ce70124267a781edf2da9f9d3af94ad0f05f4c26f88415e0fb1a950c015849f6"
+}
