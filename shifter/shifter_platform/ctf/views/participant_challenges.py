@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
@@ -155,6 +156,32 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         .order_by("name")
     )
 
+    # Precompute the filter-link relative URLs server-side so the template renders
+    # a single short <a href> per tag/topic (no long inline query-building lines,
+    # and no duplicate mutually-exclusive link branches).
+    def _filter_query(*pairs: tuple[str, Any]) -> str:
+        present = [(key, value) for key, value in pairs if value]
+        return "?" + urlencode(present) if present else ""
+
+    tags_all_url = _filter_query(("category", category_filter))
+    tag_filters = [
+        {
+            "name": tag.name,
+            "url": _filter_query(("tag", tag.name), ("category", category_filter)),
+            "active": tag_filter == tag.name,
+        }
+        for tag in event_tags
+    ]
+    topics_all_url = _filter_query(("category", category_filter), ("tag", tag_filter))
+    topic_filters = [
+        {
+            "name": topic.name,
+            "url": _filter_query(("topic", topic.name), ("category", category_filter), ("tag", tag_filter)),
+            "active": topic_filter == topic.name,
+        }
+        for topic in event_topics
+    ]
+
     context = {
         "participant": participant,
         "event": event,
@@ -166,6 +193,10 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         "categories": categories,
         "event_tags": event_tags,
         "event_topics": event_topics,
+        "tags_all_url": tags_all_url,
+        "tag_filters": tag_filters,
+        "topics_all_url": topics_all_url,
+        "topic_filters": topic_filters,
         "solved_ids": solved_ids,
         "locked_ids": locked_ids,
     }
