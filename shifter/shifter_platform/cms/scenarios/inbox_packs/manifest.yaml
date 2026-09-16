@@ -33,6 +33,6 @@ packs:
     contract_profile: shifter
     package_ref: cms/scenarios/inbox_packs/polaris
     package_version: "0.1.0"
-    package_digest: sha256:ce70124267a781edf2da9f9d3af94ad0f05f4c26f88415e0fb1a950c015849f6
+    package_digest: sha256:66d61d2ab63c73ec4c01ac3705a08ab9168f2b6d2d74c0106af48720ef80710f
     provenance:
       repo: Brad-Edwards/shifter

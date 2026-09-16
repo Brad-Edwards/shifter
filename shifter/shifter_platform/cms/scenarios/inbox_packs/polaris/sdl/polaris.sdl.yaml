@@ -63,16 +63,12 @@ accounts:
 agents:
   participant:
     entity: participant
-    description: Participant with SSH + RDP access to the Kali docker-host
+    description: Participant with SSH access to the Kali docker-host
     starting_accounts: [kali_login]
     interactive_access:
       kali_ssh:
         target_ref: a14-kali
         channel: ssh
-        account_ref: kali_login
-      kali_rdp:
-        target_ref: a14-kali
-        channel: rdp
         account_ref: kali_login
 
 realization:
