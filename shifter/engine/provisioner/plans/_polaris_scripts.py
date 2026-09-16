@@ -26,7 +26,23 @@ if [[ -z "$KALI_PUBKEY" ]]; then
   exit 1
 fi
 {{ aws_agent_setup_block }}
-cd /opt/polaris/scenario-dev/polaris/build
+# Resolve the compose stack directory the same way the bake does
+# (packer/gcp/scripts/polaris/verify-stack.sh): the stack tarball extracts under
+# .../build either flat (docker-compose.yml at the root) or in the canonical
+# build-v1 layout that keeps the polaris/build/ prefix. The runtime bootstrap
+# must cd to whichever the image actually shipped, or `docker compose` runs with
+# no compose file ("no configuration file provided: not found"). The compose
+# project name is the basename "build" in both layouts, so the baked containers
+# resolve identically.
+POLARIS_COMPOSE_BASE=/opt/polaris/scenario-dev/polaris/build
+if [[ -f "$POLARIS_COMPOSE_BASE/docker-compose.yml" ]]; then
+  cd "$POLARIS_COMPOSE_BASE"
+elif [[ -f "$POLARIS_COMPOSE_BASE/polaris/build/docker-compose.yml" ]]; then
+  cd "$POLARIS_COMPOSE_BASE/polaris/build"
+else
+  echo "polaris bootstrap: no docker-compose.yml at $POLARIS_COMPOSE_BASE or $POLARIS_COMPOSE_BASE/polaris/build" >&2
+  exit 1
+fi
 
 # Install the exact reviewed helper carried by the provisioner image. The
 # Compose override mounts it read-only into a14-kali and makes it the entrypoint
