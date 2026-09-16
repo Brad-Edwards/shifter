@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess  # nosec B404 - local dev provisioner only  # NOSONAR
+from uuid import UUID
 
 from django.conf import settings
 
@@ -18,7 +19,7 @@ from django.conf import settings
 logger = logging.getLogger("engine.ecs")
 
 
-def drain_local_intent(intent_id):
+def drain_local_intent(intent_id: UUID) -> None:
     """Wake the canonical launcher for exactly one committed local intent."""
     from engine.management.commands.drain_provisioner_launch_outbox import Command
 

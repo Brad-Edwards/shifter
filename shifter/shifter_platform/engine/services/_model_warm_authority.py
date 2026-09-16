@@ -1,5 +1,9 @@
 """Warm-ledger authority for model preparation and atomic claim revocation."""
 
+from __future__ import annotations
+
+from uuid import UUID
+
 from django.db import connection
 from django.utils import timezone
 
@@ -9,11 +13,12 @@ from shared.model_access.authority_port import invalidate_authority
 from shared.model_access.reservation import ModelWarmScope
 
 
-def _reference(generation_id):
+def _reference(generation_id: UUID) -> OwnedReference:
+    """Build the stable Engine authority identity for one generation."""
     return OwnedReference(owner="engine", reference=f"warm-generation:{generation_id}")
 
 
-def project_warm_scope(request_id, *, deployment_id):
+def project_warm_scope(request_id: UUID, *, deployment_id: UUID) -> ModelWarmScope | None:
     """Prove one unclaimed, unexpired ledger row while its caller holds the transaction.
 
     The owner takes the generation mutex before Range and authority fences. The
@@ -34,6 +39,7 @@ def project_warm_scope(request_id, *, deployment_id):
     if len(rows) != 1:
         return None
     row = rows[0]
+    assert row.idle_deadline is not None
     realized = Range.objects.select_for_update().filter(request__request_id=request_id).first()
     if realized is None or (row.range_id is not None and row.range_id != realized.pk):
         raise ContractError("allocation.generation_mismatch")
@@ -48,7 +54,7 @@ def project_warm_scope(request_id, *, deployment_id):
     )
 
 
-def invalidate_warm_preparation(instance):
+def invalidate_warm_preparation(instance: WarmRangeGeneration) -> None:
     """Fence preparation on claim/retirement or changes to captured ledger facts."""
     # Keep the same Range -> authority order as allocation, including when claim
     # invalidation runs before ownership transfer takes the Range mutex itself.

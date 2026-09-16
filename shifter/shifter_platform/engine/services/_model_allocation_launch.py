@@ -1,18 +1,32 @@
 """Join CMS's trusted model inputs to the incumbent atomic launch outbox."""
 
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from typing import Any
 from uuid import UUID
 
 from django.db import connection, transaction
 
 from engine.models import ModelAllocation, ModelLaunchPreparationRecord, ModelOptionalAbsence, ModelQuotaReading, Range
-from shared.model_access import ContractError, compute_digest, validate_catalog
-from shared.model_access.reservation import ModelAllocationRequest, ModelLaunchPreparation, ModelQuotaObservation
+from shared.model_access import ContractError, ModelAccessCatalog, OwnedReference, compute_digest, validate_catalog
+from shared.model_access.reservation import (
+    AuthorityRevision,
+    ModelAllocationRequest,
+    ModelLaunchPreparation,
+    ModelLaunchScope,
+    ModelQuotaObservation,
+)
 
 from ._model_allocation import _validated, allocate_model_access
 from ._model_allocation_lifecycle import revoke_model_generation
 
+_INTENT_CONFLICT = "allocation.intent_conflict"
 
-def project_model_launch_authority(*, deployment_id, authority_refs):
+
+def project_model_launch_authority(
+    *, deployment_id: UUID, authority_refs: tuple[OwnedReference, ...]
+) -> tuple[AuthorityRevision, ...]:
     """Project facts freshly checked under owning-service locks by the caller.
 
     An internal downward bridge, like project_selector_resolution; never exposed
@@ -30,7 +44,10 @@ def project_model_launch_authority(*, deployment_id, authority_refs):
         )
 
 
-def record_model_observations(catalog, observer):
+def record_model_observations(
+    catalog: ModelAccessCatalog,
+    observer: Callable[[ModelAccessCatalog], Iterable[ModelQuotaObservation]],
+) -> int:
     """Collect provider readings outside *every* enclosing transaction, then store.
 
     The observer is a qualified adapter supplied by the caller. An absent or
@@ -64,7 +81,16 @@ def record_model_observations(catalog, observer):
     return len(readings)
 
 
-def prepare_model_launch(*, request_id, owner_ref, needs, scope, authority_revisions, catalog, replace_revoked=False):
+def prepare_model_launch(
+    *,
+    request_id: UUID,
+    owner_ref: OwnedReference,
+    needs: tuple[Any, ...],
+    scope: ModelLaunchScope,
+    authority_revisions: tuple[AuthorityRevision, ...],
+    catalog: ModelAccessCatalog,
+    replace_revoked: bool = False,
+) -> ModelLaunchPreparationRecord:
     """Store reviewed downward inputs; this is not a grant or allocation."""
     intent = _validated(
         ModelLaunchPreparation,
@@ -93,7 +119,7 @@ def prepare_model_launch(*, request_id, owner_ref, needs, scope, authority_revis
                 not replace_revoked
                 or ModelAllocation.objects.filter(request_id=request_id, grant__state="pending").exists()
             ):
-                raise ContractError("allocation.intent_conflict")
+                raise ContractError(_INTENT_CONFLICT)
             row.intent_digest = digest
             row.intent = intent.model_dump(mode="json")
             row.catalog = catalog.model_dump(mode="json")
@@ -101,7 +127,7 @@ def prepare_model_launch(*, request_id, owner_ref, needs, scope, authority_revis
     return row
 
 
-def disable_optional_model_preparation(*, request_id, owner_ref, needs):
+def disable_optional_model_preparation(*, request_id: UUID, owner_ref: OwnedReference, needs: tuple[Any, ...]) -> None:
     """Persist a replay-stable optional denial without fabricating policy scope."""
     intent = _validated(
         ModelLaunchPreparation,
@@ -129,27 +155,33 @@ def disable_optional_model_preparation(*, request_id, owner_ref, needs):
         record.save(update_fields=["intent", "intent_digest", "catalog", "updated_at"])
 
 
-def _record_absence(key, digest, reason):
+def _record_absence(key: dict[str, Any], digest: str, reason: str) -> None:
+    """Persist one replay-stable optional absence decision."""
     row, created = ModelOptionalAbsence.objects.get_or_create(
         **key, defaults={"intent_digest": digest, "reason": reason}
     )
     if not created and (row.intent_digest != digest or row.reason != reason):
-        raise ContractError("allocation.intent_conflict")
+        raise ContractError(_INTENT_CONFLICT)
 
 
-def allocate_launch_models(payload, operation_id):
-    """Called inside enqueue_provisioner_launch, before input and intent commit."""
+def _model_launch_request_id(payload: dict[str, Any]) -> UUID | None:
+    """Return a request identity only for model-aware launch resources."""
     if payload.get("resource") not in {"range", "raes-range"} or "request_id" not in payload:
-        return ()
-    request_id = UUID(str(payload["request_id"]))
+        return None
+    return UUID(str(payload["request_id"]))
+
+
+def _load_launch_preparation(
+    request_id: UUID, operation: str, operation_id: UUID
+) -> tuple[Range, ModelLaunchPreparationRecord, ModelLaunchPreparation] | None:
+    """Apply non-allocation operations and load one usable preparation."""
     range_obj = Range.objects.select_for_update().get(request__request_id=request_id)
-    operation = payload["operation"]
     if operation in {"pause", "destroy"}:
         revoke_model_generation(range_obj.uuid)
-        return ()
+        return None
     prepared = ModelLaunchPreparationRecord.objects.filter(request_id=request_id).first()
     if prepared is None:
-        return ()
+        return None
     intent = _validated(ModelLaunchPreparation, prepared.intent)
     if intent.unavailable_reason:
         for need in intent.needs:
@@ -158,7 +190,20 @@ def allocate_launch_models(payload, operation_id):
                 compute_digest({"preparation": prepared.intent_digest, "operation_id": str(operation_id)}),
                 intent.unavailable_reason,
             )
+        return None
+    return range_obj, prepared, intent
+
+
+def allocate_launch_models(payload: dict[str, Any], operation_id: UUID) -> tuple[ModelAllocation, ...]:
+    """Called inside enqueue_provisioner_launch, before input and intent commit."""
+    request_id = _model_launch_request_id(payload)
+    if request_id is None:
         return ()
+    operation = str(payload["operation"])
+    prepared_launch = _load_launch_preparation(request_id, operation, operation_id)
+    if prepared_launch is None:
+        return ()
+    range_obj, prepared, intent = prepared_launch
     if intent.scope is None or prepared.catalog is None:
         raise ContractError("allocation.invalid_input")
     catalog = validate_catalog(prepared.catalog)
@@ -195,7 +240,11 @@ def allocate_launch_models(payload, operation_id):
     return tuple(allocated)
 
 
-def _allocate_workload(request, catalog, observations):
+def _allocate_workload(
+    request: ModelAllocationRequest,
+    catalog: ModelAccessCatalog,
+    observations: tuple[Any, ...],
+) -> ModelAllocation | None:
     """Record optional absence atomically, so a retry cannot turn it into access."""
     key = {
         "request_id": request.request_id,
@@ -206,7 +255,7 @@ def _allocate_workload(request, catalog, observations):
     absence = ModelOptionalAbsence.objects.filter(**key).first()
     if absence is not None:
         if absence.intent_digest != digest:
-            raise ContractError("allocation.intent_conflict")
+            raise ContractError(_INTENT_CONFLICT)
         return None
     try:
         return allocate_model_access(request, catalog=catalog, observations=observations, retire_previous=True)

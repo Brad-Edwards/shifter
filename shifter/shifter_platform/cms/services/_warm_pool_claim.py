@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.contrib.auth.models import User
@@ -257,7 +257,11 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     return outcome.request_id
 
 
-def _admit_claim_models(request, generation, instance) -> bool:
+def _admit_claim_models(
+    request: WarmClaimRequest,
+    generation: Any,
+    instance: RangeInstance,
+) -> bool:
     """Commit model grant/allocation and activation with the claim, or roll it all back."""
     from cms.services._model_allocation import needs_model_preparation, prepare_model_access_for_dispatch
     from engine.services import enqueue_range_activation, resolve_model_access_range_views

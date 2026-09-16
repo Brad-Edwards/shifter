@@ -25,7 +25,7 @@ if TYPE_CHECKING:
         ModelAccessRangeView,
         OwnedReference,
     )
-    from shared.model_access.reservation import ModelLaunchScope
+    from shared.model_access.reservation import AuthorityRevision, ModelLaunchScope
     from shared.receipt_validation import ReceiptVerifierBinding
     from shared.remote_access import OpenVpnProfile
 
@@ -151,7 +151,9 @@ def cms_release_range_capacity(draw_key: UUID) -> int:
     return cms_services.engine_release_range_capacity(draw_key)
 
 
-def cms_project_model_launch_authority(*, deployment_id, authority_refs):
+def cms_project_model_launch_authority(
+    *, deployment_id: UUID, authority_refs: tuple[OwnedReference, ...]
+) -> tuple[AuthorityRevision, ...]:
     """Publish CTF facts checked under owner locks through the CMS/Engine bridge."""
     from cms.services import engine_project_model_launch_authority
 

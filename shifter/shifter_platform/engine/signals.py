@@ -94,14 +94,16 @@ _WARM_FIELDS = (
 
 
 @receiver(pre_save, sender=WarmRangeGeneration, dispatch_uid="engine.model_access.warm.capture")
-def capture_warm_authority(sender, instance, **kwargs):
+def capture_warm_authority(sender: type[WarmRangeGeneration], instance: WarmRangeGeneration, **kwargs: object) -> None:
     """Capture the ledger facts from which preparation authority is derived."""
     previous = None if instance._state.adding else sender.objects.filter(pk=instance.pk).values(*_WARM_FIELDS).first()
-    instance._model_access_warm_before = previous
+    instance.__dict__["_model_access_warm_before"] = previous
 
 
 @receiver(post_save, sender=WarmRangeGeneration, dispatch_uid="engine.model_access.warm.invalidate")
-def invalidate_warm_authority(sender, instance, **kwargs):
+def invalidate_warm_authority(
+    sender: type[WarmRangeGeneration], instance: WarmRangeGeneration, **kwargs: object
+) -> None:
     """A normal preparation-to-ready transition retains the same authority."""
     previous = getattr(instance, "_model_access_warm_before", None)
     if previous is None:
@@ -116,7 +118,9 @@ def invalidate_warm_authority(sender, instance, **kwargs):
 
 
 @receiver(pre_delete, sender=WarmRangeGeneration, dispatch_uid="engine.model_access.warm.delete")
-def invalidate_deleted_warm_authority(sender, instance, **kwargs):
+def invalidate_deleted_warm_authority(
+    sender: type[WarmRangeGeneration], instance: WarmRangeGeneration, **kwargs: object
+) -> None:
     """Removing the ledger never leaves preparation authority behind."""
     from engine.services._model_warm_authority import invalidate_warm_preparation
 

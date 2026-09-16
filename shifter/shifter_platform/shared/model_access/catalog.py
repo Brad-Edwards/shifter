@@ -17,7 +17,7 @@ _ROOT_PATH = "<root>"
 _VALIDATION_ERROR = "contract.validation"
 
 
-def _catalog_model(version: object):
+def _catalog_model(version: object) -> type[ModelAccessCatalog]:
     """Select a closed versioned schema, never interpret unknown versions as v1."""
     if version == "model-access-policy/v1":
         return ModelAccessCatalog

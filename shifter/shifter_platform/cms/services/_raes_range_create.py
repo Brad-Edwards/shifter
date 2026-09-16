@@ -185,7 +185,7 @@ def create_raes_native_range(
     )
 
 
-def _create_raes_native_range_impl(
+def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch service boundary.
     user: User,
     scenario: str,
     *,
@@ -340,7 +340,7 @@ def _create_raes_native_range_impl(
     return _build_raes_range_context(request_id, scenario, user)
 
 
-def create_range_dispatch(
+def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained for existing callers.
     user: User,
     scenario: str,
     ngfw_enabled: bool = False,

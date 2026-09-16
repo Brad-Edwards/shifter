@@ -5,7 +5,13 @@ projections, complete ordered owner fences, affinity groups, real quotas.
 Publication takes the fence exclusively; concurrent allocations share it.
 """
 
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
 from django.db import connection
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from engine.models import (
@@ -20,13 +26,44 @@ from shared.model_access.core_models import AssignmentAffinity, MembershipMode
 from ._sharing_persistence import SharingError, _require_publisher_authority, _require_spending_eligibility
 from ._sharing_resolution import _pinned_pool, _pinned_profile
 
+_AUTHORITY_UNAVAILABLE = "allocation.authority_unavailable"
 
-def list_model_launch_refreshes(deployment_id):
-    """Return stale definitions without mutating or resolving upstream authority."""
-    from shared.model_access import AuthorityState, OwnedReference
+
+def _projection_is_fresh(deployment_id: UUID, projection: MembershipProjection | None) -> bool:
+    """Verify current membership and every captured owner authority."""
+    from shared.model_access import AuthorityState
 
     from ._sharing_persistence import _fence_matches
 
+    if projection is None or not projection.is_fresh():
+        return False
+    if not _fence_matches(
+        deployment_id=deployment_id,
+        authority_ref=OwnedReference(owner="engine", reference=f"membership:{projection.pk}"),
+        revision=projection.membership_revision,
+        state=AuthorityState.ALLOWED,
+    ):
+        return False
+    authorities = (
+        projection.selector_authorities
+        + projection.subject_authorizations
+        + projection.publisher_authorities
+        + projection.spending_eligibilities
+    )
+    return all(
+        item["state"] == "allowed"
+        and _fence_matches(
+            deployment_id=deployment_id,
+            authority_ref=OwnedReference.model_validate(item["authority_ref"]),
+            revision=item.get("authority_revision", item.get("eligibility_revision")),
+            state=AuthorityState.ALLOWED,
+        )
+        for item in authorities
+    )
+
+
+def list_model_launch_refreshes(deployment_id: UUID) -> tuple[SharingBinding, ...]:
+    """Return stale definitions without mutating or resolving upstream authority."""
     result = []
     for record in SharingBindingRecord.objects.filter(deployment_id=deployment_id, state="active").order_by(
         "sharing_binding_id"
@@ -37,47 +74,21 @@ def list_model_launch_refreshes(deployment_id):
             sharing_binding_id=record.sharing_binding_id,
             selector_digest=revision.selector_digest,
         ).first()
-        fresh = projection is not None and projection.is_fresh()
-        if fresh:
-            fresh = _fence_matches(
-                deployment_id=deployment_id,
-                authority_ref=OwnedReference(owner="engine", reference=f"membership:{projection.pk}"),
-                revision=projection.membership_revision,
-                state=AuthorityState.ALLOWED,
-            )
-        if fresh:
-            for item in (
-                projection.selector_authorities
-                + projection.subject_authorizations
-                + projection.publisher_authorities
-                + projection.spending_eligibilities
-            ):
-                if (
-                    not _fence_matches(
-                        deployment_id=deployment_id,
-                        authority_ref=OwnedReference.model_validate(item["authority_ref"]),
-                        revision=item.get("authority_revision", item.get("eligibility_revision")),
-                        state=AuthorityState.ALLOWED,
-                    )
-                    or item["state"] != "allowed"
-                ):
-                    fresh = False
-                    break
-        if not fresh:
+        if not _projection_is_fresh(deployment_id, projection):
             result.append(SharingBinding.model_validate(revision.definition))
     return tuple(result)
 
 
-def _shared_rows(queryset):
+def _shared_rows(queryset: QuerySet[Any]) -> list[Any]:
     """Hold read locks until commit; independent admissions do not exclude each other."""
     if connection.vendor == "postgresql":
         sql, params = queryset.values_list("pk", flat=True).query.sql_with_params()
         with connection.cursor() as cursor:
-            cursor.execute(sql + " FOR SHARE", params)
+            cursor.execute(sql + " FOR SHARE", params)  # NOSONAR -- SQL and params come from Django's ORM compiler.
     return list(queryset)
 
 
-def lock_policy_publication(deployment_id, *, writing=False):
+def lock_policy_publication(deployment_id: UUID, *, writing: bool = False) -> SharingAuthorityFence:
     """Fence phantom binding publication without serializing independent readers."""
     row, _ = SharingAuthorityFence.objects.get_or_create(
         deployment_id=deployment_id,
@@ -99,7 +110,7 @@ def lock_policy_publication(deployment_id, *, writing=False):
     return row
 
 
-def _projections(deployment_id):
+def _projections(deployment_id: UUID) -> list[tuple[Any, Any, MembershipProjection]]:
     """Read live binding revisions with the publication-compatible lock order."""
     records = list(
         SharingBindingRecord.objects.filter(
@@ -120,45 +131,52 @@ def _projections(deployment_id):
         projection = projections[0] if projections else None
         if projection is None or not projection.is_fresh():
             # Without complete current evidence absence cannot prove exclusion.
-            raise ContractError("allocation.authority_unavailable")
+            raise ContractError(_AUTHORITY_UNAVAILABLE)
         result.append((record, revision, projection))
     return result
 
 
-def _expected_fences(request, rows):
-    expected = {}
-    for item in request.authority_revisions:
-        ref = item.authority_ref
-        expected[(ref.owner, ref.reference)] = item.authority_revision
+def _add_projection_fences(
+    expected: dict[tuple[str, str], int], request: Any, revision: Any, projection: MembershipProjection
+) -> None:
+    """Add one projection's applicable owner fences without revision conflicts."""
+    expected[("engine", f"membership:{projection.pk}")] = projection.membership_revision
+    subject = request.subject_ref.model_dump(mode="json")
+    values_to_check = [projection.selector_authorities]
+    members = revision.frozen_members if revision.membership_mode == "snapshot" else projection.member_refs
+    if subject in members:
+        values_to_check.extend(
+            [
+                [item for item in projection.subject_authorizations if item["subject_ref"] == subject],
+                projection.publisher_authorities,
+                projection.spending_eligibilities,
+            ]
+        )
+    for item in (item for values in values_to_check for item in values):
+        ref = item["authority_ref"]
+        key = ref["owner"], ref["reference"]
+        authority_revision = item.get("authority_revision", item.get("eligibility_revision"))
+        if item["state"] != "allowed" or (key in expected and expected[key] != authority_revision):
+            raise ContractError(_AUTHORITY_UNAVAILABLE)
+        expected[key] = authority_revision
+
+
+def _expected_fences(request: Any, rows: list[tuple[Any, Any, MembershipProjection]]) -> dict[tuple[str, str], int]:
+    """Collect the exact owner revisions required by this decision."""
+    expected = {
+        (item.authority_ref.owner, item.authority_ref.reference): item.authority_revision
+        for item in request.authority_revisions
+    }
     for _, revision, projection in rows:
-        expected[("engine", f"membership:{projection.pk}")] = projection.membership_revision
-        subject = request.subject_ref.model_dump(mode="json")
-        values_to_check = [projection.selector_authorities]
-        members = revision.frozen_members if revision.membership_mode == "snapshot" else projection.member_refs
-        if subject in members:
-            values_to_check.extend(
-                [
-                    [item for item in projection.subject_authorizations if item["subject_ref"] == subject],
-                    projection.publisher_authorities,
-                    projection.spending_eligibilities,
-                ]
-            )
-        for values in values_to_check:
-            for item in values:
-                ref = item["authority_ref"]
-                key = ref["owner"], ref["reference"]
-                revision = item.get("authority_revision", item.get("eligibility_revision"))
-                if item["state"] != "allowed" or (key in expected and expected[key] != revision):
-                    raise ContractError("allocation.authority_unavailable")
-                expected[key] = revision
+        _add_projection_fences(expected, request, revision, projection)
     return expected
 
 
-def locked_policy(request, catalog):
-    """Prove membership or nonmembership, then call the one pure compiler."""
-    publication = lock_policy_publication(request.deployment_id)
-    rows = _projections(request.deployment_id)
-    fences = [publication]
+def _lock_expected_fences(
+    request: Any, rows: list[tuple[Any, Any, MembershipProjection]]
+) -> list[SharingAuthorityFence]:
+    """Share-lock the complete revision vector in canonical identity order."""
+    fences = []
     for (owner, reference), revision in sorted(_expected_fences(request, rows).items()):
         locked_fences = _shared_rows(
             SharingAuthorityFence.objects.filter(
@@ -169,9 +187,18 @@ def locked_policy(request, catalog):
         )
         fence = locked_fences[0] if locked_fences else None
         if fence is None or fence.state != "allowed" or fence.authority_revision != revision:
-            raise ContractError("allocation.authority_unavailable")
+            raise ContractError(_AUTHORITY_UNAVAILABLE)
         fences.append(fence)
-    now = timezone.now()
+    return fences
+
+
+def _matching_bindings(
+    request: Any,
+    catalog: Any,
+    rows: list[tuple[Any, Any, MembershipProjection]],
+    now: Any,
+) -> tuple[list[BindingMatch], list[dict[str, Any]]]:
+    """Build compiler inputs only from complete, currently authorized evidence."""
     matches, revisions = [], []
     subject = request.subject_ref.model_dump(mode="json")
     for record, revision, projection in rows:
@@ -196,11 +223,11 @@ def locked_policy(request, catalog):
                 lock=False,
             )
         except SharingError as exc:
-            raise ContractError("allocation.authority_unavailable") from exc
+            raise ContractError(_AUTHORITY_UNAVAILABLE) from exc
         if not any(
             item["subject_ref"] == subject and item["state"] == "allowed" for item in projection.subject_authorizations
         ):
-            raise ContractError("allocation.authority_unavailable")
+            raise ContractError(_AUTHORITY_UNAVAILABLE)
         matches.append(
             BindingMatch(
                 binding=binding,
@@ -221,13 +248,11 @@ def locked_policy(request, catalog):
                 "pool_revision": revision.pool_routing_revision,
             }
         )
-    policy = compile_effective_policy(
-        deployment_id=request.deployment_id,
-        catalog_digest=catalog.digest,
-        evaluated_at=now,
-        subject=request.subject_ref,
-        matches=tuple(matches),
-    )
+    return matches, revisions
+
+
+def _fresh_until(request: Any, rows: list[tuple[Any, Any, MembershipProjection]], now: Any) -> Any:
+    """Find the earliest boundary that can invalidate the compiled policy."""
     boundaries = [request.window_end]
     for _, revision, projection in rows:
         boundaries.append(projection.freshness_deadline)
@@ -237,7 +262,24 @@ def locked_policy(request, catalog):
             for boundary in (binding.effective_from, binding.effective_until)
             if boundary is not None and boundary > now
         )
-    fresh_until = min(boundaries)
+    return min(boundaries)
+
+
+def locked_policy(request: Any, catalog: Any) -> tuple[Any, list[SharingAuthorityFence], dict[str, Any]]:
+    """Prove membership or nonmembership, then call the one pure compiler."""
+    publication = lock_policy_publication(request.deployment_id)
+    rows = _projections(request.deployment_id)
+    fences = [publication, *_lock_expected_fences(request, rows)]
+    now = timezone.now()
+    matches, revisions = _matching_bindings(request, catalog, rows, now)
+    policy = compile_effective_policy(
+        deployment_id=request.deployment_id,
+        catalog_digest=catalog.digest,
+        evaluated_at=now,
+        subject=request.subject_ref,
+        matches=tuple(matches),
+    )
+    fresh_until = _fresh_until(request, rows, now)
     return (
         policy,
         fences,
@@ -249,7 +291,7 @@ def locked_policy(request, catalog):
     )
 
 
-def lock_assignment_groups(request, catalog, policy):
+def lock_assignment_groups(request: Any, catalog: Any, policy: Any) -> dict[str, AllocationGroup]:
     """Serialize first shared assignment by its canonical affinity namespace."""
     routing = {item.logical_alias: item for item in policy.alias_routings}
     keys = {}

@@ -1,5 +1,7 @@
 """Strict event demand projection for the enforcing model allocation path."""
 
+from uuid import UUID
+
 from django.conf import settings
 from django.db import transaction
 from pydantic import ValidationError
@@ -9,7 +11,13 @@ from shared.model_access import ContractError, EventModelDemand, OwnedReference
 from shared.model_access.reservation import ModelLaunchScope, SystemPreparationAuthority
 
 
-def project_event_model_scope(event, draw_key, subject, *, spare_id=None):
+def project_event_model_scope(
+    event: CTFEvent,
+    draw_key: UUID,
+    subject: OwnedReference,
+    *,
+    spare_id: UUID | None = None,
+) -> ModelLaunchScope | None:
     """Keep the actual event, stable draw, window and complete typed demand.
 
     Unlike the advisory compute declaration, malformed model demand cannot be
@@ -27,7 +35,7 @@ def project_event_model_scope(event, draw_key, subject, *, spare_id=None):
         try:
             demands = tuple(EventModelDemand.model_validate(item) for item in current.model_demand)
             system = _system_preparation(current, spare_id) if spare_id is not None else None
-            refs = (OwnedReference(owner="ctf", reference=f"event:{current.pk}"),)
+            refs: tuple[OwnedReference, ...] = (OwnedReference(owner="ctf", reference=f"event:{current.pk}"),)
             if system is not None:
                 refs += (system.authority_ref,)
             revisions = cms_project_model_launch_authority(
@@ -51,7 +59,7 @@ def project_event_model_scope(event, draw_key, subject, *, spare_id=None):
             raise ContractError("allocation.event_demand_invalid") from None
 
 
-def _system_preparation(event, spare_id):
+def _system_preparation(event: CTFEvent, spare_id: UUID) -> SystemPreparationAuthority:
     """Prove the real unconsumed spare/owner under CTF's locks, not a caller flag."""
     spare = (
         CTFSpareRange.objects.select_for_update(of=("self", "owner_user"))
@@ -66,7 +74,7 @@ def _system_preparation(event, spare_id):
         )
         .first()
     )
-    if spare is None or spare.owner_user.has_usable_password():
+    if spare is None or spare.owner_user is None or spare.owner_user.has_usable_password():
         raise ContractError("allocation.system_owner_unavailable")
     return SystemPreparationAuthority(
         owner_ref=OwnedReference(owner="management", reference=f"user:{spare.owner_user_id}"),

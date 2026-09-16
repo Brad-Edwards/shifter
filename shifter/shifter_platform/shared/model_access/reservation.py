@@ -5,7 +5,7 @@ credentials. Observation producers run before the allocation transaction.
 """
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, StrictInt, model_validator
@@ -47,7 +47,7 @@ class ModelQuotaObservation(ClosedModel):
     healthy_shard_ids: Annotated[tuple[Identifier, ...], Field(max_length=256)]
 
     @model_validator(mode="after")
-    def validate_observation(self):
+    def validate_observation(self) -> Self:
         """Require an explicit validity interval and unique health identities."""
         if self.observed_at.tzinfo is None or self.valid_until.tzinfo is None:
             raise ValueError("observation requires timezone")
@@ -78,7 +78,7 @@ class ModelAllocationRequest(ClosedModel):
     preparation_authority: OwnedReference | None = None
 
     @model_validator(mode="after")
-    def validate_request(self):
+    def validate_request(self) -> Self:
         """Require one exact workload, bounded window and complete unique fences."""
         if self.window_start.tzinfo is None or self.window_end.tzinfo is None:
             raise ValueError("window requires timezone")
@@ -139,7 +139,7 @@ class ModelLaunchScope(ClosedModel):
     ) = None
 
     @model_validator(mode="after")
-    def validate_scope(self):
+    def validate_scope(self) -> Self:
         """Reject ambiguous roles and windows at the downward service boundary."""
         if self.window_start.tzinfo is None or self.window_end.tzinfo is None or self.window_end <= self.window_start:
             raise ValueError("invalid scope window")
@@ -168,7 +168,7 @@ class ModelLaunchPreparation(ClosedModel):
     unavailable_reason: Literal["allocation.policy_unavailable"] | None = None
 
     @model_validator(mode="after")
-    def validate_roles(self):
+    def validate_roles(self) -> Self:
         """Every authored workload has exactly one explicit demand."""
         roles = [item.workload_role for item in self.needs]
         if len(roles) != len(set(roles)):

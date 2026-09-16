@@ -39,6 +39,7 @@ _CTF_KINDS = frozenset(
     }
 )
 _SELECTOR_DENIED = "Model-access selector denied"
+_PUBLISHER_UNAVAILABLE = "allocation.publisher_unavailable"
 
 
 def refresh_model_launch_projections(deployment_id: UUID) -> None:
@@ -55,14 +56,14 @@ def refresh_model_launch_projections(deployment_id: UUID) -> None:
         publisher = binding.authorized_publisher_ref
         kind, _, identity = publisher.reference.partition(":")
         if publisher.owner != "management" or kind not in {"user", "operator"} or not identity.isdecimal():
-            raise ContractError("allocation.publisher_unavailable")
+            raise ContractError(_PUBLISHER_UNAVAILABLE)
         with transaction.atomic():
             actor = get_admin_user(int(identity))
             if actor is None:
-                raise ContractError("allocation.publisher_unavailable")
+                raise ContractError(_PUBLISHER_UNAVAILABLE)
             resolve_model_access_users(actor, (actor.pk,))
             if _publisher_identity(actor) != publisher:
-                raise ContractError("allocation.publisher_unavailable")
+                raise ContractError(_PUBLISHER_UNAVAILABLE)
             resolution = resolve_model_access_selector(actor, binding.selector)
             now = timezone.now()
             engine_project_selector_resolution(

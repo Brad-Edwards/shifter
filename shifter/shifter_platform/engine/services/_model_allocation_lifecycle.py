@@ -1,6 +1,11 @@
 """Generation-scoped grant fencing and conservative model-capacity cleanup."""
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Iterable
+from datetime import datetime
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import F, Q
@@ -11,7 +16,7 @@ from engine.models import ModelAllocation, ModelCapacityReservation, ModelPendin
 logger = logging.getLogger(__name__)
 
 
-def revoke_model_authorities(fence_ids):
+def revoke_model_authorities(fence_ids: Iterable[int]) -> int:
     """Fence each dependent pending grant once in the owner's transaction."""
     return ModelPendingGrant.objects.filter(
         allocation__authorities__fence_id__in=fence_ids,
@@ -19,7 +24,7 @@ def revoke_model_authorities(fence_ids):
     ).update(state="revoked", grant_epoch=F("grant_epoch") + 1, revoked_at=timezone.now())
 
 
-def revoke_model_generation(range_id, *, operation_id=None):
+def revoke_model_generation(range_id: UUID, *, operation_id: UUID | None = None) -> int:
     """Invalidate original access before lifecycle transition/re-admission."""
     grants = ModelPendingGrant.objects.filter(allocation__range_id=range_id, state="pending")
     if operation_id is not None:
@@ -27,7 +32,36 @@ def revoke_model_generation(range_id, *, operation_id=None):
     return grants.update(state="revoked", grant_epoch=F("grant_epoch") + 1, revoked_at=timezone.now())
 
 
-def release_model_allocation(allocation_id, *, operation_id, now=None):
+def _release_locked(allocation: ModelAllocation, now: datetime) -> bool:
+    """Revoke and release an already locked allocation and its child draws."""
+    if allocation.released_at is not None:
+        return False
+    ModelPendingGrant.objects.filter(allocation=allocation, state="pending").update(
+        state="revoked",
+        grant_epoch=F("grant_epoch") + 1,
+        revoked_at=now,
+    )
+    if allocation.unresolved_liabilities:
+        return False
+    for draw in (
+        allocation.draws.filter(released_at__isnull=True)
+        .select_related("reservation")
+        .order_by("reservation__quota_id", "reservation_id")
+    ):
+        parent = draw.reservation
+        parent.consumed -= draw.amount
+        parent.workload_budgets[allocation.workload_role]["consumed"] -= draw.amount
+        if parent.consumed == 0 and (parent.scope_key.startswith(("standalone:", "warm:")) or parent.window_end <= now):
+            parent.released_at = now
+        parent.save(update_fields=["consumed", "released_at", "workload_budgets"])
+        draw.released_at = now
+        draw.save(update_fields=["released_at"])
+    allocation.released_at = now
+    allocation.save(update_fields=["released_at"])
+    return True
+
+
+def release_model_allocation(allocation_id: UUID, *, operation_id: UUID, now: datetime | None = None) -> bool:
     """Release this exact allocation only when it has no unresolved liability.
 
     A shared/event commitment survives member release until its original window
@@ -42,36 +76,10 @@ def release_model_allocation(allocation_id, *, operation_id, now=None):
         quotas = candidate.draws.values_list("reservation__quota_id", flat=True)
         tuple(ModelQuotaIdentity.objects.select_for_update().filter(pk__in=quotas).order_by("pk"))
         allocation = ModelAllocation.objects.select_for_update().get(pk=allocation_id)
-        if allocation.released_at is not None:
-            return False
-        ModelPendingGrant.objects.filter(allocation=allocation, state="pending").update(
-            state="revoked",
-            grant_epoch=F("grant_epoch") + 1,
-            revoked_at=now,
-        )
-        if allocation.unresolved_liabilities:
-            return False
-        for draw in (
-            allocation.draws.filter(released_at__isnull=True)
-            .select_related("reservation")
-            .order_by("reservation__quota_id", "reservation_id")
-        ):
-            parent = draw.reservation
-            parent.consumed -= draw.amount
-            parent.workload_budgets[allocation.workload_role]["consumed"] -= draw.amount
-            if parent.consumed == 0 and (
-                parent.scope_key.startswith(("standalone:", "warm:")) or parent.window_end <= now
-            ):
-                parent.released_at = now
-            parent.save(update_fields=["consumed", "released_at", "workload_budgets"])
-            draw.released_at = now
-            draw.save(update_fields=["released_at"])
-        allocation.released_at = now
-        allocation.save(update_fields=["released_at"])
-        return True
+        return _release_locked(allocation, now)
 
 
-def reconcile_model_allocations(*, now=None, limit=100):
+def reconcile_model_allocations(*, now: datetime | None = None, limit: int = 100) -> int:
     """Bounded expiry/revocation cleanup invoked by the incumbent reconciler."""
     now = now or timezone.now()
     terminal = Range.objects.filter(status__in=[Range.Status.DESTROYED, Range.Status.FAILED]).values_list(
@@ -88,7 +96,7 @@ def reconcile_model_allocations(*, now=None, limit=100):
     # Unused shared/event parents expire too. The real-quota mutex is the same
     # one allocation/release use; never take a draw lock before its parent.
     expired = ModelCapacityReservation.objects.filter(released_at__isnull=True, window_end__lte=now, consumed=0)
-    for quota_id in list(expired.values_list("quota_id", flat=True).distinct()[:limit]):
+    for quota_id in expired.values_list("quota_id", flat=True).distinct()[:limit]:
         with transaction.atomic():
             ModelQuotaIdentity.objects.select_for_update().get(pk=quota_id)
             expired.filter(quota_id=quota_id).update(released_at=now)

@@ -1,6 +1,11 @@
 """Ordered real-quota locking and exact model reservation/draw effects."""
 
+from __future__ import annotations
+
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 from django.db.models import Sum
 from django.utils import timezone
@@ -9,9 +14,14 @@ from engine.models import CapacityAssessment, ModelCapacityDraw, ModelCapacityRe
 from shared.model_access import ContractError, compute_digest
 
 
-def lock_quotas(catalog, profile_id=None, allowed_shards=None, retained_ids=()):
+def lock_quotas(
+    catalog: Any,
+    profile_id: str | None = None,
+    allowed_shards: set[str] | None = None,
+    retained_ids: set[str] | tuple[str, ...] = (),
+) -> dict[str, ModelQuotaIdentity]:
     """Lock identities rather than possibly empty reservation queries."""
-    identities = {}
+    identities: dict[str, tuple[str, dict[str, Any] | None]] = {}
     candidates = {
         shard_id
         for alias in catalog.aliases
@@ -24,24 +34,24 @@ def lock_quotas(catalog, profile_id=None, allowed_shards=None, retained_ids=()):
     for pool in catalog.quota_pools:
         if pool.quota_pool_id not in required:
             continue
-        fields = {
+        quota_fields = {
             "deployment_id": str(catalog.deployment_id),
             "provider_adapter_id": pool.provider_adapter_id,
             "provider_quota_identity": pool.provider_quota_identity,
             "dimension": pool.dimension,
             "unit": pool.unit,
         }
-        identities[pool.quota_pool_id] = (compute_digest(fields), fields)
+        identities[pool.quota_pool_id] = (compute_digest(quota_fields), quota_fields)
     locked = {}
     identities.update({f"retained:{identity}": (identity, None) for identity in retained_ids})
-    for name, (identity, fields) in sorted(identities.items(), key=lambda item: item[1][0]):
-        if fields is not None:
-            ModelQuotaIdentity.objects.get_or_create(identity=identity, defaults=fields)
+    for name, (identity, identity_fields) in sorted(identities.items(), key=lambda item: item[1][0]):
+        if identity_fields is not None:
+            ModelQuotaIdentity.objects.get_or_create(identity=identity, defaults=identity_fields)
         locked[name] = ModelQuotaIdentity.objects.select_for_update().get(identity=identity)
     return locked
 
 
-def metric_amount(pool, demand):
+def metric_amount(pool: Any, demand: Any) -> int:
     """Map only supported exact dimensions and units; unknown means no admission."""
     values = {
         ("requests", "requests/minute"): demand.per_participant_requests,
@@ -55,7 +65,7 @@ def metric_amount(pool, demand):
     return value
 
 
-def capacity_scope(request, effective):
+def capacity_scope(request: Any, effective: Any) -> tuple[str, ...]:
     """Overlapping selectors coalesce at the stable capacity-account identity."""
     if effective.capacity_account_refs:
         return tuple(f"shared:{ref}" for ref in sorted(set(effective.capacity_account_refs)))
@@ -65,7 +75,8 @@ def capacity_scope(request, effective):
     return (f"{request.scope_kind}:{request.scope_id}{generation}",)
 
 
-def _parent(quota, scope, request):
+def _parent(quota: ModelQuotaIdentity, scope: str, request: Any) -> ModelCapacityReservation | None:
+    """Find the exact parent commitment for a capacity scope and window."""
     return ModelCapacityReservation.objects.filter(
         quota=quota,
         scope_key=scope,
@@ -74,7 +85,8 @@ def _parent(quota, scope, request):
     ).first()
 
 
-def _observed_headroom(pool, observation, catalog_digest, now):
+def _observed_headroom(pool: Any, observation: Any, catalog_digest: str, now: datetime) -> int | None:
+    """Return fresh usable headroom or deny an absent/stale observation."""
     if observation is None or observation.catalog_digest != catalog_digest:
         return None
     if not observation.observed_at <= now < observation.valid_until:
@@ -82,51 +94,106 @@ def _observed_headroom(pool, observation, catalog_digest, now):
     return min(pool.limit, observation.limit) - observation.usage
 
 
-def vector_fits(vector, *, request, effective, catalog, locked, observations):
+def _additional_commitment(
+    *,
+    quota: ModelQuotaIdentity,
+    scopes: tuple[str, ...],
+    request: Any,
+    amount: int,
+    factor: int,
+) -> int | None:
+    """Compute new parent capacity, or deny a released/exhausted parent."""
+    added = 0
+    for scope in scopes:
+        parent = _parent(quota, scope, request)
+        if parent is None:
+            added += amount * factor
+            continue
+        budget = parent.workload_budgets.get(request.need.workload_role)
+        if parent.released_at is not None:
+            return None
+        if budget is None:
+            added += amount * factor
+        elif budget["consumed"] + amount > budget["amount"]:
+            return None
+    return added
+
+
+@dataclass(frozen=True)
+class _FitContext:
+    """Locked inputs shared by every physical-pool feasibility check."""
+
+    request: Any
+    catalog: Any
+    locked: dict[str, ModelQuotaIdentity]
+    observations: dict[str, Any]
+    scopes: tuple[str, ...]
+    factor: int
+    now: datetime
+
+
+def _pool_fits(pool_id: str, amount: int, context: _FitContext) -> bool:
+    """Check one physical quota after its durable mutex is held."""
+    pools = {pool.quota_pool_id: pool for pool in context.catalog.quota_pools}
+    headroom = _observed_headroom(
+        pools[pool_id], context.observations.get(pool_id), context.catalog.digest, context.now
+    )
+    if headroom is None:
+        return False
+    quota = context.locked[pool_id]
+    added = _additional_commitment(
+        quota=quota,
+        scopes=context.scopes,
+        request=context.request,
+        amount=amount,
+        factor=context.factor,
+    )
+    if added is None:
+        return False
+    committed = (
+        ModelCapacityReservation.objects.filter(
+            quota=quota,
+            released_at__isnull=True,
+            window_start__lt=context.request.window_end,
+            window_end__gt=context.request.window_start,
+        ).aggregate(total=Sum("amount"))["total"]
+        or 0
+    )
+    return added <= 2**63 - 1 and committed + added <= headroom
+
+
+def vector_fits(
+    vector: dict[str, int],
+    *,
+    request: Any,
+    effective: Any,
+    catalog: Any,
+    locked: dict[str, ModelQuotaIdentity],
+    observations: dict[str, Any],
+) -> bool:
     """Recheck freshness after waiting for locks, then every parent and real pool."""
     now = timezone.now()
     if now >= request.window_end:
         raise ContractError("allocation.expired")
-    pools = {pool.quota_pool_id: pool for pool in catalog.quota_pools}
     scopes = capacity_scope(request, effective)
     factor = (
         1
         if request.scope_kind == "standalone" and not effective.capacity_account_refs
         else request.demand.expected_concurrency
     )
-    for pool_id, amount in vector.items():
-        quota = locked[pool_id]
-        headroom = _observed_headroom(pools[pool_id], observations.get(pool_id), catalog.digest, now)
-        if headroom is None:
-            return False
-        added = 0
-        for scope in scopes:
-            parent = _parent(quota, scope, request)
-            if parent is None:
-                added += amount * factor
-            else:
-                budget = parent.workload_budgets.get(request.need.workload_role)
-                if parent.released_at is not None:
-                    return False
-                if budget is None:
-                    added += amount * factor
-                elif budget["consumed"] + amount > budget["amount"]:
-                    return False
-        committed = (
-            ModelCapacityReservation.objects.filter(
-                quota=quota,
-                released_at__isnull=True,
-                window_start__lt=request.window_end,
-                window_end__gt=request.window_start,
-            ).aggregate(total=Sum("amount"))["total"]
-            or 0
-        )
-        if added > 2**63 - 1 or committed + added > headroom:
-            return False
-    return True
+    context = _FitContext(
+        request=request,
+        catalog=catalog,
+        locked=locked,
+        observations=observations,
+        scopes=scopes,
+        factor=factor,
+        now=now,
+    )
+    return all(_pool_fits(pool_id, amount, context) for pool_id, amount in vector.items())
 
 
-def add_shard_demand(vector, shard, catalog, demand):
+def add_shard_demand(vector: dict[str, int], shard: Any, catalog: Any, demand: Any) -> dict[str, int]:
     """Distinct alias demands sum once on each physical metric."""
     updated = defaultdict(int, vector)
     pools = {pool.quota_pool_id: pool for pool in catalog.quota_pools}
@@ -135,7 +202,16 @@ def add_shard_demand(vector, shard, catalog, demand):
     return dict(updated)
 
 
-def persist_draws(allocation, vector, *, request, effective, catalog, locked, observations):
+def persist_draws(
+    allocation: Any,
+    vector: dict[str, int],
+    *,
+    request: Any,
+    effective: Any,
+    catalog: Any,
+    locked: dict[str, ModelQuotaIdentity],
+    observations: dict[str, Any],
+) -> None:
     """Write the whole effect vector in the allocation caller's transaction."""
     scopes = capacity_scope(request, effective)
     factor = (

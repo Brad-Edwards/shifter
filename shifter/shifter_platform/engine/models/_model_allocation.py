@@ -21,6 +21,8 @@ class ModelQuotaIdentity(models.Model):
     unit = models.CharField(max_length=64)
 
     class Meta:
+        """Enforce one durable identity for each physical provider quota."""
+
         constraints = [
             models.UniqueConstraint(
                 fields=["deployment_id", "provider_adapter_id", "provider_quota_identity", "dimension", "unit"],
@@ -54,6 +56,8 @@ class ModelAllocation(models.Model):
     unresolved_liabilities = models.PositiveBigIntegerField(default=0)
 
     class Meta:
+        """Prevent duplicate admissions for a launch operation and workload."""
+
         constraints = [
             models.UniqueConstraint(
                 fields=["request_id", "operation_id", "workload_role"],
@@ -75,6 +79,8 @@ class ModelPendingGrant(models.Model):
     revoked_at = models.DateTimeField(null=True)
 
     class Meta:
+        """Constrain the pending-grant epoch and closed state vocabulary."""
+
         constraints = [
             models.CheckConstraint(condition=models.Q(grant_epoch__gt=0), name="model_grant_positive_epoch"),
             models.CheckConstraint(
@@ -94,6 +100,8 @@ class ModelAllocationAuthority(models.Model):
     revision = models.PositiveBigIntegerField()
 
     class Meta:
+        """Pin one revision of each authority fence per allocation."""
+
         constraints = [models.UniqueConstraint(fields=["allocation", "fence"], name="model_allocation_fence_once")]
 
     def __str__(self) -> str:
@@ -115,6 +123,8 @@ class ModelCapacityReservation(models.Model):
     workload_budgets = models.JSONField(default=dict)
 
     class Meta:
+        """Constrain capacity commitments and their overlap lookup."""
+
         constraints = [
             models.UniqueConstraint(
                 fields=["quota", "scope_key", "window_start", "window_end"], name="model_capacity_scope_window"
@@ -144,6 +154,8 @@ class ModelCapacityDraw(models.Model):
     released_at = models.DateTimeField(null=True)
 
     class Meta:
+        """Record one positive draw per allocation and reservation."""
+
         constraints = [
             models.UniqueConstraint(fields=["allocation", "reservation"], name="model_draw_allocation_once"),
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="model_draw_positive"),
@@ -162,6 +174,8 @@ class ModelAliasAssignment(models.Model):
     policy_digest = models.CharField(max_length=71)
 
     class Meta:
+        """Pin one shard assignment for each shared group alias."""
+
         constraints = [models.UniqueConstraint(fields=["group", "logical_alias"], name="model_group_alias_once")]
 
     def __str__(self) -> str:
@@ -190,6 +204,8 @@ class ModelQuotaReading(models.Model):
     observation = models.JSONField()
 
     class Meta:
+        """Keep one latest reading per catalog revision and quota pool."""
+
         constraints = [
             models.UniqueConstraint(fields=["catalog_digest", "quota_pool_id"], name="model_quota_reading_revision")
         ]
@@ -209,6 +225,8 @@ class ModelOptionalAbsence(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        """Keep one optional-absence decision per operation workload."""
+
         constraints = [
             models.UniqueConstraint(
                 fields=["request_id", "operation_id", "workload_role"], name="model_optional_operation_role"

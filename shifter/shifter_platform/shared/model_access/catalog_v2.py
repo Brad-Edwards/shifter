@@ -1,6 +1,6 @@
 """Explicit deployment-owned provider pools without changing v1 wire digests."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
@@ -38,7 +38,7 @@ class ModelAccessCatalogV2(ModelAccessCatalog):
         return tuple(sorted(values, key=lambda pool: pool.provider_pool_id))
 
     @model_validator(mode="after")
-    def validate_provider_membership(self):
+    def validate_provider_membership(self) -> Self:
         """Every pool member and every sharing reference resolves in this revision."""
         shards = {shard.shard_id for shard in self.shards}
         pools = {pool.provider_pool_id for pool in self.provider_pools}
