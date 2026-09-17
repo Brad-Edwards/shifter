@@ -53,6 +53,7 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
   const [password, setPassword] = useState("");
   const error = describeMutationError(query.error, "Plugins could not be loaded.");
   const label = action ? action.kind[0].toUpperCase() + action.kind.slice(1) : "Update";
+  const paginationLabel = query.isFetchingNextPage ? "Loading adapters…" : "Load more adapters";
   function choose(adapter: Adapter, kind: AdapterAction) {
     update.reset(); setUsername(""); setPassword(""); setAction({ adapter, kind });
   }
@@ -67,7 +68,7 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
       {query.hasNextPage ? <div className="my-3 space-y-2">
         <p>Load more installed versions to manage them or assign them to a pack.</p>
         <Button variant="outline" disabled={query.isFetching} onClick={() => void query.fetchNextPage()}>
-          {query.isFetchingNextPage ? "Loading adapters…" : "Load more adapters"}
+          {paginationLabel}
         </Button>
       </div> : null}
       {showPacks ? <AdapterPackBindings organization={organization} adapters={adapters} /> : null}

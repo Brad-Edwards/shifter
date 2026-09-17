@@ -685,11 +685,11 @@ and external infrastructure scanners remain in CI. Retired scenario-role checks
 and private-content exclusions are not restored by development-branch merges.
 
 The AWS model-broker module is included in the Terraform validation inventory
-with active contract tests. Listener-wide binds are intentional within private
-Kubernetes Services protected by TLS, workload identity and NetworkPolicy; their
-Bandit B104 annotations match the existing Ruff S104 rationale. The EC2 secret
-category mapping has a scoped B105 annotation because its values identify secret
-types rather than contain credentials. Secret scanning remains enabled.
+with active contract tests. Broker and control listeners bind the explicit
+private pod IPv4 address supplied by the Downward API, with TLS, workload identity
+and NetworkPolicy enforcing the service boundary. EC2 secret categories derive
+from a closed authentication-method set. Secret scanning remains enabled without
+a suppression for these category identifiers.
 
 The isolated GKE plugin pool uses the version-6 Google beta provider required
 for sandbox configuration. Module contract tests pin the same provider family
