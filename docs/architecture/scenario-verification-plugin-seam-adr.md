@@ -231,3 +231,8 @@ fallback. Both AWS and GCP require independent lifecycle qualification.
 The full extraction acceptance criteria remain in
 `external-scenario-runtime-design.md`. Local synthetic lifecycle coverage is not
 live qualification or proof that private-code extraction is complete.
+
+Native scenario ranges currently support provision, activation and teardown.
+Pause/resume is unavailable: the legacy power worker consumes instance records
+that native realization does not create. The tenant capability projection and
+Engine service reject those operations before state mutation or task dispatch.

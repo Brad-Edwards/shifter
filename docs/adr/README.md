@@ -682,3 +682,9 @@ Kubernetes Services protected by TLS, workload identity and NetworkPolicy; their
 Bandit B104 annotations match the existing Ruff S104 rationale. The EC2 secret
 category mapping has a scoped B105 annotation because its values identify secret
 types rather than contain credentials. Secret scanning remains enabled.
+
+The isolated GKE plugin pool uses the version-6 Google beta provider required
+for sandbox configuration. Module contract tests pin the same provider family
+as both deployment roots, so a newer module-only schema cannot mask an invalid
+deployment configuration. Native range power capabilities are refused before
+legacy worker dispatch because native realization has a separate member inventory.

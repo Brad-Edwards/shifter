@@ -1,6 +1,7 @@
 # Untrusted tenant code has a distinct sandbox pool. RuntimeClass admission and
 # node placement are mandatory; a missing pool cannot fall back to platform nodes.
 resource "google_container_node_pool" "runtime_plugins" {
+  provider           = google-beta
   name               = "${var.name_prefix}-runtime-plugins"
   project            = var.project_id
   location           = var.region
@@ -26,7 +27,7 @@ resource "google_container_node_pool" "runtime_plugins" {
     tags            = ["shifter", "gke", "runtime-plugin"]
 
     sandbox_config {
-      type = "GVISOR"
+      sandbox_type = "gvisor"
     }
 
     taint {
