@@ -344,3 +344,21 @@ class TestAuthentication:
 
         assert response.status_code in {401, 403}
         assert RaesImageMapping.objects.get(source_name="kali").enabled is True
+
+
+def test_registry_validation_response_uses_public_message(api_client, staff_user, monkeypatch):
+    from engine.services import RaesImageMappingError
+
+    class DiagnosticError(RaesImageMappingError):
+        def __str__(self):
+            return "internal-storage-diagnostic"
+
+    def reject(**kwargs):
+        raise DiagnosticError("Unsupported image provider")
+
+    monkeypatch.setattr("cms.api.raes_image_registry.list_raes_image_mappings", reject)
+    api_client.force_authenticate(user=staff_user)
+    response = api_client.get(LIST_CREATE_URL)
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Unsupported image provider"
+    assert "internal-storage-diagnostic" not in response.content.decode()

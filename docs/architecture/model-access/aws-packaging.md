@@ -72,3 +72,9 @@ workload identity. The same two-second connection/read timeouts and single attem
 apply to implicit web-identity refresh and explicit role assumption; configuring
 only the final service client would leave the refresh on SDK defaults. Proxy
 environment variables are not used by these STS clients.
+
+The private broker NLB has deletion protection enabled. Deployment teardown must
+explicitly disable that protection before destroying the load balancer. It uses
+TCP passthrough for guest TLS, so AWS NLB access logging is unavailable (AWS only
+logs TLS listeners); broker request metadata and VPC flow logs remain the audit
+surfaces. See the narrowly scoped ADR-004-R11 scanner exception.

@@ -6,6 +6,7 @@ import json
 from botocore.eventstream import EventStreamBuffer
 
 from shared.model_access import ContractError
+from shared.model_access.core_models import BillingComponent
 from shared.model_access.messages import strict_json
 from shared.model_access.provider import ProviderUsage, VerifiedUsage
 
@@ -30,8 +31,10 @@ def usage_from_message(value: dict) -> ProviderUsage:
         raise ContractError("provider.incomplete_usage")
     return ProviderUsage(
         items=(
-            VerifiedUsage(component="input_tokens", units=input_units, provider_verified=True),
-            VerifiedUsage(component="output_tokens", units=_units(usage["output_tokens"]), provider_verified=True),
+            VerifiedUsage(component=BillingComponent.INPUT_TOKENS, units=input_units, provider_verified=True),
+            VerifiedUsage(
+                component=BillingComponent.OUTPUT_TOKENS, units=_units(usage["output_tokens"]), provider_verified=True
+            ),
         )
     )
 

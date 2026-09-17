@@ -253,3 +253,16 @@ def test_retirement_is_irreversible_and_expired_probe_cannot_enable(tenant, mani
     change_runtime_plugin(actor, organization.uuid, result.id, "retire")
     with pytest.raises(ValidationError):
         change_runtime_plugin(actor, organization.uuid, result.id, "enable")
+
+
+def test_plugin_validation_response_excludes_diagnostic_value(tenant, manifest, monkeypatch):
+    actor, organization = tenant
+    diagnostic = "internal-registry-diagnostic"
+    failure = ValidationError("Invalid plugin manifest", field="manifest", value=diagnostic)
+    monkeypatch.setattr("cms.api.runtime_plugins.install_runtime_plugin", Mock(side_effect=failure))
+    client = APIClient()
+    client.force_authenticate(user=actor)
+    response = client.post(url(organization), {"manifest": manifest}, format="json")
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Invalid plugin manifest"
+    assert diagnostic not in response.content.decode()

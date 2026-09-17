@@ -274,6 +274,11 @@ modules:
     contract: terraform_test
     test: tests/security.tftest.hcl
     test_profile: aws-1.13.3
+  - path: platform/terraform/modules/portal/eks-model-broker
+    owner: "@Brad-Edwards"
+    contract: terraform_test
+    test: tests/boundary.tftest.hcl
+    test_profile: aws-1.13.3
   - path: platform/terraform/modules/portal/eks-provisioner-env
     owner: "@Brad-Edwards"
     contract: deferred

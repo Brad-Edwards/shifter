@@ -85,6 +85,7 @@ resource "aws_vpc_security_group_egress_rule" "listener" {
   description       = "TLS passthrough and health checks to broker pods"
 }
 resource "aws_lb" "broker" {
+  # checkov:skip=CKV_AWS_91:TCP passthrough preserves guest TLS; AWS NLB access logs require a TLS listener (ADR-004-R11).
   name                             = "${substr(var.cluster_name, 0, 19)}-model-broker"
   internal                         = true
   load_balancer_type               = "network"
@@ -92,6 +93,7 @@ resource "aws_lb" "broker" {
   subnets                          = [for subnet in var.private_subnets : subnet.id]
   security_groups                  = [aws_security_group.listener.id]
   enable_cross_zone_load_balancing = true
+  enable_deletion_protection       = true
   tags                             = var.tags
 }
 # Read the actual private listener addresses after NLB creation. Guests receive

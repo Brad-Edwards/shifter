@@ -450,5 +450,23 @@
       "shifter/shifter_platform/ctf/services/participant/accounts.py",
       "shifter/shifter_platform/frontend/src/features/ctf/admin/ParticipantPasswordDialog.tsx"
     ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_AWS_91: the private model-broker NLB uses TCP passthrough so TLS terminates at the authenticated broker and the guest peer is preserved. AWS NLB access logs require a TLS listener and cannot log this TCP listener. Broker metadata-only request auditing and VPC flow logs provide observability. https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-access-logs.html",
+    "expires_on": "2027-03-17",
+    "paths": [
+      "platform/terraform/modules/portal/eks-model-broker/network.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV2_AWS_44 false positive on the private route table containing distinct NAT and peering routes: 0.0.0.0/0 targets the NAT gateway only; the sole peering route targets the bounded range VPC CIDR. Terraform security contract tests retain this distinction.",
+    "expires_on": "2027-03-17",
+    "paths": [
+      "platform/terraform/modules/portal/eks/network.tf"
+    ]
   }
 ]

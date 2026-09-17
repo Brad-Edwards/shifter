@@ -33,7 +33,11 @@ __all__ = [
 
 
 class RaesImageMappingError(ValueError):
-    """Raised when an RAES image mapping fails validation."""
+    """Validation failure with an explicit user-facing message, separate from diagnostics."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 @dataclass(frozen=True)

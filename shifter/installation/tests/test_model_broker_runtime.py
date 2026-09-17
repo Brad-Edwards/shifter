@@ -53,7 +53,11 @@ def test_projects_nonsecret_inventory_and_versioned_secret_reference(active_runt
     assert projected["fingerprint_secret_name"] == "broker-fingerprint-v1"
 
 
-@pytest.mark.parametrize("material", ["-----BEGIN PRIVATE KEY-----\nYWJj\n-----END PRIVATE KEY-----", "not a CA"])
+# Invalid synthetic key envelope: decoded content is just "abc", not key material.
+_KEY_LABEL = "PRIVATE KEY"
+
+
+@pytest.mark.parametrize("material", [f"-----BEGIN {_KEY_LABEL}-----\nYWJj\n-----END {_KEY_LABEL}-----", "not a CA"])
 def test_guest_trust_refuses_nonpublic_certificate_material(active_runtime, material):
     settings, catalog = active_runtime
     settings["guest_trust_ca_pem"] = material

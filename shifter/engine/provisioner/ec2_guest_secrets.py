@@ -154,7 +154,8 @@ class Ec2GuestSecrets:
         return ref, derive_ssh_public_key(value)
 
     def delete_account(self, range_id: int, instance_key: str, username: str, auth_method: str) -> None:
-        kind = {"password": "account-password", "key": "account-key"}.get(auth_method)
+        # Stable secret-category identifiers; neither value is a credential.
+        kind = {"password": "account-password", "key": "account-key"}.get(auth_method)  # nosec B105
         if kind is None:
             raise Ec2SecretError("EC2 account authentication method is invalid")
         self.delete(range_id, kind, (instance_key, username))

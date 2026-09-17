@@ -62,7 +62,7 @@ def main() -> None:
     try:
         uvicorn.run(
             ControlApplication(verify_identity=verify, ready=ready),
-            host="0.0.0.0",  # noqa: S104 - private Kubernetes listener; TLS, IAM and NetworkPolicy gate every call.
+            host="0.0.0.0",  # noqa: S104 # nosec B104 -- private Kubernetes listener; TLS, IAM and NetworkPolicy gate every call.
             port=8444,
             ssl_certfile=os.environ["MODEL_CONTROL_TLS_CERT"],
             ssl_keyfile=os.environ["MODEL_CONTROL_TLS_KEY"],

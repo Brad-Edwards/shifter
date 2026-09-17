@@ -116,7 +116,7 @@ def _domain_error(request: Request, exc: RaesImageMappingError) -> Response:
     """Render an RAES registry domain-validation error as the shared 400 envelope."""
     return api_error_response(
         code="invalid",
-        message=str(exc),
+        message=exc.message,
         status_code=status.HTTP_400_BAD_REQUEST,
         request=request,
     )

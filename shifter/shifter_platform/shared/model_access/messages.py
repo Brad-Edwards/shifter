@@ -127,6 +127,6 @@ def parse_messages(raw: bytes, *, count_only: bool, limits: AccessLimits):
         message = (CountTokensRequest if count_only else MessagesRequest).model_validate(value)
     except ValidationError:
         raise ContractError("messages.unsupported_request") from None
-    if not count_only and message.max_tokens > limits.max_output_tokens:
+    if isinstance(message, MessagesRequest) and message.max_tokens > limits.max_output_tokens:
         raise ContractError("messages.output_limit")
     return message

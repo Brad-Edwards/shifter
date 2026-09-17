@@ -4,6 +4,7 @@ from dataclasses import asdict
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
+from rest_framework.filters import BaseFilterBackend
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -67,7 +68,7 @@ class RuntimePluginPackUpdateSerializer(PreparationSerializer):
 class RuntimePluginPackListView(ListAPIView):
     permission_classes = [IsAuthenticatedSession]
     serializer_class = RuntimePluginPackSerializer
-    filter_backends = []
+    filter_backends: list[type[BaseFilterBackend]] = []
 
     def get_queryset(self):
         return list_runtime_plugin_packs(self.request.user, self.kwargs["organization_uuid"])

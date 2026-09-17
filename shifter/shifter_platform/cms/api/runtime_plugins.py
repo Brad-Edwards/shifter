@@ -48,11 +48,12 @@ class RuntimePluginPageSerializer(serializers.Serializer):
     next_cursor = serializers.UUIDField(allow_null=True)
 
 
-def _error(request: Request, exc: Exception) -> Response:
+def _error(request: Request, exc: OrganizationAuthorizationError | ValidationError) -> Response:
     denied = isinstance(exc, OrganizationAuthorizationError)
+    message = exc.message if isinstance(exc, ValidationError) else "Organization access denied"
     return api_error_response(
         code="plugin_access_denied" if denied else "plugin_invalid",
-        message="Organization access denied" if denied else exc.message,
+        message=message,
         status_code=403 if denied else 400,
         request=request,
     )

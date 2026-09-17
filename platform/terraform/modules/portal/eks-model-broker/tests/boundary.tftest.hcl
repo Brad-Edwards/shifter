@@ -52,7 +52,7 @@ run "private_broker_boundary" {
   command = apply
   assert {
     condition = (
-      aws_lb.broker.internal && aws_lb.broker.load_balancer_type == "network" &&
+      aws_lb.broker.internal && aws_lb.broker.enable_deletion_protection && aws_lb.broker.load_balancer_type == "network" &&
       aws_lb_listener.broker.protocol == "TCP" && aws_lb_listener.broker.port == 443 &&
       aws_lb_target_group.broker.preserve_client_ip && !aws_lb_target_group.broker.proxy_protocol_v2 &&
       aws_lb_target_group.broker.health_check[0].path == "/health/ready" &&

@@ -68,42 +68,45 @@ class ControlApplication:
     @staticmethod
     def _dispatch(route: str, payload: dict) -> dict:
         if route == "enroll":
-            request = EnrollmentRequest.model_validate(payload)
-            result = issue_model_enrollment(**request.model_dump())
+            enrollment_request = EnrollmentRequest.model_validate(payload)
+            enrollment = issue_model_enrollment(**enrollment_request.model_dump())
             return {
-                "grant_id": str(result.grant_id),
-                "enrollment_token": result.enrollment_token.get_secret_value(),
-                "expires_at": result.expires_at.isoformat(),
+                "grant_id": str(enrollment.grant_id),
+                "enrollment_token": enrollment.enrollment_token.get_secret_value(),
+                "expires_at": enrollment.expires_at.isoformat(),
             }
         if route in {"exchange", "refresh", "authenticate"}:
-            request = TokenRequest.model_validate(payload)
-            operation = {
-                "exchange": exchange_model_enrollment,
-                "refresh": refresh_model_access,
-                "authenticate": authenticate_model_access,
-            }[route]
-            result = operation(token=request.token.get_secret_value(), transport_peer=request.transport_peer)
+            token_request = TokenRequest.model_validate(payload)
+            token = token_request.token.get_secret_value()
+            peer = token_request.transport_peer
             if route == "authenticate":
-                return result.model_dump(mode="json")
+                authority = authenticate_model_access(token=token, transport_peer=peer)
+                return authority.model_dump(mode="json")
+            operation = exchange_model_enrollment if route == "exchange" else refresh_model_access
+            pair = operation(token=token, transport_peer=peer)
             return {
-                "access_token": result.access_token.get_secret_value(),
-                "refresh_token": result.refresh_token.get_secret_value(),
-                "access_expires_at": result.access_expires_at.isoformat(),
-                "hard_expires_at": result.hard_expires_at.isoformat(),
+                "access_token": pair.access_token.get_secret_value(),
+                "refresh_token": pair.refresh_token.get_secret_value(),
+                "access_expires_at": pair.access_expires_at.isoformat(),
+                "hard_expires_at": pair.hard_expires_at.isoformat(),
             }
         if route == "reserve":
-            request = ReservationRequest.model_validate(payload)
-            values = request.model_dump(exclude={"token", "billing_bound"})
-            result = reserve_model_call(
-                **values, token=request.token.get_secret_value(), billing_bound=request.billing_bound
+            reservation_request = ReservationRequest.model_validate(payload)
+            values = reservation_request.model_dump(exclude={"token", "billing_bound"})
+            reservation = reserve_model_call(
+                **values,
+                token=reservation_request.token.get_secret_value(),
+                billing_bound=reservation_request.billing_bound,
             )
-            return {**asdict(result), "request_uuid": str(result.request_uuid)}
+            return {**asdict(reservation), "request_uuid": str(reservation.request_uuid)}
         if route == "advance":
-            request = AdvanceRequest.model_validate(payload)
+            advance_request = AdvanceRequest.model_validate(payload)
             return advance_model_call(
-                **request.model_dump(exclude={"token", "dispatch_token"}),
-                token=request.token.get_secret_value(),
-                dispatch_token=request.dispatch_token.get_secret_value(),
+                **advance_request.model_dump(exclude={"token", "dispatch_token"}),
+                token=advance_request.token.get_secret_value(),
+                dispatch_token=advance_request.dispatch_token.get_secret_value(),
             )
-        request = FinishRequest.model_validate(payload)
-        return finish_model_call(request_uuid=request.request_uuid, action=request.action, usage=request.usage)
+        finish_request = FinishRequest.model_validate(payload)
+        return finish_model_call(
+            request_uuid=finish_request.request_uuid, action=finish_request.action, usage=finish_request.usage
+        )

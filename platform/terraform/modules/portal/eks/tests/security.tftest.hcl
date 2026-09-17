@@ -462,13 +462,6 @@ run "enabled_broker_routes" {
       invocation_models       = { primary = "anthropic.example-model-v1:0" }
     }
   }
-  override_data {
-    target = data.aws_ssm_parameters_by_path.broker_range[0]
-    values = {
-      names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
-      values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
-    }
-  }
   override_module {
     target = module.model_broker[0]
     outputs = {
@@ -482,6 +475,13 @@ run "enabled_broker_routes" {
       length([for route in table.route : route if route.cidr_block == "10.50.0.0/16" && route.vpc_peering_connection_id == aws_vpc_peering_connection.range.id]) == 1
     ])
     error_message = "Every private EKS route table must return admitted guest traffic over the owned direct peering."
+  }
+  assert {
+    condition = alltrue(flatten([for table in aws_route_table.private : [
+      for route in table.route :
+      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16"
+    ]]))
+    error_message = "Peering routes must stay bounded to the range CIDR; the default route uses NAT."
   }
   assert {
     condition = (

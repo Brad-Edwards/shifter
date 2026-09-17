@@ -160,6 +160,7 @@ resource "aws_nat_gateway" "this" {
 }
 
 resource "aws_route_table" "private" {
+  # checkov:skip=CKV2_AWS_44:Only the range VPC CIDR targets peering; 0.0.0.0/0 targets NAT, not peering (ADR-004-R11).
   for_each = local.zones
 
   vpc_id = aws_vpc.this.id

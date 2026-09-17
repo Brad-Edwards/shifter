@@ -64,7 +64,7 @@ def main():
     app = application_from_environment()
     uvicorn.run(
         app,
-        host="0.0.0.0",  # noqa: S104 - private Service and enforced NetworkPolicy only.
+        host="0.0.0.0",  # noqa: S104 # nosec B104 -- private Service and enforced NetworkPolicy only.
         port=8443,
         ssl_certfile=os.environ["MODEL_BROKER_TLS_CERT"],
         ssl_keyfile=os.environ["MODEL_BROKER_TLS_KEY"],
