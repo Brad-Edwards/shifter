@@ -151,16 +151,9 @@ class GuestSSHExecutor:
 
     @staticmethod
     def _get_remote_command(document_name: str) -> list[str]:
-        if document_name == "AWS-RunPowerShellScript":
-            return [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                "-",
-            ]
+        # PowerShell scripts never reach here: run_command always delivers them via
+        # -EncodedCommand (the `-Command -` stdin form silently returns empty
+        # stdout for multi-line scripts over SSH). This path is the Linux shell.
         # Run guest shell setup as root, matching the AWS SSM RunShellScript
         # execution context (SSM runs as root; this SSH path logs in as an
         # unprivileged host user). Range setup needs root: writing under
@@ -191,13 +184,15 @@ class GuestSSHExecutor:
         stdin_input: str | None = None,
     ) -> CommandResult:
         host = instance_id
-        remote_command = self._get_remote_command(document_name)
-        command_input = self._build_command_input(script, stdin_input, document_name)
-        if document_name == "AWS-RunPowerShellScript" and stdin_input is not None:
-            # Secret-bearing PowerShell plans need two distinct channels: the
-            # non-secret script is encoded in argv, while runtime data alone is
-            # supplied on stdin. This keeps credentials out of PowerShell source,
-            # process argv, environment, metadata, and temporary scripts.
+        if document_name == "AWS-RunPowerShellScript":
+            # Always deliver the PowerShell script through -EncodedCommand, never
+            # `powershell -Command -` with the script piped on stdin. Piping a
+            # multi-line script to `-Command -` over SSH silently returns exit 0
+            # with EMPTY stdout on some Windows builds (valid `-EncodedCommand`,
+            # empty `-Command -` during the OS-observation probe),
+            # which fails the observation with no signal. The encoded-argv channel
+            # is reliable and leaves stdin free for optional secret-bearing runtime
+            # data, keeping credentials out of PowerShell source, argv, and env.
             encoded_script = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
             remote_command = [
                 "powershell.exe",
@@ -208,7 +203,7 @@ class GuestSSHExecutor:
                 "-EncodedCommand",
                 encoded_script,
             ]
-            command_input = stdin_input
+            command_input = stdin_input or ""
         elif stdin_input is not None:
             # Keep a secret-bearing Linux plan out of both the SSH command line
             # and the script stream. The non-secret script is base64-encoded in
@@ -226,6 +221,10 @@ class GuestSSHExecutor:
                 encoded_script,
             ]
             command_input = stdin_input
+        else:
+            # Non-secret Linux script: piped to a privileged login shell on stdin.
+            remote_command = self._get_remote_command(document_name)
+            command_input = self._build_command_input(script, stdin_input, document_name)
         ssh_args = self._build_ssh_args(host, remote_command)
 
         logger.info("Running %s script over SSH on %s as %s", document_name, host, self._username)

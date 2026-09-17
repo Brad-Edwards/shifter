@@ -51,6 +51,7 @@ def _instance(*, os_type: str = "kali", attach_service_account: bool = True) -> 
         "os_type": os_type,
         "tags": ["shifter-range-42", "shifter-range-42-example"],
         "host_ssh_username": "ubuntu",
+        "ssh_port": 22,
         "profile": profile,
         "image_key": "",
         "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
@@ -229,6 +230,26 @@ class TestInstanceResource:
         # service_account_email set -> service_accounts block present with scopes.
         assert body["service_accounts"][0]["email"] == "range-host@test-project.iam.gserviceaccount.com"
         assert body["service_accounts"][0]["scopes"] == ["https://www.googleapis.com/auth/cloud-platform"]
+
+    def test_host_key_converge_check_targets_the_instance_mgmt_ssh_port(self):
+        """A Docker host's sshd is on a mgmt port; :22 is the container's.
+
+        The converge check must scan the host's actual management port or it
+        would scan the container's sshd (or a closed port) and always report
+        FAILED even when the host key is correctly served.
+        """
+        instance = _instance(os_type="kali")
+        instance["ssh_port"] = 2222
+        body = instance_resource(
+            _plan(),
+            instance,
+            _config(),
+            ssh_public_key="ssh-ed25519 AAAAkey",
+            host_private_key_b64="Ym9ndXM=",
+            host_public_key="ssh-ed25519 AAAAhost",
+        )
+        startup = _metadata_map(body)["startup-script"]
+        assert "ssh-keyscan -t ed25519 -T 5 -p 2222 127.0.0.1" in startup
 
     def test_windows_instance_uses_powershell_boot_script(self):
         body = instance_resource(

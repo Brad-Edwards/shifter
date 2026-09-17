@@ -27,6 +27,7 @@ from typing import cast
 
 from config import (
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+    GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCERangeCellConfig,
     GCERangeImageProfile,
     gce_image_profile_fingerprint,
@@ -67,6 +68,15 @@ from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 #: participant-facing user is a later participant-runtime concern (not provisioning).
 _DEFAULT_SSH_USERNAME = "raes"
 _DEFAULT_SSH_PORT = 22
+
+#: A prepromoted-domain-controller guest is a pre-baked Windows DC. Its accounts
+#: are domain accounts (a promoted DC has no local SAM), so the GCE guest agent
+#: cannot create the "raes" local user the standard RAES node setup connects as,
+#: and raes@22 is refused. The Windows boot script authorizes the provisioner key
+#: via ``administrators_authorized_keys`` (any Administrators-group member), so
+#: guest setup connects as the built-in domain "Administrator". Mirrors the legacy
+#: get_ssh_username(role="dc") host access on the RAES-native path.
+_WINDOWS_DC_ADMIN_USERNAME = "Administrator"
 
 
 class RaesGcePlanError(RuntimeError):
@@ -383,6 +393,13 @@ def _instance_plans_for_node(
     profile = resolve_image(node)
     if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
         raise RaesGcePlanError("RAES GCE does not support preconfigured-machine-host participant readiness")
+    # A promoted domain controller has no local SAM. Its existing domain
+    # administrator receives the key through administrators_authorized_keys.
+    host_ssh_username = (
+        _WINDOWS_DC_ADMIN_USERNAME
+        if profile.bootstrap_capability == GCE_BOOTSTRAP_PREPROMOTED_DC
+        else _DEFAULT_SSH_USERNAME
+    )
     os_type = node.os_family or "linux"
     plans: list[InstancePlan] = []
     for index in range(node.count):
@@ -409,7 +426,7 @@ def _instance_plans_for_node(
                 "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
                 "source": {},
                 "ssh_username": _DEFAULT_SSH_USERNAME,
-                "host_ssh_username": _DEFAULT_SSH_USERNAME,
+                "host_ssh_username": host_ssh_username,
                 "ssh_port": _DEFAULT_SSH_PORT,
                 # The closed realized access binding the portal authorizes
                 # against (#1349), sourced only from the authored RAES

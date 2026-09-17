@@ -160,6 +160,9 @@ def test_render_emits_range_access_egress_scoped_to_portal_and_guacd():
     assert "port: 5985" in rendered  # WinRM for provisioner guest setup
     assert "port: 22" in rendered
     assert "port: 3389" in rendered
+    # Container-host management sshd: :22 is the
+    # published container, so the provisioner drives the host on 2222.
+    assert "port: 2222" in rendered
 
 
 def test_render_omits_range_access_when_range_network_cidr_absent():
