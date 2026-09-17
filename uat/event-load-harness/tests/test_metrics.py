@@ -8,7 +8,13 @@ from event_load_harness.metrics import build_adapter
 from event_load_harness.metrics.aws import AwsMetricsAdapter, _aggregate, _connection_churn_proxy
 from event_load_harness.metrics.base import MetricsResult, MetricValue
 from event_load_harness.metrics.client_only import ClientOnlyAdapter
-from event_load_harness.metrics.gcp import _SIGNALS, GcpEvidenceReader, GcpMetricsAdapter, GcpSignal
+from event_load_harness.metrics.gcp import (
+    _SIGNALS,
+    GcpEvidenceReader,
+    GcpMetricsAdapter,
+    GcpSignal,
+    _metric_namespace,
+)
 
 WINDOW = ("2026-06-14T00:00:00Z", "2026-06-14T00:05:00Z")
 START = dt.datetime(2026, 6, 14, 0, 0, tzinfo=dt.UTC)
@@ -97,6 +103,13 @@ def test_gcp_gate_signals_filter_failures_instead_of_counting_all_traffic():
     assert signals["load_balancer.backend_5xx_delta"].metric_filter == "metric.labels.response_code_class = 500"
     assert signals["load_balancer.timeout_delta"].metric_filter == "metric.labels.response_code = 504"
     assert signals["load_balancer.dropped_connection_delta"].metric_filter == "metric.labels.response_code_class = 0"
+
+
+def test_gcp_metric_namespace_requires_an_exact_leading_segment():
+    assert _metric_namespace("cloudsql.googleapis.com/database/cpu/utilization") == "cloudsql.googleapis.com"
+    assert _metric_namespace("redis.googleapis.com.evil/stats/memory/usage_ratio") == "redis.googleapis.com.evil"
+    assert _metric_namespace("prefix/cloudsql.googleapis.com/database/cpu/utilization") == "prefix"
+    assert _metric_namespace("cloudsql.googleapis.com") == ""
 
 
 def test_gcp_evidence_reader_uses_bounded_read_only_health_commands(monkeypatch):

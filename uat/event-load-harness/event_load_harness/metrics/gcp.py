@@ -203,9 +203,10 @@ class CloudMonitoringReader:
         filters = [f'metric.type = "{signal.metric_type}"']
         if signal.metric_filter:
             filters.append(signal.metric_filter)
+        metric_namespace = _metric_namespace(signal.metric_type)
         cluster = targets.get("cluster")
         namespace = targets.get("namespace")
-        if signal.metric_type.startswith("kubernetes.io/"):
+        if metric_namespace == "kubernetes.io":
             if cluster:
                 filters.append(f'resource.labels.cluster_name = "{cluster}"')
             if namespace:
@@ -213,13 +214,13 @@ class CloudMonitoringReader:
             if signal.component:
                 filters.append(f'resource.labels.container_name = "{signal.component}"')
         sql_instance = targets.get("sql_instance")
-        if signal.metric_type.startswith("cloudsql.googleapis.com/") and sql_instance:
+        if metric_namespace == "cloudsql.googleapis.com" and sql_instance:
             filters.append(f'resource.labels.database_id = "{project_id}:{sql_instance}"')
         redis_instance = targets.get("redis_instance")
-        if signal.metric_type.startswith("redis.googleapis.com/") and redis_instance:
+        if metric_namespace == "redis.googleapis.com" and redis_instance:
             filters.append(f'resource.labels.instance_id = "{redis_instance}"')
         backend_name = targets.get("backend_name")
-        if signal.metric_type.startswith("loadbalancing.googleapis.com/") and backend_name:
+        if metric_namespace == "loadbalancing.googleapis.com" and backend_name:
             filters.append(f'resource.labels.backend_target_name = "{backend_name}"')
         request = {
             "name": f"projects/{project_id}",
@@ -337,6 +338,12 @@ def _reduce(values: list[float], reducer: str) -> float | None:
 
 def _timestamp(value: str) -> dt.datetime:
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _metric_namespace(metric_type: str) -> str:
+    """Return the exact namespace segment of one Cloud Monitoring metric type."""
+    namespace, separator, _ = metric_type.partition("/")
+    return namespace if separator else ""
 
 
 def _provenance(signal: GcpSignal) -> str:
