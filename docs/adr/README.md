@@ -2,6 +2,11 @@
 
 This directory holds the machine-readable part of ADR enforcement.
 
+SDK candidate distributions from pull-request CI include their SHA-256 checksums
+and are retained under a revision-specific artifact name for independent adapter
+builds. Candidate retention grants no publishing authority: SDK publication still
+requires the protected `main` workflow and the `adapter-sdk-pypi` environment.
+
 ## Files
 
 - `index.yaml`: accepted ADRs and their enforceable rules

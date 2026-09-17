@@ -61,6 +61,15 @@ that a package release has been published.
 
 ## Releasing the SDK
 
+Pull-request CI retains the tested wheel, source distribution and `SHA256SUMS`
+in the `adapter-sdk-candidate-<revision>` artifact. Pack authors can build and test
+their adapter against that exact wheel before Shifter merges. Download the
+artifact from the successful run for the reviewed revision, verify it with
+`sha256sum --check SHA256SUMS`, and install the wheel in an isolated environment.
+This is a candidate handoff, not a package-index release. After publication,
+rebuild the adapter image against the published SDK and record its wheel hash and
+the registry-resolved image digest before live qualification.
+
 The SDK has its own version in `pyproject.toml`, independent of platform release
 tags. The `Publish adapter SDK` workflow accepts that exact version from `main`,
 runs the SDK checks, builds the wheel and source distribution, and verifies the
