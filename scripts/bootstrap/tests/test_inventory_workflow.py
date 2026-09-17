@@ -48,7 +48,8 @@ def inventory(tmp_path, record_data):
     )
 
 
-def test_committed_inventory_validates_and_drives_scaffold(inventory, tmp_path, capsys):
+def test_committed_inventory_validates_and_drives_scaffold(inventory, tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     inventory.action = "validate"
     handle(inventory)
     assert json.loads(capsys.readouterr().out)["valid"] is True
@@ -428,6 +429,7 @@ def test_plan_cli_retains_both_stack_results_after_execution_cleanup(record_data
     import inventory_runner
     from inventory_plan import publish_plan
 
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("shutil.which", lambda tool: f"/mock-bin/{tool}")
     record = validate_record(record_data)
     monkeypatch.setattr(inventory_cli, "verified_inventory", lambda args: record)
@@ -483,3 +485,57 @@ def test_plan_cli_retains_both_stack_results_after_execution_cleanup(record_data
     assert (args.plan_output / "identity.plan").read_bytes() == b"identity"
     assert (args.plan_output / "runner.plan").read_bytes() == b"runner"
     assert json.loads((args.plan_output / "provenance.json").read_text())["inventory_revision"] == "b" * 40
+
+
+def test_scaffold_rejects_output_path_traversal(record_data, monkeypatch, tmp_path):
+    """--output escaping the working directory is refused (S8707 path traversal)."""
+    import inventory_cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(inventory_cli, "verified_inventory", lambda args: validate_record(record_data))
+    args = argparse.Namespace(action="scaffold", output=Path("../escape"))
+    with pytest.raises(SystemExit):
+        handle(args)
+    assert not (tmp_path.parent / "escape").exists()
+
+
+def test_resolve_secret_rejects_output_path_traversal(record_data, monkeypatch, tmp_path):
+    """--secret-output escaping the working directory is refused before any fetch."""
+    import inventory_cli
+    import inventory_secrets
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(inventory_cli, "verified_inventory", lambda args: validate_record(record_data))
+    monkeypatch.setattr(inventory_secrets, "resolve_secret", lambda *a, **k: pytest.fail("must reject before fetch"))
+    args = argparse.Namespace(
+        action="resolve-secret",
+        secret_name="DJANGO_SECRET_KEY",
+        secret_output=Path("../escape"),
+        execution_repository="example/product",
+        execution_environment="customer-deploy",
+    )
+    with pytest.raises(SystemExit):
+        handle(args)
+    assert not (tmp_path.parent / "escape").exists()
+
+
+def test_plan_rejects_plan_output_traversal(record_data, monkeypatch, tmp_path):
+    """--plan-output escaping the working directory is refused (S8707 path traversal)."""
+    import inventory_cli
+
+    record = validate_record(record_data)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(inventory_cli, "verified_inventory", lambda args: record)
+    monkeypatch.setattr("shutil.which", lambda tool: f"/mock-bin/{tool}")
+    args = argparse.Namespace(
+        action="plan",
+        operator="operator@example.com",
+        github_actor="operator",
+        execution_repository=record.execution.repository,
+        project=record.installation.settings["project_id"],
+        plan_output=Path("../escape"),
+        apply=False,
+    )
+    with pytest.raises(SystemExit):
+        handle(args)
+    assert not (tmp_path.parent / "escape").exists()

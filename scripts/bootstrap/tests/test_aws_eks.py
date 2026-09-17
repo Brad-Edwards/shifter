@@ -128,6 +128,7 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     assert values["identity"]["serviceAccountRoleArns"]["workers"].endswith("shifter-dev-workers")
     assert values["identity"]["serviceAccountRoleArns"]["ctfScheduler"].endswith("shifter-dev-ctf-scheduler")
     assert values["runtimeEnv"]["CLOUD_PROVIDER"] == "aws"
+    assert values["runtimeEnv"]["AUDIT_DEPLOYMENT_SCOPE"] == "aws:123456789012:us-east-2:dev"
     assert values["runtimeEnv"]["ENVIRONMENT"] == "development"
     assert values["runtimeEnv"]["AUTH_PROVIDER"] == "oidc"
     # ENGINE_TASK_IMAGE is renderer-generated from the attested provisioner digest.

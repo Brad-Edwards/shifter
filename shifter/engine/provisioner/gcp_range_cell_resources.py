@@ -197,7 +197,8 @@ def _linux_host_key_script(host_private_key_b64: str, mgmt_ssh_port: int = 22) -
         '  if ! restart_ssh; then log "WARNING could not restart the ssh service"; fi\n'
         # Converge: confirm sshd actually serves the intended key, once it is up.
         "  for attempt in 1 2 3 4 5; do\n"
-        f"    got=$(ssh-keyscan -t ed25519 -T 5 -p {int(mgmt_ssh_port)} 127.0.0.1 2>/dev/null | awk '{{print $2\" \"$3}}' | tail -n1)\n"
+        f"    got=$(ssh-keyscan -t ed25519 -T 5 -p {int(mgmt_ssh_port)} 127.0.0.1 2>/dev/null | "
+        f"awk '{{print $2\" \"$3}}' | tail -n1)\n"
         '    if [ "$got" = "$want" ]; then log "OK serving the provisioner-issued host key"; return 0; fi\n'
         "    sleep 3\n"
         '    if [ "$attempt" = 3 ]; then log "retrying ssh restart"; restart_ssh || true; fi\n'
@@ -239,10 +240,10 @@ def _windows_boot_script(host_private_key_b64: str, authorized_key: str) -> str:
 
 def _metadata_items(
     config: GCERangeCellConfig,
+    instance: InstancePlan,
     username: str,
     public_key: str,
     *,
-    os_type: str,
     host_private_key_b64: str,
     host_public_key: str,
     composition_script: str = "",
@@ -252,8 +253,11 @@ def _metadata_items(
 
     ``composition_script`` (empty on the cyberscript path) is appended to the guest
     startup script after the host-key install, so the RAES-native path realizes
-    node content/features/accounts as part of the same idempotent bootstrap.
+    node content/features/accounts as part of the same idempotent bootstrap. The
+    guest boot dialect keys on ``instance["os_type"]`` and the linux host-key
+    converge check on ``instance["ssh_port"]`` (the host management sshd port).
     """
+    os_type = instance["os_type"]
     items = [{"key": key, "value": value} for key, value in config.metadata_items]
     items.append({"key": "ssh-keys", "value": f"{username}:{public_key}"})
     if host_public_key:
@@ -265,7 +269,7 @@ def _metadata_items(
         items.append(
             {
                 "key": "startup-script",
-                "value": _linux_host_key_script(host_private_key_b64, mgmt_ssh_port) + composition_script,
+                "value": _linux_host_key_script(host_private_key_b64, int(instance["ssh_port"])) + composition_script,
             }
         )
     return items
@@ -303,9 +307,9 @@ def instance_resource(
         "metadata": {
             "items": _metadata_items(
                 config,
+                instance,
                 instance["host_ssh_username"],
                 ssh_public_key,
-                os_type=instance["os_type"],
                 host_private_key_b64=host_private_key_b64,
                 host_public_key=host_public_key,
                 composition_script=composition_script,

@@ -5,6 +5,16 @@ This feature is being designed under
 capability described here is not yet available. Existing scenario-specific
 model setup is not evidence that these controls are implemented.
 
+The allocation foundation now records approved shard choices, reserves model
+quota before dispatch, and retains the original choices on retry. Operators
+can declare explicit provider-pool membership in a v2 catalog. Inactive CTF
+spares use event/spare preparation authority; this does not enable their
+accounts or participant model use. Warm-pool preparation likewise uses explicit
+generation authority; claim revokes it before authorizing the new owner.
+Pending grants are not credentials. See
+[durable allocations](../architecture/model-access/allocations.md) for the
+implemented boundary and its tests.
+
 An enabled scenario will request an approved model profile for each range.
 The platform will allocate model capacity and configure the participant's
 tool automatically. Participants will not need cloud accounts or provider

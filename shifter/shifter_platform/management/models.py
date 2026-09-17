@@ -209,6 +209,8 @@ class ModelAccessGroupEligibility(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Database table and integrity constraints for the eligibility record."""
+
         db_table = "management_model_access_group_eligibility"
         constraints = [
             models.CheckConstraint(

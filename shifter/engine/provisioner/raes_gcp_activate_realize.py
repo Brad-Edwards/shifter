@@ -29,7 +29,7 @@ from shared.raes.completion_evidence import build_completion_evidence
 from shared.warm_pool.activation_input import ActivationInput
 
 from cloud.exceptions import CloudError
-from config import GCERangeCellConfig
+from config import GCERangeCellConfig, load_gce_range_cell_config
 from raes_gcp_activate import ActivationResult
 from raes_gcp_apply import RaesGceApplyOptions, realize_access_on_existing_cell
 from raes_plan import parse_plan
@@ -58,14 +58,17 @@ def realize_claimant_access_on_cell(
     """
     operation_input = activation.raes_input
     raes_plan = parse_plan(operation_input.plan)
+    # Resolve once so the image resolver (which reads keyed image profiles) and the
+    # apply options share the same config; _registry_resolver requires a concrete one.
+    resolved_config = config or load_gce_range_cell_config()
     try:
         result = realize_access_on_existing_cell(
             str(activate_generation),
             activation.legacy_range_id,
             raes_plan,
-            _registry_resolver(operation_input),
+            _registry_resolver(operation_input, resolved_config),
             options=RaesGceApplyOptions(
-                config=config,
+                config=resolved_config,
                 egress_mode=operation_input.egress_mode,
                 allocated_network_cidr=allocated_network_cidr,
             ),

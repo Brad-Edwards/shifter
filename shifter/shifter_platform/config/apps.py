@@ -17,16 +17,19 @@ class PortalConfig(AppConfig):
             register_channel_layer_redis_health_check,
         )
         from config.model_access_authority import register_model_access_authority_signals
+        from config.model_access_sharing import refresh_model_launch_projections
         from config.organizer_authority import register_organizer_authority_signals
         from config.workspace_invitation_auth import register_workspace_invitation_login_signal
         from shared.audit import bind_audit_writer
         from shared.audit_adapter import audit_log_writer
         from shared.model_access.authority_port import bind_authority_invalidator
+        from shared.model_access.projection_port import bind_projection_refresher
 
         # Bind the one concrete audit writer to the neutral port. A missing or
         # conflicting binding is a startup configuration error (#1523).
         bind_audit_writer(audit_log_writer)
         bind_authority_invalidator(engine_invalidate_sharing_authority)
+        bind_projection_refresher(refresh_model_launch_projections)
         register_audit_log_degraded_health_check()
         register_channel_layer_redis_health_check()
         register_model_access_authority_signals()

@@ -30,16 +30,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from config import (
-    GCE_BOOTSTRAP_POLARIS_HOST,
-    GCE_BOOTSTRAP_PREPROMOTED_DC,
-    GCERangeCellConfig,
-    GCERangeImageProfile,
-    load_gce_range_cell_config,
-)
-from instance_setup import _set_attacker_container_password_after_bootstrap
-from polaris_bootstrap import _run_polaris_range_bootstrap
+from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops, mint_range_vertex_key
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
@@ -72,6 +65,7 @@ from raes_content_delivery import assert_content_delivery_bindings_complete, rea
 from raes_gcp_composition import node_bootstrap_script
 from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
 from raes_gcp_plan import RaesGcePlanError, RaesGcePlanOptions, build_raes_range_cell_plan
+from raes_gcp_polaris import _run_polaris_post_provision
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_operating_system import observe_operating_systems, validate_operating_systems
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
@@ -241,21 +235,9 @@ def _provision_raes_resources(
     authored account credential installed and verified on the guest, so a
     declared endpoint never appears with a credential that was never realized.
     """
-    # Per-range Vertex agent credential (polaris docker-host): mint the SA key,
-    # store it in Secret Manager, and grant the attached range-cell SA
-    # secretAccessor so the host can inject it into a14-kali. Mirrors the legacy
-    # scenario path (gcp_range_cells._provision_range_resources); gated on the
-    # tenant configuring a Vertex SA, so ranges without the agent are unaffected.
-    # The ref is persisted on every instance output (only the polaris host reads
-    # it), exactly as the legacy path does.
-    vertex_secret_ref: str | None = None
-    if runtime.config.vertex_service_account_email:
-        vertex_secret_ref = runtime.vertex_ops.ensure(
-            plan["range_id"],
-            runtime.config.vertex_service_account_email,
-            plan["project_id"],
-            runtime.config.service_account_email,
-        )
+    # Per-range Vertex agent credential (polaris docker-host); persisted on every
+    # instance output (only the polaris host reads it), mirroring the legacy path.
+    vertex_secret_ref = mint_range_vertex_key(plan["range_id"], plan["project_id"], runtime.config, runtime.vertex_ops)
     if plan["manage_network"]:
         _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
@@ -420,48 +402,6 @@ def _cleanup_failed_apply(
             allocated_network_cidr=runtime.allocated_network_cidr,
         ),
     )
-
-
-def _run_polaris_post_provision(instance_outputs: list[ResourceDict], range_id: int) -> None:
-    """Materialize the polaris compose stack on any polaris-docker-host guest.
-
-    The RAES-path counterpart of the legacy range-cell polaris post-provision
-    (``instance_orchestrator``): the polaris-vm image ships the a0-a16 docker
-    compose stack baked with a bake-time DC IP and a throwaway kali key, so after
-    the guests exist we reuse the reviewed ``PolarisRangeBootstrapPlan`` to
-    rewrite the compose override with THIS range's actual DC IP (statically
-    assigned at plan time) and per-instance participant key, then force-recreate
-    the dns + a14-kali containers and set the per-range attacker password. A
-    polaris-docker-host guest requires its prepromoted-domain-controller peer to
-    supply the DC IP. A no-op for ranges with no polaris host.
-    """
-    hosts = [out for out in instance_outputs if out.get("gcp_bootstrap_capability") == GCE_BOOTSTRAP_POLARIS_HOST]
-    if not hosts:
-        return
-    dc = next(
-        (out for out in instance_outputs if out.get("gcp_bootstrap_capability") == GCE_BOOTSTRAP_PREPROMOTED_DC),
-        None,
-    )
-    if dc is None:
-        raise RaesGcePlanError(
-            "a polaris-docker-host range requires a prepromoted-domain-controller instance to supply the DC IP"
-        )
-    dc_ip = str(dc.get("private_ip") or "")
-    for host in hosts:
-        instance_id = str(host["instance_id"])
-        _run_polaris_range_bootstrap(
-            instance_data=host,
-            instance_id=instance_id,
-            dc_ip=dc_ip,
-            public_key=str(host.get("public_key") or ""),
-            range_id=range_id,
-        )
-        _set_attacker_container_password_after_bootstrap(
-            instance_data=host,
-            instance_id=instance_id,
-            container_name="a14-kali",
-            ssh_user="kali",
-        )
 
 
 def apply_raes_range_cell(

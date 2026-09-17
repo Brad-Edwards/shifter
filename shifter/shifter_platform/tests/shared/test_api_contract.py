@@ -9,6 +9,7 @@ the boundary-mock policy.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -141,6 +142,47 @@ class TestPublishedContract:
         for operation in (collection["get"], collection["post"], resend["post"], revoke["post"]):
             assert operation["security"] == [{"cookieAuth": []}]
 
+    def test_workspace_session_operations_advertise_only_session_auth(self, openapi_document: dict[str, Any]) -> None:
+        paths = openapi_document["paths"]
+        operations = (
+            paths["/api/v1/workspaces/context/"]["get"],
+            paths["/api/v1/workspaces/organizations/"]["get"],
+            paths["/api/v1/workspaces/organizations/{organization_uuid}/"]["get"],
+            paths["/api/v1/workspaces/organizations/{organization_uuid}/"]["patch"],
+        )
+
+        for operation in operations:
+            assert operation["security"] == [{"cookieAuth": []}]
+
+    def test_range_launch_declares_validation_denial_and_quota_conflict(self, openapi_document: dict[str, Any]) -> None:
+        responses = openapi_document["paths"]["/api/v1/mission-control/range/launch/"]["post"]["responses"]
+
+        for status in ("400", "403", "409"):
+            schema = responses[status]["content"]["application/json"]["schema"]
+            assert schema["$ref"].endswith("/ApiError")
+        assert "workspace_range_quota_exceeded" in responses["409"]["description"]
+
+    def test_public_scoreboard_contract_matches_the_stable_runtime_shape(
+        self, openapi_document: dict[str, Any]
+    ) -> None:
+        schema = openapi_document["paths"]["/api/v1/ctf/events/{event_id}/scoreboard/"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]
+        name = schema["$ref"].rsplit("/", 1)[-1]
+        scoreboard = openapi_document["components"]["schemas"][name]
+
+        expected = {
+            "scoreboard_hidden",
+            "event_id",
+            "team_mode",
+            "frozen",
+            "rankings",
+            "bracket_rankings",
+            "brackets",
+        }
+        assert set(scoreboard["required"]) == expected
+        assert set(scoreboard["properties"]) == expected
+
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
         ngfw = openapi_document["paths"]["/api/v1/mission-control/ngfw/"]["post"]
@@ -191,6 +233,15 @@ class TestPublishedContract:
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])
+
+    def test_pack_registration_digest_default_satisfies_its_own_pattern(self, openapi_document: dict[str, Any]) -> None:
+        # A published default that violates its property's pattern makes the whole
+        # document fail OpenAPI/JSON-Schema validation before any operation can be
+        # checked (#2212). expected_package_digest is optional and accepts an empty
+        # string ("no expected digest"), so the pattern must admit "" alongside a
+        # sha256 digest and the emitted default must match it.
+        digest = openapi_document["components"]["schemas"]["PackRegistration"]["properties"]["expected_package_digest"]
+        assert re.fullmatch(digest["pattern"], digest["default"]) is not None
 
 
 @pytest.mark.django_db

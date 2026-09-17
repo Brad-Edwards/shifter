@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: SHOULD
 wave: 2
 created_at: 2026-04-16T22:49:32.549002Z
-updated_at: 2026-09-12T00:00:00Z
+updated_at: 2026-09-16T00:00:00Z
 ---
 
 # PLAT-202: Per-Range LLM Access Management
@@ -123,3 +123,31 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_model_demand_declaration.py`
 - TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_admission.py`
 - TESTS → TEST `shifter/shifter_platform/tests/cms/test_launch_model_admission.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2120` (M03: durable quota allocations and non-usable pending grants)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/allocations.md`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/catalog_v2.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/reservation.py`
+- IMPLEMENTS → CONFIG `shifter/installation/published_contract/model-access-policy.v2.schema.json`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_model_allocation.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation_authority.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation_launch.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation_lifecycle.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_warm_authority.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/management/model_access_authority.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_quota.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_model_allocation.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/range/model_allocation.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_allocation.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_allocation_postgres.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_allocation_sharing.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_allocation_lifecycle.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_allocation_launch.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_provider_pool.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_model_allocation_dispatch.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_model_lifecycle_refresh.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_model_warm_authority.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_model_allocation_scope.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/ecs/test_local_model_dispatch.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_provider_pools.py`

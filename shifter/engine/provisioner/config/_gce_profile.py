@@ -200,7 +200,7 @@ def _validate_preconfigured_machine_profile(prefix: str, profile: GCERangeImageP
         ):
             raise RuntimeError(f"{prefix}.participant_container_name is not a valid container name")
         _reject_machine_host_fields(
-            prefix, profile, (profile.participant_username, profile.host_ssh_username) + readiness_fields
+            prefix, profile, (profile.participant_username, profile.host_ssh_username, *readiness_fields)
         )
         return
     if profile.bootstrap_capability != GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
