@@ -212,15 +212,21 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul"}
 
     @classmethod
     def setUpClass(cls):
         cls.deploy = _load("deploy.yml")
         cls.script = ADR_GUARD._dw_extract_set_environment_script(cls.deploy)
 
-    def env(self, event_name, ref="", base_ref=""):
-        return ADR_GUARD._dw_evaluate_env(self.script, event_name, ref=ref, base_ref=base_ref)
+    def env(self, event_name, ref="", base_ref="", environment_input=""):
+        return ADR_GUARD._dw_evaluate_env(
+            self.script,
+            event_name,
+            ref=ref,
+            base_ref=base_ref,
+            environment_input=environment_input,
+        )
 
     def test_push_never_deploys(self):
         for ref in ("refs/heads/dev", "refs/heads/main"):
@@ -259,6 +265,20 @@ class TestManualDeployDispatch(unittest.TestCase):
         env_input = self.deploy["on"]["workflow_dispatch"]["inputs"]["environment"]
         self.assertEqual(env_input["type"], "choice")
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
+
+    def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
+        for environment in ("gcp-dev", "nazgul"):
+            with self.subTest(environment=environment):
+                out = self.env(
+                    "workflow_dispatch",
+                    ref=f"refs/heads/{environment}",
+                    environment_input=environment,
+                )
+
+                self.assertEqual(out["gcp_environment"], environment)
+                self.assertEqual(out["gcp_github_environment"], environment)
+                self.assertEqual(out["run_gcp"], "true")
+                self.assertEqual(out["deploy_gcp"], "true")
 
     def test_deploy_jobs_stay_pull_request_denied(self):
         # Unchanged trust invariant: no deploy job runs on a pull_request event.
