@@ -670,3 +670,8 @@ pre-mutation cleanup across the external runtime seam. Model enrollment now
 activates pending grants only on one-use token exchange, and re-enrollment
 revokes old request authority. Accounting retains complete billing evidence,
 hard request deadlines and owner-first locks alongside request reconciliation.
+
+The latest hook cleanup retains fast syntax/format checks, pure-Python IAM and
+network scoping guards, and secret/identifier hygiene. Full tests, type checks
+and external infrastructure scanners remain in CI. Retired scenario-role checks
+and private-content exclusions are not restored by development-branch merges.
