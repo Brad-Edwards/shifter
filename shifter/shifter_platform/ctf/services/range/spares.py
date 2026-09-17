@@ -156,13 +156,25 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
             status=SpareRangeStatus.FAILED.value,
         )
 
+    spare = CTFSpareRange.objects.create(event=event, owner_user=spare_user, status=SpareRangeStatus.PROVISIONING.value)
     try:
+        from ctf.services.range.model_allocation import project_event_model_scope
+        from shared.model_access import OwnedReference
+
+        subject = OwnedReference(owner="ctf", reference=f"draw:{spare.pk}")
         result = cms_create_range(
             user=spare_user,
             scenario=event.scenario_id,
             agents_by_os=agents_by_os,
             ngfw_enabled=ngfw_enabled,
             remote_access_teardown_at=event.get_cleanup_time(),
+            model_admission_subject=subject,
+            model_launch_scope=project_event_model_scope(
+                event,
+                draw_key,
+                subject,
+                spare_id=spare.pk,
+            ),
         )
     except Exception:
         logger.exception(
@@ -171,20 +183,15 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
         )
         # No range came up, so the draw must go back.
         release_range(draw_key)
-        return CTFSpareRange.objects.create(
-            event=event,
-            owner_user=spare_user,
-            status=SpareRangeStatus.FAILED.value,
-        )
+        spare.status = SpareRangeStatus.FAILED.value
+        spare.save(update_fields=["status", "updated_at"])
+        return spare
 
     range_instance_id = cms_find_range_instance_id(result.request_id)
-    return CTFSpareRange.objects.create(
-        event=event,
-        owner_user=spare_user,
-        range_instance_id=range_instance_id,
-        request_id=result.request_id,
-        status=SpareRangeStatus.PROVISIONING.value,
-    )
+    spare.range_instance_id = range_instance_id
+    spare.request_id = result.request_id
+    spare.save(update_fields=["range_instance_id", "request_id", "updated_at"])
+    return spare
 
 
 def provision_event_spares(event_id: UUID, target_count: int, *, operator: User | None = None) -> dict[str, Any]:

@@ -21,7 +21,7 @@ def revoke_projection_read(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("engine", "0069_runtime_plugin_bindings"),
+        ("engine", "0073_runtime_plugin_bindings"),
     ]
 
     operations = [

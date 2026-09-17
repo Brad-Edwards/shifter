@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.db import transaction
 from installation.range_egress import RangeEgressMode
 
 from engine.services import RangeBindings, create_raes_range
@@ -93,20 +94,31 @@ class CmsRaesDispatchPort:
     ) -> ShifterDispatchResult:
         delivery_bindings = self._prepare_delivery(compiled_plan)
         artifact_bindings = self._resolve_artifact_bindings(compiled_plan)
-        ref = create_raes_range(
-            request_id=self.request_id,
-            user_id=self.user_id,
-            compiled_plan=compiled_plan,
-            backend_admission=self.backend_admission,
-            bindings=RangeBindings(
-                delivery=delivery_bindings,
-                participant_access=tuple(participant_access),
-                artifact=artifact_bindings,
-                runtime_plugin_scope=self.runtime_plugin_scope,
-            ),
-            workspace_id=self.workspace_id,
-            egress_mode=self.egress_mode,
-        )
+        from uuid import UUID
+
+        from cms.services._model_allocation import needs_model_preparation, prepare_model_access_for_dispatch
+        from engine.services import dispatch_created_raes_range
+
+        prepare_models = needs_model_preparation(self.request_id)
+        with transaction.atomic():
+            ref = create_raes_range(
+                request_id=self.request_id,
+                user_id=self.user_id,
+                compiled_plan=compiled_plan,
+                backend_admission=self.backend_admission,
+                bindings=RangeBindings(
+                    delivery=delivery_bindings,
+                    participant_access=tuple(participant_access),
+                    artifact=artifact_bindings,
+                    runtime_plugin_scope=self.runtime_plugin_scope,
+                    defer_dispatch=prepare_models,
+                ),
+                workspace_id=self.workspace_id,
+                egress_mode=self.egress_mode,
+            )
+            if prepare_models:
+                prepare_model_access_for_dispatch(UUID(self.request_id), range_id=UUID(ref.range_id))
+                ref = dispatch_created_raes_range(UUID(self.request_id))
         return ShifterDispatchResult(
             request_id=ref.request_id, accepted=ref.accepted, status=ref.status, range_id=ref.range_id
         )

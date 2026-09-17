@@ -17597,7 +17597,7 @@
             "type": "string",
             "default": "",
             "maxLength": 71,
-            "pattern": "^sha256:[a-f0-9]{64}$"
+            "pattern": "^(sha256:[a-f0-9]{64})?$"
           },
           "lock_ref": {
             "type": "string",

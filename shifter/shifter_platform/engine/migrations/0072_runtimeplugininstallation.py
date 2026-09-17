@@ -9,7 +9,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("engine", "0067_publicoperationretrybinding_rangecleanupverification"),
+        ("engine", "0071_model_workload_budgets"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

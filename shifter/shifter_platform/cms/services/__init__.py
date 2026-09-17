@@ -41,12 +41,15 @@ from engine.services import assess_declared_event_capacity as engine_assess_decl
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
 from engine.services import confirm_receipt_verifier_binding as engine_confirm_receipt_verifier_binding
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
+from engine.services import fence_model_policy_publication as engine_fence_model_policy_publication
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
 from engine.services import get_openvpn_profile as engine_get_openvpn_profile
 from engine.services import get_range_pause_resume_capability as engine_get_range_pause_resume_capability
 from engine.services import has_openvpn_profile as engine_has_openvpn_profile
 from engine.services import invalidate_sharing_authority as engine_invalidate_sharing_authority
+from engine.services import list_model_launch_refreshes as engine_list_model_launch_refreshes
 from engine.services import pause_range as engine_pause_range
+from engine.services import project_model_launch_authority as engine_project_model_launch_authority
 from engine.services import project_range_cleanup_outcome as project_range_cleanup_outcome
 from engine.services import project_receipt_verifier_binding as engine_project_receipt_verifier_binding
 from engine.services import project_selector_resolution as engine_project_selector_resolution
@@ -263,12 +266,15 @@ __all__ = (
     "engine_cancel_range_by_request",
     "engine_confirm_receipt_verifier_binding",
     "engine_destroy_range_by_request",
+    "engine_fence_model_policy_publication",
     "engine_get_instance_ips_by_uuid",
     "engine_get_openvpn_profile",
     "engine_get_range_pause_resume_capability",
     "engine_has_openvpn_profile",
     "engine_invalidate_sharing_authority",
+    "engine_list_model_launch_refreshes",
     "engine_pause_range",
+    "engine_project_model_launch_authority",
     "engine_project_receipt_verifier_binding",
     "engine_project_selector_resolution",
     "engine_publish_sharing_binding",

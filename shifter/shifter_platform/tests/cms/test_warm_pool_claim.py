@@ -19,10 +19,10 @@ from uuid import uuid4
 
 import pytest
 
-from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
+from cms.services._warm_pool_claim import WarmClaimRequest, _resolve_claim_candidates, attempt_warm_claim
 from shared.enums import RangeSource
 from shared.range_instantiation_policy import InstantiationPurpose
-from shared.warm_pool.policy import load_policy_json
+from shared.warm_pool.policy import WarmPoolOverride, load_policy_json
 
 _DISABLED = load_policy_json("")
 _ENABLED_GCE = load_policy_json(
@@ -70,6 +70,27 @@ class TestDecisionGates:
         monkeypatch.setattr(settings, "WARM_POOL_POLICY", _ENABLED_GCE, raising=False)
         # Enabled + gce supported, but no bucket serves this scenario.
         assert attempt_warm_claim(_request("gce", "some-other-scenario")) is None
+
+    def test_narrowed_policy_excludes_an_unauthorized_candidate(self, monkeypatch):
+        from django.conf import settings
+
+        policy = load_policy_json(
+            '{"enabled": true, "buckets": ['
+            '{"id": "authorized", "backend": "gce", "scenario": "polaris", "capacity_partition": "default", '
+            '"target": 1, "minimum": 0, "maximum": 2, "idle_ttl_seconds": 3600},'
+            '{"id": "excluded", "backend": "gce", "scenario": "polaris", "capacity_partition": "default", '
+            '"target": 1, "minimum": 0, "maximum": 2, "idle_ttl_seconds": 3600}'
+            "]}"
+        )
+        monkeypatch.setattr(settings, "WARM_POOL_POLICY", policy, raising=False)
+        monkeypatch.setattr("cms.services._warm_pool_claim.warm_isolation_class", lambda user, ws: "personal")
+
+        candidates = _resolve_claim_candidates(
+            _request("gce", "polaris", user=SimpleNamespace()),
+            WarmPoolOverride(bucket_ids=("authorized",)),
+        )
+
+        assert [bucket_id for bucket_id, _digest in candidates] == ["authorized"]
 
 
 @pytest.mark.django_db

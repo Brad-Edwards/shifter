@@ -7,7 +7,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("engine", "0068_runtimeplugininstallation"),
+        ("engine", "0072_runtimeplugininstallation"),
     ]
 
     operations = [
