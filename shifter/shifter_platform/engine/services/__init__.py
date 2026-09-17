@@ -49,8 +49,18 @@ from ._cleanup_verification import (
     record_cleanup_verification,
 )
 from ._common import EngineError
-from ._lifecycle import pause_range, resume_range
+from ._lifecycle import dispatch_prepared_range_resume, pause_range, resume_range
 from ._model_admission import admit_range_model_access
+from ._model_launch_api import (
+    disable_optional_model_preparation,
+    fence_model_policy_publication,
+    get_model_launch_preparation,
+    get_model_warm_scope,
+    list_model_launch_refreshes,
+    prepare_model_launch,
+    project_model_launch_authority,
+    record_model_observations,
+)
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
 from ._preparation_adapters import (
@@ -90,7 +100,7 @@ from ._raes_image import (
     list_raes_image_mappings,
     upsert_raes_image_mapping,
 )
-from ._raes_range import RaesRangeRef, RangeBindings, create_raes_range
+from ._raes_range import RaesRangeRef, RangeBindings, create_raes_range, dispatch_created_raes_range
 from ._raes_status import project_raes_operation_status
 from ._range import (
     cancel_range,
@@ -235,15 +245,21 @@ __all__ = (
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",
+    "disable_optional_model_preparation",
     "disable_raes_image_mapping",
+    "dispatch_created_raes_range",
+    "dispatch_prepared_range_resume",
     "drain_sharing_binding",
     "enqueue_range_activation",
     "evaluate_operation_result",
+    "fence_model_policy_publication",
     "finalize_retiring_generations",
     "get_active_range_provisioned_instances",
     "get_artifact_preparation",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
+    "get_model_launch_preparation",
+    "get_model_warm_scope",
     "get_openvpn_profile",
     "get_or_create_allocation_group",
     "get_owned_instance_request_ref",
@@ -263,12 +279,15 @@ __all__ = (
     "latest_capacity_declaration",
     "latest_cleanup_verification",
     "list_backend_artifacts",
+    "list_model_launch_refreshes",
     "list_preparation_adapters",
     "list_raes_image_mappings",
     "lookup_public_operation",
     "operation_id_for_request",
     "pause_range",
+    "prepare_model_launch",
     "preview_effective_policy",
+    "project_model_launch_authority",
     "project_raes_operation_status",
     "project_range_cleanup_outcome",
     "project_receipt_verifier_binding",
@@ -287,6 +306,7 @@ __all__ = (
     "reconcile_preparations",
     "record_capacity_declaration",
     "record_cleanup_verification",
+    "record_model_observations",
     "record_preparation_worker_result",
     "record_raes_operation_status",
     "record_raes_runtime_snapshot",

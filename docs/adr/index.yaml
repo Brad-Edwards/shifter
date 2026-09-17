@@ -3860,6 +3860,10 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/060-model-access-allocation-accounting.md",
+      "docs/architecture/model-access/allocation-preflight-2120.md",
+      "docs/architecture/model-access/allocations.md",
+      "shifter/shifter_platform/engine/services/_model_allocation.py",
+      "shifter/shifter_platform/tests/engine/services/test_model_allocation_postgres.py",
       "docs/architecture/model-access/sharing.md",
       "docs/architecture/model-access/sharing-authority-preflight-2140.md",
       "docs/architecture/model-access/architecture.md",

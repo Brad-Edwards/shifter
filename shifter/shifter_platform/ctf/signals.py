@@ -85,6 +85,16 @@ _SPARE_AUTHORITY_FIELDS = (
     "status",
     "deleted_at",
 )
+_EVENT_AUTHORITY_FIELDS = (
+    "created_by_id",
+    "status",
+    "deleted_at",
+    "model_demand",
+    "event_start",
+    "event_end",
+    "range_spinup_minutes",
+    "cleanup_delay_hours",
+)
 
 
 @receiver(pre_save, sender=CTFParticipant, dispatch_uid="ctf.model_access.participant.capture")
@@ -185,14 +195,14 @@ def invalidate_cohort_model_access(sender: type[CTFCohort], instance: CTFCohort,
 @receiver(pre_save, sender=CTFEvent, dispatch_uid="ctf.model_access.event.capture")
 def capture_event_model_access(sender: type[CTFEvent], instance: CTFEvent, **kwargs: object) -> None:
     """Capture event authority before saving."""
-    _capture_authority_fields(sender, instance, ("created_by_id", "status", "deleted_at"))
+    _capture_authority_fields(sender, instance, _EVENT_AUTHORITY_FIELDS)
 
 
 @receiver(post_save, sender=CTFEvent, dispatch_uid="ctf.model_access.event.invalidate")
 @receiver(pre_delete, sender=CTFEvent, dispatch_uid="ctf.model_access.event.delete")
 def invalidate_event_model_access(sender: type[CTFEvent], instance: CTFEvent, **kwargs: object) -> None:
     """Invalidate an event selector after authority changes or deletion."""
-    if _changed(instance, ("created_by_id", "status", "deleted_at")):
+    if _changed(instance, _EVENT_AUTHORITY_FIELDS):
         _invalidate_model_access(
             [_authority_ref("event", instance.pk)],
             "ctf-event-changed",

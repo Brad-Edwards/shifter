@@ -19,6 +19,8 @@ deployment ranges. Shared resources do not require shared participant tokens.
 | [Architecture and contracts](architecture.md) | Ownership, configuration, allocation, API, persistence, protocol, lifecycle, and user flows. |
 | [Configurable sharing](sharing.md) | Which ranges share which resources, membership modes, overlapping policies, pooled accounting and management examples. |
 | [Sharing authority preflight](sharing-authority-preflight-2140.md) | M20 owner-resolution, transactional fence, mutation-path, validation and security guardrails. |
+| [Allocation preflight](allocation-preflight-2120.md) | M03 transaction, shared-quota locking, pending-grant, lifecycle and cross-cutting validation guardrails. |
+| [Durable allocations](allocations.md) | M03 quota reservations, v2 provider-pool membership, pending grants and preparation authority. |
 | [Security design](security.md) | Threats, identities, network/IAM boundaries, credential lifecycle, privacy, and negative tests. |
 | [GCP deployment package](gcp-packaging.md) | Disabled M06 identity, TLS, network, runtime and deployment-lane resources. |
 | [GCP packaging preflight](gcp-packaging-preflight-2123.md) | M06 repository integration gates for runtime isolation, IAM, egress, TLS and deployment evidence. |

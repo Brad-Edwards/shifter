@@ -271,6 +271,37 @@ uses the new admission epoch; old guest tokens cannot regain authority.
 
 ## Qualification evidence
 
+### Allocation evidence
+
+The M03 [allocation boundary](../architecture/model-access/allocations.md)
+persists quota commitments and pending grants before dispatch. Operators can
+use `model-access-policy/v2` to declare explicit provider-pool shard membership;
+v1 remains readable without changing existing snapshot digests. A provider-pool
+restriction without that mapping denies allocation.
+
+Admission requires fresh, catalog-bound quota observations and complete owner
+authority. Observation collection must run outside database transactions.
+Missing observations deny required model use; enabling the catalog alone does
+not fabricate provider capacity. Pending grants cannot authorize broker calls.
+Local PostgreSQL and integration tests establish transaction behavior, not
+live provider availability or billing correctness.
+
+Lifecycle refresh reads the durable, package-bound preparation snapshot. A
+catalog revision changes its identity even when scenario demand is unchanged;
+operators must publish matching fresh observations before renewal. Removing or
+disabling policy revokes any existing optional preparation and records visible
+absence rather than reusing its old catalog. Local development launches drain
+the production-shaped outbox after commit, so a rollback must produce neither a
+launch row nor a subprocess.
+
+An initial optional launch while policy is unavailable is also durable: the
+operation records a catalog-free absence and cannot gain access on replay after
+policy is enabled. Routine Range status updates refresh selector evidence but do
+not revoke generation-stable launch authority. Owner, workspace, destroy and
+delete mutations remain revoking events and require fresh preparation.
+
+### Release evidence
+
 The release bundle records repository/image/pack/client/SDK/chart digests,
 configuration and policy/price revisions, provider/project/region references
 under protected access, measured cohort/limits, effective IAM/network probe
