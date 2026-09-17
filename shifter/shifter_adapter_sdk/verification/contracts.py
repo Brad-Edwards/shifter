@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
-from shared.log_sanitize import safe_log_value
+from shifter_adapter_sdk._text import safe_log_value
 
 ENTRY_POINT_GROUP = "shifter.scenario_verification.adapters"
 API_VERSION = "1"

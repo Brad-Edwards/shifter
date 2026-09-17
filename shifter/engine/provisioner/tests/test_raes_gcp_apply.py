@@ -78,6 +78,21 @@ def _resolver(node):
     return GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1")
 
 
+def test_plugin_failure_enters_resource_and_secret_cleanup_before_readiness():
+    from runtime_plugin_execution import RuntimePluginExecutionError
+
+    clients = _clients(exists=True)
+    secrets, secret_calls = _secret_ops()
+    plugin = MagicMock(side_effect=RuntimePluginExecutionError("Runtime plugin guest execution failed"))
+    composition = MagicMock()
+    options = _apply_options(_config(), clients, secrets, runtime_plugin=plugin, composition_verifier=composition)
+    with pytest.raises(RuntimePluginExecutionError):
+        apply_raes_range_cell("req-plugin", 7, _plan(), _resolver, options)
+    assert clients.instances.delete.call_count == 2
+    assert secret_calls.delete_ssh.call_count == 2
+    composition.assert_not_called()
+
+
 def _clients(*, exists: bool = False, instance_insert_error: Exception | None = None) -> SimpleNamespace:
     def get_side_effect(**_kwargs):
         if exists:
@@ -768,6 +783,30 @@ def test_normal_apply_path_realizes_both_account_auth_methods_without_output_exp
     assert "PASSWORD" not in repr(output)
     assert "ssh-rsa PUBLIC" not in repr(output)
     assert "projects/proj-1/secrets/password" not in repr(output)
+
+
+def test_participant_projection_uses_only_the_selected_verified_account():
+    from raes_access import RealizedAccessBinding
+    from raes_gcp_apply import _publish_participant_access
+
+    output = {
+        "public_key": "management-public-key",
+        "_verified_account_public_keys": {"account.selected": "participant-key", "account.other": "other-key"},
+    }
+    binding = RealizedAccessBinding("node.web", "ssh", "account.selected", "participant", "key")
+    _publish_participant_access(output, (binding,), {"account.selected": "participant-secret-ref"})
+    assert output["participant_ssh_public_key"] == "participant-key"
+    assert output["ssh_key_secret_arn"] == "participant-secret-ref"
+    assert "_verified_account_public_keys" not in output
+    assert "other-key" not in repr(output)
+
+
+def test_undeclared_account_public_keys_are_not_published():
+    from raes_gcp_apply import _publish_participant_access
+
+    output = {"public_key": "management-public-key", "_verified_account_public_keys": {"account.other": "other-key"}}
+    _publish_participant_access(output, (), {"account.other": "other-secret-ref"})
+    assert output == {"public_key": "management-public-key"}
 
 
 class TestAccountCredentialIntegration:

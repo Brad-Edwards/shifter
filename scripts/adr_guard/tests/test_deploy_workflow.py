@@ -342,7 +342,7 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
         cls.filters = {unit["id"]: unit["paths"] for unit in raw["quality_units"]}
 
     def test_shared_framework_path_uses_normal_platform_quality_jobs(self):
-        framework_path = "shifter/shifter_platform/shared/scenario_verification/__init__.py"
+        framework_path = "shifter/shifter_adapter_sdk/verification/__init__.py"
         self.assertTrue(ADR_GUARD._dw_path_matches_any(framework_path, self.filters["shifter_platform"]))
         for job_id in (
             "shifter-platform-lint",

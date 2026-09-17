@@ -20,6 +20,7 @@ from shared.cloud.exceptions import CloudTaskError
 
 from ._client import load_kubernetes_api
 from ._interrupt import interrupt_job
+from ._output import read_task_output
 from ._profile import KubernetesTaskProfile
 from ._run_task_flow import _build_run_context, _run_task
 from ._secrets import _build_secret_name as _build_secret_name_impl
@@ -136,3 +137,13 @@ class KubernetesTaskRunner:
         except Exception as e:
             logger.exception("get_task_status: failed task_id=%s error_type=%s", task_id, type(e).__name__)
             raise CloudTaskError(f"Failed to get Kubernetes Job status ({type(e).__name__})") from e
+
+    def get_task_output(self, cluster: str, task_ref: str, expected_identity: dict[str, Any]) -> bytes | None:
+        """Read bounded output without logging untrusted worker diagnostics."""
+        try:
+            batch_api, core_api, _client, _api_exception = self._load_kubernetes_api()
+            return read_task_output(batch_api, core_api, cluster, task_ref, expected_identity)
+        except CloudTaskError:
+            raise
+        except Exception:
+            raise CloudTaskError("Task output is unavailable") from None

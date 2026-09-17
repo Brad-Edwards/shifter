@@ -37,6 +37,7 @@ from shared.auth import (
     is_ctf_participant,
     is_ctf_participant_only,
 )
+from workspaces.services import list_administrable_organizations
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -73,6 +74,7 @@ class BootstrapPermissionsSerializer(serializers.Serializer):
     can_view_users = serializers.BooleanField()
     can_change_users = serializers.BooleanField()
     can_delete_users = serializers.BooleanField()
+    can_manage_adapters = serializers.BooleanField(required=False)
 
 
 class BootstrapModesSerializer(serializers.Serializer):
@@ -182,6 +184,11 @@ class BootstrapView(APIView):
                 "can_view_users": bool(session_user is not None and session_user.has_perm("auth.view_user")),
                 "can_change_users": bool(session_user is not None and session_user.has_perm("auth.change_user")),
                 "can_delete_users": bool(session_user is not None and session_user.has_perm("auth.delete_user")),
+                "can_manage_adapters": bool(
+                    session_user is not None
+                    and session_user.is_active
+                    and (session_user.is_superuser or list_administrable_organizations(session_user))
+                ),
             },
             "modes": _modes_for_user(session_user),
         }

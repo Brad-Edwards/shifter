@@ -42,9 +42,11 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #1583 after qualifying portal memory headroom and maintenance-worker startup capacity.
 # Regenerated for #2179 after adding the GKE metadata-server egress NetworkPolicy
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
+# Regenerated for ADR-041 tenant plugin installation: dedicated restricted
+# namespace, network denial, quotas, controller RBAC and worker admission policy.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "d776ddac24998a73c2e8b62baa70588b7bb625032782b9d3008c4e133b2fa271",
-    "gcp-prod": "22a86be62f03e4929874b60c4847ccca7f0fadf0e7af21d12d8ca8ae782049f3",
+    "gcp-dev": "815be9cc5c0482795eb49e13d105799c2f86afe47df3a9e7b1083586d383711a",
+    "gcp-prod": "b685d2c1cb70b1e07ac30f4c3dbe4ea92fc19f64484573af3fdf1f396dcd3e8d",
 }
 
 

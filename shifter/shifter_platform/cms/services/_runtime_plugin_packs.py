@@ -1,0 +1,84 @@
+"""Tenant administration over verified catalog packs and Engine plugin bindings."""
+
+from dataclasses import asdict
+from uuid import UUID
+
+from django.db import transaction
+
+from cms.models import RaesPackageSource
+from cms.scenarios.catalog_presentation import list_catalog_presentations
+from cms.scenarios.realizability import _availability_provider, _trusted_scenario_path
+from engine.services import bind_runtime_plugin, list_runtime_plugin_bindings
+from shared.exceptions import ValidationError
+from shared.raes.realizability import RealizabilityOutcome, assess_scenario_capability
+from shared.runtime_plugin_binding import PluginTargetBindings
+from workspaces.services import get_organization_profile
+
+
+def list_runtime_plugin_packs(user, organization_uuid: UUID) -> list[dict]:
+    get_organization_profile(user, organization_uuid)
+    bindings = {row.pack_id: row for row in list_runtime_plugin_bindings(user, organization_uuid)}
+    packs = []
+    for entry in list_catalog_presentations(user=user):
+        evidence = entry.get("raes")
+        if evidence is None:
+            continue
+        binding = bindings.get(entry["id"])
+        packs.append(
+            {
+                "id": entry["id"],
+                "name": entry["name"],
+                "pack_digest": evidence["package_digest"],
+                "binding": asdict(binding) if binding is not None else None,
+            }
+        )
+    return sorted(packs, key=lambda row: row["id"])
+
+
+def runtime_plugin_pack_detail(user, organization_uuid: UUID, pack_id: str) -> dict:
+    """Return selectable guest identities only; never apply a compiled plan."""
+    entry = next((row for row in list_runtime_plugin_packs(user, organization_uuid) if row["id"] == pack_id), None)
+    if entry is None:
+        raise ValidationError("The pack is unavailable")
+    source = RaesPackageSource.objects.filter(scenario_id=pack_id).first()
+    if source is None:
+        raise ValidationError("The pack is unavailable")
+    with _trusted_scenario_path(source) as (path, _gap):
+        if path is None:
+            raise ValidationError("The registered pack could not be verified; reinstall the pack before binding")
+        assessment = assess_scenario_capability(path, artifact_availability_provider=_availability_provider("gce"))
+    if assessment.outcome == RealizabilityOutcome.INDETERMINATE:
+        raise ValidationError("The pack's guest targets could not be resolved")
+    # Bind to the exact source row whose bytes were verified, not an earlier list
+    # projection if catalog registration changed while it was being loaded.
+    entry["pack_digest"] = source.package_digest
+    return {
+        **entry,
+        "targets": [{"address": row.address, "os_family": row.os_family} for row in assessment.image_demands],
+    }
+
+
+def set_runtime_plugin_pack(user, organization_uuid: UUID, pack_id: str, payload: dict, *, audit=None):
+    detail = runtime_plugin_pack_detail(user, organization_uuid, pack_id)
+    if payload["pack_digest"] != detail["pack_digest"]:
+        raise ValidationError("The pack changed; reload its current version before saving")
+    try:
+        bindings = PluginTargetBindings.model_validate(payload["bindings"])
+        if not set(bindings.targets.values()) <= {row["address"] for row in detail["targets"]}:
+            raise ValueError("Unknown guest")
+    except ValueError:
+        raise ValidationError("Select a pack guest for every required plugin target") from None
+    with transaction.atomic():
+        source = RaesPackageSource.objects.select_for_update().filter(scenario_id=pack_id).first()
+        if source is None or source.package_digest != detail["pack_digest"]:
+            raise ValidationError("The pack changed; reload its current version before saving")
+        return bind_runtime_plugin(
+            user,
+            organization_uuid,
+            payload["installation_id"],
+            detail["pack_digest"],
+            bindings.model_dump(mode="json"),
+            pack_id=pack_id,
+            enabled=payload["enabled"],
+            audit=audit,
+        )

@@ -95,6 +95,7 @@ class RaesGceApplyOptions:
     composition_verifier: Callable[..., frozenset[str]] = verify_bootstrap_composition
     operating_system_observer: Callable[..., list[dict[str, str]]] = observe_operating_systems
     substrate_observer: Callable[..., list[dict[str, str]]] = observe_gce_substrates
+    runtime_plugin: Callable[..., None] | None = None
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ class _RaesGceApplyRuntime:
     operating_system_observer: Callable[..., list[dict[str, str]]]
     substrate_observer: Callable[..., list[dict[str, str]]]
     allocated_network_cidr: str | None
+    runtime_plugin: Callable[..., None] | None
 
 
 def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
@@ -130,6 +132,7 @@ def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
         operating_system_observer=options.operating_system_observer,
         substrate_observer=options.substrate_observer,
         allocated_network_cidr=options.allocated_network_cidr,
+        runtime_plugin=options.runtime_plugin,
     )
 
 
@@ -291,6 +294,7 @@ def _publish_participant_access(
     brokered. A declared channel whose account produced no verified reference is
     a failed realization, not a silently credential-less endpoint.
     """
+    public_keys = output.pop("_verified_account_public_keys", {})
     for binding in access_bindings:
         secret_ref = account_secret_refs.get(binding.account_address, "")
         if not secret_ref:
@@ -300,6 +304,8 @@ def _publish_participant_access(
             )
         field = "ssh_key_secret_arn" if binding.channel == "ssh" else "rdp_password_secret_arn"
         output[field] = secret_ref
+        if binding.channel == "ssh" and binding.account_address in public_keys:
+            output["participant_ssh_public_key"] = public_keys[binding.account_address]
 
 
 def _access_by_node(
@@ -450,6 +456,8 @@ def apply_raes_range_cell(
         )
         verified = set(_realize_directory(plan, raes_plan, instance_outputs, runtime))
         verified.update(_realize_content_delivery(raes_plan, instance_outputs, delivery_bindings, runtime))
+        if runtime.runtime_plugin is not None:
+            runtime.runtime_plugin(raes_plan, instance_outputs)
         verified.update(runtime.composition_verifier(raes_plan, instance_outputs))
         operating_systems = runtime.operating_system_observer(raes_plan, instance_outputs)
         validate_operating_systems(raes_plan, operating_systems)

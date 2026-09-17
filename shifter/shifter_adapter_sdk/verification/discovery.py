@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Protocol, cast
 
-from shared.log_sanitize import safe_log_value
+from shifter_adapter_sdk._text import safe_log_value
 
 from .contracts import API_VERSION, ENTRY_POINT_GROUP, AdapterDeclaration, PluginDeclaration
 

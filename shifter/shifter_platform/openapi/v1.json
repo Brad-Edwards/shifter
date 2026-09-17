@@ -1622,6 +1622,510 @@
         ]
       }
     },
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/": {
+      "get": {
+        "operationId": "cms_organizations_plugin_packs_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedRuntimePluginPackList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/{pack_id}/": {
+      "get": {
+        "operationId": "cms_organizations_plugin_packs_retrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginPackDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "cms_organizations_plugin_packs_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginPackUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginPackUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginPackUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginPackBinding"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/": {
+      "get": {
+        "operationId": "cms_organizations_plugins_list",
+        "description": "Organization administrators install their own plugins without staff status.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RuntimePluginView"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "cms_organizations_plugins_create",
+        "description": "Organization administrators install their own plugins without staff status.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginInstall"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginInstall"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginInstall"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/{plugin_id}/actions/": {
+      "post": {
+        "operationId": "cms_organizations_plugins_actions_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginAction"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginAction"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/preparation-adapter-grants/": {
+      "get": {
+        "operationId": "cms_preparation_adapter_grants_list",
+        "description": "Grant selection is read-only; cloud authority is installed separately.",
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdapterGrantView"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation-adapters:read"
+        ]
+      }
+    },
     "/api/v1/cms/preparation-adapters/": {
       "get": {
         "operationId": "cms_preparation_adapters_list",
@@ -13671,6 +14175,29 @@
         "type": "string",
         "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito"
       },
+      "AdapterGrantView": {
+        "type": "object",
+        "description": "Select existing authority without returning its private cloud configuration.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "active",
+          "id",
+          "verified_at"
+        ]
+      },
       "AdapterInstall": {
         "type": "object",
         "description": "Only an existing grant and the closed versioned manifest enter installation.",
@@ -13691,12 +14218,21 @@
         "description": "Lifecycle changes retain immutable registration and cleanup references.",
         "properties": {
           "state": {
-            "$ref": "#/components/schemas/StateEnum"
+            "$ref": "#/components/schemas/AdapterStateStateEnum"
           }
         },
         "required": [
           "state"
         ]
+      },
+      "AdapterStateStateEnum": {
+        "enum": [
+          "enabled",
+          "disabled",
+          "retired"
+        ],
+        "type": "string",
+        "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `retired` - retired"
       },
       "AdapterView": {
         "type": "object",
@@ -14291,6 +14827,9 @@
             "type": "boolean"
           },
           "can_delete_users": {
+            "type": "boolean"
+          },
+          "can_manage_adapters": {
             "type": "boolean"
           }
         },
@@ -17263,6 +17802,37 @@
           }
         }
       },
+      "PaginatedRuntimePluginPackList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimePluginPack"
+            }
+          }
+        }
+      },
       "ParticipantAdd": {
         "type": "object",
         "description": "Request body for inviting a single participant.\n\n``name`` and ``email`` are both required and non-blank (mirroring the legacy\ntruthiness check). ``email`` is a plain ``CharField`` rather than an\n``EmailField`` because the service layer owns email validation.",
@@ -19924,6 +20494,25 @@
           "message"
         ]
       },
+      "RegistryCredentials": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ]
+      },
       "ReplaceLeasePolicy": {
         "type": "object",
         "description": "Strict full replacement plus expected revision.",
@@ -20020,6 +20609,269 @@
         ],
         "type": "string",
         "description": "* `pending` - pending\n* `provisioning` - provisioning\n* `ready` - ready\n* `pausing` - pausing\n* `paused` - paused\n* `resuming` - resuming\n* `destroying` - destroying\n* `destroyed` - destroyed\n* `failed` - failed"
+      },
+      "RuntimePluginAction": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/RuntimePluginActionActionEnum"
+          },
+          "registry_credentials": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RegistryCredentials"
+              }
+            ],
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "RuntimePluginActionActionEnum": {
+        "enum": [
+          "disable",
+          "enable",
+          "retry",
+          "retire"
+        ],
+        "type": "string",
+        "description": "* `disable` - disable\n* `enable` - enable\n* `retry` - retry\n* `retire` - retire"
+      },
+      "RuntimePluginBindings": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "targets": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          }
+        },
+        "required": [
+          "targets"
+        ]
+      },
+      "RuntimePluginInstall": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "manifest": {},
+          "registry_credentials": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RegistryCredentials"
+              }
+            ],
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "manifest"
+        ]
+      },
+      "RuntimePluginPack": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_digest": {
+            "type": "string"
+          },
+          "binding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimePluginPackBinding"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "binding",
+          "id",
+          "name",
+          "pack_digest"
+        ]
+      },
+      "RuntimePluginPackBinding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pack_id": {
+            "type": "string"
+          },
+          "pack_digest": {
+            "type": "string"
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bindings": {
+            "$ref": "#/components/schemas/RuntimePluginBindings"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "installation_state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bindings",
+          "enabled",
+          "id",
+          "installation_id",
+          "installation_state",
+          "organization_uuid",
+          "pack_digest",
+          "pack_id"
+        ]
+      },
+      "RuntimePluginPackDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_digest": {
+            "type": "string"
+          },
+          "binding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimePluginPackBinding"
+              }
+            ],
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimePluginTarget"
+            }
+          }
+        },
+        "required": [
+          "binding",
+          "id",
+          "name",
+          "pack_digest",
+          "targets"
+        ]
+      },
+      "RuntimePluginPackUpdate": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pack_digest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "bindings": {
+            "$ref": "#/components/schemas/RuntimePluginBindings"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "bindings",
+          "installation_id",
+          "pack_digest"
+        ]
+      },
+      "RuntimePluginTarget": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "os_family": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "os_family"
+        ]
+      },
+      "RuntimePluginView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manifest": {},
+          "manifest_digest": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RuntimePluginViewStateEnum"
+          },
+          "failure_code": {
+            "type": "string"
+          },
+          "has_registry_credentials": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "failure_code",
+          "has_registry_credentials",
+          "id",
+          "manifest",
+          "manifest_digest",
+          "organization_uuid",
+          "state"
+        ]
+      },
+      "RuntimePluginViewStateEnum": {
+        "enum": [
+          "checking",
+          "ready",
+          "failed",
+          "disabled",
+          "retired"
+        ],
+        "type": "string",
+        "description": "* `checking` - checking\n* `ready` - ready\n* `failed` - failed\n* `disabled` - disabled\n* `retired` - retired"
       },
       "ScenarioDetail": {
         "type": "object",
@@ -20385,15 +21237,6 @@
           "existing",
           "target_count"
         ]
-      },
-      "StateEnum": {
-        "enum": [
-          "enabled",
-          "disabled",
-          "retired"
-        ],
-        "type": "string",
-        "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `retired` - retired"
       },
       "SubmissionListItem": {
         "type": "object",

@@ -1004,3 +1004,32 @@ To add a production path:
   unchanged (`.*` already spans the leading whitespace the redundant `\s*` matched)
   and is pinned by the existing `tests/test_agent_attribution.py` parity tests. No
   change to what the guardrail forbids.
+# Private scenario boundary
+
+`AGENTS.md`, `.github/copilot-instructions.md`, and `.gc/plan-rules.md` require
+private scenario content and adapters to remain in their owning repositories.
+Public planning and review evidence uses synthetic examples; existing disclosure
+does not authorize further disclosure. Review application and infrastructure
+changes for identity-based scenario dispatch, embedded guest scripts, image
+recipes, and accidental imports from private adapters. Pack installation cannot
+authorize executable code. Runtime adapter bindings require explicit administrator
+authorization against a versioned public contract.
+
+The independently buildable SDK lives in `shifter/shifter_adapter_sdk`. Its paths
+route to platform quality jobs, which run SDK lint, security analysis, contract
+tests, an isolated wheel-installation test, and distribution builds. `make test`
+also runs the SDK lane. Application images copy the same first-party SDK source
+alongside the existing installation package; external authors consume its wheel.
+SDK tests reject imports from platform applications. Tenant standup instructions
+now use a base-range smoke and leave optional external pack validation and its
+evidence in the owning repository.
+
+ADR-041's tenant installation addendum permits organization administrators to
+install their own plugins. Engine's organization-authority imports and config's
+advisory bootstrap projection have narrow symbol allowlists. Runtime protocol
+tests exercise replay, malformed output and target escalation; the worker-output
+tests verify Job/Pod ownership and bounded streaming. Admission tests evaluate
+the rendered CEL against actual neutral-runner manifests and privilege overrides.
+API tests cover tenant denial, immutable versions, encrypted registry credentials,
+retry and stale probe completion. These tests do not replace live isolation or
+range-lifecycle qualification.

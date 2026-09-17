@@ -48,6 +48,11 @@ class Command(BaseCommand):
             self._touch_heartbeat()
             drained = self._drain_batch(options["batch_size"])
             interrupted = self._drain_interrupts(options["batch_size"])
+            with self._active_heartbeat():
+                from engine.services import reconcile_runtime_plugin_operations, reconcile_runtime_plugins
+
+                reconcile_runtime_plugins(limit=3)
+                reconcile_runtime_plugin_operations(limit=6)
             self.stdout.write(f"Drained {drained} launch intents, {interrupted} interrupts")
             if not options["loop"]:
                 return

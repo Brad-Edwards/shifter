@@ -609,6 +609,13 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
+      - name: Lint adapter SDK
+        working-directory: shifter/shifter_adapter_sdk
+        run: |
+          uv sync --frozen
+          uv run ruff check .
+          uv run ruff format --check .
+
       - name: Check for missing migrations
         working-directory: shifter/shifter_platform
         env:
@@ -1331,6 +1338,7 @@ jobs:
         run: |
           uv tool install bandit
           bandit -r shifter/shifter_platform/ --skip B101 --exclude shifter/shifter_platform/tests,shifter/shifter_platform/.venv
+          bandit -r shifter/shifter_adapter_sdk/ --skip B101 --exclude shifter/shifter_adapter_sdk/tests,shifter/shifter_adapter_sdk/.venv
 
   provisioner-sast:
     permissions:
@@ -1538,6 +1546,13 @@ jobs:
           # Django docs app and its suite were retired (#1591), so no path is
           # excluded here.
           uv run pytest tests/ -m "not redis and not postgres" --cov --cov-report=term-missing --cov-report=xml:coverage.xml
+
+      - name: Test and build independent adapter SDK
+        working-directory: shifter/shifter_adapter_sdk
+        run: |
+          uv sync --frozen --all-extras
+          uv run --all-extras pytest tests/
+          uv build
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the
       # redis-marked integration tests against the Redis service, with xdist

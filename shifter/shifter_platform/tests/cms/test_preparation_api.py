@@ -26,6 +26,19 @@ def test_staff_session_cannot_install_or_inspect_private_adapters(grant):
     assert not PreparationAdapter.objects.exists()
 
 
+def test_grant_picker_requires_executable_authority_and_omits_configuration(administrator, grant):
+    client = APIClient()
+    client.force_authenticate(user=User.objects.create_user(username="grant-picker-staff", is_staff=True))
+    assert client.get("/api/v1/cms/preparation-adapter-grants/").status_code == 403
+    client.force_authenticate(user=administrator)
+    response = client.get("/api/v1/cms/preparation-adapter-grants/")
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["id"] == str(grant.id)
+    assert set(rows[0]) == {"id", "active", "verified_at"}
+
+
 def test_explicit_administrator_installs_and_retires_without_platform_release(administrator, grant):
     client = APIClient()
     client.force_authenticate(user=administrator)

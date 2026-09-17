@@ -10,12 +10,39 @@ from cms.api import (
     preparation_workers,
     raes_image_registry,
     range_scope,
+    runtime_plugin_packs,
+    runtime_plugins,
     views,
 )
 
 app_name = "cms"
 
 urlpatterns = [
+    path(
+        "organizations/<uuid:organization_uuid>/plugin-packs/",
+        runtime_plugin_packs.RuntimePluginPackListView.as_view(),
+        name="runtime-plugin-packs",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/plugin-packs/<slug:pack_id>/",
+        runtime_plugin_packs.RuntimePluginPackDetailView.as_view(),
+        name="runtime-plugin-pack-detail",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/plugins/",
+        runtime_plugins.RuntimePluginListCreateView.as_view(),
+        name="runtime-plugins",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/plugins/<uuid:plugin_id>/actions/",
+        runtime_plugins.RuntimePluginActionView.as_view(),
+        name="runtime-plugin-action",
+    ),
+    path(
+        "preparation-adapter-grants/",
+        preparation_adapters.PreparationAdapterGrantListView.as_view(),
+        name="preparation-adapter-grants",
+    ),
     path(
         "artifact-preparation/workers/<uuid:operation_id>/",
         preparation_workers.PreparationWorkerView.as_view(),

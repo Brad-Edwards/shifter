@@ -41,6 +41,7 @@ from shared.raes.participant_access import (
     ParticipantAccessBinding,
     ParticipantAccessError,
 )
+from shared.runtime_plugin_binding import RuntimePluginPin
 
 __all__ = [
     "MAX_ACCESS_BINDINGS",
@@ -76,6 +77,7 @@ class RaesInputBindings:
     delivery: Sequence[DeliveryBinding]
     access: Sequence[ParticipantAccessBinding] = ()
     artifact: Sequence[ArtifactBinding] = ()
+    runtime_plugin: RuntimePluginPin | None = None
 
 
 # Bounded per ADR-043-R2/R7: the input is a reference-only projection, never a
@@ -95,6 +97,7 @@ _INPUT_KEYS = frozenset(
         "instantiation_purpose",
         "legacy_range_id",
         "egress_mode",
+        "runtime_plugin",
     }
 )
 
@@ -108,7 +111,7 @@ _INPUT_KEYS = frozenset(
 # deployment baseline) -- the exact pre-feature behavior, never a silent
 # *weakening*: a ``none`` zero-egress or an active egress posture is always carried
 # explicitly, so a missing field can never be read as "allow egress".
-_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings", "egress_mode"})
+_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings", "egress_mode", "runtime_plugin"})
 
 # Mirrors ``installation.range_egress.RangeEgressMode`` without importing it (the
 # provisioner image does not load the installation/pydantic machinery, exactly as
@@ -239,6 +242,7 @@ class RaesOperationInput:
     legacy_range_id: int
     egress_mode: str
     _image_candidates: dict[str, tuple[dict[str, Any], ...]]
+    runtime_plugin: RuntimePluginPin | None = None
 
     def artifact_binding_for(self, target: str) -> ArtifactBinding | None:
         """Return the fenced artifact binding for a node address, or None.
@@ -448,6 +452,13 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
     """
     obj = _require_mapping(payload, "raes operation input")
     _require_exact_keys(obj, _INPUT_KEYS, "raes operation input", optional=_OPTIONAL_INPUT_KEYS)
+    plugin = None
+    if "runtime_plugin" in obj:
+        try:
+            plugin = RuntimePluginPin.model_validate(obj["runtime_plugin"])
+            plugin.bindings.validate_plan(obj["plan"])
+        except ValueError:
+            raise RaesOperationInputError("raes operation input runtime plugin binding is invalid") from None
     return RaesOperationInput(
         plan=_require_mapping(obj["plan"], "raes operation input plan"),
         delivery_bindings=_validated_bindings(obj["delivery_bindings"]),
@@ -458,6 +469,7 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
         legacy_range_id=_validated_legacy_range_id(obj["legacy_range_id"]),
         egress_mode=_validated_egress_mode(obj.get("egress_mode")),
         _image_candidates=_validated_candidates(obj["image_candidates"]),
+        runtime_plugin=plugin,
     )
 
 
@@ -494,5 +506,7 @@ def build_raes_operation_input(
     # pre-#1580 shape and an older consumer never sees an unexpected key.
     if bindings.artifact:
         payload["artifact_bindings"] = [binding.to_transport() for binding in bindings.artifact]
+    if bindings.runtime_plugin is not None:
+        payload["runtime_plugin"] = bindings.runtime_plugin.model_dump(mode="json")
     parse_raes_operation_input(payload)
     return payload

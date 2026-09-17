@@ -40,6 +40,7 @@ export type PermissionPolicy =
   | "ctf_organizer"
   | "ctf_admin"
   | "ctf_participant"
+  | "adapter_admin"
   | "staff";
 
 export type NavIconKey =
@@ -273,6 +274,15 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         iconKey: "settings",
         external: false,
       },
+      {
+        surface: "Adapters",
+        routeName: "administer:adapters",
+        purpose: "Install and manage approved executable adapters.",
+        routePath: "/administer/adapters",
+        permissionPolicy: "adapter_admin",
+        iconKey: "boxes",
+        external: false,
+      },
       // Django admin escape hatch: always available, linked as a full-page legacy
       // handoff and never wrapped or described as a SPA-native workflow.
       {
@@ -304,6 +314,8 @@ export function permissionAllows(policy: PermissionPolicy, bootstrap: Bootstrap)
       return bootstrap.permissions.is_ctf_participant;
     case "staff":
       return bootstrap.principal.is_staff;
+    case "adapter_admin":
+      return bootstrap.permissions.can_manage_adapters === true;
     default:
       return false;
   }

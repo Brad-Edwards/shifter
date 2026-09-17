@@ -264,6 +264,9 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
     logger.info("Starting RAES range provision for request_id=%s", request_id)
     _report(ref, operation, ResultStep.RAES_PROVISION_RUNNING, {"raes_status": "running"})
     try:
+        from runtime_plugin_execution import load_guest_plugin_plans
+
+        plugin_plans = load_guest_plugin_plans(run)
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
         config = _config_for_range_placement(request_id, config)
@@ -283,6 +286,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
                 config=config,
                 egress_mode=operation_input.egress_mode,
                 allocated_network_cidr=network_allocation.require_available(),
+                runtime_plugin=plugin_plans.execute if plugin_plans is not None else None,
             ),
             delivery_bindings=operation_input.binding_transport(),
             access_bindings=operation_input.access_binding_transport(),
@@ -386,6 +390,8 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
     _report(ref, operation, ResultStep.RAES_ACTIVATE_RUNNING, {"raes_status": "running"})
     try:
         operation_input = activation.raes_input
+        if operation_input.runtime_plugin is not None:
+            raise RaesRealizationError("Runtime plugin warm activation is not supported")
         backend = _require_gce_live_fire_binding(operation_input)
         config = _config_for_range_placement(request_id, load_gce_range_cell_config(backend=backend))
         raes_plan = parse_plan(operation_input.plan)

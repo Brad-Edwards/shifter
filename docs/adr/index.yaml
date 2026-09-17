@@ -2393,6 +2393,16 @@
         "id": "ADR-041-R7",
         "description": "Core CI MUST exercise discovery, selection, contract validation, prerequisite ordering, all statuses, deadlines/cancellation, exception containment, deterministic ordering, aggregation, and redaction with synthetic entry points, declarations, sentinel data, and fake runners. It MUST NOT install or fetch an external adapter distribution to prove the core contract.",
         "checks": []
+      },
+      {
+        "id": "ADR-041-R8",
+        "description": "Tenant organization administrators may install their own immutable digest-pinned runtime plugins through the tenant UI without operator approval or per-plugin cloud grants. The independent author SDK defines the isolated runtime protocol separately from the legacy verification ABI. Plugin code must execute only in the restricted networkless worker namespace without application or cloud credentials. Installation compatibility requires current invocation-bound worker evidence; disable, retry and retirement fence stale completion. Registry credentials are encrypted at rest and never returned, audited or mounted in the worker. Core reauthorizes runtime plans against the original operation and target bindings; a plan or compatibility probe is not evidence of guest execution or range readiness. Engine and config consume only explicitly allowed organization-authority facade symbols. Contract, admission and tenant authorization tests use synthetic plugins; live qualification and full range integration remain separately required.",
+        "checks": ["layer-imports"]
+      },
+      {
+        "id": "ADR-041-R9",
+        "description": "Runtime guest values MUST be closed references to an original guest binding's private address or verified participant SSH public key, resolved by core after realization and delivered only to the action as bounded JSON data. The worker cannot select arbitrary output fields, cloud coordinates, secrets or management keys. Participant key references require a declared SSH endpoint before cloud mutation and the public key from verified authored-account installation; there is no management-key fallback. The complete plan set and every realized value MUST validate before the first guest action. AWS and GCP lifecycle acceptance are independent and both required for extraction; local plan tests do not establish live parity.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2404,8 +2414,17 @@
       "docs/architecture/scenario-verification-plugin-seam-adr.md",
       "docs/architecture/aces-polaris-scenario-smoketest-coverage-preflight-1293.md",
       "docs/technical/shifter_platform/scenario-verification.md",
-      "shifter/shifter_platform/shared/scenario_verification",
-      "shifter/shifter_platform/tests/shared/scenario_verification",
+      "shifter/shifter_adapter_sdk/verification",
+      "docs/architecture/external-scenario-runtime-design.md",
+      "shifter/shifter_adapter_sdk/runtime.py",
+      "shifter/shifter_platform/engine/services/_runtime_plugins.py",
+      "shifter/shifter_platform/engine/services/_runtime_plugin_controller.py",
+      "shifter/shifter_platform/shared/cloud/runtime_plugins.py",
+      "platform/k8s/gcp/base/runtime-plugins.yaml",
+      "platform/charts/shifter/templates/runtime-plugins.yaml",
+      "shifter/shifter_platform/tests/cms/test_runtime_plugins.py",
+      "shifter/shifter_platform/tests/shared/cloud/test_runtime_plugin_policy.py",
+      "shifter/shifter_adapter_sdk/tests",
       ".github/quality-path-filters.yaml",
       ".github/workflows/_quality.yml"
     ]
@@ -2482,7 +2501,7 @@
     "rules": [
       {
         "id": "ADR-043-R1",
-        "description": "The provisioner MUST NOT use Django model tables, columns, joins, migration history, arbitrary field updates, or the range-event outbox as its service API. At completed cutover its database principal may read only the immutable operation-input integration surface, append only to the result inbox, and use an explicitly reviewed stable coordination surface for synchronous reservations; all legacy domain-table and outbox grants MUST be revoked by forward migration and proved absent with PostgreSQL effective-privilege tests.",
+        "description": "The provisioner MUST NOT use Django model tables, columns, joins, migration history, arbitrary field updates, or the range-event outbox as its service API. At completed cutover its database principal may read only the immutable operation-input integration surface and the bounded plugin response projection defined in ADR-043-R8, append only to the result inbox, and use an explicitly reviewed stable coordination surface for synchronous reservations; all legacy domain-table and outbox grants MUST be revoked by forward migration and proved absent with PostgreSQL effective-privilege tests.",
         "checks": []
       },
       {
@@ -2513,6 +2532,11 @@
       {
         "id": "ADR-043-R7",
         "description": "The operation boundary MUST retain immutable input until terminal recovery is no longer possible, support an explicit rolling producer/consumer version window, and provide bounded retry/DLQ plus operator-visible signals for inbox lag, unsupported versions, stale/conflicting results, and operations lacking terminal results. A crash after cloud mutation but before result append MUST be recoverable through idempotent re-drive or provider/Terraform reconciliation; ADR-025 projection reconciliation alone is insufficient.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R8",
+        "description": "Runtime plugin planning MUST remain anchored to the existing operation generation and immutable range pin. Engine creates bounded SDK requests in the launch transaction; the isolated controller validates ownership, exact input digest, phase and expiry and rechecks generation under the range lock before recording terminal output. The provisioner may SELECT only invocation id, operation_id, state, input_digest and result from the operation response projection; it receives no registry or controller-input reads, writes, or Job-launch authority. It MUST reauthorize every plan against its original input before cloud or guest mutation. Configure and verify execute only on core-resolved pinned guests inside the existing cleanup boundary; planning success alone cannot imply readiness. PostgreSQL effective-privilege tests must prove both the narrow grant and denied mutations.",
         "checks": []
       }
     ],

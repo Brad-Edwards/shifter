@@ -26,7 +26,7 @@ from shared.warm_pool.policy import load_policy_json
 
 _DISABLED = load_policy_json("")
 _ENABLED_GCE = load_policy_json(
-    '{"enabled": true, "buckets": [{"id": "gce-polaris", "backend": "gce", "scenario": "polaris",'
+    '{"enabled": true, "buckets": [{"id": "gce-example", "backend": "gce", "scenario": "example",'
     ' "capacity_partition": "default", "target": 1, "minimum": 0, "maximum": 2, "idle_ttl_seconds": 3600}]}'
 )
 
@@ -51,18 +51,18 @@ class TestDecisionGates:
         from django.conf import settings
 
         monkeypatch.setattr(settings, "WARM_POOL_POLICY", _DISABLED, raising=False)
-        assert attempt_warm_claim(_request("gce", "polaris")) is None
+        assert attempt_warm_claim(_request("gce", "example")) is None
 
     def test_unsupported_backend_cold_falls_back(self, monkeypatch):
         from django.conf import settings
 
         # A bucket may target gdc, but gdc has no warm-activation adapter.
         policy = load_policy_json(
-            '{"enabled": true, "buckets": [{"id": "gdc-x", "backend": "gdc", "scenario": "polaris",'
+            '{"enabled": true, "buckets": [{"id": "gdc-x", "backend": "gdc", "scenario": "example",'
             ' "capacity_partition": "default", "target": 1, "minimum": 0, "maximum": 2, "idle_ttl_seconds": 3600}]}'
         )
         monkeypatch.setattr(settings, "WARM_POOL_POLICY", policy, raising=False)
-        assert attempt_warm_claim(_request("gdc", "polaris")) is None
+        assert attempt_warm_claim(_request("gdc", "example")) is None
 
     def test_no_matching_bucket_cold_falls_back(self, monkeypatch):
         from django.conf import settings
@@ -89,6 +89,9 @@ class TestClaimOrchestration:
         # The isolation class is resolved through the workspaces seam elsewhere;
         # pin it so the digest is stable without provisioning a personal workspace.
         monkeypatch.setattr("cms.services._warm_pool_claim.warm_isolation_class", lambda user, ws: "personal")
+        monkeypatch.setattr(
+            "workspaces.services.authorize_bound_workspace", lambda *args: SimpleNamespace(organization_uuid=uuid4())
+        )
         self.enqueued: list = []
         self.outcomes: list = []
         monkeypatch.setattr(
@@ -114,7 +117,7 @@ class TestClaimOrchestration:
         return RangeInstance.objects.create(
             workspace_id=1,
             request=request,
-            scenario_id="polaris",
+            scenario_id="example",
             user_id=user.id,
             range_source=RangeSource.MISSION_CONTROL.value,
             status=ResourceStatus.PROVISIONING.value,
@@ -139,7 +142,7 @@ class TestClaimOrchestration:
         system_row = self._unleased_system_range(user)
         assert system_row.maximum_expires_at is None  # warm-prepared rows are unleased
         claimed_request_id = uuid4()
-        generation = SimpleNamespace(request_id=claimed_request_id, uuid=uuid4(), bucket_id="gce-polaris")
+        generation = SimpleNamespace(request_id=claimed_request_id, uuid=uuid4(), bucket_id="gce-example")
         self._patch_claim(monkeypatch, generation)
         monkeypatch.setattr(
             "cms.services._warm_pool_claim._system_range_instance_for",
@@ -151,7 +154,7 @@ class TestClaimOrchestration:
             lambda pk, new_user, *, rehome=False: rehomed.append((pk, new_user, rehome)),
         )
 
-        result = attempt_warm_claim(_request("gce", "polaris", user=user))
+        result = attempt_warm_claim(_request("gce", "example", user=user))
 
         assert result == claimed_request_id
         assert rehomed == [(system_row.pk, user, True)]
@@ -182,7 +185,7 @@ class TestClaimOrchestration:
         system_row.maximum_expires_at = existing_maximum
         system_row.extension_days = 0
         system_row.save(update_fields=["expires_at", "maximum_expires_at", "extension_days"])
-        generation = SimpleNamespace(request_id=uuid4(), uuid=uuid4(), bucket_id="gce-polaris")
+        generation = SimpleNamespace(request_id=uuid4(), uuid=uuid4(), bucket_id="gce-example")
         self._patch_claim(monkeypatch, generation)
         monkeypatch.setattr(
             "cms.services._warm_pool_claim._system_range_instance_for",
@@ -193,7 +196,7 @@ class TestClaimOrchestration:
             lambda pk, new_user, *, rehome=False: None,
         )
 
-        attempt_warm_claim(_request("gce", "polaris", user=user))
+        attempt_warm_claim(_request("gce", "example", user=user))
 
         system_row.refresh_from_db()
         assert system_row.expires_at == existing_expires
@@ -202,21 +205,21 @@ class TestClaimOrchestration:
 
     def test_miss_cold_falls_back(self, monkeypatch):
         self._patch_claim(monkeypatch, None)
-        result = attempt_warm_claim(_request("gce", "polaris", user=SimpleNamespace(id=1)))
+        result = attempt_warm_claim(_request("gce", "example", user=SimpleNamespace(id=1)))
         assert result is None
         assert self.enqueued == []
         assert self.outcomes
         assert self.outcomes[-1]["outcome"] == "fallback"
 
     def test_inconsistent_ledger_row_rolls_back(self, monkeypatch):
-        generation = SimpleNamespace(request_id=uuid4(), uuid=uuid4(), bucket_id="gce-polaris")
+        generation = SimpleNamespace(request_id=uuid4(), uuid=uuid4(), bucket_id="gce-example")
         self._patch_claim(monkeypatch, generation)
         # A claimed generation with no CMS range instance is inconsistent: roll back.
         monkeypatch.setattr(
             "cms.services._warm_pool_claim._system_range_instance_for",
             lambda request_id: None,
         )
-        result = attempt_warm_claim(_request("gce", "polaris", user=SimpleNamespace(id=1)))
+        result = attempt_warm_claim(_request("gce", "example", user=SimpleNamespace(id=1)))
         assert result is None
         assert self.enqueued == []
 
@@ -246,7 +249,7 @@ class TestHelpers:
         ri = RangeInstance.objects.create(
             workspace_id=1,
             request=request,
-            scenario_id="polaris",
+            scenario_id="example",
             user_id=user.id,
             range_source=RangeSource.MISSION_CONTROL.value,
             status=ResourceStatus.PROVISIONING.value,

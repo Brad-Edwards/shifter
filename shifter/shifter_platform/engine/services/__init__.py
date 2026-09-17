@@ -56,6 +56,7 @@ from ._operation_apply import apply_pending_operation_results, evaluate_operatio
 from ._preparation_adapters import (
     PreparationAdapterView,
     install_preparation_adapter,
+    list_preparation_adapter_grants,
     list_preparation_adapters,
     set_preparation_adapter_state,
 )
@@ -118,6 +119,10 @@ from ._receipt import (
     register_receipt_verifier,
     revoke_receipt_verifier,
 )
+from ._runtime_plugin_bindings import bind_runtime_plugin, has_runtime_plugin_binding, list_runtime_plugin_bindings
+from ._runtime_plugin_controller import reconcile_runtime_plugins
+from ._runtime_plugin_operations import reconcile_runtime_plugin_operations
+from ._runtime_plugins import change_runtime_plugin, install_runtime_plugin, list_runtime_plugins
 from ._sharing import (
     MembershipEvidence,
     ModelAccessRangeView,
@@ -221,10 +226,12 @@ __all__ = (
     "assess_declared_event_capacity",
     "assess_event_capacity",
     "bind_public_operation",
+    "bind_runtime_plugin",
     "bucket_state_counts",
     "cancel_artifact_preparation",
     "cancel_range",
     "cancel_range_by_request",
+    "change_runtime_plugin",
     "claim_ready_generation",
     "confirm_receipt_verifier_binding",
     "connect_ngfw_terminal",
@@ -257,14 +264,19 @@ __all__ = (
     "get_ssh_key",
     "get_user_ready_range_instances",
     "has_openvpn_profile",
+    "has_runtime_plugin_binding",
     "install_preparation_adapter",
+    "install_runtime_plugin",
     "invalidate_sharing_authority",
     "is_cleanup_verified_absent",
     "latest_capacity_declaration",
     "latest_cleanup_verification",
     "list_backend_artifacts",
+    "list_preparation_adapter_grants",
     "list_preparation_adapters",
     "list_raes_image_mappings",
+    "list_runtime_plugin_bindings",
+    "list_runtime_plugins",
     "lookup_public_operation",
     "operation_id_for_request",
     "pause_range",
@@ -285,6 +297,8 @@ __all__ = (
     "rebind_range_workspace_by_request",
     "reconcile_capacity_budgets",
     "reconcile_preparations",
+    "reconcile_runtime_plugin_operations",
+    "reconcile_runtime_plugins",
     "record_capacity_declaration",
     "record_cleanup_verification",
     "record_preparation_worker_result",

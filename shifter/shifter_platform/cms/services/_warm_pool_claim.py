@@ -237,6 +237,15 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     candidates = _resolve_claim_candidates(request, override)
     if not candidates:
         return None
+    # Warm compatibility currently describes the base realization only. A pack
+    # with any plugin selection (including disabled/retired) must go through cold
+    # admission; otherwise a ready base image could silently skip its adapter.
+    from engine.services import has_runtime_plugin_binding
+    from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+    authorization = authorize_bound_workspace(request.user, request.workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+    if has_runtime_plugin_binding(authorization.organization_uuid, request.scenario):
+        return None
     outcome = _run_atomic_claim(request, candidates)
     if outcome is None:
         return None

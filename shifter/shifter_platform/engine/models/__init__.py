@@ -56,6 +56,12 @@ from ._range import Range
 from ._receipt import ReceiptVerifierRegistration
 from ._request import App, Instance, Instantiation, Request
 from ._retry_binding import PublicOperationRetryBinding, RetryBindingStatus
+from ._runtime_plugins import (
+    RuntimePluginInstallation,
+    RuntimePluginInvocation,
+    RuntimePluginPackBinding,
+    RuntimePluginRangeBinding,
+)
 from ._sharing import (
     AllocationGroup,
     MembershipProjection,
@@ -104,6 +110,10 @@ __all__ = [
     "ReceiptVerifierRegistration",
     "Request",
     "RetryBindingStatus",
+    "RuntimePluginInstallation",
+    "RuntimePluginInvocation",
+    "RuntimePluginPackBinding",
+    "RuntimePluginRangeBinding",
     "SharingAuthorityFence",
     "SharingBindingRecord",
     "SharingBindingRevision",

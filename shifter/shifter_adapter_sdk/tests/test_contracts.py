@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 
 import pytest
-
-from shared.scenario_verification import (
+from shifter_adapter_sdk.verification import (
     API_VERSION,
     ENTRY_POINT_GROUP,
     MAX_OUTPUT_BYTES,

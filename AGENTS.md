@@ -115,6 +115,20 @@ reconciliation.
 
 ## Architectural Defaults
 
+- Private scenario packs and their adapters belong in their owning repositories.
+  Never copy private pack content, topology, answers, guest scripts, image recipes,
+  credentials, or scenario-specific infrastructure into this repository.
+- Public issues, PRs, review records, plans, and documentation describe generic
+  Shifter behavior using synthetic examples. Do not include private pack names,
+  repository locations, domains, asset names, or operational details, even when
+  these already appear in historical material. Keep private reproduction evidence
+  in the private owning repository. Existing disclosure is not permission to
+  repeat it.
+- Core code must not branch on a pack name, image alias, guest/container name, or
+  other private scenario identity. External adapters consume the published SDK;
+  they must not import application internals. A pack cannot authorize executable
+  adapter installation. Use explicit administrator-managed adapter bindings.
+
 - Cross-layer access goes through service boundaries.
 - Shared contracts live under `shared`.
 - `cyberscript` is retired and no layer may import it. Shifter-owned lifecycle,

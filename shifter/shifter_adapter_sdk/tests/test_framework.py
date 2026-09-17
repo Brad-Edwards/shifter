@@ -4,8 +4,7 @@ import hashlib
 import json
 
 import pytest
-
-from shared.scenario_verification import (
+from shifter_adapter_sdk.verification import (
     API_VERSION,
     AdapterContext,
     AdapterDeclaration,
