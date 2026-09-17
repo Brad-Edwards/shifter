@@ -8,6 +8,8 @@ public import surface.
 
 from __future__ import annotations
 
+# Keys emitted by ``scripts/gcp/render_runtime_env.py`` from Terraform outputs.
+# Keep this set scoped to that renderer: its contract test asserts exact equality.
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "MODEL_BROKER_GUEST_URL",
@@ -82,6 +84,20 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "SITE_URL",
         "STORAGE_BUCKET_NAME",
         "TF_STATE_BUCKET",
+    }
+)
+
+# Keys projected separately by the selected immutable capacity profile while the
+# bootstrap assembles Helm values. They reach the same runtime ConfigMap, but are
+# deliberately not inputs to the Terraform-output runtime-env renderer above.
+GCP_CAPACITY_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
+    {
+        "GUACAMOLE_BOOTSTRAP_WORKERS",
+        "PORTAL_WEB_GRACEFUL_TIMEOUT",
+        "PORTAL_WEB_WORKERS",
+        "PORTAL_WEB_WS_PING_INTERVAL",
+        "PORTAL_WEB_WS_PING_TIMEOUT",
+        "SHARED_SERVICE_CAPACITY_PROFILE",
     }
 )
 

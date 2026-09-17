@@ -29,6 +29,9 @@ secrets:
 # Deployment tooling validates the values it consumes.
 settings:
   region: us-central1
+  # Versioned shared participant-path capacity contract. The p30 profile is the
+  # qualified live-event shape; use p10/p50/p100 only as authored alternatives.
+  shared_service_capacity_profile: gcp-shared-v1-p30
   project_id: your-gcp-project
   # Pre-create one Secret Manager project per Shifter deployment. This may equal
   # project_id only while following the documented expand/cut-over migration.

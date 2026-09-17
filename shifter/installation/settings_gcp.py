@@ -29,6 +29,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .capacity_profiles_gcp import CapacityProfileId, resolve_capacity_profile
 from .gcp_model_broker import GcpModelBrokerSettings
 from .model_broker_runtime import ModelBrokerRuntimeSettings
 
@@ -109,6 +110,14 @@ class GcpBackendSettings(BaseModel):
         description="Lowercase GCP region/location token (letters, digits, and internal hyphens), e.g. 'us-central1'.",
     )
 
+    shared_service_capacity_profile: CapacityProfileId = Field(
+        default="gcp-shared-v1-p10",
+        description=(
+            "Immutable GCP shared-service event-capacity contract. The selected entry projects the "
+            "same profile identity and settings into Terraform, Helm, the public-path gate, and drift checks."
+        ),
+    )
+
     model_broker: GcpModelBrokerSettings = Field(default_factory=GcpModelBrokerSettings)
     model_broker_runtime: ModelBrokerRuntimeSettings | None = None
 
@@ -117,6 +126,7 @@ class GcpBackendSettings(BaseModel):
         """Keep invocation-only projects outside platform and range-secret authority."""
         if {self.project_id, self.range_resource_project_id} & self.model_broker.model_projects.keys():
             raise ValueError("model projects must be dedicated outside platform and dynamic-secret projects")
+        resolve_capacity_profile(self.shared_service_capacity_profile)
         return self
 
     @classmethod

@@ -3613,6 +3613,84 @@
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP shared-service capacity value (GUACAMOLE_BOOTSTRAP_WORKERS) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "GUACAMOLE_BOOTSTRAP_WORKERS",
+          "owner": "canonical GCP shared-service capacity profile Helm projection",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
+        },
+        {
+          "description": "Public GCP shared-service capacity value (PORTAL_WEB_GRACEFUL_TIMEOUT) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PORTAL_WEB_GRACEFUL_TIMEOUT",
+          "owner": "canonical GCP shared-service capacity profile Helm projection",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
+        },
+        {
+          "description": "Public GCP shared-service capacity value (PORTAL_WEB_WORKERS) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PORTAL_WEB_WORKERS",
+          "owner": "canonical GCP shared-service capacity profile Helm projection",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
+        },
+        {
+          "description": "Public GCP shared-service capacity value (PORTAL_WEB_WS_PING_INTERVAL) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PORTAL_WEB_WS_PING_INTERVAL",
+          "owner": "canonical GCP shared-service capacity profile Helm projection",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
+        },
+        {
+          "description": "Public GCP shared-service capacity value (PORTAL_WEB_WS_PING_TIMEOUT) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PORTAL_WEB_WS_PING_TIMEOUT",
+          "owner": "canonical GCP shared-service capacity profile Helm projection",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
+        },
+        {
+          "description": "Public GCP shared-service capacity value (SHARED_SERVICE_CAPACITY_PROFILE) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "SHARED_SERVICE_CAPACITY_PROFILE",
+          "owner": "canonical GCP shared-service capacity profile Helm projection",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
         }
       ],
       "health_checks": [
@@ -3951,6 +4029,18 @@
             "description": "Lowercase GCP region/location token (letters, digits, and internal hyphens), e.g. 'us-central1'.",
             "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
             "title": "Region",
+            "type": "string"
+          },
+          "shared_service_capacity_profile": {
+            "default": "gcp-shared-v1-p10",
+            "description": "Immutable GCP shared-service event-capacity contract. The selected entry projects the same profile identity and settings into Terraform, Helm, the public-path gate, and drift checks.",
+            "enum": [
+              "gcp-shared-v1-p10",
+              "gcp-shared-v1-p30",
+              "gcp-shared-v1-p50",
+              "gcp-shared-v1-p100"
+            ],
+            "title": "Shared Service Capacity Profile",
             "type": "string"
           }
         },

@@ -649,6 +649,18 @@ class GcpRenderArtifacts:
     model_access_env: str = ""
     mission_control_lease_env: str = ""
     model_broker_runtime: dict | None = None
+    capacity_profile_id: str = "gcp-shared-v1-p10"
+
+
+def _merge_capacity_values(target: dict[str, object], projection: dict[str, object]) -> dict[str, object]:
+    """Merge the typed capacity projection without replacing unrelated chart values."""
+    for key, projected in projection.items():
+        current = target.get(key)
+        if isinstance(current, dict) and isinstance(projected, dict):
+            _merge_capacity_values(current, projected)
+        else:
+            target[key] = projected
+    return target
 
 
 def render_gcp_helm_values(
@@ -661,6 +673,7 @@ def render_gcp_helm_values(
     render_artifacts: "GcpRenderArtifacts | None" = None,
 ) -> dict[str, object]:
     """Render non-secret Helm values for the Shifter release from Terraform outputs."""
+    from installation.capacity_profiles_gcp import resolve_capacity_profile
     from installation.gcp_model_broker import project_model_broker
 
     artifacts = render_artifacts or GcpRenderArtifacts()
@@ -698,7 +711,7 @@ def render_gcp_helm_values(
         runtime_settings=artifacts.model_broker_runtime,
     )
     runtime_env.update(broker.get("enrollment_env", {}))
-    return {
+    values: dict[str, object] = {
         "releaseNamespace": "shifter-system",
         "modelBroker": broker,
         "serviceAccounts": _helm_service_account_values(service_accounts),
@@ -749,6 +762,8 @@ def render_gcp_helm_values(
             "rangeAccessPorts": [22, 3389],
         },
     }
+    capacity = resolve_capacity_profile(artifacts.capacity_profile_id)
+    return _merge_capacity_values(values, capacity.helm_projection())
 
 
 def resolve_gcp_control_plane_image_identities(
@@ -1458,6 +1473,9 @@ def stage_gcp_control_plane_values(
     )
 
     root_config = load_root_config(resolve_shifter_config_path(config, get_repo_root()))
+    from installation.settings_gcp import GcpBackendSettings
+
+    gcp_settings = GcpBackendSettings.from_root_settings(root_config.settings)
     validate_model_broker_readback(outputs.get("model_broker", {}).get("value"), root_config)
     catalog_json = render_model_access_catalog(root_config)
     values = render_gcp_helm_values(
@@ -1471,6 +1489,7 @@ def stage_gcp_control_plane_values(
             model_access_env=render_model_access_env(root_config),
             mission_control_lease_env=render_mission_control_lease_env(root_config),
             model_broker_runtime=root_config.settings.get("model_broker_runtime"),
+            capacity_profile_id=gcp_settings.shared_service_capacity_profile,
         ),
     )
     values_path = staging_root / "shifter.values.generated.json"

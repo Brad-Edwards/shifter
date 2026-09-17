@@ -218,3 +218,7 @@ output "guacamole_database" {
   description = "Guacamole database connection metadata."
   value       = module.portal_cloud_sql.guacamole_database
 }
+output "shared_service_capacity_profile" {
+  description = "Applied immutable shared-service capacity profile identity."
+  value       = var.shared_service_capacity_profile
+}

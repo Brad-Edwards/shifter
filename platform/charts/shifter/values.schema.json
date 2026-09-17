@@ -7,6 +7,7 @@
     "provider",
     "profile",
     "deployment",
+    "capacityProfile",
     "capabilities",
     "namespaces",
     "serviceAccounts",
@@ -136,6 +137,18 @@
           "type": "string",
           "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
         }
+      }
+    },
+    "capacityProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "participants"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(?:|gcp-shared-v[1-9][0-9]*-p(?:10|30|50|100))$"
+        },
+        "participants": { "type": "integer", "minimum": 0, "maximum": 10000 }
       }
     },
     "capabilities": {
@@ -287,14 +300,27 @@
     "guacd": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["replicas", "resources", "freerdpConfigVolume"],
+      "required": ["replicas", "resources", "freerdpConfigVolume", "autoscaling", "terminationGracePeriodSeconds"],
       "properties": {
         "replicas": { "type": "integer", "minimum": 1 },
         "resources": { "$ref": "#/$defs/resources" },
-        "freerdpConfigVolume": { "$ref": "#/$defs/volume" }
+        "freerdpConfigVolume": { "$ref": "#/$defs/volume" },
+        "autoscaling": { "$ref": "#/$defs/autoscaling" },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 30 }
       }
     },
-    "guacamoleClient": { "$ref": "#/$defs/scaledWorkload" },
+    "guacamoleClient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicas", "resources", "terminationGracePeriodSeconds", "postgresqlAbsoluteMaxConnections"],
+      "properties": {
+        "replicas": { "const": 1 },
+        "resources": { "$ref": "#/$defs/resources" },
+        "autoscaling": { "$ref": "#/$defs/autoscaling" },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 30 },
+        "postgresqlAbsoluteMaxConnections": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    },
     "security": {
       "type": "object",
       "additionalProperties": false,
@@ -715,7 +741,27 @@
       "required": ["replicas", "resources"],
       "properties": {
         "replicas": { "type": "integer", "minimum": 1 },
-        "resources": { "$ref": "#/$defs/resources" }
+        "resources": { "$ref": "#/$defs/resources" },
+        "autoscaling": { "$ref": "#/$defs/autoscaling" },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 30 }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "minReplicas",
+        "maxReplicas",
+        "cpuUtilizationPercentage",
+        "scaleDownStabilizationSeconds"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "cpuUtilizationPercentage": { "type": "integer", "minimum": 20, "maximum": 90 },
+        "scaleDownStabilizationSeconds": { "type": "integer", "minimum": 300, "maximum": 3600 }
       }
     },
     "securityIdentity": {
@@ -763,14 +809,16 @@
     "backendConfig": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "name", "securityPolicyName"],
+      "required": ["enabled", "name", "securityPolicyName", "timeoutSec", "connectionDraining"],
       "properties": {
         "enabled": { "type": "boolean" },
         "name": { "$ref": "#/$defs/dnsLabel" },
         "securityPolicyName": {
           "type": "string",
           "pattern": "^(?:|[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)$"
-        }
+        },
+        "timeoutSec": { "type": "integer", "minimum": 30, "maximum": 86400 },
+        "connectionDraining": { "$ref": "#/$defs/connectionDraining" }
       }
     },
     "portalBackendConfig": {
@@ -780,7 +828,9 @@
         "enabled",
         "name",
         "securityPolicyName",
-        "healthCheck"
+        "healthCheck",
+        "timeoutSec",
+        "connectionDraining"
       ],
       "properties": {
         "enabled": { "type": "boolean" },
@@ -789,7 +839,17 @@
           "type": "string",
           "pattern": "^(?:|[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)$"
         },
-        "healthCheck": { "$ref": "#/$defs/healthCheck" }
+        "healthCheck": { "$ref": "#/$defs/healthCheck" },
+        "timeoutSec": { "type": "integer", "minimum": 30, "maximum": 86400 },
+        "connectionDraining": { "$ref": "#/$defs/connectionDraining" }
+      }
+    },
+    "connectionDraining": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["drainingTimeoutSec"],
+      "properties": {
+        "drainingTimeoutSec": { "type": "integer", "minimum": 0, "maximum": 3600 }
       }
     },
     "cidrList": {

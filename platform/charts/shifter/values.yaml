@@ -8,6 +8,12 @@ deployment:
   name: shifter
   profile: default
 
+# Empty in provider-neutral defaults. GCP deployment composition projects one
+# immutable versioned identity plus the participant envelope (#1816).
+capacityProfile:
+  id: ""
+  participants: 0
+
 # Provider bundles project their supported Kubernetes capabilities explicitly.
 # Templates gate optional provider resources on these switches and never infer
 # behavior from provider or profile names.
@@ -79,6 +85,13 @@ runtime:
 
 portal:
   replicas: 2
+  terminationGracePeriodSeconds: 150
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 2
+    cpuUtilizationPercentage: 65
+    scaleDownStabilizationSeconds: 900
   resources:
     requests:
       cpu: 250m
@@ -227,6 +240,13 @@ workers:
 
 guacd:
   replicas: 1
+  terminationGracePeriodSeconds: 150
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 1
+    cpuUtilizationPercentage: 65
+    scaleDownStabilizationSeconds: 900
   freerdpConfigVolume:
     sizeLimit: 16Mi
   resources:
@@ -240,6 +260,8 @@ guacd:
       ephemeral-storage: 256Mi
 guacamoleClient:
   replicas: 1
+  terminationGracePeriodSeconds: 180
+  postgresqlAbsoluteMaxConnections: 10
   resources:
     requests:
       cpu: 250m
@@ -279,6 +301,9 @@ services:
       enabled: false
       name: portal-web
       securityPolicyName: ""
+      timeoutSec: 30
+      connectionDraining:
+        drainingTimeoutSec: 30
       healthCheck:
         type: HTTP
         requestPath: /health/
@@ -293,6 +318,9 @@ services:
       enabled: false
       name: guacamole-client
       securityPolicyName: ""
+      timeoutSec: 30
+      connectionDraining:
+        drainingTimeoutSec: 30
 
 network:
   enabled: true

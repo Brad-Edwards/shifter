@@ -45,6 +45,7 @@ client, so it stays runnable without the app installed.
 cd uat/event-load-harness
 uv sync                # core (httpx, websockets)
 uv sync --extra aws    # add boto3 for the AWS metrics adapter
+uv sync --extra gcp    # add Google Cloud Monitoring for the GCP event gate
 ```
 
 ## Run
@@ -173,8 +174,23 @@ session. Three sources:
   opens/closes per second; short-lived open/close cycles between samples remain
   invisible, so the report labels the value as a proxy.
 
-A GCP / Prometheus / OpenShift adapter is the next implementation of the same
-`MetricsAdapter` protocol.
+- `gcp`: the strict event-capacity adapter. It reads GKE restart/CPU metrics,
+  Cloud SQL and Redis connection/health metrics, external HTTPS load-balancer
+  latency and response classes, effective guacd readiness, and backend-service
+  health. Missing data is a named gap and fails the strict gate.
+
+## GCP p30 event gate (#1816)
+
+The `guacamole-event-gate` profile is a qualification gate for
+`gcp-shared-v1-p30`, not a synthetic portal-core approximation. It requires 30
+distinct mode-0600 manifest entries with `email`, `password`, `totp_secret`, and
+`api_key`, then drives the real Identity Platform/TOTP, product session, range
+target, versioned Guacamole bootstrap, WebSocket tunnel, display sync, and
+120-second continuous hold for every participant.
+
+The complete scale-up, drift, invocation, thresholds, and scale-down procedure
+is documented in
+[`docs/ops/gcp-event-capacity.md`](../../docs/ops/gcp-event-capacity.md).
 
 ## Database connection churn (#853)
 
