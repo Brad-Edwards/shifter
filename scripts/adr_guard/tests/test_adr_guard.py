@@ -6567,7 +6567,7 @@ class MissionControlFlagLiteralsTests(unittest.TestCase):
     def test_ignores_flags_outside_mc_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            # Tests, native CTF, docs, Polaris content, and non-MC templates all
+            # Tests, native CTF, docs, Example content, and non-MC templates all
             # legitimately carry flag literals; none are MC runtime surfaces.
             self._write(repo_root, "shifter/shifter_platform/tests/mission_control/test_x.py", f'F = "{self.CONCRETE}"\n')
             self._write(repo_root, "shifter/shifter_platform/ctf/models/challenge.py", f'F = "{self.CONCRETE}"\n')

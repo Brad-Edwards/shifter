@@ -49,9 +49,15 @@ The embedded private content tree, dedicated image recipes, workshop tooling and
 corresponding build/test jobs have been removed from core after hash-verified
 preservation in the owning repository. Shared image checks remain in core.
 
-Private adapter migration, removal of remaining scenario-specific runtime code,
-additional host capabilities needed by external
-adapters, and SDK publication remain outstanding. An installation's `ready` status means its
+Embedded scenario bootstrap and repair commands, provider-role creation and its
+assume-role grant, guest provider-key issuance, and private executable assets have
+also been removed. Container escape probes now require an explicit container;
+there is no private default. Legacy GCP key revocation remains teardown-only.
+AWS ranges using the retired role issuer must be drained with the previous release
+before the IAM cutover.
+
+Private adapter migration, additional host capabilities needed by external
+adapters, documentation cleanup, and SDK publication remain outstanding. An installation's `ready` status means its
 compatibility probe succeeded; it does not mean a pack is runnable or a range is
 ready. This branch is not a completed cutover.
 

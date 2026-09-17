@@ -19,7 +19,6 @@ from shared.sftp_root import SftpRootError, normalize_sftp_root_directory
 from ._env import _get_int_env
 
 GCE_BOOTSTRAP_STANDARD = "standard"
-GCE_BOOTSTRAP_POLARIS_HOST = "polaris-docker-host"
 GCE_BOOTSTRAP_PREPROMOTED_DC = "prepromoted-domain-controller"
 GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST = "preconfigured-machine-host"
 GCE_PARTICIPANT_READINESS_CONTRACT_V1 = "participant-readiness/v1"
@@ -27,7 +26,6 @@ GCE_SUPPORTED_PARTICIPANT_READINESS_CONTRACTS = frozenset({GCE_PARTICIPANT_READI
 GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES = frozenset(
     {
         GCE_BOOTSTRAP_STANDARD,
-        GCE_BOOTSTRAP_POLARIS_HOST,
         GCE_BOOTSTRAP_PREPROMOTED_DC,
         GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     }
@@ -67,7 +65,7 @@ def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
     if not profile.participant_readiness_contract and not profile.participant_readiness_manifest_sha256:
         # These fields did not exist before the participant-readiness contract.
         # Omitting their empty defaults preserves labels on every existing
-        # standard, Polaris, and pre-promoted-DC guest across the rollout.
+        # existing guest across the rollout.
         profile_fields.pop("participant_readiness_contract")
         profile_fields.pop("participant_readiness_manifest_sha256")
     if not profile.source_image_id:
@@ -294,7 +292,6 @@ def _load_gce_range_profile(
 
 
 __all__ = [
-    "GCE_BOOTSTRAP_POLARIS_HOST",
     "GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST",
     "GCE_BOOTSTRAP_PREPROMOTED_DC",
     "GCE_BOOTSTRAP_STANDARD",

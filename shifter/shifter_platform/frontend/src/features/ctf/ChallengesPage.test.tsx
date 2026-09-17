@@ -43,28 +43,28 @@ describe("ChallengesPage", () => {
   it("renders authored mission categories in numeric mission order", async () => {
     mockApi.mockResolvedValue([
       challenge({ id: "c10", name: "Tenth", category: "Mission 10 — Finale" }),
-      challenge({ id: "c2", name: "Second", category: "Mission 2 — Inside Boreas" }),
-      challenge({ id: "c1", name: "First", category: "Mission 1 — Boreas" }),
+      challenge({ id: "c2", name: "Second", category: "Mission 2 — Inside Example" }),
+      challenge({ id: "c1", name: "First", category: "Mission 1 — Example" }),
     ]);
     renderRoute(<ChallengesPage />);
 
     const headings = await screen.findAllByRole("heading", { level: 2 });
     expect(headings.map((heading) => heading.textContent)).toEqual([
-      "Mission 1 — Boreas",
-      "Mission 2 — Inside Boreas",
+      "Mission 1 — Example",
+      "Mission 2 — Inside Example",
       "Mission 10 — Finale",
     ]);
   });
 
   it("pins the participant warm-up ahead of the mission groups", async () => {
     mockApi.mockResolvedValue([
-      challenge({ id: "c2", name: "Employee Directory", category: "Mission 1 — Boreas" }),
+      challenge({ id: "c2", name: "Employee Directory", category: "Mission 1 — Example" }),
       challenge({ id: "warmup", name: "Start Here — Kali Warm-Up", category: "Start Here" }),
     ]);
     renderRoute(<ChallengesPage />);
 
     const headings = await screen.findAllByRole("heading", { level: 2 });
-    expect(headings.map((heading) => heading.textContent)).toEqual(["Start Here", "Mission 1 — Boreas"]);
+    expect(headings.map((heading) => heading.textContent)).toEqual(["Start Here", "Mission 1 — Example"]);
   });
 
   it("summarizes solved-of-total in the header", async () => {

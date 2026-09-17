@@ -91,7 +91,7 @@ variable "dc_domain_name" {
 }
 
 variable "provisioner_extra_env" {
-  description = "Additional non-secret provisioner env (e.g. AWS_POLARIS_AGENT_* for AWS Polaris deployments)."
+  description = "Additional non-secret provisioner environment values."
   type        = map(string)
   default     = {}
 }

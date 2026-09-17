@@ -1043,10 +1043,6 @@ resource "aws_iam_role_policy" "capacity_inventory_read" {
   })
 }
 
-# Cross-account headroom reads (Polaris "Account B" overflow pattern). Created
-# only when a deployment actually declares overflow partitions, and scoped to
-# the exact role ARNs it declares -- no account wildcard, so adding an account
-# to the trust path is a reviewed configuration change.
 resource "aws_iam_role_policy" "capacity_inventory_assume" {
   count = length(var.capacity_inventory_read_role_arns) > 0 ? 1 : 0
 

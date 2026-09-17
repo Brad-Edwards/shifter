@@ -135,7 +135,6 @@ VPN_GATEWAY_IDENTITY_ROLE_RESOURCE = (
 )
 VPN_GATEWAY_IDENTITY_PROFILE_RESOURCE = "arn:aws:iam::${local.account_id}:instance-profile/shifter-${var.environment}-*-vpn-gateway"
 VPN_GATEWAY_BOUNDARY_NOT_RESOURCES: set[str] = {
-    "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent",
     VPN_GATEWAY_ROLE_RESOURCE,
     VPN_GATEWAY_PROFILE_RESOURCE,
 }

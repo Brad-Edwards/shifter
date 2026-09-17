@@ -134,8 +134,6 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # Mission Control lease policy (#27): emitted only when the operator sets
         # settings.mission_control_leases; absent -> Django applies canonical defaults.
         "MISSION_CONTROL_LEASE_POLICY_JSON",
-        "POLARIS_TESTS_BUCKET",
-        "POLARIS_TESTS_KEY",
         "RANGE_NETWORK_ZONE",
         "RANGE_NETWORK_ZONES",
         "SHIFTER_CTF_CONTENT_BUCKET",
@@ -211,8 +209,6 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
         "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
         "GOOGLE_CLOUD_PROJECT",
-        "POLARIS_TESTS_BUCKET",
-        "POLARIS_TESTS_KEY",
         "PORTAL_NETWORK_CIDRS",
         "RANGE_NETWORK_CIDR",
         "RANGE_NETWORK_ID",

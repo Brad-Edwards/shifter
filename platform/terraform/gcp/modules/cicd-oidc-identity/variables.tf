@@ -46,7 +46,7 @@ variable "build_roles" {
 }
 
 variable "build_read_bucket_names" {
-  description = "Existing input buckets the Packer build identity may read, such as the Polaris stack bucket."
+  description = "Existing platform image input buckets the Packer build identity may read."
   type        = set(string)
   default     = []
 }

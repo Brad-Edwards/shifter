@@ -15,8 +15,8 @@ const mockApi = vi.mocked(apiFetch);
 
 function entry(overrides: Record<string, unknown> = {}) {
   return {
-    id: "polaris",
-    name: "polaris",
+    id: "example",
+    name: "example",
     scenario_type: "raes",
     source: "raes",
     is_default: false,
@@ -27,7 +27,7 @@ function entry(overrides: Record<string, unknown> = {}) {
       source_kind: "repo",
       contract_kind: "raes",
       contract_profile: "shifter",
-      package_ref: "scenario-dev/polaris",
+      package_ref: "scenario-dev/example",
       package_version: "1.0.0",
       package_digest: "sha256:abc",
       lock_ref: "",
@@ -48,7 +48,7 @@ describe("ScenarioListPage", () => {
   it("renders only the RAES catalog contract", async () => {
     mockApi.mockResolvedValue([entry()]);
     renderRoute(<ScenarioListPage />);
-    expect(await screen.findByRole("link", { name: "polaris" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "example" })).toBeInTheDocument();
     const table = screen.getByRole("table");
     expect(within(table).getByText("RAES")).toBeInTheDocument();
     expect(within(table).getByText("Yes")).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe("ScenarioListPage", () => {
   it("has no axe violations when loaded", async () => {
     mockApi.mockResolvedValue([entry()]);
     const { container } = renderRoute(<ScenarioListPage />);
-    await screen.findByRole("link", { name: "polaris" });
+    await screen.findByRole("link", { name: "example" });
     const results = await axe(container);
     expect(results.violations).toEqual([]);
   });

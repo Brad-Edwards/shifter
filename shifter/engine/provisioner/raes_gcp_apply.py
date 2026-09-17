@@ -295,6 +295,8 @@ def _publish_participant_access(
     a failed realization, not a silently credential-less endpoint.
     """
     public_keys = output.pop("_verified_account_public_keys", {})
+    if not isinstance(public_keys, dict):
+        raise RaesGcePlanError("verified account public keys must be a mapping")
     for binding in access_bindings:
         secret_ref = account_secret_refs.get(binding.account_address, "")
         if not secret_ref:

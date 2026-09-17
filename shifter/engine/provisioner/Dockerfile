@@ -129,7 +129,6 @@ COPY shifter_platform/shared /opt/shifter-libs/shared
 # (terraform_base._stage_workspace) so a process compromise cannot tamper
 # with application code at runtime (issue #1103, follow-up to #950).
 COPY engine/provisioner/ .
-COPY packer/files/polaris_splice_credential.py /app/assets/polaris-splice-credential.py
 
 # Bake the Terraform provider packages needed by the runtime range/NGFW
 # modules. Provisioner tasks run in private subnets without public Terraform

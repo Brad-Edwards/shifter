@@ -13,8 +13,8 @@ import { ScenarioDetailPage } from "./ScenarioDetailPage";
 const mockApi = vi.mocked(apiFetch);
 
 const detail = {
-  id: "polaris",
-  name: "polaris",
+  id: "example",
+  name: "example",
   scenario_type: "raes",
   source: "raes",
   enabled: true,
@@ -24,7 +24,7 @@ const detail = {
     source_kind: "repo",
     contract_kind: "raes",
     contract_profile: "shifter",
-    package_ref: "scenario-dev/polaris",
+    package_ref: "scenario-dev/example",
     package_version: "1.0.0",
     package_digest: "sha256:abc",
     lock_ref: "",
@@ -38,7 +38,7 @@ const detail = {
 function mockDetail() {
   mockApi.mockImplementation(async (path) => {
     if (String(path).endsWith("/realizability/")) {
-      return { scenario_id: "polaris", target_id: "gce", outcome: "realizable", gaps: [] };
+      return { scenario_id: "example", target_id: "gce", outcome: "realizable", gaps: [] };
     }
     return detail;
   });
@@ -47,7 +47,7 @@ function mockDetail() {
 function renderDetail() {
   return renderRoute(<ScenarioDetailPage />, {
     path: "/scenario-editor/:scenarioId",
-    initialEntries: ["/scenario-editor/polaris"],
+    initialEntries: ["/scenario-editor/example"],
   });
 }
 
@@ -59,8 +59,8 @@ describe("ScenarioDetailPage", () => {
   it("renders the read-only RAES package identity", async () => {
     mockDetail();
     renderDetail();
-    expect(await screen.findByRole("heading", { name: "polaris" })).toBeInTheDocument();
-    expect(screen.getByText("scenario-dev/polaris")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "example" })).toBeInTheDocument();
+    expect(screen.getByText("scenario-dev/example")).toBeInTheDocument();
     expect(screen.getByText("sha256:abc")).toBeInTheDocument();
     expect(screen.getByText("passed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
@@ -85,7 +85,7 @@ describe("ScenarioDetailPage", () => {
   it("has no axe violations when loaded", async () => {
     mockDetail();
     const { container } = renderDetail();
-    await screen.findByRole("heading", { name: "polaris" });
+    await screen.findByRole("heading", { name: "example" });
     const results = await axe(container);
     expect(results.violations).toEqual([]);
   });

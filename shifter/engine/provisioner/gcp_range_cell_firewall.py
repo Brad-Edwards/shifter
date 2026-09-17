@@ -238,7 +238,7 @@ def _boundary_ingress_rules(
     # participant SSH.
     if portal_network_cidrs:
         # Management-only ingress: native-guest host SSH (:22) and the Docker-host
-        # management sshd port (Polaris host, whose Kali container binds :22),
+        # management sshd port (when a participant container binds :22),
         # sourced from the provisioner/management range only.
         mgmt_ports = ["22"]
         if str(config.host_mgmt_ssh_port) not in mgmt_ports:

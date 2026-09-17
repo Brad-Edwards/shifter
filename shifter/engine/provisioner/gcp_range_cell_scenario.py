@@ -15,7 +15,6 @@ from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE, UNSUPPOR
 
 from cloud.exceptions import CloudError
 from config import (
-    GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES,
@@ -263,8 +262,6 @@ def _host_access(
 ) -> tuple[str, str, int]:
     """Realize participant and setup access for a legacy scenario guest."""
     participant_user = get_ssh_username(os_type, role)
-    if profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST:
-        return participant_user, _DOCKER_HOST_SSH_USERNAME, config.host_mgmt_ssh_port
     if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
         return profile.participant_username, profile.host_ssh_username, profile.host_ssh_port
     return participant_user, participant_user, _DEFAULT_SSH_PORT
@@ -342,7 +339,7 @@ def build_instance_plans(
                     "host_ssh_username": host_ssh_username,
                     "ssh_port": ssh_port,
                     "participant_access_channels": access_by_ref.get(str(instance.get("uuid", "")), []),
-                    "attach_service_account": profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST,
+                    "attach_service_account": False,
                     "service_account_email": service_account_email,
                 }
             )

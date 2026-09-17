@@ -669,10 +669,11 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertEqual(
             self.bucket_roles,
             {
-                # portal: objectAdmin on the assets bucket, and read-only
-                # objectViewer on the optional object-backed RAES package bucket
-                # (#1567, gated on raes_package_bucket_name).
-                "portal": {"roles/storage.objectAdmin", "roles/storage.objectViewer"},
+                # Portal owns assets and tenant uploads; package writes are
+                # scoped to the configured package bucket, never the project.
+                "portal": {
+                    "roles/storage.objectAdmin", "roles/storage.objectViewer", "roles/storage.objectUser"
+                },
                 "workers": {"roles/storage.objectViewer"},
                 "provisioner": {
                     "roles/storage.objectViewer",

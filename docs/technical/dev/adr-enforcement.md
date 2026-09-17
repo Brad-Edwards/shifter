@@ -1045,3 +1045,15 @@ is preceded by a hash-verified private archive. This does not establish live
 qualification of an external adapter on either cloud.
 
 The independent adapter SDK has its own dependency update entry, like every other Python package root. Private image recipes and their dependency update targets belong to the pack owner.
+
+### Participant model credential cutover (ADR-004-R21, ADR-059)
+
+Core no longer creates pack-specific provider roles or issues guest provider keys.
+The dedicated legacy role checker moved with the removed issuer; generic IAM,
+permissions-boundary, namespace and model-broker checks remain enforced. The AWS
+permissions boundary no longer exempts the retired role namespace from its IAM
+deny. Drain existing ranges that depend on those roles using the previous release
+before applying the new platform IAM. GCP teardown retains legacy credential
+revocation, but new ranges receive no provider key. Qualification must establish
+broker-mediated model access on both clouds before declaring the private adapter
+migration complete.

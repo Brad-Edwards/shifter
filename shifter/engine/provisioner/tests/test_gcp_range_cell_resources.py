@@ -44,12 +44,12 @@ def _instance(*, os_type: str = "kali", attach_service_account: bool = True) -> 
     return {
         "resource_name": "shifter-r-42-kali",
         "address_name": "shifter-r-42-kali-ip",
-        "subnet_name": "polaris",
+        "subnet_name": "example",
         "subnetwork_link": "projects/p/regions/us-central1/subnetworks/sn",
         "private_ip": "10.50.2.4",
         "role": "attacker",
         "os_type": os_type,
-        "tags": ["shifter-range-42", "shifter-range-42-polaris"],
+        "tags": ["shifter-range-42", "shifter-range-42-example"],
         "host_ssh_username": "ubuntu",
         "profile": profile,
         "image_key": "",
@@ -81,12 +81,12 @@ class TestNetworkResource:
 class TestSubnetworkResource:
     def test_renders_cidr_region_and_pga_flag(self):
         subnet = {
-            "resource_name": "shifter-r-42-polaris",
+            "resource_name": "shifter-r-42-example",
             "network_link": "projects/p/global/networks/shifter-range-42",
             "cidr": "10.50.2.0/28",
         }
         body = subnetwork_resource(_plan(), subnet)
-        assert body["name"] == "shifter-r-42-polaris"
+        assert body["name"] == "shifter-r-42-example"
         assert body["ip_cidr_range"] == "10.50.2.0/28"
         assert body["region"] == "us-central1"
         assert body["private_ip_google_access"] is True
@@ -188,10 +188,10 @@ class TestInstanceResource:
             host_public_key="ssh-ed25519 AAAAhost",
         )
         assert body["machine_type"] == "zones/us-central1-b/machineTypes/e2-standard-4"
-        assert body["labels"]["subnet"] == "polaris"
+        assert body["labels"]["subnet"] == "example"
         assert body["labels"]["role"] == "attacker"
         assert body["labels"]["range"] == "shifter-range-42"
-        assert body["tags"] == {"items": ["shifter-range-42", "shifter-range-42-polaris"]}
+        assert body["tags"] == {"items": ["shifter-range-42", "shifter-range-42-example"]}
         assert body["network_interfaces"][0]["network_i_p"] == "10.50.2.4"
         assert "access_configs" not in body["network_interfaces"][0]
         disk = body["disks"][0]["initialize_params"]

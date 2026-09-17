@@ -137,3 +137,22 @@ reconciliation.
 - Do not weaken CI or local enforcement silently.
 - If a rule needs an exception, record it in `docs/adr/exceptions.yaml` with an owner and expiry.
 - Guardrail-file changes should also update the ADR enforcement docs or registry in the same change.
+
+## External pack ownership
+
+Private and third-party packs own their scenario content, adapters, image recipes,
+guest scripts, answer material, operational evidence, and cloud-specific pack
+configuration. Keep those assets in the owner's repository. Core changes must use
+the public adapter SDK, typed runtime capabilities, and synthetic fixtures; never
+branch on pack names, image aliases, container names, domains, or private identities.
+
+Do not copy private pack names, details, logs, repository links, or acceptance
+evidence into public issues, pull requests, comments, commit metadata, or release
+notes. Describe shared defects through a synthetic reproduction. Keep private
+acceptance records in the owner's repository. This applies even when private
+material is visible in a neighboring checkout or earlier issue history.
+
+Tenant organization administrators may install their own conforming adapters and
+packs through the tenant UI. Executable adapters run through the isolated plugin
+worker boundary; core must not import pack code or install it into the portal or
+provisioner process. A compatibility probe alone does not qualify a live range.

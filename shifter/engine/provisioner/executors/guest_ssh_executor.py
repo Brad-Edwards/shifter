@@ -82,7 +82,7 @@ class GuestSSHExecutor:
 
         OpenSSH keys known_hosts by ``host`` for :22 but by ``[host]:port`` for any
         other port, so a Docker-host guest reached on the management port (e.g. the
-        Polaris range host on :2222) needs the bracketed form or strict checking
+        container host on :2222) needs the bracketed form or strict checking
         fails to match the seeded key.
         """
         host_entry = host if self._port == self.DEFAULT_SSH_PORT else f"[{host}]:{self._port}"
@@ -164,8 +164,8 @@ class GuestSSHExecutor:
         # Run guest shell setup as root, matching the AWS SSM RunShellScript
         # execution context (SSM runs as root; this SSH path logs in as an
         # unprivileged host user). Range setup needs root: writing under
-        # /opt/polaris (root-owned from the image bake), installing systemd units
-        # (the splice watcher), and iptables rules (the Kali metadata block). The
+        # root-owned image directories, installing systemd units, and configuring
+        # guest firewall rules. The
         # guest images ship passwordless sudo for the login user (the reboot path
         # already relies on it); -n fails fast instead of hanging if that ever
         # regresses.

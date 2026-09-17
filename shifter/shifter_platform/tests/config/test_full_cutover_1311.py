@@ -74,6 +74,6 @@ def test_legacy_runtime_authorities_are_absent_from_the_checkout():
     retired_paths = (
         REPO_ROOT / "shifter/cyberscript",
         REPO_ROOT / "shifter/shifter_platform/cms/scenarios/templates",
-        REPO_ROOT / "scripts/polaris-aws-range",
+        REPO_ROOT / "scripts/example-aws-range",
     )
     assert [str(path.relative_to(REPO_ROOT)) for path in retired_paths if path.exists()] == []

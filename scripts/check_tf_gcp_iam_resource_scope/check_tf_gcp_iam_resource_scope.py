@@ -87,7 +87,7 @@ FORBIDDEN_CUSTOM_PERMISSIONS = frozenset(
 _FORBIDDEN_PERMISSION_WILDCARD_PREFIXES = ("secretmanager.", "storage.objects.")
 
 # Range-host principals (#1644). ``range_host`` and the ``range_host_pool`` members
-# are the service accounts attached to participant-controllable POLARIS/GCE range
+# are the service accounts attached to participant-controllable an authored scenario/GCE range
 # guests. They are NOT application workloads, but a participant with root on a
 # guest can mint the attached SA token from the metadata server, so they must
 # never hold a project-level Cloud Storage role: a project (or shared-bucket)

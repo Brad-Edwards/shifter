@@ -37,7 +37,7 @@ profiles:
 
 # Execution roots: the provisioner stages/executes the two `modules/{range,ngfw}`
 # directories, so despite the name they are runtime roots (each declares a
-# backend and owns a lockfile). Polaris is a real root without a remote backend.
+# backend and owns a lockfile).
 # A root may declare an optional `test` (relative to `path`): a credential-free
 # `terraform test` suite run with the root's own toolchain against its committed
 # lockfile, for behavior that lives in the root rather than a reusable module.

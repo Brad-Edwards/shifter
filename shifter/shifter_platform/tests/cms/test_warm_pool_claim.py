@@ -76,9 +76,9 @@ class TestDecisionGates:
 
         policy = load_policy_json(
             '{"enabled": true, "buckets": ['
-            '{"id": "authorized", "backend": "gce", "scenario": "polaris", "capacity_partition": "default", '
+            '{"id": "authorized", "backend": "gce", "scenario": "example", "capacity_partition": "default", '
             '"target": 1, "minimum": 0, "maximum": 2, "idle_ttl_seconds": 3600},'
-            '{"id": "excluded", "backend": "gce", "scenario": "polaris", "capacity_partition": "default", '
+            '{"id": "excluded", "backend": "gce", "scenario": "example", "capacity_partition": "default", '
             '"target": 1, "minimum": 0, "maximum": 2, "idle_ttl_seconds": 3600}'
             "]}"
         )
@@ -86,7 +86,7 @@ class TestDecisionGates:
         monkeypatch.setattr("cms.services._warm_pool_claim.warm_isolation_class", lambda user, ws: "personal")
 
         candidates = _resolve_claim_candidates(
-            _request("gce", "polaris", user=SimpleNamespace()),
+            _request("gce", "example", user=SimpleNamespace()),
             WarmPoolOverride(bucket_ids=("authorized",)),
         )
 

@@ -16,7 +16,7 @@ const briefing = {
   id: "b1",
   title: "Mission Briefing",
   slug: "briefing",
-  body: "You are on **Kali** inside Boreas Systems. Reach the range via Range -> Open.",
+  body: "You are on **Kali** inside Example Systems. Reach the range via Range -> Open.",
   order: 0,
 };
 

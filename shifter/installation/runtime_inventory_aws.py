@@ -148,16 +148,6 @@ AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "NGFW_SUBNET_CIDR",
         "NGFW_BOOTSTRAP_BUCKET",
         "NGFW_INSTANCE_PROFILE_NAME",
-        "AWS_POLARIS_AGENT_REGION",
-        "AWS_POLARIS_AGENT_MAIN_MODEL_ID",
-        "AWS_POLARIS_AGENT_SMALL_MODEL_ID",
-        "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN",
-        "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
-        "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
-        "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
-        "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS",
-        "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS",
-        "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
         "DC_DOMAIN_PASSWORD",
     }
 )
@@ -173,7 +163,7 @@ AWS_PROVISIONER_HYDRATED_SECRET_KEYS: frozenset[str] = frozenset({"DC_DOMAIN_PAS
 # The complete set of keys render_aws_values emits into the ConfigMap-bound runtime
 # env. It mirrors the Terraform merged_runtime_env (var.runtime_env carrying the
 # required bindings, the eks-provisioner-env provisioner_env range/portal topology,
-# and deployment extras such as AWS_POLARIS_AGENT_*) plus the renderer-owned keys,
+# and non-secret deployment extras) plus the renderer-owned keys,
 # minus the hydrated-secret keys that flow as references. The bundle's generated
 # outputs are derived from this so the published contract and the renderer cannot
 # drift; an oracle test asserts a representative render emits exactly this set.

@@ -69,9 +69,9 @@ settings:
     scale_down: oldest-first
     replacement: destroy-and-replace
     buckets:
-      - id: gce-polaris-vpn
+      - id: gce-example-vpn
         backend: gce
-        scenario: polaris
+        scenario: example
         capacity_partition: default
         # Compatibility narrows to this region + access mode; the authoritative
         # match at claim time is the immutable-input compatibility digest.

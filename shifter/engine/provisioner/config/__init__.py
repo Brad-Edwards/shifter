@@ -14,17 +14,11 @@ re-exported here so callers keep using ``from config import X`` /
 - ``_gdc``: GDC (Google Distributed Cloud) VM Runtime / scenario-Pod configuration.
 - ``_range``: range/instance dataclasses, range-network contract, DB loading.
 - ``_gce``: GCE (Compute Engine) live-fire range-cell backend configuration.
-- ``_aws_polaris``: per-range AWS Polaris agent Bedrock role configuration.
 
 Dependency direction is one-way (leaves first, no cycles):
 ``_env``, ``_crypto`` -> ``_gcp_backend``, ``_ngfw`` -> ``_gdc`` -> ``_range`` -> ``_gce``;
-``_aws_polaris`` depends only on ``_env``.
 """
 
-from ._aws_polaris import (
-    AWSPolarisAgentConfig,
-    load_aws_polaris_agent_config,
-)
 from ._content_delivery import (
     RaesContentDeliveryConfig,
     load_raes_content_delivery_config,
@@ -36,7 +30,6 @@ from ._crypto import (
     resolve_cloud_provider,
 )
 from ._gce import (
-    GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCE_BOOTSTRAP_STANDARD,
@@ -79,13 +72,11 @@ from ._range import (
 )
 
 __all__ = [
-    "GCE_BOOTSTRAP_POLARIS_HOST",
     "GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST",
     "GCE_BOOTSTRAP_PREPROMOTED_DC",
     "GCE_BOOTSTRAP_STANDARD",
     "GCE_PARTICIPANT_READINESS_CONTRACT_V1",
     "GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES",
-    "AWSPolarisAgentConfig",
     "FieldDecryptError",
     "GCERangeCellConfig",
     "GCERangeImageProfile",
@@ -109,7 +100,6 @@ __all__ = [
     "get_range_from_db",
     "has_ngfw_attachment_state",
     "is_gce_range_cell_backend",
-    "load_aws_polaris_agent_config",
     "load_gce_range_cell_config",
     "load_gdc_network_access_config",
     "load_gdc_palo_alto_vmseries_config",

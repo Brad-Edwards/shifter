@@ -21,17 +21,18 @@ def resolve_runtime_values(action: GuestAction, request: RuntimeInput, outputs: 
             value = str(ipaddress.ip_address(output["private_ip"]))
         else:
             # Never fall back to output['public_key']: that is the management key.
-            value = output.get("participant_ssh_public_key")
+            participant_key = output.get("participant_ssh_public_key")
             if (
                 "ssh" not in output.get("participant_access_channels", [])
-                or not isinstance(value, str)
-                or not value
-                or len(value) > 16_384
-                or "\n" in value
-                or "\r" in value
+                or not isinstance(participant_key, str)
+                or not participant_key
+                or len(participant_key) > 16_384
+                or "\n" in participant_key
+                or "\r" in participant_key
             ):
                 raise ValueError("Participant public key is unavailable")
-            load_ssh_public_key(value.encode("ascii"))
+            load_ssh_public_key(participant_key.encode("ascii"))
+            value = participant_key
         values[name] = value
     raw = json.dumps(values, sort_keys=True, separators=(",", ":")).encode("utf-8")
     if len(raw) > MAX_RUNTIME_VALUES_BYTES:

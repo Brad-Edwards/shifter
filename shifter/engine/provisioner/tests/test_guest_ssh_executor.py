@@ -42,7 +42,7 @@ class TestGuestSSHExecutorRunCommand:
         assert mock_run.call_args.kwargs["input"].decode("utf-8").startswith("set -euo pipefail\necho ok")
 
     def test_seeded_host_key_uses_bracketed_form_for_non_default_port(self, tmp_path):
-        # A Docker-host guest reached on the management port (e.g. the Polaris
+        # A Docker-host guest reached on the management port (e.g. the Example
         # range host on :2222) must be seeded as [host]:port, else OpenSSH's
         # known_hosts lookup misses the entry and strict checking fails.
         executor = GuestSSHExecutor(

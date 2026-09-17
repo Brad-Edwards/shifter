@@ -80,8 +80,8 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(
             {
                 "kali": {
-                    "polaris-vm": {
-                        "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                    "example-vm": {
+                        "source_image": "projects/test/global/images/family/shifter-example-vm",
                         "machine_type": "e2-standard-8",
                         "disk_size_gb": 210,
                         "disk_type": "pd-balanced",
@@ -106,8 +106,6 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL": "range-vertex@shifter-gcp-dev.iam.gserviceaccount.com",
         "GCP_RANGE_KALI_ANTHROPIC_MODEL": "claude-sonnet-4-6",
         "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5",
-        "POLARIS_TESTS_BUCKET": "shifter-gcp-dev-polaris-tests",
-        "POLARIS_TESTS_KEY": "polaris/tests/polaris-tests.tar.gz",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -449,7 +447,7 @@ def test_render_env_rejects_duplicate_image_profile_keys(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
     monkeypatch.setenv(
         "GCP_RANGE_IMAGE_KEY_PROFILES_JSON",
-        '{"kali":{"polaris-vm":{},"polaris-vm":{}}}',
+        '{"kali":{"example-vm":{},"example-vm":{}}}',
     )
 
     with pytest.raises(ValueError, match="duplicate JSON key"):

@@ -176,7 +176,6 @@ quality_units:
       - scripts/check_tf_kms_secrets_grant/**
       - scripts/check_tf_rds_security/**
       - scripts/check_tf_iam_ssm_range_scope/**
-      - scripts/check_tf_iam_bedrock_agent_scope/**
       - scripts/check_portal_target_sg_sources/**
       - scripts/check_tf_roots/**
       - shifter/engine/provisioner/terraform/**

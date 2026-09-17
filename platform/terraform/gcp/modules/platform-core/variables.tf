@@ -412,14 +412,7 @@ variable "ctf_content_bucket_name" {
 variable "range_provisioner_ports" {
   description = "TCP ports the platform provisioner is allowed to reach on the range VPC. Used to construct the range-allow-platform-provisioner firewall rule. The range VPC otherwise denies all ingress (ADR-008-R4)."
   type        = list(number)
-  # Provisioner-to-range protocols today: SSH (22) for Linux range VMs and the
-  # Windows DC's setup SSH, RDP (3389) for Windows, Guacamole websocket port
-  # (8080) for remote display when proxied from the platform side, and 2222 —
-  # the Docker-host management sshd port (config.host_mgmt_ssh_port) used by
-  # Polaris range hosts, whose participant container binds host :22 and so
-  # forces the host sshd the provisioner drives onto a dedicated port. Update
-  # the list when a new provisioner protocol is introduced.
-  default = [22, 3389, 8080, 2222]
+  default     = [22, 3389, 8080, 2222]
 
   validation {
     condition     = length(var.range_provisioner_ports) > 0
