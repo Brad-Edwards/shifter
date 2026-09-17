@@ -58,9 +58,10 @@ locals {
     "localhost",
   ]))
   common_labels = merge(var.labels, {
-    environment = var.environment
-    managed_by  = "terraform"
-    project     = "shifter"
+    environment              = var.environment
+    managed_by               = "terraform"
+    project                  = "shifter"
+    shifter_capacity_profile = var.shared_service_capacity_profile
   })
 
   artifact_repositories = toset([
@@ -416,6 +417,7 @@ module "portal_gke" {
   worker_node_count                         = var.worker_node_count
   provisioner_node_count                    = var.provisioner_node_count
   access_node_count                         = var.access_node_count
+  access_node_max_count                     = var.access_node_max_count
   node_service_account_email                = module.portal_iam.node_service_account_email
 
   # The cluster already orders after the node service account via the

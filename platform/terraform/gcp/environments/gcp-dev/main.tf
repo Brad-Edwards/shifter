@@ -88,6 +88,8 @@ module "platform_core" {
   worker_node_count                  = var.worker_node_count
   provisioner_node_count             = var.provisioner_node_count
   access_node_count                  = var.access_node_count
+  access_node_max_count              = var.access_node_max_count
+  shared_service_capacity_profile    = var.shared_service_capacity_profile
   cloud_sql_database_version         = var.cloud_sql_database_version
   cloud_sql_tier                     = var.cloud_sql_tier
   cloud_sql_availability_type        = var.cloud_sql_availability_type
