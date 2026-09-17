@@ -385,20 +385,18 @@
   {
     "rule_id": "ADR-004-R24",
     "owner": "@Brad-Edwards",
-    "reason": "Production-path quality-ownership SECURITY gaps (#1530). These quality units have lint and/or test coverage but no category-specific BLOCKING security (SAST) job: the script categories (assert_portal_inspection, check_rds_pending_modifications, handle_sd_replacement, cyberscript, ctfd_workshop, polaris_tests, stack_smoke) and the adr_guard/quality_ownership guard tooling have no dedicated blocking SAST lane; the MCP packages (mcp_ngfw, mcp_ops, mcp_planner, mcp_shared) have no JavaScript SAST lane; k8s security is provided only by the advisory continue-on-error Checkov job. Recorded as visible, dated gaps rather than mislabelling an advisory/absent job as a blocking owner (the #1530 preflight forbids not_applicable/advisory dispositions). Gap-closure tracked by #1698.",
+    "reason": "Production-path quality-ownership SECURITY gaps (#1530). These quality units have lint and/or test coverage but no category-specific BLOCKING security (SAST) job: the script categories (assert_portal_inspection, check_rds_pending_modifications, handle_sd_replacement, cyberscript, stack_smoke) and the adr_guard/quality_ownership guard tooling have no dedicated blocking SAST lane; the MCP packages (mcp_ngfw, mcp_ops, mcp_planner, mcp_shared) have no JavaScript SAST lane; k8s security is provided only by the advisory continue-on-error Checkov job. Recorded as visible, dated gaps rather than mislabelling an advisory/absent job as a blocking owner (the #1530 preflight forbids not_applicable/advisory dispositions). Gap-closure tracked by #1698.",
     "expires_on": "2026-10-17",
     "paths": [
       ".github/quality-path-filters.yaml#assert_portal_inspection:security",
       ".github/quality-path-filters.yaml#check_rds_pending_modifications:security",
       ".github/quality-path-filters.yaml#handle_sd_replacement:security",
       ".github/quality-path-filters.yaml#cyberscript:security",
-      ".github/quality-path-filters.yaml#ctfd_workshop:security",
       ".github/quality-path-filters.yaml#k8s:security",
       ".github/quality-path-filters.yaml#mcp_ngfw:security",
       ".github/quality-path-filters.yaml#mcp_ops:security",
       ".github/quality-path-filters.yaml#mcp_planner:security",
       ".github/quality-path-filters.yaml#mcp_shared:security",
-      ".github/quality-path-filters.yaml#polaris_tests:security",
       ".github/quality-path-filters.yaml#stack_smoke:security",
       ".github/quality-path-filters.yaml#adr_guard:security"
     ]
@@ -406,12 +404,10 @@
   {
     "rule_id": "ADR-004-R24",
     "owner": "@Brad-Edwards",
-    "reason": "Production-path quality-ownership LINT gaps (#1530). These quality units have test coverage but no category-specific BLOCKING lint job: cyberscript and ctfd_workshop have no dedicated linter; polaris_tests and stack_smoke are shell/smoke script categories with no lint lane; the adr_guard/quality_ownership guard tooling is ruff-linted only via pre-commit, with no blocking CI lint job. Recorded as visible, dated gaps per the #1530 preflight (no not_applicable disposition). Gap-closure tracked by #1698.",
+    "reason": "Production-path quality-ownership LINT gaps (#1530). These quality units have test coverage but no category-specific BLOCKING lint job: cyberscript has no dedicated linter; stack_smoke are shell/smoke script categories with no lint lane; the adr_guard/quality_ownership guard tooling is ruff-linted only via pre-commit, with no blocking CI lint job. Recorded as visible, dated gaps per the #1530 preflight (no not_applicable disposition). Gap-closure tracked by #1698.",
     "expires_on": "2026-10-17",
     "paths": [
       ".github/quality-path-filters.yaml#cyberscript:lint",
-      ".github/quality-path-filters.yaml#ctfd_workshop:lint",
-      ".github/quality-path-filters.yaml#polaris_tests:lint",
       ".github/quality-path-filters.yaml#stack_smoke:lint",
       ".github/quality-path-filters.yaml#adr_guard:lint"
     ]

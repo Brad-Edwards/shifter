@@ -9,7 +9,7 @@ not advertise an installed capability or qualified provider.
 ## Context
 
 Participant root must be an assumed adversary under ADR-056. The existing
-Polaris model setup selects provider scripts and can place Vertex service
+The retired embedded model setup selected provider scripts and could place Vertex service
 account keys in the guest. Multiple keys on one service account authenticate
 the same principal. That cannot enforce independent range authorization,
 spend ceilings, or immediate application revocation. Direct short-lived

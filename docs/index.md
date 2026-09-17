@@ -31,7 +31,6 @@ enforces the prerequisites documented here before any Terraform apply.
 | [GCP inventory bootstrap](dev/gcp-inventory-bootstrap.md) | You are onboarding or migrating CI identities and runners from private inventory. |
 | [GCP range-cell deploy](dev/gcp-range-cell-deploy.md) | You are deploying the GCP GCE range-cell backend. |
 | [Native CTF scenario content](dev/ctf-scenario-content.md) | You are publishing and binding private, digest-pinned native challenges to a scenario. |
-| [Polaris on the GCP range-cell](dev/polaris-gcp-range-cell.md) | You are running the Polaris scenario on the GCP range-cell backend. |
 | [Secrets rotation](dev/secrets-rotation-runbook.md) | You are rotating deployment or runtime secrets. |
 | [Service Discovery ForceNew](dev/service-discovery-forcenew.md) | You hit a Service Discovery replacement and need the operational rule. |
 | [Portal on EKS operations](ops/portal-eks-operations.md) | You are monitoring, scaling, deploying, troubleshooting, or rolling back the Portal on EKS. |

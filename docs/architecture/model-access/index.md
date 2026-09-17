@@ -63,7 +63,7 @@ storage, retention and export policy outside this broker audit boundary.
 - `shifter/engine/provisioner/gcp_range_vertex_creds.py` creates keys on a
   preconfigured service account and supports copying a shared source key.
   Separate secret/key objects are not separate principals.
-- `plans/polaris_range_bootstrap.py` and `plans/_polaris_scripts_gcp.py`
+- `plans/external adapter_range_bootstrap.py` and `plans/_external adapter_scripts_gcp.py`
   implement scenario-specific Vertex setup; the AWS sibling uses the
   per-range role path from #1377. Neither is a general allocation service.
 - `ctf/services/range/capacity.py` already declares roster/spare demand and
