@@ -770,8 +770,7 @@ class TestGcpPurposeIdentityWorkflows:
         assert "environment: ${{ inputs.release_scan_github_environment }}" in reusable
         assert (
             "release_scan_github_environment: "
-            "${{ needs.changes.outputs.gcp_release_scan_github_environment }}"
-            in caller
+            "${{ needs.changes.outputs.gcp_release_scan_github_environment }}" in caller
         )
         assert "vars.GCP_SERVICE_ACCOUNT" in reusable
         assert "vars.GCP_WIF_PROVIDER" in reusable
