@@ -28,6 +28,11 @@ triggers a deploy (#730).
 | Manual dispatch, `environment: gcp-dev` | Quality, then GCP dev deploy |
 | Manual dispatch, `environment: nazgul` | Quality, then Nazgul deploy |
 
+GCP dispatches bind deployment and release scanning to separate protected
+Environments. The deploy Environment matches the selected Terraform root; the
+scanner uses `gcp-release-scan-<deployment suffix>`. Both accept the non-secret
+identity locators published by deployment-inventory bootstrap.
+
 Run a deploy from the Actions UI (**Deploy → Run workflow**, pick the branch to
 deploy and the `environment`) or the CLI:
 

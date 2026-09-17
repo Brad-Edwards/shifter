@@ -217,6 +217,7 @@ class TestManualDeployDispatch(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.deploy = _load("deploy.yml")
+        cls.gcp = _load("_gcp-dev.yml")
         cls.script = ADR_GUARD._dw_extract_set_environment_script(cls.deploy)
 
     def env(self, event_name, ref="", base_ref="", environment_input=""):
@@ -277,8 +278,31 @@ class TestManualDeployDispatch(unittest.TestCase):
 
                 self.assertEqual(out["gcp_environment"], environment)
                 self.assertEqual(out["gcp_github_environment"], environment)
+                expected_scan_environment = f"gcp-release-scan-{environment.removeprefix('gcp-')}"
+                self.assertEqual(
+                    out["gcp_release_scan_github_environment"],
+                    expected_scan_environment,
+                )
                 self.assertEqual(out["run_gcp"], "true")
                 self.assertEqual(out["deploy_gcp"], "true")
+
+    def test_gcp_reusable_workflow_uses_selected_scanner_environment(self):
+        call = self.deploy["jobs"]["gcp-dev"]["with"]
+        self.assertEqual(
+            call["release_scan_github_environment"],
+            "${{ needs.changes.outputs.gcp_release_scan_github_environment }}",
+        )
+        self.assertEqual(
+            self.gcp["jobs"]["release_scan"]["environment"],
+            "${{ inputs.release_scan_github_environment }}",
+        )
+
+    def test_gcp_identity_jobs_accept_inventory_variable_bindings(self):
+        for job_id in ("prepare", "release_scan", "deploy", "post-deploy-smoke"):
+            with self.subTest(job=job_id):
+                rendered = str(self.gcp["jobs"][job_id])
+                self.assertIn("vars.GCP_WIF_PROVIDER", rendered)
+                self.assertIn("vars.GCP_SERVICE_ACCOUNT", rendered)
 
     def test_deploy_jobs_stay_pull_request_denied(self):
         # Unchanged trust invariant: no deploy job runs on a pull_request event.

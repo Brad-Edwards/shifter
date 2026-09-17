@@ -75,6 +75,10 @@ AWS roles defined in `platform/terraform/global/iam/github-oidc.tf`. GCP WIF con
 GCP deploys through CI/CD via a manual `workflow_dispatch` with an allowlisted
 GCP environment (`gh workflow run deploy.yml --ref <branch> -f environment=<gcp-dev|nazgul>`). Branch names
 no longer trigger deploys; `dev`/`main` are Quality-only integration branches (#730).
+The selected deployment Environment and the purpose-scoped
+`gcp-release-scan-<deployment suffix>` Environment provide their own exact WIF
+identity variables; the reusable workflow does not reuse the deploy identity for
+release scanning.
 
 The GCP CI path:
 

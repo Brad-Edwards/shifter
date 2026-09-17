@@ -75,6 +75,7 @@ jobs:
       aws_github_environment: ${{ steps.env.outputs.aws_github_environment }}
       gcp_environment: ${{ steps.env.outputs.gcp_environment }}
       gcp_github_environment: ${{ steps.env.outputs.gcp_github_environment }}
+      gcp_release_scan_github_environment: ${{ steps.env.outputs.gcp_release_scan_github_environment }}
       run_aws: ${{ steps.env.outputs.run_aws }}
       run_gcp: ${{ steps.env.outputs.run_gcp }}
       apply_aws: ${{ steps.env.outputs.apply_aws }}
@@ -245,6 +246,7 @@ jobs:
           AWS_GITHUB_ENV="aws-dev"
           GCP_ENV="gcp-dev"
           GCP_GITHUB_ENV="gcp-dev"
+          GCP_RELEASE_SCAN_GITHUB_ENV="gcp-release-scan-dev"
           RUN_AWS="false"
           RUN_GCP="false"
           APPLY_AWS="false"
@@ -269,6 +271,7 @@ jobs:
               gcp-dev|nazgul)
                 GCP_ENV="$ENVIRONMENT"
                 GCP_GITHUB_ENV="$ENVIRONMENT"
+                GCP_RELEASE_SCAN_GITHUB_ENV="gcp-release-scan-${ENVIRONMENT#gcp-}"
                 RUN_GCP="true"
                 DEPLOY_GCP="true"
                 ;;
@@ -280,6 +283,7 @@ jobs:
             echo "aws_github_environment=$AWS_GITHUB_ENV"
             echo "gcp_environment=$GCP_ENV"
             echo "gcp_github_environment=$GCP_GITHUB_ENV"
+            echo "gcp_release_scan_github_environment=$GCP_RELEASE_SCAN_GITHUB_ENV"
             echo "run_aws=$RUN_AWS"
             echo "run_gcp=$RUN_GCP"
             echo "apply_aws=$APPLY_AWS"
@@ -523,6 +527,7 @@ jobs:
     with:
       environment: ${{ needs.changes.outputs.gcp_environment }}
       github_environment: ${{ needs.changes.outputs.gcp_github_environment }}
+      release_scan_github_environment: ${{ needs.changes.outputs.gcp_release_scan_github_environment }}
       deploy_changes: ${{ needs.changes.outputs.deploy_gcp == 'true' }}
       # Automatic deploys always require an active certificate; only a manual
       # workflow_dispatch may opt into the first-time-bootstrap bypass.
