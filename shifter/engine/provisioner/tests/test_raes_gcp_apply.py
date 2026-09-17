@@ -22,6 +22,7 @@ from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
 from raes_account_credentials import RaesAccountCredentialOps, install_instance_account_credentials
 import raes_gcp_apply
+from gcp_range_cell_credentials import GCEVertexCredentialOps
 from raes_active_directory import RaesDirectorySecretOps
 from raes_gcp_apply import (
     RaesGceApplyOptions,
@@ -120,6 +121,14 @@ def _secret_ops() -> tuple[RaesGceSecretOps, SimpleNamespace]:
     return RaesGceSecretOps(ensure_ssh=mocks.ensure_ssh, delete_ssh=mocks.delete_ssh), mocks
 
 
+def _vertex_ops() -> tuple[GCEVertexCredentialOps, SimpleNamespace]:
+    mocks = SimpleNamespace(
+        ensure=MagicMock(return_value="projects/proj-1/secrets/shifter-range-7-vertex-key"),
+        delete=MagicMock(),
+    )
+    return GCEVertexCredentialOps(ensure=mocks.ensure, delete=mocks.delete), mocks
+
+
 def _apply_options(
     config: GCERangeCellConfig,
     clients: SimpleNamespace,
@@ -127,6 +136,7 @@ def _apply_options(
     **overrides,
 ) -> RaesGceApplyOptions:
     """Build injectable RAES apply options for fake-GCP tests."""
+    overrides.setdefault("vertex_ops", _vertex_ops()[0])
     overrides.setdefault(
         "composition_verifier",
         lambda plan, _outputs: frozenset(
@@ -270,6 +280,38 @@ def _plan_with_domain(*, include_local: bool = False) -> RaesPlan:
         accounts=(authority, service, *((local_operator,) if include_local else ())),
         domains=(domain,),
     )
+
+
+class TestVertexCredential:
+    def test_mints_per_range_vertex_key_and_persists_ref_when_configured(self):
+        """Polaris' in-container agent needs a per-range Vertex key.
+
+        When a Vertex SA is configured, the apply mints the key (granting the
+        attached range-cell SA secretAccessor) and persists the ref on every
+        instance output, mirroring the legacy scenario path.
+        """
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        vertex_ops, vertex_mocks = _vertex_ops()
+        config = replace(_config(), vertex_service_account_email="vertex@proj-1.iam.gserviceaccount.com")
+        output = apply_raes_range_cell(
+            "req-1", 7, _plan(), _resolver, _apply_options(config, clients, secret_ops, vertex_ops=vertex_ops)
+        )
+        vertex_mocks.ensure.assert_called_once_with(
+            7, "vertex@proj-1.iam.gserviceaccount.com", "proj-1", "host@proj-1.iam.gserviceaccount.com"
+        )
+        for instance in output["instances"]:
+            assert instance["gcp_vertex_secret_ref"] == "projects/proj-1/secrets/shifter-range-7-vertex-key"
+
+    def test_no_vertex_key_when_tenant_configures_no_vertex_sa(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        vertex_ops, vertex_mocks = _vertex_ops()
+        # Default _config() has no vertex_service_account_email.
+        apply_raes_range_cell(
+            "req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops, vertex_ops=vertex_ops)
+        )
+        vertex_mocks.ensure.assert_not_called()
 
 
 class TestApply:
@@ -923,7 +965,7 @@ class TestServiceFirewallLifecycle:
             "req-1",
             7,
             _plan_with_service(),
-            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]),
         )
         deleted = {call.kwargs.get("firewall") for call in clients.firewalls.delete.call_args_list}
         assert service_names[0] in deleted
@@ -934,7 +976,7 @@ class TestDestroy:
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
         destroy_raes_range_cell(
-            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops)
+            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0])
         )
 
         assert clients.instances.delete.call_count == 2
@@ -954,7 +996,7 @@ class TestDestroy:
             "req-1",
             7,
             _plan(),
-            RaesGceDestroyOptions(config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops),
+            RaesGceDestroyOptions(config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]),
         )
         assert not clients.networks.delete.called
 
@@ -972,6 +1014,7 @@ class TestDestroy:
                 config=_config(),
                 clients=clients,
                 secret_ops=ssh_ops,
+                vertex_ops=_vertex_ops()[0],
                 account_secret_ops=account_ops,
             ),
         )
@@ -995,7 +1038,7 @@ class TestDestroy:
             "req-1",
             7,
             _plan_with_content(content),
-            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]),
         )
 
         assert clients.instances.delete.call_count == 1

@@ -403,12 +403,22 @@ def _instance_plans_for_node(
     # observation) reads these host_ssh fields via instance_output ->
     # build_guest_execution_context, so setting them here is the single point that
     # routes the docker-host management channel correctly.
-    if profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST:
+    is_polaris_host = profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST
+    if is_polaris_host:
         host_ssh_username = _DOCKER_HOST_SSH_USERNAME
         host_ssh_port = config.host_mgmt_ssh_port
     else:
         host_ssh_username = _DEFAULT_SSH_USERNAME
         host_ssh_port = _DEFAULT_SSH_PORT
+    # The polaris docker-host runs the in-container Vertex agent: the host reads
+    # the per-range Vertex key from Secret Manager and injects it into a14-kali.
+    # That read is authenticated by the attached range-cell service account
+    # (config.service_account_email, granted secretAccessor per range by
+    # gcp_range_vertex_creds.ensure_range_vertex_key). instance_resource falls back
+    # to config.service_account_email when attach_service_account is set with no
+    # explicit email -- matching the legacy scenario path (gcp_range_cell_scenario).
+    # Standard RAES nodes hold no cloud identity (participant-controllable).
+    attach_service_account = is_polaris_host
     os_type = node.os_family or "linux"
     plans: list[InstancePlan] = []
     for index in range(node.count):
@@ -443,7 +453,7 @@ def _instance_plans_for_node(
                 # Empty when the scenario authored none.
                 "participant_access_channels": [binding.channel for binding in access_bindings],
                 "participant_access_usernames": {binding.channel: binding.username for binding in access_bindings},
-                "attach_service_account": False,
+                "attach_service_account": attach_service_account,
             }
         )
     return plans

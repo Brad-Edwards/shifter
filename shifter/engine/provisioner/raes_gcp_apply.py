@@ -41,6 +41,7 @@ from instance_setup import _set_attacker_container_password_after_bootstrap
 from polaris_bootstrap import _run_polaris_range_bootstrap
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
+from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict
@@ -88,6 +89,7 @@ class RaesGceApplyOptions:
     config: GCERangeCellConfig | None = None
     clients: GCEClients | None = None
     secret_ops: RaesGceSecretOps | None = None
+    vertex_ops: GCEVertexCredentialOps | None = None
     # Effective range egress posture pinned at create (PLAT-238), carried here so
     # the apply seam stays within the parameter budget; a `none` range gets no
     # public-web/allow-CIDR firewall lane and no range-owned Cloud NAT.
@@ -112,6 +114,7 @@ class _RaesGceApplyRuntime:
     config: GCERangeCellConfig
     clients: GCEClients
     secret_ops: RaesGceSecretOps
+    vertex_ops: GCEVertexCredentialOps
     account_secret_ops: RaesAccountCredentialOps
     credential_installer: Callable[..., dict[str, str]]
     directory_secret_ops: RaesDirectorySecretOps
@@ -129,6 +132,7 @@ def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
         config=options.config or load_gce_range_cell_config(),
         clients=options.clients or _build_clients(),
         secret_ops=options.secret_ops or _default_secret_ops(),
+        vertex_ops=options.vertex_ops or _default_vertex_ops(),
         account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
         credential_installer=options.credential_installer,
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
@@ -237,6 +241,21 @@ def _provision_raes_resources(
     authored account credential installed and verified on the guest, so a
     declared endpoint never appears with a credential that was never realized.
     """
+    # Per-range Vertex agent credential (polaris docker-host): mint the SA key,
+    # store it in Secret Manager, and grant the attached range-cell SA
+    # secretAccessor so the host can inject it into a14-kali. Mirrors the legacy
+    # scenario path (gcp_range_cells._provision_range_resources); gated on the
+    # tenant configuring a Vertex SA, so ranges without the agent are unaffected.
+    # The ref is persisted on every instance output (only the polaris host reads
+    # it), exactly as the legacy path does.
+    vertex_secret_ref: str | None = None
+    if runtime.config.vertex_service_account_email:
+        vertex_secret_ref = runtime.vertex_ops.ensure(
+            plan["range_id"],
+            runtime.config.vertex_service_account_email,
+            plan["project_id"],
+            runtime.config.service_account_email,
+        )
     if plan["manage_network"]:
         _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
@@ -266,6 +285,7 @@ def _provision_raes_resources(
                 host_public_key=host_public_key,
             ),
             runtime.config,
+            vertex_secret_ref=vertex_secret_ref,
         )
         node_address = _node_address_of(instance)
         accounts = accounts_by_node.get(node_address, ())
@@ -394,6 +414,7 @@ def _cleanup_failed_apply(
             config=runtime.config,
             clients=runtime.clients,
             secret_ops=runtime.secret_ops,
+            vertex_ops=runtime.vertex_ops,
             account_secret_ops=runtime.account_secret_ops,
             directory_secret_ops=runtime.directory_secret_ops,
             allocated_network_cidr=runtime.allocated_network_cidr,
