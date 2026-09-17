@@ -133,9 +133,31 @@ resource "google_storage_bucket" "daisy_export_scratch" {
   public_access_prevention    = "enforced"
   force_destroy               = true
 
+  # Storage baseline, matching the gdc_vm_images bucket in this module:
+  # versioning (CKV_GCP_78) and access logging to the shared audit-logs bucket
+  # (CKV_GCP_62). Versioning is paired with a noncurrent-version expiry below so
+  # retained old versions cannot defeat the 1-day scratch cleanup.
+  versioning {
+    enabled = true
+  }
+
+  logging {
+    log_bucket        = var.access_log_bucket_name
+    log_object_prefix = "daisy-export-scratch-access/"
+  }
+
   lifecycle_rule {
     condition {
       age = 1
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      days_since_noncurrent_time = 1
     }
     action {
       type = "Delete"
