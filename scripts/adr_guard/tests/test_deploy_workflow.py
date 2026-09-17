@@ -628,7 +628,7 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             self.assertIn(digest, workflow)
         self.assertIn("--exit-code 1", workflow)
         self.assertIn("--severity HIGH,CRITICAL", workflow)
-        self.assertEqual(scanner["environment"], "gcp-release-scan-dev")
+        self.assertEqual(scanner["environment"], "${{ inputs.release_scan_github_environment }}")
         self.assertIn("release_scan", deploy["needs"])
         scan_env = "\n".join(str(step.get("env", "")) for step in scanner["steps"])
         self.assertNotIn("GCP_DEPLOY_SERVICE_ACCOUNT", scan_env)
