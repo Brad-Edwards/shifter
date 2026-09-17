@@ -6,8 +6,10 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from django.utils import timezone
 
 from engine.models import (
+    ModelAllocation,
     ModelBudgetAccount,
     ModelDispatchLease,
     ModelPendingGrant,
@@ -29,7 +31,7 @@ from engine.services import (
 from shared.model_access import ContractError
 from shared.model_access.provider import ProviderUsage, VerifiedUsage
 
-from .test_model_request_accounting import _bound, make_reservable_allocation
+from .test_model_request_accounting import _bound, failing_audit_writer, make_reservable_allocation
 
 pytestmark = pytest.mark.django_db
 
@@ -47,6 +49,18 @@ def _reserve(allocation, **overrides):
 
 def _usage(units, *, verified=True):
     return ProviderUsage(items=(VerifiedUsage(component="input_tokens", units=units, provider_verified=verified),))
+
+
+def _multi_bound():
+    from shared.model_access import BillingBound
+    from shared.model_access.provider import BillingAmount
+
+    return BillingBound(
+        amounts=(
+            BillingAmount(component="input_tokens", units=1000, maximum_charge_micro_units=0),
+            BillingAmount(component="output_tokens", units=500, maximum_charge_micro_units=0),
+        )
+    )
 
 
 def _spend():
@@ -255,12 +269,9 @@ def test_reconcile_expired_dispatches_records_unknown_and_charges():
     reservation = ModelRequestReservation.objects.get(request_uuid=outcome.request_uuid)
     assert reservation.state == "unknown"
     assert _spend().reserved == 3000  # hold retained through the sweep, not released
-    # A transport lease expiry does not prove remote provider work has stopped.
-    assert reconcile_model_requests(now=later) == 0
-    assert _concurrency().active_leases == 1
-    reconcile_model_requests(now=later + timedelta(seconds=901))
+    # The obligation is due immediately, so the request pass conservatively charges it.
+    reconcile_model_requests(now=later)
     assert _spend().spent == 3000
-    assert _concurrency().active_leases == 0
 
 
 def test_open_dispatch_rechecks_authority():
@@ -280,6 +291,67 @@ def test_open_dispatch_rechecks_authority():
     fence.save(update_fields=["authority_revision"])
     with pytest.raises(ContractError, match=r"request\.authority_changed"):
         open_dispatch(request_uuid=outcome.request_uuid)
+
+
+def test_open_dispatch_denies_expired_allocation():
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    ModelAllocation.objects.filter(pk=allocation.pk).update(deadline=timezone.now() - timedelta(seconds=1))
+    with pytest.raises(ContractError, match=r"request\.allocation_expired"):
+        open_dispatch(request_uuid=outcome.request_uuid)
+
+
+def test_settle_requires_every_bounded_component():
+    allocation = make_reservable_allocation()
+    outcome = reserve_request(
+        allocation_id=allocation.pk,
+        request_uuid=uuid4(),
+        logical_alias="coding-main",
+        billing_bound=_multi_bound(),
+    )
+    open_dispatch(request_uuid=outcome.request_uuid)
+    # Usage covers only input_tokens; output_tokens was bounded too, so it is incomplete
+    # and must not release the hold as if output cost zero.
+    only_input = ProviderUsage(items=(VerifiedUsage(component="input_tokens", units=500, provider_verified=True),))
+    with pytest.raises(ContractError, match=r"request\.usage_incomplete"):
+        settle_request(request_uuid=outcome.request_uuid, usage=only_input)
+    assert _spend().reserved > 0  # conservative hold retained
+
+
+def test_late_evidence_rejects_incomplete_usage():
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    open_dispatch(request_uuid=outcome.request_uuid)
+    charge_unknown(request_uuid=outcome.request_uuid, uncertainty_reason="timeout", horizon_seconds=0)
+    reconcile_model_requests(now=datetime.now(UTC) + timedelta(seconds=1))
+    charged = _spend().spent
+    with pytest.raises(ContractError, match=r"request\.usage_incomplete"):
+        apply_late_evidence(request_uuid=outcome.request_uuid, usage=ProviderUsage(items=()))
+    assert _spend().spent == charged  # conservative charge never erased by empty evidence
+
+
+def test_settle_writes_a_body_free_audit_row():
+    from shared.models import AuditLog
+
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    open_dispatch(request_uuid=outcome.request_uuid)
+    settle_request(request_uuid=outcome.request_uuid, usage=_usage(500))
+    row = AuditLog.objects.get(entity_ref=str(outcome.request_uuid), action="request_settle")
+    assert row.entity_type == "model_request"
+    assert "prompt" not in row.context.lower()
+
+
+def test_strict_audit_failure_rolls_back_settlement():
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    open_dispatch(request_uuid=outcome.request_uuid)
+    with failing_audit_writer(), pytest.raises(RuntimeError):
+        settle_request(request_uuid=outcome.request_uuid, usage=_usage(500))
+    reservation = ModelRequestReservation.objects.get(request_uuid=outcome.request_uuid)
+    assert reservation.settlement_state == "open"  # settlement rolled back with the audit
+    assert _spend().reserved == 3000
+    assert _spend().spent == 0
 
 
 def test_scheduled_worker_runs_the_request_pass():

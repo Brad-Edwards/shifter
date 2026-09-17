@@ -62,7 +62,11 @@ def _replay(request: ModelAllocationRequest, intent_digest: str) -> ModelAllocat
         return None
     if existing.intent_digest != intent_digest:
         raise ContractError("allocation.intent_conflict")
-    if existing.released_at is not None or existing.grant.state != "pending" or timezone.now() >= existing.deadline:
+    if (
+        existing.released_at is not None
+        or existing.grant.state not in {"pending", "active"}
+        or timezone.now() >= existing.deadline
+    ):
         raise ContractError("allocation.revoked")
     return existing
 

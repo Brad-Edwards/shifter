@@ -256,6 +256,8 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     from workspaces.services import WorkspaceOperation, authorize_bound_workspace
 
     authorization = authorize_bound_workspace(request.user, request.workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+    if authorization.organization_uuid is None:
+        return None
     if has_runtime_plugin_binding(authorization.organization_uuid, request.scenario):
         return None
     outcome = _run_atomic_claim(request, candidates)

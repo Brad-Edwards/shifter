@@ -16,6 +16,7 @@ from shifter_adapter_sdk.runtime import (
     Digest,
     GuestTarget,
     Identifier,
+    Phase,
     PluginManifest,
     RuntimeInput,
     canonical_digest,
@@ -107,6 +108,7 @@ def runtime_plugin_requests(
         name: GuestTarget(node_address=address, os_family=plan["resources"][address]["payload"]["os_family"])
         for name, address in pin.bindings.targets.items()
     }
+    phases: tuple[Phase, ...] = ("validate", "configure", "verify")
     return tuple(
         RuntimeInput(
             protocol=PROTOCOL,
@@ -120,5 +122,5 @@ def runtime_plugin_requests(
             targets=targets,
             parameters=pin.bindings.parameters,
         )
-        for phase in ("validate", "configure", "verify")
+        for phase in phases
     )

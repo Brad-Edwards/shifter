@@ -52,18 +52,19 @@ from provisioner_db_operation_input import (
 )
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
-from raes_gcp_inventory import inventory_raes_range_cell
+from raes_gcp_inventory import VERIFIED_ABSENT, inventory_raes_range_cell
 from raes_gcp_network_allocation import (
     GceNetworkAllocation,
     RaesRealizationError,
 )
 from raes_gcp_network_allocation import (
-    allocated_open_network_for_destroy as _allocated_open_network_for_destroy,
+    allocated_networks_for_destroy as _allocated_networks_for_destroy,
 )
 from raes_gcp_network_allocation import (
-    allocated_open_network_for_provision as _allocated_open_network_for_provision,
+    allocated_networks_for_provision as _allocated_networks_for_provision,
 )
 from raes_plan import RaesPlan, RaesPlanNode, parse_plan
+from raes_range_members import realized_members as _realized_members
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
 from range_subnet_allocation import _release_subnet_allocations_best_effort
@@ -263,6 +264,10 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
 
     logger.info("Starting RAES range provision for request_id=%s", request_id)
     _report(ref, operation, ResultStep.RAES_PROVISION_RUNNING, {"raes_status": "running"})
+    network_allocation: GceNetworkAllocation | None = None
+    raes_plan: RaesPlan | None = None
+    config: GCERangeCellConfig | None = None
+    pre_mutation_release_attempted = False
     try:
         from model_enrollment import load_model_enrollment
         from runtime_plugin_execution import load_guest_plugin_plans
@@ -279,12 +284,19 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             config = load_gce_range_cell_config(backend=backend)
             config = _config_for_range_placement(request_id, config)
             raes_plan = parse_plan(operation_input.plan)
-            network_allocation = _allocated_open_network_for_provision(
+            network_allocation = _allocated_networks_for_provision(
                 request_id,
                 generation,
                 raes_plan,
                 config,
             )
+
+            def release_pre_mutation_allocation() -> None:
+                """Release this generation's reservation before provider mutation."""
+                nonlocal pre_mutation_release_attempted
+                pre_mutation_release_attempted = True
+                _release_subnet_allocations_best_effort(request_id, operation_id=generation)
+
             apply_result = apply_raes_range_cell(
                 request_id,
                 range_id,
@@ -293,10 +305,13 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
                 options=RaesGceApplyOptions(
                     config=config,
                     egress_mode=operation_input.egress_mode,
-                    allocated_network_cidr=network_allocation.require_available(),
+                    allocated_network_cidrs=network_allocation.require_available(),
                     runtime_plugin=plugin_plans.execute if plugin_plans is not None else None,
                     model_enrollment=enrollment.execute if enrollment is not None else None,
                     model_broker=enrollment.gce_egress_capability() if enrollment is not None else None,
+                    on_pre_mutation_failure=(
+                        release_pre_mutation_allocation if network_allocation.network_cidrs else None
+                    ),
                 ),
                 delivery_bindings=operation_input.binding_transport(),
                 access_bindings=operation_input.access_binding_transport(),
@@ -316,6 +331,16 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             generation_id=run.operation_id,
         )
     except Exception as exc:
+        if (
+            network_allocation is not None
+            and network_allocation.network_cidrs
+            and raes_plan is not None
+            and config is not None
+            and not pre_mutation_release_attempted
+        ):
+            cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config, network_allocation)
+            if cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
+                _release_subnet_allocations_best_effort(request_id, operation_id=generation)
         reason_code, diagnostic = _classify_failure(exc, "raes range provision")
         logger.error("RAES range provision failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
@@ -330,48 +355,6 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         ResultStep.RAES_TERMINAL_READY,
         {"raes_status": "succeeded", "members": members, "completion": completion},
     )
-
-
-def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]]:
-    """Project realized instances into the bounded member/access result (#1710).
-
-    Carries only what ``Range.provisioned_instances`` needs for the portal to
-    authorize and dial, and secret *references* only -- never a credential value,
-    the reserved management secret, or a raw provider response.
-    """
-    instances = apply_result.get("instances")
-    if not isinstance(instances, list):
-        raise RaesRealizationError("realized instance outputs are invalid")
-    members: list[dict[str, object]] = []
-    for instance in instances:
-        if not isinstance(instance, dict):
-            raise RaesRealizationError("realized instance outputs are invalid")
-        channels = list(instance.get("participant_access_channels") or [])
-        member: dict[str, object] = {
-            "uuid": str(instance.get("uuid", "")),
-            "name": str(instance.get("name", "")),
-            "os_type": str(instance.get("os", "")),
-            "private_ip": str(instance.get("private_ip", "")),
-            "instance_id": str(instance.get("instance_id", "")),
-            "subnet_name": str(instance.get("subnet_name", "")),
-            "participant_access_channels": channels,
-            "participant_access_usernames": dict(instance.get("participant_access_usernames") or {}),
-        }
-        host_public_key = str(
-            instance.get("participant_ssh_host_public_key")
-            or instance.get("host_public_key")
-            or instance.get("gcp_host_public_key", "")
-        )
-        if host_public_key:
-            member["host_public_key"] = host_public_key
-        sftp_root_directory = str(instance.get("sftp_root_directory", ""))
-        if sftp_root_directory:
-            member["sftp_root_directory"] = sftp_root_directory
-        for channel, key in (("ssh", "ssh_key_secret_arn"), ("rdp", "rdp_password_secret_arn")):
-            if channel in channels:
-                member[key] = str(instance.get(key, ""))
-        members.append(member)
-    return members
 
 
 def run_raes_range_activate(request_id: str, *, operation_id: str | None = None) -> None:
@@ -409,9 +392,9 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
         backend = _require_gce_live_fire_binding(operation_input)
         config = _config_for_range_placement(request_id, load_gce_range_cell_config(backend=backend))
         raes_plan = parse_plan(operation_input.plan)
-        network_allocation = _allocated_open_network_for_destroy(
+        network_allocation = _allocated_networks_for_destroy(
             request_id,
-            activation.prepared_generation_fence,
+            run.operation_id,
             raes_plan,
             config,
         )
@@ -421,7 +404,7 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
             activate_generation=UUID(run.operation_id),
             ops=default_activation_ops(
                 config=config,
-                allocated_network_cidr=network_allocation.require_available(),
+                allocated_network_cidrs=network_allocation.require_available(),
             ),
         )
         resources = result.completion["resources"]
@@ -440,7 +423,11 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
 
 
 def _raes_cleanup_inventory(
-    request_id: str, range_id: int, raes_plan: RaesPlan, config: GCERangeCellConfig
+    request_id: str,
+    range_id: int,
+    raes_plan: RaesPlan,
+    config: GCERangeCellConfig,
+    network_allocation: GceNetworkAllocation,
 ) -> dict[str, Any]:
     """Inventory owned resources after a successful destroy; never fail the terminal report.
 
@@ -448,7 +435,14 @@ def _raes_cleanup_inventory(
     the destroy still terminalizes but no consumer treats it as verified cleanup.
     """
     try:
-        return inventory_raes_range_cell(request_id, range_id, raes_plan, config=config)
+        return inventory_raes_range_cell(
+            request_id,
+            range_id,
+            raes_plan,
+            config=config,
+            allocated_network_cidrs=network_allocation.network_cidrs or None,
+            reconstruct_without_allocation=network_allocation.required and not network_allocation.network_cidrs,
+        )
     except Exception:
         logger.exception("RAES cleanup inventory failed for request_id=%s", request_id)
         return {"outcome": "INCOMPLETE", "residual_categories": [], "scope": {}}
@@ -481,7 +475,7 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
         config = load_gce_range_cell_config(backend=backend)
         config = _config_for_range_placement(request_id, config)
         raes_plan = parse_plan(operation_input.plan, cleanup_only=True)
-        network_allocation = _allocated_open_network_for_destroy(
+        network_allocation = _allocated_networks_for_destroy(
             request_id,
             generation,
             raes_plan,
@@ -493,8 +487,8 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
             raes_plan,
             RaesGceDestroyOptions(
                 config=config,
-                allocated_network_cidr=network_allocation.cidr,
-                reconstruct_without_allocation=network_allocation.required and network_allocation.cidr is None,
+                allocated_network_cidrs=network_allocation.network_cidrs or None,
+                reconstruct_without_allocation=network_allocation.required and not network_allocation.network_cidrs,
             ),
         )
     except Exception as exc:
@@ -502,12 +496,13 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
         logger.error("RAES range destroy failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
         raise
-    if network_allocation.cidr is not None:
-        _release_subnet_allocations_best_effort(request_id, operation_id=generation)
     # Independent inventory/readback of owned resources -- verified cleanup requires
-    # this evidence, not the delete loop completing (#2086, ADR-063-R4/R5). Run after
-    # subnet release so the readback reflects the true final state.
-    cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config)
+    # this evidence, not the delete loop completing (#2086, ADR-063-R4/R5). The
+    # reservation remains held until absence is proven so another range cannot
+    # reuse an occupied CIDR after a partial or unreadable cleanup.
+    cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config, network_allocation)
+    if network_allocation.network_cidrs and cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
+        _release_subnet_allocations_best_effort(request_id, operation_id=generation)
     _report(
         ref,
         operation,

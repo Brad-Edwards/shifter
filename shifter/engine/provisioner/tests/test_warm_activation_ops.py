@@ -114,12 +114,21 @@ class TestRealizeClaimantAccess:
         gen = uuid4()
         config = object()
         assert (
-            GceActivationOps(config=config, allocated_network_cidr="10.90.0.0/28").realize_claimant_access(
-                _activation(), gen
-            )
+            GceActivationOps(
+                config=config,
+                allocated_network_cidrs=(("backend.gce.network.default", "10.90.0.0/28"),),
+            ).realize_claimant_access(_activation(), gen)
             == members
         )
-        assert seen == [(gen, {"config": config, "allocated_network_cidr": "10.90.0.0/28"})]
+        assert seen == [
+            (
+                gen,
+                {
+                    "config": config,
+                    "allocated_network_cidrs": (("backend.gce.network.default", "10.90.0.0/28"),),
+                },
+            )
+        ]
 
 
 class TestPriorAccessRevoked:
@@ -207,7 +216,11 @@ def _patch_activate_orchestration(monkeypatch, *, reports, activation):
     )
     monkeypatch.setattr(raes_range_ops, "parse_plan", lambda plan: _FakePlan())
     monkeypatch.setattr(raes_range_ops, "snapshot_resources", lambda plan, verified: [])
-    monkeypatch.setattr(raes_range_ops, "_report", lambda ref, operation, step, payload: reports.append(step))
+    monkeypatch.setattr(
+        raes_range_ops,
+        "_report",
+        lambda ref, operation, step, payload: reports.append((step, payload)),
+    )
     monkeypatch.setattr(
         raes_range_ops,
         "_report_failure",
@@ -224,24 +237,28 @@ class TestRunRaesRangeActivate:
         monkeypatch.setattr("raes_gcp_activate.default_activation_ops", lambda **_: object())
         monkeypatch.setattr(
             raes_range_ops,
-            "_allocated_open_network_for_destroy",
+            "_allocated_networks_for_destroy",
             lambda *args: raes_range_ops._GceNetworkAllocation(required=False),
         )
         monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
         monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", lambda **kwargs: object())
         monkeypatch.setattr(raes_range_ops, "_config_for_range_placement", lambda request_id, config: config)
+        members = [{"target_address": "n1", "channel": "ssh"}]
+        completion = {"resources": []}
         monkeypatch.setattr(
             "raes_gcp_activate.activate_raes_range_cell",
-            lambda **kwargs: SimpleNamespace(
-                members=[{"target_address": "n1", "channel": "ssh"}], completion={"resources": []}
-            ),
+            lambda **kwargs: SimpleNamespace(members=members, completion=completion),
         )
         raes_range_ops.run_raes_range_activate("rid")
-        assert reports == [
+        assert [step for step, _payload in reports] == [
             ResultStep.RAES_ACTIVATE_RUNNING,
             ResultStep.RAES_ACTIVATE_SNAPSHOT,
             ResultStep.RAES_TERMINAL_READY,
         ]
+        ready_payload = next(payload for step, payload in reports if step is ResultStep.RAES_TERMINAL_READY)
+        assert ready_payload["members"] == members
+        assert ready_payload["completion"] == completion
+        assert ready_payload["raes_status"] == "succeeded"
 
     def test_input_read_failure_reports_and_raises(self, monkeypatch):
         reports: list = []
@@ -267,7 +284,7 @@ class TestRunRaesRangeActivate:
         monkeypatch.setattr("raes_gcp_activate.default_activation_ops", lambda **_: object())
         monkeypatch.setattr(
             raes_range_ops,
-            "_allocated_open_network_for_destroy",
+            "_allocated_networks_for_destroy",
             lambda *args: raes_range_ops._GceNetworkAllocation(required=False),
         )
         monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
@@ -280,13 +297,13 @@ class TestRunRaesRangeActivate:
         monkeypatch.setattr("raes_gcp_activate.activate_raes_range_cell", _boom)
         with pytest.raises(RuntimeError):
             raes_range_ops.run_raes_range_activate("rid")
-        assert reports[0] == ResultStep.RAES_ACTIVATE_RUNNING
+        assert reports[0][0] == ResultStep.RAES_ACTIVATE_RUNNING
         assert reports[-1][0] == "failure"
 
     def test_open_network_allocation_is_recovered_before_scrub(self, monkeypatch):
         activation = _activation()
         reports: list = []
-        _patch_activate_orchestration(monkeypatch, reports=reports, activation=activation)
+        op_id = _patch_activate_orchestration(monkeypatch, reports=reports, activation=activation)
         config = SimpleNamespace(network_mode="shared-vpc")
         monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
         monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", lambda **kwargs: config)
@@ -294,10 +311,13 @@ class TestRunRaesRangeActivate:
         recovered = []
         monkeypatch.setattr(
             raes_range_ops,
-            "_allocated_open_network_for_destroy",
+            "_allocated_networks_for_destroy",
             lambda request_id, operation_id, plan, value: (
                 recovered.append((request_id, operation_id, value))
-                or raes_range_ops._GceNetworkAllocation(required=True, cidr="10.90.0.0/28")
+                or raes_range_ops._GceNetworkAllocation(
+                    required=True,
+                    network_cidrs=(("backend.gce.network.default", "10.90.0.0/28"),),
+                )
             ),
         )
         created = []
@@ -312,8 +332,13 @@ class TestRunRaesRangeActivate:
 
         raes_range_ops.run_raes_range_activate("rid")
 
-        assert recovered == [("rid", activation.prepared_generation_fence, config)]
-        assert created == [{"config": config, "allocated_network_cidr": "10.90.0.0/28"}]
+        assert recovered == [("rid", op_id, config)]
+        assert created == [
+            {
+                "config": config,
+                "allocated_network_cidrs": (("backend.gce.network.default", "10.90.0.0/28"),),
+            }
+        ]
 
     def test_missing_open_network_allocation_fails_before_scrub(self, monkeypatch):
         activation = _activation()
@@ -324,7 +349,7 @@ class TestRunRaesRangeActivate:
         monkeypatch.setattr(raes_range_ops, "_config_for_range_placement", lambda request_id, config: config)
         monkeypatch.setattr(
             raes_range_ops,
-            "_allocated_open_network_for_destroy",
+            "_allocated_networks_for_destroy",
             lambda *args: raes_range_ops._GceNetworkAllocation(required=True),
         )
         monkeypatch.setattr(

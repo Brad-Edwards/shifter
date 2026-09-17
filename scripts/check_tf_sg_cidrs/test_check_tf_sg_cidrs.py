@@ -346,6 +346,21 @@ class CheckTfSgCidrsTest(unittest.TestCase):
             self.skipTest(f"{main_tf} not present in this checkout")
         self.assertEqual(check_file(main_tf), [])
 
+    def test_ci_invokes_checker_for_complete_provisioner_range_module(self) -> None:
+        """The live isolation scan must remain a blocking CI step."""
+        repo_root = Path(__file__).resolve().parents[2]
+        workflow = (repo_root / ".github" / "workflows" / "_quality.yml").read_text()
+
+        self.assertIn("- name: Run check-tf-sg-cidrs", workflow)
+        self.assertIn(
+            "python3 scripts/check_tf_sg_cidrs/check_tf_sg_cidrs.py",
+            workflow,
+        )
+        self.assertIn(
+            "find shifter/engine/provisioner/terraform/modules/range",
+            workflow,
+        )
+
 
 
 if __name__ == "__main__":

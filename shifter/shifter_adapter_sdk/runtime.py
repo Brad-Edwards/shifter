@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Annotated, Literal, Protocol, Self
+from typing import Annotated, Final, Literal, Protocol, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-PROTOCOL = "shifter.runtime-plugin/v1"
+PROTOCOL: Final = "shifter.runtime-plugin/v1"
 ENTRY_POINT_GROUP = "shifter.runtime.plugins"
 # Fits one injected environment value on Linux, including its name and terminator.
 MAX_INPUT_BYTES = 65_536
@@ -247,8 +247,9 @@ def parse_result(raw: str | bytes, request: RuntimeInput | InspectionInput) -> R
     """Host-side parser: validate shape and invocation before using worker output."""
     value = decode_message(raw, limit=MAX_OUTPUT_BYTES)
     if isinstance(request, InspectionInput):
-        result = InspectionResult.model_validate(value)
-    else:
-        result = RuntimePlan.model_validate(value)
-    result.authorize(request)
-    return result
+        inspection = InspectionResult.model_validate(value)
+        inspection.authorize(request)
+        return inspection
+    plan = RuntimePlan.model_validate(value)
+    plan.authorize(request)
+    return plan

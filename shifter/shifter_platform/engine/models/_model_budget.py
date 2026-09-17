@@ -89,6 +89,9 @@ class ModelRequestReservation(models.Model):
     intent_fingerprint_hmac = models.CharField(max_length=71, blank=True, default="")
     intent_contract_version = models.CharField(max_length=64, blank=True, default="")
     reservation_vector = models.JSONField()
+    # The billing components the conservative bound covered; settlement must have
+    # authoritative usage for every one of them before releasing the hold.
+    billed_components = models.JSONField(default=list)
     canonical_request_cost = models.PositiveBigIntegerField()
     billing_bound = models.JSONField(default=dict)
     state = models.CharField(max_length=16, default="reserved")

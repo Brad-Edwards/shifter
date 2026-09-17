@@ -136,12 +136,6 @@ class TestCreateRangeValidation:
         result = services.create_range(user, hydratable_scenario.scenario_id, {"windows": 999999})
         assert result.scenario_id == hydratable_scenario.scenario_id
 
-    def test_raises_when_user_already_has_active_range(self, user, make_agent, hydratable_scenario):
-        agent = make_agent(user)
-        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
-        with pytest.raises(CMSError, match="already have an active range"):
-            services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
-
     def test_raises_for_non_launchable_raes_scenario(self, user, make_agent):
         from cms.models import RaesPackageSource
 

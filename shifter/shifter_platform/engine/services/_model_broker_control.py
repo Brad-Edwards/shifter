@@ -12,7 +12,7 @@ from shared.model_access import BillingBound, ContractError
 from shared.model_access.provider import ProviderUsage
 
 from ._model_credentials import authenticate_model_access
-from ._model_request_accounting import ReservationOutcome, reserve_request
+from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
 from ._model_request_lifecycle import (
     charge_unknown,
     check_dispatch_lease,
@@ -47,13 +47,15 @@ def reserve_model_call(
             request_uuid=request_uuid,
             logical_alias=logical_alias,
             billing_bound=billing_bound,
-            caller_key_hmac=caller_key_hmac,
-            intent_fingerprint_hmac=intent_fingerprint_hmac,
-            key_version=key_version,
-            prior_caller_key_hmacs=prior_caller_key_hmacs,
-            prior_intent_fingerprint_hmacs=prior_intent_fingerprint_hmacs,
-            retained_key_versions=retained_key_versions,
-            intent_contract_version="model-messages/v1",
+            idempotency=RequestIdempotency(
+                caller_key_hmac=caller_key_hmac,
+                intent_fingerprint_hmac=intent_fingerprint_hmac,
+                key_version=key_version,
+                prior_caller_key_hmacs=prior_caller_key_hmacs,
+                prior_intent_fingerprint_hmacs=prior_intent_fingerprint_hmacs,
+                retained_key_versions=retained_key_versions,
+                intent_contract_version="model-messages/v1",
+            ),
             now=moment,
         )
 
@@ -91,8 +93,10 @@ def advance_model_call(
             revision = renew_continuation_lease(request_uuid=request_uuid, now=moment)
             from engine.models import ModelDispatchLease
 
-            lease = ModelDispatchLease.objects.get(reservation=reservation)
-            return {"revision": revision, "deadline": lease.continuation_deadline.isoformat()}
+            continuation = ModelDispatchLease.objects.get(reservation=reservation)
+            if continuation.continuation_deadline is None:
+                raise ContractError("request.no_lease")
+            return {"revision": revision, "deadline": continuation.continuation_deadline.isoformat()}
         raise ContractError("request.invalid_action")
 
 

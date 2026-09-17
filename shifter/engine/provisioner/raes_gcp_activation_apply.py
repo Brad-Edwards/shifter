@@ -50,7 +50,7 @@ def realize_existing_cell(
             config=runtime.config,
             access_bindings=realized_access,
             egress_policy=GceEgressPolicy(mode=resolved_options.egress_mode),
-            allocated_network_cidr=runtime.allocated_network_cidr,
+            allocated_network_cidrs=runtime.allocated_network_cidrs,
         ),
     )
     for instance in plan["instances"]:

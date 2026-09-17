@@ -66,7 +66,7 @@ def _lock_binding(allocation_id: UUID, moment: datetime) -> tuple[ModelAllocatio
     if (
         range_obj is None
         or grant is None
-        or grant.state != "pending"
+        or grant.state not in {"pending", "active"}
         or allocation.released_at is not None
         or allocation.deadline <= moment
         or range_obj.provisioner_operation_id != allocation.operation_id
@@ -91,8 +91,9 @@ def issue_model_enrollment(*, allocation_id: UUID, operation_id: UUID, now: date
         previous = ModelAccessCredential.objects.select_for_update().filter(grant=grant).first()
         if previous is not None:
             grant.grant_epoch += 1
-            grant.save(update_fields=["grant_epoch"])
             fence_revoked_requests(allocation_id=allocation.pk, now=moment)
+        grant.state = "pending"
+        grant.save(update_fields=["state", "grant_epoch"])
         token = _token(grant.public_id)
         expires = min(moment + timedelta(seconds=120), allocation.deadline)
         ModelAccessCredential.objects.update_or_create(
@@ -145,6 +146,8 @@ def _lock_credential(token: str, peer: str, kind: str, moment: datetime):
     credential = ModelAccessCredential.objects.select_for_update().filter(grant=grant).first()
     if credential is None or credential.grant_epoch != grant.grant_epoch or credential.hard_expires_at <= moment:
         raise ContractError(_DENIED)
+    if (kind == "enrollment" and grant.state != "pending") or (kind != "enrollment" and grant.state != "active"):
+        raise ContractError(_DENIED)
     expected = getattr(credential, f"{kind}_hash")
     if not expected or not secrets.compare_digest(expected, _hash(token)):
         raise ContractError(_DENIED)
@@ -181,6 +184,8 @@ def exchange_model_enrollment(*, token: str, transport_peer: str, now: datetime 
     moment = now or timezone.now()
     with transaction.atomic():
         _, grant, credential = _lock_credential(token, transport_peer, "enrollment", moment)
+        grant.state = "active"
+        grant.save(update_fields=["state"])
         return _rotate(grant, credential, moment)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -15,7 +16,7 @@ from engine.models import (
     ModelPendingGrant,
     ModelRequestReservation,
 )
-from engine.services import reserve_request
+from engine.services import RequestIdempotency, reserve_request
 from shared.model_access import ContractError, seal_catalog
 from shared.model_access.core_models import AccessLimits, EffectiveProfile, OwnedReference
 from shared.model_access.effective_policy import EffectivePolicy
@@ -23,6 +24,32 @@ from shared.model_access.effective_policy import EffectivePolicy
 pytestmark = pytest.mark.django_db
 
 _FAR_FUTURE = "2027-10-01T00:00:00Z"
+
+
+class _FailingAuditWriter:
+    """An audit writer whose persistence always fails, exercising the strict path."""
+
+    def write(self, event):
+        raise RuntimeError("audit unavailable")
+
+
+@contextlib.contextmanager
+def failing_audit_writer():
+    """Swap in a failing audit writer through the public port seam, then restore it.
+
+    Using the port's own binding contract (not an internal mock) keeps this within
+    the boundary-mock policy while still driving the strict fail-closed audit path.
+    """
+    from shared.audit.port import bind_audit_writer, get_audit_writer, reset_audit_writer
+
+    original = get_audit_writer()
+    reset_audit_writer()
+    bind_audit_writer(_FailingAuditWriter())
+    try:
+        yield
+    finally:
+        reset_audit_writer()
+        bind_audit_writer(original)
 
 
 def _limits(**overrides):
@@ -71,7 +98,8 @@ def seal_v3_catalog(deployment_id, *, valid_until=_FAR_FUTURE, spend_ceiling=5_0
                 "currency": "USD",
                 "valid_until": valid_until,
                 "prices": [
-                    {"component": "input_tokens", "unit_denominator": 1_000_000, "price_micro_units": 3_000_000}
+                    {"component": "input_tokens", "unit_denominator": 1_000_000, "price_micro_units": 3_000_000},
+                    {"component": "output_tokens", "unit_denominator": 1_000_000, "price_micro_units": 15_000_000},
                 ],
             }
         ],
@@ -90,7 +118,7 @@ def seal_v3_catalog(deployment_id, *, valid_until=_FAR_FUTURE, spend_ceiling=5_0
                 "provider_model_version": "20260901",
                 "protocol": "anthropic-messages/2023-06-01",
                 "capabilities": ["messages"],
-                "billing_components": ["input_tokens"],
+                "billing_components": ["input_tokens", "output_tokens"],
                 "quota_pool_ids": ["vertex-tokens-eu"],
                 "weight": 1,
                 "enabled": True,
@@ -201,7 +229,7 @@ def make_reservable_allocation(*, deployment_id=None, spend_ceiling=5_000_000, s
         },
         deadline=datetime.now(UTC) + timedelta(hours=1),
     )
-    ModelPendingGrant.objects.create(allocation=allocation, grant_epoch=1)
+    ModelPendingGrant.objects.create(allocation=allocation, grant_epoch=1, state="active")
     return allocation
 
 
@@ -276,7 +304,7 @@ def test_reserve_rejects_expired_price():
         },
         deadline=datetime.now(UTC) + timedelta(hours=1),
     )
-    ModelPendingGrant.objects.create(allocation=allocation, grant_epoch=1)
+    ModelPendingGrant.objects.create(allocation=allocation, grant_epoch=1, state="active")
     with pytest.raises(ContractError, match=r"request\.price_expired"):
         _reserve(allocation)
 
@@ -297,6 +325,16 @@ def test_reserve_denies_a_revoked_grant():
         _reserve(allocation)
 
 
+def test_reserve_denies_a_pending_grant():
+    # A pending grant is a non-usable enrollment binding; only an issued (active)
+    # capability authorizes a request. M04 never activates it.
+    allocation = make_reservable_allocation()
+    ModelPendingGrant.objects.filter(allocation=allocation).update(state="pending")
+    with pytest.raises(ContractError, match=r"request\.grant_inactive"):
+        _reserve(allocation)
+    assert not ModelRequestReservation.objects.exists()
+
+
 def test_reserve_denies_an_expired_allocation():
     allocation = make_reservable_allocation()
     allocation.deadline = timezone.now() - timedelta(seconds=1)
@@ -307,30 +345,33 @@ def test_reserve_denies_an_expired_allocation():
 
 def test_repeated_key_same_intent_returns_completed_metadata():
     allocation = make_reservable_allocation()
-    key = "sha256:" + "c" * 64
-    fingerprint = "sha256:" + "f" * 64
-    first = _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+    idem = RequestIdempotency(caller_key_hmac="sha256:" + "c" * 64, intent_fingerprint_hmac="sha256:" + "f" * 64)
+    first = _reserve(allocation, idempotency=idem)
     # Settle the first so the duplicate resolves to completed metadata.
     ModelRequestReservation.objects.filter(request_uuid=first.request_uuid).update(state="settled")
-    second = _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+    second = _reserve(allocation, idempotency=idem)
     assert second.request_uuid == first.request_uuid
 
 
 def test_repeated_key_changed_intent_conflicts():
     allocation = make_reservable_allocation()
     key = "sha256:" + "c" * 64
-    _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "1" * 64)
+    _reserve(
+        allocation, idempotency=RequestIdempotency(caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "1" * 64)
+    )
     with pytest.raises(ContractError, match=r"request\.intent_conflict"):
-        _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "2" * 64)
+        _reserve(
+            allocation,
+            idempotency=RequestIdempotency(caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "2" * 64),
+        )
 
 
 def test_repeated_key_still_in_progress_conflicts():
     allocation = make_reservable_allocation()
-    key = "sha256:" + "c" * 64
-    fingerprint = "sha256:" + "f" * 64
-    _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+    idem = RequestIdempotency(caller_key_hmac="sha256:" + "c" * 64, intent_fingerprint_hmac="sha256:" + "f" * 64)
+    _reserve(allocation, idempotency=idem)
     with pytest.raises(ContractError, match=r"request\.in_progress_or_unknown"):
-        _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+        _reserve(allocation, idempotency=idem)
 
 
 def test_no_retry_key_permits_independent_invocations():
@@ -364,30 +405,50 @@ def test_hmac_rotation_replays_across_key_versions():
     old_hmac = "sha256:" + "a" * 64
     new_hmac = "sha256:" + "b" * 64
     fingerprint = "sha256:" + "f" * 64
-    first = _reserve(allocation, caller_key_hmac=old_hmac, key_version="k1", intent_fingerprint_hmac=fingerprint)
+    first = _reserve(
+        allocation,
+        idempotency=RequestIdempotency(caller_key_hmac=old_hmac, key_version="k1", intent_fingerprint_hmac=fingerprint),
+    )
     ModelRequestReservation.objects.filter(request_uuid=first.request_uuid).update(state="settled")
     # After key rotation the same raw key hashes to new_hmac; the caller passes the
     # prior-version digest too, so the retry resolves to the original, not a new request.
     second = _reserve(
         allocation,
-        caller_key_hmac=new_hmac,
-        prior_caller_key_hmacs=(old_hmac,),
-        prior_intent_fingerprint_hmacs=(fingerprint,),
-        retained_key_versions=("k1",),
-        key_version="k2",
-        intent_fingerprint_hmac="sha256:" + "c" * 64,
+        idempotency=RequestIdempotency(
+            caller_key_hmac=new_hmac,
+            prior_caller_key_hmacs=(old_hmac,),
+            retained_key_versions=("k1",),
+            key_version="k2",
+            intent_fingerprint_hmac=fingerprint,
+        ),
     )
     assert second.request_uuid == first.request_uuid
     assert ModelRequestReservation.objects.count() == 1
 
 
-def test_key_rotation_without_retained_key_cannot_create_a_second_invocation():
+def test_strict_audit_failure_rolls_back_the_whole_reservation():
+    # The pre-dispatch decision audit is fail-closed: if it cannot commit, the
+    # reservation, postings and account holds must not persist either.
     allocation = make_reservable_allocation()
-    first = _reserve(allocation, caller_key_hmac="a" * 64, key_version="v1", intent_fingerprint_hmac="b" * 64)
-    ModelRequestReservation.objects.filter(request_uuid=first.request_uuid).update(state="settled")
-    with pytest.raises(ContractError, match=r"request\.retry_key_rotation_unavailable"):
-        _reserve(allocation, caller_key_hmac="c" * 64, key_version="v2", intent_fingerprint_hmac="d" * 64)
-    assert ModelRequestReservation.objects.count() == 1
+    with failing_audit_writer(), pytest.raises(RuntimeError):
+        _reserve(allocation)
+    assert not ModelRequestReservation.objects.exists()
+    assert not ModelBudgetPosting.objects.exists()
+    assert not ModelBudgetAccount.objects.filter(account_ref="deployment-spend", reserved__gt=0).exists()
+
+
+def test_reserve_writes_a_body_free_decision_audit_row():
+    from shared.models import AuditLog
+
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    row = AuditLog.objects.get(entity_ref=str(outcome.request_uuid))
+    assert row.action == "request_reserve"
+    assert row.entity_type == "model_request"
+    assert row.entity_id == ModelRequestReservation.objects.get(request_uuid=outcome.request_uuid).pk
+    # Body-free: no prompt/response/fingerprint content in the audit context.
+    assert "prompt" not in row.context.lower()
+    assert "sha256" not in row.context.lower()
 
 
 def test_lowered_ceiling_blocks_new_work_but_keeps_committed():
@@ -400,3 +461,20 @@ def test_lowered_ceiling_blocks_new_work_but_keeps_committed():
         _reserve(allocation)
     spend.refresh_from_db()
     assert spend.reserved == 3000  # committed value retained
+
+
+def test_key_rotation_without_retained_key_cannot_create_a_second_invocation():
+    allocation = make_reservable_allocation()
+    first = _reserve(
+        allocation,
+        idempotency=RequestIdempotency(caller_key_hmac="a" * 64, key_version="v1", intent_fingerprint_hmac="b" * 64),
+    )
+    ModelRequestReservation.objects.filter(request_uuid=first.request_uuid).update(state="settled")
+    with pytest.raises(ContractError, match=r"request\.retry_key_rotation_unavailable"):
+        _reserve(
+            allocation,
+            idempotency=RequestIdempotency(
+                caller_key_hmac="c" * 64, key_version="v2", intent_fingerprint_hmac="d" * 64
+            ),
+        )
+    assert ModelRequestReservation.objects.count() == 1

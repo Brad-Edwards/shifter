@@ -131,6 +131,12 @@ variable "deploy_roles" {
     "roles/monitoring.editor",
     "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
+    # Manage the dynamic-secret custom role DEFINITIONS created by the platform-core
+    # deploy (portal/iam: shifterDynamicSecretCreator / shifterDynamicSecretLifecycle).
+    # projectIamAdmin covers IAM bindings but not iam.roles.* on custom-role
+    # definitions. Tracked for a least-privilege redesign (bootstrap-created roles,
+    # deploy binds only) in #2227.
+    "roles/iam.roleAdmin",
   ]
 }
 

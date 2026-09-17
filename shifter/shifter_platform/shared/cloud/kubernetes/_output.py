@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol, cast
 
 from shared.cloud.exceptions import CloudTaskError
 
@@ -11,6 +11,12 @@ from ._interrupt import _is_reserved_intent
 from .naming import parse_job_task_id
 
 MAX_TASK_OUTPUT_BYTES = 1_048_576
+
+
+class _LogResponse(Protocol):
+    def read(self, amt: int, *, decode_content: bool) -> bytes: ...
+    def close(self) -> None: ...
+    def release_conn(self) -> None: ...
 
 
 def read_task_output(
@@ -85,10 +91,13 @@ def read_task_output(
         or getattr(getattr(getattr(statuses[0], "state", None), "terminated", None), "exit_code", None) != 0
     ):
         raise CloudTaskError("Task output completion is unavailable")
+    pod_name = getattr(metadata, "name", None)
+    if not isinstance(pod_name, str) or not pod_name:
+        raise CloudTaskError("Task output pod identity is unavailable")
     response = _api_call(
         core_api,
         "read_namespaced_pod_log",
-        name=metadata.name,
+        name=pod_name,
         namespace=namespace,
         container=expected["container_name"],
         follow=False,
@@ -97,11 +106,12 @@ def read_task_output(
         _preload_content=False,
         _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
     )
+    stream = cast(_LogResponse, response)
     try:
-        raw = response.read(MAX_TASK_OUTPUT_BYTES + 1, decode_content=True)
+        raw = stream.read(MAX_TASK_OUTPUT_BYTES + 1, decode_content=True)
     finally:
-        response.close()
-        response.release_conn()
+        stream.close()
+        stream.release_conn()
     if not isinstance(raw, bytes) or len(raw) > MAX_TASK_OUTPUT_BYTES:
         raise CloudTaskError("Task output exceeds its bound")
     return raw

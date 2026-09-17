@@ -84,7 +84,7 @@ class ModelPendingGrant(models.Model):
         constraints = [
             models.CheckConstraint(condition=models.Q(grant_epoch__gt=0), name="model_grant_positive_epoch"),
             models.CheckConstraint(
-                condition=models.Q(state__in=["pending", "revoked"]), name="model_grant_closed_state"
+                condition=models.Q(state__in=["pending", "active", "revoked"]), name="model_grant_closed_state"
             ),
         ]
 

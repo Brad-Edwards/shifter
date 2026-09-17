@@ -28,8 +28,8 @@ Usage:
     python3 scripts/check_tf_sg_cidrs/check_tf_sg_cidrs.py FILE.tf [FILE.tf ...]
 
 Exit code 0 if every file passes, 1 if any rule is violated.
-Designed to run from the pre-commit framework — pre-commit passes the
-changed file paths as positional arguments.
+The blocking CI invocation passes the complete provisioner range-module
+Terraform inventory as positional arguments.
 """
 
 from __future__ import annotations

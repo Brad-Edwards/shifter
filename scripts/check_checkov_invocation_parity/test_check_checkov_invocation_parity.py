@@ -137,6 +137,12 @@ class CheckCheckovInvocationParityTest(unittest.TestCase):
             f"expected soft-fail violation, got: {violations}",
         )
 
+    def test_missing_quality_workflow_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".pre-commit-config.yaml").write_text("repos: []\n")
+            self.assertEqual(check_repo(root), ["missing .github/workflows/_quality.yml"])
+
     def test_ci_soft_fail_true_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

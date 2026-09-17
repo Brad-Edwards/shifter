@@ -12,7 +12,7 @@ consumer reports verified cleanup, prunes retry evidence, or releases capacity.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,7 +21,7 @@ from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _get_or_none
 from raes_gcp_destroy import _default_destroy_profile
-from raes_gcp_plan import build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_plan import RaesPlan
 
 __all__ = ["INCOMPLETE", "RESIDUALS_FOUND", "VERIFIED_ABSENT", "inventory_raes_range_cell"]
@@ -55,6 +55,8 @@ def inventory_raes_range_cell(
     raes_plan: RaesPlan,
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None,
+    reconstruct_without_allocation: bool = False,
 ) -> dict[str, Any]:
     """Inventory the RAES range cell's owned resources after teardown.
 
@@ -66,7 +68,17 @@ def inventory_raes_range_cell(
     """
     resolved_config = config or load_gce_range_cell_config()
     resolved_clients = clients or _build_clients()
-    plan = build_raes_range_cell_plan(request_uuid, range_id, raes_plan, _default_destroy_profile, resolved_config)
+    plan = build_raes_range_cell_plan(
+        request_uuid,
+        range_id,
+        raes_plan,
+        _default_destroy_profile,
+        RaesGcePlanOptions(
+            config=resolved_config,
+            allocated_network_cidrs=allocated_network_cidrs,
+            reconstruct_for_teardown=reconstruct_without_allocation,
+        ),
+    )
 
     tally = _Tally()
     project = plan["project_id"]

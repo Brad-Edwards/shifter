@@ -136,6 +136,8 @@ def _launch_pack(
     from workspaces.services import WorkspaceOperation, authorize_bound_workspace
 
     authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+    if authorization.organization_uuid is None:
+        raise CMSError("The workspace has no organization binding")
     if source.organization_uuid is not None and source.organization_uuid != authorization.organization_uuid:
         raise CMSError("The pack is unavailable in this workspace")
     plugin_scope = RuntimePluginScope(

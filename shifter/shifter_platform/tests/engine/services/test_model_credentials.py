@@ -151,5 +151,47 @@ def test_audit_failure_rolls_back_token_consumption(enrolled_allocation, monkeyp
     monkeypatch.setattr(shared.audit, "audit_log", fail)
     with pytest.raises(RuntimeError):
         exchange(enrollment)
+    assert ModelPendingGrant.objects.get(allocation=enrolled_allocation).state == "pending"
     monkeypatch.setattr(shared.audit, "audit_log", original)
     exchange(enrollment)
+
+
+def test_enrollment_activates_request_authority_only_after_token_exchange(enrolled_allocation):
+    from engine.services import reserve_request
+    from engine.services._model_broker_control import reserve_model_call
+
+    from .test_model_request_accounting import _bound
+
+    enrollment = issue(enrolled_allocation)
+    grant = ModelPendingGrant.objects.get(allocation=enrolled_allocation)
+    assert grant.state == "pending"
+    with pytest.raises(ContractError, match=r"request\.grant_inactive"):
+        reserve_request(
+            allocation_id=enrolled_allocation.pk,
+            request_uuid=uuid4(),
+            logical_alias="coding-main",
+            billing_bound=_bound(),
+        )
+    pair = exchange(enrollment)
+    grant.refresh_from_db()
+    assert grant.state == "active"
+    request_id = uuid4()
+    result = reserve_model_call(
+        token=pair.access_token.get_secret_value(),
+        transport_peer=_PEER,
+        request_uuid=request_id,
+        logical_alias="coding-main",
+        billing_bound=_bound(),
+    )
+    assert result.request_uuid == request_id
+    issue(enrolled_allocation)
+    grant.refresh_from_db()
+    assert grant.state == "pending"
+    with pytest.raises(ContractError):
+        reserve_model_call(
+            token=pair.access_token.get_secret_value(),
+            transport_peer=_PEER,
+            request_uuid=uuid4(),
+            logical_alias="coding-main",
+            billing_bound=_bound(),
+        )

@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: SHOULD
 wave: 2
 created_at: 2026-04-16T22:49:32.549002Z
-updated_at: 2026-09-16T00:00:00Z
+updated_at: 2026-09-17T00:00:00Z
 ---
 
 # PLAT-202: Per-Range LLM Access Management
@@ -151,3 +151,22 @@ Scenario authors need a provider-neutral way to request model access. The platfo
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_model_allocation_scope.py`
 - TESTS → TEST `shifter/shifter_platform/tests/engine/ecs/test_local_model_dispatch.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_provider_pools.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2121` (M04: atomic request budgets and dispatch leases)
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/catalog_v3.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/account_policy.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_model_budget.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_request_accounting.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_request_lifecycle.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/migrations/0073_model_request_accounting.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/audit/vocabulary.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/migrations/0021_alter_auditlog_action_alter_auditlog_entity_type.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/scripts/generate_model_access_schema.py`
+- IMPLEMENTS → CONFIG `shifter/installation/published_contract/model-access-policy.v3.schema.json`
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/request-accounting-preflight-2121.md`
+- IMPLEMENTS → DOCUMENTATION `docs/ops/model-access.md`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_account_definitions.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/test_model_budget_model.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_request_accounting.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_request_lifecycle.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_request_accounting_postgres.py`

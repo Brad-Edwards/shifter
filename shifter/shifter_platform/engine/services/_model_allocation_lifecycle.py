@@ -20,7 +20,7 @@ def revoke_model_authorities(fence_ids: Iterable[int]) -> int:
     """Fence each dependent pending grant once in the owner's transaction."""
     grants = ModelPendingGrant.objects.filter(
         allocation__authorities__fence_id__in=fence_ids,
-        state="pending",
+        state__in=["pending", "active"],
     )
     allocation_ids = list(grants.values_list("allocation_id", flat=True))
     revoked = grants.update(state="revoked", grant_epoch=F("grant_epoch") + 1, revoked_at=timezone.now())
@@ -30,7 +30,7 @@ def revoke_model_authorities(fence_ids: Iterable[int]) -> int:
 
 def revoke_model_generation(range_id: UUID, *, operation_id: UUID | None = None) -> int:
     """Invalidate original access before lifecycle transition/re-admission."""
-    grants = ModelPendingGrant.objects.filter(allocation__range_id=range_id, state="pending")
+    grants = ModelPendingGrant.objects.filter(allocation__range_id=range_id, state__in=["pending", "active"])
     if operation_id is not None:
         grants = grants.filter(allocation__operation_id=operation_id)
     allocation_ids = list(grants.values_list("allocation_id", flat=True))
@@ -51,7 +51,7 @@ def _release_locked(allocation: ModelAllocation, now: datetime) -> bool:
     """Revoke and release an already locked allocation and its child draws."""
     if allocation.released_at is not None:
         return False
-    ModelPendingGrant.objects.filter(allocation=allocation, state="pending").update(
+    ModelPendingGrant.objects.filter(allocation=allocation, state__in=["pending", "active"]).update(
         state="revoked",
         grant_epoch=F("grant_epoch") + 1,
         revoked_at=now,
@@ -130,9 +130,14 @@ def reconcile_model_allocations(*, now: datetime | None = None, limit: int = 100
 
 def _reconcile_requests_isolated(*, now: datetime, limit: int) -> None:
     """Run the bounded request-accounting reconciliation pass, isolated from failure."""
-    from ._model_request_lifecycle import close_expired_revocations, reconcile_model_requests
+    from ._model_request_reconcile import (
+        close_expired_revocations,
+        reconcile_expired_dispatches,
+        reconcile_model_requests,
+    )
 
     try:
+        reconcile_expired_dispatches(now=now, limit=limit)
         reconcile_model_requests(now=now, limit=limit)
         close_expired_revocations(now=now, limit=limit)
     except Exception:

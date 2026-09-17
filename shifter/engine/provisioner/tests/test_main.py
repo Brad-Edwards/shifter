@@ -78,7 +78,7 @@ class _FakeCoordinationBoundary:
 class _FakeSubnetworksClient:
     """Compute Engine subnetworks client stand-in (the real GCP SDK boundary)."""
 
-    def list(self, **_kwargs):
+    def aggregated_list(self, **_kwargs):
         return []
 
 
