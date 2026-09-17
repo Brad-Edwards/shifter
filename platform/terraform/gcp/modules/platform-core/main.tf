@@ -86,6 +86,7 @@ locals {
   runtime_secrets = merge({
     "app"                 = "Django runtime secret bundle (SECRET_KEY and field encryption key)."
     "db"                  = "Database connection secret bundle for the platform control plane."
+    "db-migration"        = "Schema-owner database connection bundle restricted to the migration workload."
     "guacamole-db"        = "Database connection secret bundle for the Guacamole client."
     "guacamole-json-auth" = "Guacamole JSON auth signing key."
     "redis"               = "Redis AUTH token for the platform control-plane cache (ADR-008-R6)."
@@ -353,8 +354,10 @@ module "portal_secrets" {
   runtime_secrets                   = local.runtime_secrets
   cloud_sql_private_ip              = module.portal_cloud_sql.private_ip_address
   cloud_sql_platform_database_name  = module.portal_cloud_sql.platform_database_name
-  cloud_sql_platform_user_name      = module.portal_cloud_sql.platform_user_name
-  cloud_sql_db_password             = module.portal_cloud_sql.db_password
+  cloud_sql_runtime_user_name       = module.portal_cloud_sql.runtime_user_name
+  cloud_sql_runtime_db_password     = module.portal_cloud_sql.runtime_db_password
+  cloud_sql_migration_user_name     = module.portal_cloud_sql.platform_user_name
+  cloud_sql_migration_db_password   = module.portal_cloud_sql.db_password
   cloud_sql_guacamole_database_name = module.portal_cloud_sql.guacamole_database_name
   cloud_sql_guacamole_user_name     = module.portal_cloud_sql.guacamole_user_name
   cloud_sql_guacamole_db_password   = module.portal_cloud_sql.guacamole_db_password

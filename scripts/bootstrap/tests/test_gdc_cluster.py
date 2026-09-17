@@ -11,6 +11,7 @@ All external dependencies are mocked. No actual AWS calls, file operations,
 or subprocess executions occur during tests.
 """
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -649,8 +650,20 @@ class TestGdcControlPlaneRollout:
         """The rollout path must fetch cluster credentials and perform one atomic Helm release."""
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
         outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        outputs["workload_service_accounts"]["value"]["migrator"] = (
+            f"shiftergcpdev-migrator@{config.project_id}.iam.gserviceaccount.com"
+        )
         values_path = tmp_path / "values.json"
-        values_path.write_text("{}")
+        values_path.write_text(
+            json.dumps(
+                {
+                    "images": {"platform": f"example.invalid/shifter/platform@sha256:{'a' * 64}"},
+                    "runtimeEnv": {
+                        "DB_MIGRATION_SECRET_ID": (f"projects/{config.project_id}/secrets/shifter-gcp-dev-db-migration")
+                    },
+                }
+            )
+        )
         chart_dir = Path(__file__).resolve().parents[3] / "platform" / "charts" / "shifter"
         environment_values_path = chart_dir / "values-gcp-dev.yaml"
 
@@ -663,6 +676,8 @@ class TestGdcControlPlaneRollout:
                     return subprocess.CompletedProcess(cmd, 0, stdout="json-auth-key\n")
             if cmd == ["kubectl", "apply", "-f", "-"]:
                 return subprocess.CompletedProcess(cmd, 0, stdout="secret/guacamole-runtime configured\n", stderr="")
+            if cmd and cmd[0] == "kubectl":
+                return subprocess.CompletedProcess(cmd, 0, stdout="migration complete\n", stderr="")
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=f"unexpected command: {cmd}")
 
         with (

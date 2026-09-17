@@ -1027,6 +1027,85 @@ jobs:
               -n shifter-platform --ignore-not-found
           fi
           kubectl apply -f "${manifest}"
+      - name: Run database migrations with the migration identity
+        env:
+          PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
+        run: |
+          set -euo pipefail
+          job="platform-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            kubectl delete job "${job}" -n shifter-platform --ignore-not-found --wait=false >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          cleanup
+          cat <<YAML | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: ${job}
+            namespace: shifter-platform
+            labels:
+              app.kubernetes.io/name: shifter
+              app.kubernetes.io/component: migrator
+              app.kubernetes.io/part-of: shifter
+          spec:
+            backoffLimit: 0
+            activeDeadlineSeconds: 900
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: shifter
+                  app.kubernetes.io/component: migrator
+                  app.kubernetes.io/part-of: shifter
+              spec:
+                serviceAccountName: migrator
+                automountServiceAccountToken: true
+                restartPolicy: Never
+                securityContext:
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: migrate
+                    image: ${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}
+                    imagePullPolicy: IfNotPresent
+                    args: ["/bin/true"]
+                    envFrom:
+                      - configMapRef:
+                          name: platform-runtime
+                    env:
+                      - name: DB_SECRET_ID
+                        valueFrom:
+                          configMapKeyRef:
+                            name: platform-runtime
+                            key: DB_MIGRATION_SECRET_ID
+                      - name: SKIP_MIGRATIONS
+                        value: ""
+                      - name: GUACAMOLE_SECRET_ID
+                        value: ""
+                      - name: DC_DOMAIN_PASSWORD_SECRET_ID
+                        value: ""
+                      - name: REDIS_SECRET_ID
+                        value: ""
+                      - name: EMAIL_API_KEY_SECRET_ID
+                        value: ""
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                      readOnlyRootFilesystem: true
+                      runAsNonRoot: true
+                    volumeMounts:
+                      - name: tmp
+                        mountPath: /tmp
+                volumes:
+                  - name: tmp
+                    emptyDir: {}
+          YAML
+          if ! kubectl wait --for=condition=complete "job/${job}" -n shifter-platform --timeout=15m; then
+            kubectl logs "job/${job}" -n shifter-platform --all-containers=true || true
+            exit 1
+          fi
+          kubectl logs "job/${job}" -n shifter-platform --all-containers=true
       - name: Sync Guacamole runtime secret
         run: |
           python3 - <<'PY'

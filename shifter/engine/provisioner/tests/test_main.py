@@ -2004,69 +2004,6 @@ class TestDcSetupRouting:
             assert _should_promote_dc_at_runtime("aws") is False
             assert _should_promote_dc_at_runtime("gcp") is False
 
-    def test_should_run_dc_bootstrap_plan_is_always_disabled(self):
-        # The DC bootstrap plan renames the guest (runtime DC mutation), so it is
-        # unreachable for every provider and has no env enable path; a pre-promoted
-        # DC gets SSH from the guest metadata startup script instead.
-        from state_helpers import _should_run_dc_bootstrap_plan
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.delenv("DC_BOOTSTRAP_VIA_SETUP_PLAN", raising=False)
-            assert _should_run_dc_bootstrap_plan("aws") is False
-            assert _should_run_dc_bootstrap_plan("gcp") is False
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setenv("DC_BOOTSTRAP_VIA_SETUP_PLAN", "true")
-            assert _should_run_dc_bootstrap_plan("gcp") is False
-
-    def test_run_dc_setup_bootstraps_and_promotes_for_gcp(self, monkeypatch):
-        from dc_setup import _run_dc_setup
-
-        mock_execution = MagicMock()
-        mock_execution.target = "10.50.1.10"
-        mock_execution.document_name = "AWS-RunPowerShellScript"
-        mock_execution.transport_name = "ssh"
-        mock_execution.executor = MagicMock()
-        mock_execution.executor.run_command.return_value = MagicMock(success=True, stderr="")
-
-        mock_orchestrator = MagicMock()
-        mock_orchestrator.orchestrate.return_value = MagicMock(success=True, error=None)
-
-        mock_bootstrap_plan = MagicMock()
-        mock_bootstrap_plan.get_context.return_value = {"hostname": "dc-01", "public_key": "ssh-rsa AAAA"}
-        mock_dc_plan = MagicMock()
-        mock_dc_plan.get_context.return_value = {
-            "domain_name": "range.local",
-            "netbios_name": "RANGE",
-            "dsrm_password": "Secret123!",
-            "domain_admin_password": "Secret123!",
-        }
-
-        build_context = MagicMock(return_value=mock_execution)
-        bootstrap_plan_cls = MagicMock(return_value=mock_bootstrap_plan)
-        dc_plan_cls = MagicMock(return_value=mock_dc_plan)
-        monkeypatch.setattr("dc_setup.build_guest_execution_context", build_context)
-        monkeypatch.setattr("dc_setup.SetupOrchestrator", MagicMock(return_value=mock_orchestrator))
-        monkeypatch.setattr("dc_setup.BootstrapPlan", bootstrap_plan_cls)
-        monkeypatch.setattr("dc_setup.DCSetupPlan", dc_plan_cls)
-        monkeypatch.setattr("dc_setup._should_run_dc_bootstrap_plan", MagicMock(return_value=True))
-        monkeypatch.setattr("dc_setup._should_promote_dc_at_runtime", MagicMock(return_value=True))
-        monkeypatch.setenv("DC_DOMAIN_PASSWORD", "Secret123!")
-
-        _run_dc_setup(
-            instance_data={"hostname": "dc-01", "name": "dc-01", "public_key": "ssh-rsa AAAA"},
-            instance_id="gcp-dc-01",
-            dc_config={"domain_name": "range.local", "netbios_name": "RANGE"},
-            agent_presigned_url="",
-            public_key="ssh-rsa AAAA",
-        )
-
-        build_context.assert_called_once()
-        bootstrap_plan_cls.assert_called_once_with()
-        dc_plan_cls.assert_called_once_with(runtime_promotion=True)
-        assert mock_orchestrator.orchestrate.call_count == 2
-        mock_execution.close.assert_called_once_with()
-
     def test_run_dc_setup_keeps_prebaked_mode_for_aws(self, monkeypatch):
         from dc_setup import _run_dc_setup
 
@@ -2088,13 +2025,10 @@ class TestDcSetupRouting:
             "domain_admin_password": "Secret123!",
         }
 
-        bootstrap_plan_cls = MagicMock()
         dc_plan_cls = MagicMock(return_value=mock_dc_plan)
         monkeypatch.setattr("dc_setup.build_guest_execution_context", MagicMock(return_value=mock_execution))
         monkeypatch.setattr("dc_setup.SetupOrchestrator", MagicMock(return_value=mock_orchestrator))
-        monkeypatch.setattr("dc_setup.BootstrapPlan", bootstrap_plan_cls)
         monkeypatch.setattr("dc_setup.DCSetupPlan", dc_plan_cls)
-        monkeypatch.setattr("dc_setup._should_run_dc_bootstrap_plan", MagicMock(return_value=False))
         monkeypatch.setattr("dc_setup._should_promote_dc_at_runtime", MagicMock(return_value=False))
         monkeypatch.setenv("DC_DOMAIN_PASSWORD", "Secret123!")
 
@@ -2106,7 +2040,8 @@ class TestDcSetupRouting:
             public_key="ssh-rsa AAAA",
         )
 
-        bootstrap_plan_cls.assert_not_called()
+        # Pre-baked DC path: no bootstrap plan exists, only the DC verification
+        # plan runs (prebaked promotion), so orchestrate is invoked exactly once.
         dc_plan_cls.assert_called_once_with(runtime_promotion=False)
         assert mock_orchestrator.orchestrate.call_count == 1
         mock_execution.close.assert_called_once_with()

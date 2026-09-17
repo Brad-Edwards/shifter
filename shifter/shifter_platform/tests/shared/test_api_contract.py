@@ -9,6 +9,7 @@ the boundary-mock policy.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -232,6 +233,15 @@ class TestPublishedContract:
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])
+
+    def test_pack_registration_digest_default_satisfies_its_own_pattern(self, openapi_document: dict[str, Any]) -> None:
+        # A published default that violates its property's pattern makes the whole
+        # document fail OpenAPI/JSON-Schema validation before any operation can be
+        # checked (#2212). expected_package_digest is optional and accepts an empty
+        # string ("no expected digest"), so the pattern must admit "" alongside a
+        # sha256 digest and the emitted default must match it.
+        digest = openapi_document["components"]["schemas"]["PackRegistration"]["properties"]["expected_package_digest"]
+        assert re.fullmatch(digest["pattern"], digest["default"]) is not None
 
 
 @pytest.mark.django_db

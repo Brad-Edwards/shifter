@@ -164,6 +164,7 @@ def _audit_adapter(
         AuditEvent(
             entity_type=AuditEntityType.PREPARATION_ADAPTER,
             entity_id=0,
+            entity_ref=str(row.id),
             action=AuditAction.CREATE if action == "install" else AuditAction.UPDATE,
             actor_type=attribution.actor_type or AuditActorType.USER,
             actor_id=attribution.actor_id if attribution.actor_type else user.id,
