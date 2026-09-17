@@ -163,6 +163,9 @@ Current mechanisms:
   harness's deterministic layers only: the harness itself drives a deployed
   tenant and a live range, so it is operator-invoked and deliberately has no CI
   execution job and gates no deploy (issue #987).
+  Guard implementation modules remain below the CI file-length threshold;
+  formatting-only maintenance must preserve that bound without changing the
+  guard's exported behavior.
   Its SonarCloud
   job restores coverage artifacts, sets up Temurin Java 21, and disables
   SonarScanner JRE auto-provisioning so the quality gate does not depend

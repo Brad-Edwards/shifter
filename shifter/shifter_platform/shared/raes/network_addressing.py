@@ -95,22 +95,20 @@ def _node_static_address_diagnostics(
     properties = _infrastructure(payload).get("properties")
     if properties in (None, []):
         return []
+    invalid_message = None
     if not isinstance(properties, list | tuple):
+        invalid_message = "static network properties must be a list of one-network address entries"
+    elif payload.get("count", 1) != 1:
+        invalid_message = "static network addressing requires exactly one node instance"
+    if invalid_message is not None:
         return [
             _diagnostic(
                 resource,
-                "static network properties must be a list of one-network address entries",
+                invalid_message,
                 diagnostic_factory,
             )
         ]
-    if payload.get("count", 1) != 1:
-        return [
-            _diagnostic(
-                resource,
-                "static network addressing requires exactly one node instance",
-                diagnostic_factory,
-            )
-        ]
+    assert isinstance(properties, list | tuple)
 
     attached = _node_networks(payload, lookup)
     primary = attached[0] if attached else None
