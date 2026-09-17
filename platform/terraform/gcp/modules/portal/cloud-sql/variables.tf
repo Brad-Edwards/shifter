@@ -31,7 +31,8 @@ variable "cloud_sql_availability_type" {
 }
 
 variable "cloud_sql_disk_size_gb" {
-  type = number
+  description = "Minimum Cloud SQL disk size in GiB; provider storage does not shrink."
+  type        = number
 }
 
 variable "cloud_sql_database_name" {

@@ -42,9 +42,11 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #1583 after qualifying portal memory headroom and maintenance-worker startup capacity.
 # Regenerated for #2179 after adding the GKE metadata-server egress NetworkPolicy
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
+# Regenerated for #1816 after adding capacity identity, termination, Guacamole
+# connection, and GCP BackendConfig drain/timeout contracts.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "d776ddac24998a73c2e8b62baa70588b7bb625032782b9d3008c4e133b2fa271",
-    "gcp-prod": "22a86be62f03e4929874b60c4847ccca7f0fadf0e7af21d12d8ca8ae782049f3",
+    "gcp-dev": "75fd50a19dcc6141ed7ca692d19f7b3d60d88e773b4ff1b048523aa29b0d20ad",
+    "gcp-prod": "f21a3173844647359084317fa1eb2446197a92c830622f9818d66b0a5ad77bae",
 }
 
 
@@ -152,6 +154,66 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                 self.assertIn(("Deployment", "worker-provisioner-launcher"), identities)
                 self.assertIn(("Role", "job-launcher"), identities)
                 self.assertIn("cloud.google.com/neg", rendered)
+
+    def test_gcp_p30_capacity_projection_renders_runtime_guards(self) -> None:
+        """#1816: the qualified p30 projection is schema-valid and workload-visible."""
+        generated = {
+            "capacityProfile": {"id": "gcp-shared-v1-p30", "participants": 30},
+            "portal": {
+                "replicas": 5,
+                "terminationGracePeriodSeconds": 330,
+                "autoscaling": {
+                    "enabled": True,
+                    "minReplicas": 5,
+                    "maxReplicas": 10,
+                    "cpuUtilizationPercentage": 65,
+                    "scaleDownStabilizationSeconds": 900,
+                },
+            },
+            "guacd": {
+                "replicas": 2,
+                "terminationGracePeriodSeconds": 330,
+                "autoscaling": {
+                    "enabled": True,
+                    "minReplicas": 2,
+                    "maxReplicas": 4,
+                    "cpuUtilizationPercentage": 65,
+                    "scaleDownStabilizationSeconds": 900,
+                },
+            },
+            "guacamoleClient": {
+                "terminationGracePeriodSeconds": 330,
+                "postgresqlAbsoluteMaxConnections": 30,
+            },
+            "services": {
+                "portal": {"backendConfig": {"timeoutSec": 3600}},
+                "guacamoleClient": {"backendConfig": {"enabled": True, "timeoutSec": 3600}},
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            generated_path = Path(directory) / "capacity.json"
+            generated_path.write_text(json.dumps(generated), encoding="utf-8")
+            _, documents = _render(VALUES_FILES["gcp-prod"], generated_path)
+
+        by_identity = {_identity(document): document for document in documents}
+        portal = by_identity[("Deployment", "portal-web")]
+        guacd = by_identity[("Deployment", "guacd")]
+        self.assertEqual(portal["metadata"]["annotations"]["shifter.dev/capacity-profile"], "gcp-shared-v1-p30")
+        self.assertEqual(guacd["metadata"]["annotations"]["shifter.dev/capacity-profile"], "gcp-shared-v1-p30")
+        self.assertEqual(portal["spec"]["replicas"], 5)
+        self.assertEqual(guacd["spec"]["replicas"], 2)
+        self.assertEqual(portal["spec"]["template"]["spec"]["terminationGracePeriodSeconds"], 330)
+        self.assertEqual(guacd["spec"]["template"]["spec"]["terminationGracePeriodSeconds"], 330)
+        guacamole = by_identity[("Deployment", "guacamole-client")]
+        self.assertEqual(guacamole["spec"]["template"]["spec"]["terminationGracePeriodSeconds"], 330)
+        guacamole_env = {entry["name"]: entry for entry in guacamole["spec"]["template"]["spec"]["containers"][0]["env"]}
+        self.assertEqual(guacamole_env["POSTGRESQL_ABSOLUTE_MAX_CONNECTIONS"]["value"], "30")
+        self.assertIn(("HorizontalPodAutoscaler", "portal-web"), by_identity)
+        self.assertIn(("HorizontalPodAutoscaler", "guacd"), by_identity)
+        self.assertIn(("PodDisruptionBudget", "portal-web"), by_identity)
+        self.assertIn(("PodDisruptionBudget", "guacd"), by_identity)
+        self.assertEqual(by_identity[("BackendConfig", "portal-web")]["spec"]["timeoutSec"], 3600)
+        self.assertEqual(by_identity[("BackendConfig", "guacamole-client")]["spec"]["timeoutSec"], 3600)
 
     def test_aws_generated_projection_wires_edge_identity_and_secret_references(self) -> None:
         digest = "a" * 64

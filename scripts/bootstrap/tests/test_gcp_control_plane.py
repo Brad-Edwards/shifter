@@ -2710,3 +2710,81 @@ def test_staging_writes_configured_lease_policy_into_generated_values(tmp_path):
         "maximum_days": 90,
         "extensions_enabled": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "participants", "portal_replicas", "guacd_replicas"),
+    [
+        ("gcp-shared-v1-p10", 10, 2, 1),
+        ("gcp-shared-v1-p30", 30, 5, 2),
+        ("gcp-shared-v1-p50", 50, 8, 4),
+        ("gcp-shared-v1-p100", 100, 14, 8),
+    ],
+)
+def test_staging_projects_every_selected_capacity_profile(
+    tmp_path, profile_id, participants, portal_replicas, guacd_replicas
+):
+    """One validated selector drives every Terraform-adjacent Helm shape (#1816)."""
+    import json
+
+    import yaml
+
+    root_path = tmp_path / "shifter.yaml"
+    root_path.write_text(
+        yaml.safe_dump(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "portal.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "project_id": "prod-rwctxzl6shxk",
+                    "dynamic_secret_project_id": "secrets-example",
+                    "region": "us-central1",
+                    "shared_service_capacity_profile": profile_id,
+                },
+            }
+        )
+    )
+    config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", shifter_config_path=str(root_path))
+    outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+    values_path = gcp_control_plane.stage_gcp_control_plane_values(
+        config, outputs, tmp_path, image_tag=PINNED_IMAGE_TAG, image_identities=None
+    )
+
+    values = json.loads(values_path.read_text())
+    assert values["capacityProfile"] == {"id": profile_id, "participants": participants}
+    assert values["portal"]["replicas"] == portal_replicas
+    assert values["guacd"]["replicas"] == guacd_replicas
+    assert values["guacamoleClient"]["replicas"] == 1
+    assert values["runtimeEnv"]["SHARED_SERVICE_CAPACITY_PROFILE"] == profile_id
+    assert values["runtimeEnv"]["PORTAL_WEB_WORKERS"] == "4"
+    assert values["runtimeEnv"]["PORTAL_WEB_WS_PING_INTERVAL"] == "30"
+    assert values["runtimeEnv"]["PORTAL_WEB_WS_PING_TIMEOUT"] == "30"
+    assert values["runtimeEnv"]["PORTAL_WEB_GRACEFUL_TIMEOUT"] == "300"
+    assert values["portal"]["terminationGracePeriodSeconds"] == 330
+    assert values["guacd"]["terminationGracePeriodSeconds"] == 330
+    assert values["guacamoleClient"]["terminationGracePeriodSeconds"] == 330
+    assert values["guacamoleClient"]["postgresqlAbsoluteMaxConnections"] == participants
+    assert values["services"]["portal"]["backendConfig"]["timeoutSec"] == 3600
+    assert values["services"]["guacamoleClient"]["backendConfig"]["timeoutSec"] == 3600
+
+
+def test_merge_capacity_values_preserves_unrelated_nested_chart_values():
+    target = {
+        "runtimeEnv": {"CLOUD_PROVIDER": "gcp"},
+        "services": {"portal": {"backendConfig": {"securityPolicyName": "portal-waf"}}},
+    }
+    projection = {
+        "runtimeEnv": {"PORTAL_WEB_WORKERS": "4"},
+        "services": {"portal": {"backendConfig": {"timeoutSec": 3600}}},
+    }
+
+    merged = gcp_control_plane._merge_capacity_values(target, projection)
+
+    assert merged is target
+    assert merged["runtimeEnv"] == {"CLOUD_PROVIDER": "gcp", "PORTAL_WEB_WORKERS": "4"}
+    assert merged["services"]["portal"]["backendConfig"] == {
+        "securityPolicyName": "portal-waf",
+        "timeoutSec": 3600,
+    }
