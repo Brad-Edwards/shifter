@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shlex
 from collections.abc import Callable
@@ -10,6 +11,8 @@ from typing import Any
 
 from executors.factory import build_guest_execution_context
 from raes_plan import RaesPlan
+
+logger = logging.getLogger(__name__)
 
 _MAX_OBSERVATION_BYTES = 4096
 _LINUX_PROBE = "head -c 4097 /etc/os-release"
@@ -118,6 +121,7 @@ def _observe(output: dict[str, Any], family: str, execution_builder: Callable[..
     execution = execution_builder(output, os_type=family, role="raes-node")
     try:
         if execution.wait_for_ready(timeout_seconds=600) is False:
+            logger.warning("OS observation: %s guest %s never became SSH-ready", family, execution.target)
             raise _fail()
         result = execution.executor.run_command(
             execution.target,
@@ -126,10 +130,31 @@ def _observe(output: dict[str, Any], family: str, execution_builder: Callable[..
             document_name=execution.document_name,
         )
         if not result.success or result.exit_code != 0 or not isinstance(result.stdout, str):
+            # Fail closed, but say why: the generic error is otherwise
+            # undebuggable across a rebuild+relaunch cycle.
+            logger.warning(
+                "OS observation: %s probe on %s failed success=%s exit=%s stdout=%r stderr=%r",
+                family,
+                execution.target,
+                getattr(result, "success", None),
+                getattr(result, "exit_code", None),
+                (result.stdout[:400] if isinstance(result.stdout, str) else result.stdout),
+                (result.stderr[:400] if isinstance(getattr(result, "stderr", None), str) else None),
+            )
             raise _fail()
         if len(result.stdout.encode("utf-8")) > _MAX_OBSERVATION_BYTES:
+            logger.warning("OS observation: %s probe on %s exceeded size cap", family, execution.target)
             raise _fail()
-        return _windows_identity(result.stdout) if family == "windows" else _linux_identity(result.stdout)
+        try:
+            return _windows_identity(result.stdout) if family == "windows" else _linux_identity(result.stdout)
+        except Exception:
+            logger.warning(
+                "OS observation: %s identity parse on %s rejected stdout=%r",
+                family,
+                execution.target,
+                result.stdout[:400],
+            )
+            raise
     finally:
         execution.close()
 
