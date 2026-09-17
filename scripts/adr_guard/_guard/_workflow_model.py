@@ -237,7 +237,11 @@ def _dw_extract_set_environment_script(
 
 
 def _dw_evaluate_env(
-    script: str, event_name: str, ref: str = "", base_ref: str = ""
+    script: str,
+    event_name: str,
+    ref: str = "",
+    base_ref: str = "",
+    environment_input: str = "",
 ) -> dict[str, str]:
     """Execute the workflow's own ``Set environment`` bash and return its
     ``GITHUB_OUTPUT`` key/value pairs. Only literal event/branch strings reach
@@ -245,14 +249,17 @@ def _dw_evaluate_env(
     ``bash -e -o pipefail`` shell."""
     import tempfile
 
-    rendered = script.replace("${{ github.event_name }}", event_name).replace(
-        "${{ github.base_ref }}", base_ref
+    rendered = (
+        script.replace("${{ github.event_name }}", event_name)
+        .replace("${{ github.base_ref }}", base_ref)
+        .replace("${{ github.event.inputs.environment }}", environment_input)
     )
     with tempfile.TemporaryDirectory() as tmp:
         out_path = os.path.join(tmp, "github_output")
         Path(out_path).touch()
         env = {
             "PATH": os.environ.get("PATH", ""),
+            "ENVIRONMENT": environment_input,
             "GITHUB_REF": ref,
             "GITHUB_OUTPUT": out_path,
         }
