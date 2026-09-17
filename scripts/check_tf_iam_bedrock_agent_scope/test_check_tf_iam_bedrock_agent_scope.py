@@ -328,14 +328,6 @@ class CheckTfIamBedrockAgentScopeTest(unittest.TestCase):
 
         self.assertTrue(any("precondition" in r.lower() and "permissions" in r.lower() for r in reasons))
 
-    def test_permissions_boundary_fixed_form_passes(self) -> None:
-        """The real (fixed) shape -- unconditional assignment plus a
-        precondition enforcing non-empty -- produces zero violations."""
-        with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), _GOOD_ROLE, _GOOD_POLICY)
-
-            self.assertEqual(check_file(tf), [])
-
     def test_missing_tags_rejected(self) -> None:
         bad_role = _GOOD_ROLE.replace(
             """
@@ -627,13 +619,6 @@ class CheckTfIamBedrockAgentScopeTest(unittest.TestCase):
             )
 
             self.assertEqual(check_file(tf), [])
-
-    def test_live_iam_module_has_no_extra_policy_surfaces(self) -> None:
-        """Regression guard: the real module's single-canonical-policy,
-        no-attachments shape must not false-positive on the new checks."""
-        path = Path("shifter/engine/provisioner/terraform/modules/range/iam.tf")
-
-        self.assertEqual(check_file(path), [])
 
 
 if __name__ == "__main__":

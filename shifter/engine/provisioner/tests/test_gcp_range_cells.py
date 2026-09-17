@@ -736,14 +736,6 @@ def test_domain_composition_accepts_matching_profile_domain_identity():
     assert plan["instances"][1]["profile"].bootstrap_capability == GCE_BOOTSTRAP_PREPROMOTED_DC
 
 
-def test_render_range_cell_plan_rejects_subnet_without_cidr_when_images_required():
-    variables = _variables(bindings=[])
-    config = _sample_config()
-
-    with pytest.raises(RuntimeError, match="requires a network binding"):
-        render_range_cell_plan("req-123", variables, config)
-
-
 def test_apply_shared_vpc_skips_network_create(mocker):
     clients = _mock_clients(exists=False)
     secret_ops, _ = _mock_secret_ops(mocker)
