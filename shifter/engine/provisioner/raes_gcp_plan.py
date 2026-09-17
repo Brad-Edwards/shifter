@@ -433,7 +433,7 @@ def _rebased_static_ip(
     requested = dict(node.network_ip_assignments).get(network.address)
     if requested is None:
         return None
-    if node.count != 1 or authored_network is None or not authored_network.cidr:
+    if node.count != 1 or authored_network is None or not authored_network.cidr or not network.cidr:
         raise RaesGcePlanError("static GCE address has no unambiguous authored network")
     try:
         authored = ipaddress.ip_network(authored_network.cidr, strict=True)
