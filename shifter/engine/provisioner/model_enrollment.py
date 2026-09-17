@@ -118,11 +118,17 @@ def load_model_enrollment(run) -> EnrollmentDelivery | None:
         control, broker = os.environ["MODEL_ENROLLMENT_CONTROL_URL"], os.environ["MODEL_BROKER_GUEST_URL"]
         if not _ORIGIN.fullmatch(control) or not _ORIGIN.fullmatch(broker):
             raise ValueError
+        provider = os.environ["CLOUD_PROVIDER"]
+        if provider not in {"aws", "gcp"}:
+            raise ValueError
+        region = os.environ.get("AWS_REGION" if provider == "aws" else "CLOUD_REGION", "")
+        if provider == "aws" and not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-[0-9]+", region):
+            raise ValueError
         return EnrollmentDelivery(
             operation_id=UUID(run.operation_id),
             bindings=run.input.model_enrollments,
-            provider=os.environ["CLOUD_PROVIDER"],
-            region=os.environ.get("CLOUD_REGION", ""),
+            provider=provider,
+            region=region,
             control_url=control,
             audience="shifter-model-control",
             broker_url=broker,

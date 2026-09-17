@@ -153,3 +153,23 @@ def test_failed_delivery_is_closed_and_never_exposes_secret(control, delivery, f
 
 def test_absent_binding_needs_no_runtime_configuration():
     assert model_enrollment.load_model_enrollment(SimpleNamespace(input=SimpleNamespace(model_enrollments=()))) is None
+
+
+def test_aws_enrollment_uses_native_deployment_region(delivery, monkeypatch):
+    monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+    monkeypatch.setenv("AWS_REGION", "us-east-2")
+    monkeypatch.delenv("CLOUD_REGION", raising=False)
+    value = model_enrollment.load_model_enrollment(delivery.run)
+    assert value is not None
+    value.execute(None, [{"uuid": "node.client#0"}])
+    assert delivery.identity.call_args.kwargs["region"] == "us-east-2"
+    assert delivery.identity.call_args.kwargs["provider"] == "aws"
+
+
+@pytest.mark.parametrize("provider,region", [("unsupported", "us-east-2"), ("aws", ""), ("aws", "https://evil.test")])
+def test_bad_provider_configuration_fails_before_guest_mutation(delivery, monkeypatch, provider, region):
+    monkeypatch.setenv("CLOUD_PROVIDER", provider)
+    monkeypatch.setenv("AWS_REGION", region)
+    with pytest.raises(model_enrollment.ModelEnrollmentError):
+        model_enrollment.load_model_enrollment(delivery.run)
+    delivery.builder.assert_not_called()
