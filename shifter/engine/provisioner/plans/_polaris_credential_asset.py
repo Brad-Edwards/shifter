@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
+
 def _source_helper_path(resolved: Path) -> Path | None:
     """Source-tree fallback path for the helper, or None when unavailable.
 

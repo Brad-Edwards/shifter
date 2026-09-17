@@ -281,8 +281,8 @@ class TestPolarisRangeBootstrapPlan:
         bootstrap = SetupOrchestrator._render_script(POLARIS_RANGE_BOOTSTRAP_SCRIPT, context, "polaris_range_bootstrap")
 
         base = "/opt/polaris/scenario-dev/polaris/build"
-        assert f'if [[ -f "$POLARIS_COMPOSE_BASE/docker-compose.yml" ]]; then' in bootstrap
-        assert f'elif [[ -f "$POLARIS_COMPOSE_BASE/polaris/build/docker-compose.yml" ]]; then' in bootstrap
+        assert 'if [[ -f "$POLARIS_COMPOSE_BASE/docker-compose.yml" ]]; then' in bootstrap
+        assert 'elif [[ -f "$POLARIS_COMPOSE_BASE/polaris/build/docker-compose.yml" ]]; then' in bootstrap
         assert f"POLARIS_COMPOSE_BASE={base}" in bootstrap
         # Fail closed when neither layout is present, rather than running compose
         # from a directory with no compose file.

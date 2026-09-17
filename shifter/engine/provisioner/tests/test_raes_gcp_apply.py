@@ -17,12 +17,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import raes_gcp_apply
 from config import GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
-from raes_account_credentials import RaesAccountCredentialOps, install_instance_account_credentials
-import raes_gcp_apply
 from gcp_range_cell_credentials import GCEVertexCredentialOps
+from raes_account_credentials import RaesAccountCredentialOps, install_instance_account_credentials
 from raes_active_directory import RaesDirectorySecretOps
 from raes_gcp_apply import (
     RaesGceApplyOptions,
@@ -965,7 +965,9 @@ class TestServiceFirewallLifecycle:
             "req-1",
             7,
             _plan_with_service(),
-            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]),
+            RaesGceDestroyOptions(
+                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
         deleted = {call.kwargs.get("firewall") for call in clients.firewalls.delete.call_args_list}
         assert service_names[0] in deleted
@@ -976,7 +978,12 @@ class TestDestroy:
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
         destroy_raes_range_cell(
-            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0])
+            "req-1",
+            7,
+            _plan(),
+            RaesGceDestroyOptions(
+                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
 
         assert clients.instances.delete.call_count == 2
@@ -996,7 +1003,9 @@ class TestDestroy:
             "req-1",
             7,
             _plan(),
-            RaesGceDestroyOptions(config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]),
+            RaesGceDestroyOptions(
+                config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
         assert not clients.networks.delete.called
 
@@ -1038,7 +1047,9 @@ class TestDestroy:
             "req-1",
             7,
             _plan_with_content(content),
-            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]),
+            RaesGceDestroyOptions(
+                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
 
         assert clients.instances.delete.call_count == 1

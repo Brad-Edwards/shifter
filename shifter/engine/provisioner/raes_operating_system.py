@@ -36,6 +36,7 @@ def _linux_probe(output: dict[str, Any]) -> str:
             return f"docker exec {shlex.quote(container)} head -c {_MAX_OBSERVATION_BYTES + 1} /etc/os-release"
     return _LINUX_PROBE
 
+
 _MAX_OBSERVATION_BYTES = 4096
 _LINUX_PROBE = "head -c 4097 /etc/os-release"
 _WINDOWS_PROBE = """$ErrorActionPreference = 'Stop'

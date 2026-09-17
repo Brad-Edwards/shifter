@@ -37,11 +37,9 @@ from config import (
     GCERangeImageProfile,
     load_gce_range_cell_config,
 )
-from instance_setup import _set_attacker_container_password_after_bootstrap
-from polaris_bootstrap import _run_polaris_range_bootstrap
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops
+from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict
@@ -53,6 +51,8 @@ from gcp_range_cells import (
     _ensure_subnetwork,
     _host_public_key_from_instance,
 )
+from instance_setup import _set_attacker_container_password_after_bootstrap
+from polaris_bootstrap import _run_polaris_range_bootstrap
 from raes_access import RealizedAccessBinding, join_participant_access
 from raes_account_credentials import (
     RaesAccountCredentialOps,
