@@ -16,7 +16,7 @@ from engine.models import (
     ModelPendingGrant,
     ModelRequestReservation,
 )
-from engine.services import reserve_request
+from engine.services import RequestIdempotency, reserve_request
 from shared.model_access import ContractError, seal_catalog
 from shared.model_access.core_models import AccessLimits, EffectiveProfile, OwnedReference
 from shared.model_access.effective_policy import EffectivePolicy
@@ -345,30 +345,33 @@ def test_reserve_denies_an_expired_allocation():
 
 def test_repeated_key_same_intent_returns_completed_metadata():
     allocation = make_reservable_allocation()
-    key = "sha256:" + "c" * 64
-    fingerprint = "sha256:" + "f" * 64
-    first = _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+    idem = RequestIdempotency(caller_key_hmac="sha256:" + "c" * 64, intent_fingerprint_hmac="sha256:" + "f" * 64)
+    first = _reserve(allocation, idempotency=idem)
     # Settle the first so the duplicate resolves to completed metadata.
     ModelRequestReservation.objects.filter(request_uuid=first.request_uuid).update(state="settled")
-    second = _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+    second = _reserve(allocation, idempotency=idem)
     assert second.request_uuid == first.request_uuid
 
 
 def test_repeated_key_changed_intent_conflicts():
     allocation = make_reservable_allocation()
     key = "sha256:" + "c" * 64
-    _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "1" * 64)
+    _reserve(
+        allocation, idempotency=RequestIdempotency(caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "1" * 64)
+    )
     with pytest.raises(ContractError, match=r"request\.intent_conflict"):
-        _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "2" * 64)
+        _reserve(
+            allocation,
+            idempotency=RequestIdempotency(caller_key_hmac=key, intent_fingerprint_hmac="sha256:" + "2" * 64),
+        )
 
 
 def test_repeated_key_still_in_progress_conflicts():
     allocation = make_reservable_allocation()
-    key = "sha256:" + "c" * 64
-    fingerprint = "sha256:" + "f" * 64
-    _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+    idem = RequestIdempotency(caller_key_hmac="sha256:" + "c" * 64, intent_fingerprint_hmac="sha256:" + "f" * 64)
+    _reserve(allocation, idempotency=idem)
     with pytest.raises(ContractError, match=r"request\.in_progress_or_unknown"):
-        _reserve(allocation, caller_key_hmac=key, intent_fingerprint_hmac=fingerprint)
+        _reserve(allocation, idempotency=idem)
 
 
 def test_no_retry_key_permits_independent_invocations():
@@ -402,16 +405,21 @@ def test_hmac_rotation_replays_across_key_versions():
     old_hmac = "sha256:" + "a" * 64
     new_hmac = "sha256:" + "b" * 64
     fingerprint = "sha256:" + "f" * 64
-    first = _reserve(allocation, caller_key_hmac=old_hmac, key_version="k1", intent_fingerprint_hmac=fingerprint)
+    first = _reserve(
+        allocation,
+        idempotency=RequestIdempotency(caller_key_hmac=old_hmac, key_version="k1", intent_fingerprint_hmac=fingerprint),
+    )
     ModelRequestReservation.objects.filter(request_uuid=first.request_uuid).update(state="settled")
     # After key rotation the same raw key hashes to new_hmac; the caller passes the
     # prior-version digest too, so the retry resolves to the original, not a new request.
     second = _reserve(
         allocation,
-        caller_key_hmac=new_hmac,
-        prior_caller_key_hmacs=(old_hmac,),
-        key_version="k2",
-        intent_fingerprint_hmac=fingerprint,
+        idempotency=RequestIdempotency(
+            caller_key_hmac=new_hmac,
+            prior_caller_key_hmacs=(old_hmac,),
+            key_version="k2",
+            intent_fingerprint_hmac=fingerprint,
+        ),
     )
     assert second.request_uuid == first.request_uuid
     assert ModelRequestReservation.objects.count() == 1

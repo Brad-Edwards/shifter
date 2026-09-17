@@ -19,7 +19,7 @@ audit-chain lock acquired last.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -38,7 +38,13 @@ from shared.model_access.account_policy import (
     ResolvedRequestAccounts,
     resolve_request_accounts,
 )
-from shared.model_access.core_models import AccountDefinition, AccountWindowKind
+from shared.model_access.core_models import (
+    AccountDefinition,
+    AccountWindowKind,
+    BillingComponent,
+    Price,
+    PriceSchedule,
+)
 from shared.model_access.effective_policy import EffectivePolicy
 
 if TYPE_CHECKING:
@@ -55,6 +61,29 @@ LIFETIME_WINDOW_START = datetime(1970, 1, 1, tzinfo=UTC)
 LIFETIME_WINDOW_END = datetime(9999, 12, 31, tzinfo=UTC)
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
+# One posted account and the amount its dimension holds, carried from admission to
+# posting: (account_ref, locked account row, held amount, dimension, pinned revision).
+_AccountHold = tuple[str, "ModelBudgetAccount", int, AccountDimension, int]
+
+
+@dataclass(frozen=True)
+class RequestIdempotency:
+    """Caller idempotency evidence for a request: HMAC digests only, never raw values.
+
+    ``prior_caller_key_hmacs`` carries the same caller key hashed under every
+    still-retained key version so an HMAC rotation cannot turn a retry into a
+    second billable request.
+    """
+
+    caller_key_hmac: str | None = None
+    prior_caller_key_hmacs: tuple[str, ...] = ()
+    key_version: str | None = None
+    intent_fingerprint_hmac: str | None = None
+    intent_contract_version: str | None = None
+
+
+_NO_IDEMPOTENCY = RequestIdempotency()
+
 
 @dataclass(frozen=True)
 class ReservationOutcome:
@@ -62,7 +91,7 @@ class ReservationOutcome:
 
     request_uuid: UUID
     canonical_request_cost: int
-    account_refs: tuple[str, ...]
+    account_refs: tuple[str, ...] = field(default_factory=tuple)
 
 
 def reserve_request(
@@ -72,16 +101,13 @@ def reserve_request(
     logical_alias: str,
     billing_bound: BillingBound,
     now: datetime | None = None,
-    caller_key_hmac: str | None = None,
-    prior_caller_key_hmacs: tuple[str, ...] = (),
-    key_version: str | None = None,
-    intent_fingerprint_hmac: str | None = None,
-    intent_contract_version: str | None = None,
+    idempotency: RequestIdempotency | None = None,
     projection: AccountPolicyProjection | None = None,
 ) -> ReservationOutcome:
     """Reserve every applicable account atomically with a strict pre-dispatch audit."""
     from engine.models import ModelAllocation, ModelBudgetPosting, ModelRequestReservation
 
+    idem = idempotency or _NO_IDEMPOTENCY
     moment = now or datetime.now(UTC)
     with transaction.atomic():
         allocation = _lock_allocation(allocation_id, moment)
@@ -93,7 +119,7 @@ def reserve_request(
             raise ContractError("request.alias_unavailable")
         spend_currency, upper_charge = _conservative_charge(catalog, logical_alias, billing_bound, moment, effective)
 
-        existing = _replay(allocation, grant_epoch, caller_key_hmac, prior_caller_key_hmacs, intent_fingerprint_hmac)
+        existing = _replay(allocation, grant_epoch, idem)
         if existing is not None:
             return _outcome(existing)
 
@@ -115,10 +141,10 @@ def reserve_request(
             grant_epoch=grant_epoch,
             logical_alias=logical_alias,
             shard=allocation.snapshot["shards"][logical_alias],
-            caller_key_hmac=caller_key_hmac or "",
-            key_version=key_version or "",
-            intent_fingerprint_hmac=intent_fingerprint_hmac or "",
-            intent_contract_version=intent_contract_version or "",
+            caller_key_hmac=idem.caller_key_hmac or "",
+            key_version=idem.key_version or "",
+            intent_fingerprint_hmac=idem.intent_fingerprint_hmac or "",
+            intent_contract_version=idem.intent_contract_version or "",
             reservation_vector={ref: held for ref, _account, held, _dim, _rev in vector},
             billed_components=sorted({amount.component.value for amount in billing_bound.amounts}),
             canonical_request_cost=upper_charge,
@@ -132,7 +158,7 @@ def reserve_request(
         ModelAllocation.objects.filter(pk=allocation.pk).update(
             unresolved_liabilities=allocation.unresolved_liabilities + 1
         )
-        _decision_audit(allocation, reservation)
+        _decision_audit(reservation)
         return _outcome(reservation)
 
 
@@ -161,9 +187,9 @@ def _lock_grant_epoch(allocation: ModelAllocation) -> int:
         raise ContractError("request.grant_unavailable") from None
     if grant.state == "revoked":
         raise ContractError("request.revoked")
-    # A pending grant is an enrollment binding, not live authority; only an issued
-    # (active) capability authorizes a request. M04 never performs that activation.
     if grant.state != "active":
+        # A pending grant is an enrollment binding, not live authority; only an issued
+        # (active) capability authorizes a request. M04 never performs that activation.
         raise ContractError("request.grant_inactive")
     return grant.grant_epoch
 
@@ -203,6 +229,15 @@ def _conservative_charge(
     Returns the schedule currency alongside the integer micro-unit charge so the
     caller can prove every spend account shares that currency before any hold.
     """
+    schedule = _priced_schedule(catalog, logical_alias, moment)
+    prices: dict[BillingComponent, Price] = {price.component: price for price in schedule.prices}
+    total = _sum_billing_components(billing_bound, prices)
+    _assert_within_grant_bound(total, schedule.currency.value, effective)
+    return schedule.currency.value, total
+
+
+def _priced_schedule(catalog: ModelAccessCatalogV3, logical_alias: str, moment: datetime) -> PriceSchedule:
+    """Resolve the alias's immutable, unexpired price schedule from the snapshot."""
     alias = next((item for item in catalog.aliases if item.logical_alias == logical_alias), None)
     if alias is None:
         raise ContractError("request.alias_unavailable")
@@ -214,8 +249,11 @@ def _conservative_charge(
         raise ContractError("request.price_unavailable")
     if schedule.valid_until <= moment:
         raise ContractError("request.price_expired")
-    currency = schedule.currency.value
-    prices = {price.component: price for price in schedule.prices}
+    return schedule
+
+
+def _sum_billing_components(billing_bound: BillingBound, prices: dict[BillingComponent, Price]) -> int:
+    """Sum the conservative charge for every bounded component in integer micro-units."""
     total = 0
     for amount in billing_bound.amounts:
         price = prices.get(amount.component)
@@ -224,15 +262,18 @@ def _conservative_charge(
         total += _checked_ceil(amount.units, price.price_micro_units, price.unit_denominator)
         if total > _MAX_BIGINT:
             raise ContractError("request.charge_overflow")
+    return total
+
+
+def _assert_within_grant_bound(total: int, currency: str, effective: EffectivePolicy) -> None:
+    """The grant's per-request ceiling and the price schedule must share a currency."""
     limits = effective.effective_profile.limits if effective.effective_profile else None
-    if limits is not None:
-        # The grant ceiling and the price schedule must be the same currency, or the
-        # numeric comparison below silently mixes monetary units.
-        if limits.currency.value != currency:
-            raise ContractError("request.currency_mismatch")
-        if total > limits.max_spend_micro_units:
-            raise ContractError("request.bound_exceeds_grant")
-    return currency, total
+    if limits is None:
+        return
+    if limits.currency.value != currency:
+        raise ContractError("request.currency_mismatch")
+    if total > limits.max_spend_micro_units:
+        raise ContractError("request.bound_exceeds_grant")
 
 
 def _assert_spend_currency(resolved: ResolvedRequestAccounts, currency: str) -> None:
@@ -267,9 +308,9 @@ def _admit_accounts(
     deployment_id: UUID,
     holds: list[tuple[AccountDefinition, int]],
     moment: datetime,
-) -> list[tuple[str, ModelBudgetAccount, int, AccountDimension, int]]:
+) -> list[_AccountHold]:
     """Lock each account/window in canonical order and enforce S + R + U <= B."""
-    vector: list[tuple[str, ModelBudgetAccount, int, AccountDimension, int]] = []
+    vector: list[_AccountHold] = []
     for definition, held in sorted(holds, key=lambda item: item[0].account_ref):
         window_start, window_end = _window(definition, moment)
         account = _lock_account(deployment_id, definition, window_start, window_end)
@@ -285,7 +326,8 @@ def _window(definition: AccountDefinition, moment: datetime) -> tuple[datetime, 
     if definition.window.kind is AccountWindowKind.LIFETIME:
         return LIFETIME_WINDOW_START, LIFETIME_WINDOW_END
     period = definition.window.period_seconds
-    if period is None:  # validated non-None for a rolling window; narrows the type
+    if period is None:
+        # Validated non-None for a rolling window; this narrows the type and fails closed.
         raise ContractError("request.window_unsupported")
     elapsed = int((moment - _EPOCH).total_seconds())
     start_seconds = (elapsed // period) * period
@@ -321,16 +363,17 @@ def _lock_account(
                 **identity,
             )
     except IntegrityError:
-        pass  # A concurrent first use created it; the locking read below wins.
+        # A concurrent first use created it; the locking read below wins.
+        pass
     account = ModelBudgetAccount.objects.select_for_update().get(**identity)
-    # A reference reused with changed dimension, unit or currency is a different
-    # account masquerading as the same one; reject rather than post to it.
     account_currency = definition.currency.value if definition.currency else ""
     if (
         account.dimension != definition.dimension.value
         or account.unit != definition.unit
         or account.currency != account_currency
     ):
+        # A reference reused with changed dimension, unit or currency is a different
+        # account masquerading as the same one; reject rather than post to it.
         raise ContractError("request.account_semantics_changed")
     if definition.definition_revision > account.definition_revision:
         # Only a strictly newer revision may move the live ceiling; a stale or equal
@@ -364,9 +407,7 @@ def _apply_hold(account: ModelBudgetAccount, dimension: AccountDimension, held: 
 def _replay(
     allocation: ModelAllocation,
     grant_epoch: int,
-    caller_key_hmac: str | None,
-    prior_caller_key_hmacs: tuple[str, ...],
-    intent_fingerprint_hmac: str | None,
+    idempotency: RequestIdempotency,
 ) -> ModelRequestReservation | None:
     """Return the winning reservation for a repeated key, or raise on changed intent.
 
@@ -376,9 +417,10 @@ def _replay(
     """
     from engine.models import ModelRequestReservation
 
-    if not caller_key_hmac:
-        return None  # no idempotency key: always a new invocation
-    candidates = [hmac for hmac in (caller_key_hmac, *prior_caller_key_hmacs) if hmac]
+    if not idempotency.caller_key_hmac:
+        # No idempotency key: always a new invocation.
+        return None
+    candidates = [digest for digest in (idempotency.caller_key_hmac, *idempotency.prior_caller_key_hmacs) if digest]
     existing = (
         ModelRequestReservation.objects.select_for_update()
         .filter(
@@ -391,14 +433,14 @@ def _replay(
     )
     if existing is None:
         return None
-    if existing.intent_fingerprint_hmac != (intent_fingerprint_hmac or ""):
+    if existing.intent_fingerprint_hmac != (idempotency.intent_fingerprint_hmac or ""):
         raise ContractError("request.intent_conflict")
     if existing.state != "settled":
         raise ContractError("request.in_progress_or_unknown")
     return existing
 
 
-def _decision_audit(allocation: ModelAllocation, reservation: ModelRequestReservation) -> None:
+def _decision_audit(reservation: ModelRequestReservation) -> None:
     """Commit the strict body-free decision/accounting audit before any dispatch."""
     from shared.audit import AuditActorType, AuditEvent, audit_log
     from shared.audit.vocabulary import AuditAction, AuditEntityType

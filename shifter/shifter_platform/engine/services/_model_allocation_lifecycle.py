@@ -130,9 +130,14 @@ def reconcile_model_allocations(*, now: datetime | None = None, limit: int = 100
 
 def _reconcile_requests_isolated(*, now: datetime, limit: int) -> None:
     """Run the bounded request-accounting reconciliation pass, isolated from failure."""
-    from ._model_request_lifecycle import close_expired_revocations, reconcile_model_requests
+    from ._model_request_reconcile import (
+        close_expired_revocations,
+        reconcile_expired_dispatches,
+        reconcile_model_requests,
+    )
 
     try:
+        reconcile_expired_dispatches(now=now, limit=limit)
         reconcile_model_requests(now=now, limit=limit)
         close_expired_revocations(now=now, limit=limit)
     except Exception:

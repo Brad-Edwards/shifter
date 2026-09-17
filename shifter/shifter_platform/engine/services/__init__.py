@@ -61,20 +61,22 @@ from ._model_launch_api import (
     project_model_launch_authority,
     record_model_observations,
 )
-from ._model_request_accounting import ReservationOutcome, reserve_request
+from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
 from ._model_request_lifecycle import (
     DispatchGrant,
-    apply_late_evidence,
     charge_unknown,
     check_dispatch_lease,
-    close_expired_revocations,
     fence_revoked_requests,
     open_dispatch,
-    reconcile_expired_dispatches,
-    reconcile_model_requests,
     release_before_dispatch,
     renew_continuation_lease,
     settle_request,
+)
+from ._model_request_reconcile import (
+    apply_late_evidence,
+    close_expired_revocations,
+    reconcile_expired_dispatches,
+    reconcile_model_requests,
 )
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
@@ -229,6 +231,7 @@ __all__ = (
     "RangeWorkspaceRebindOutcome",
     "ReceiptBindingUnavailable",
     "ReceiptRegistrationConflict",
+    "RequestIdempotency",
     "ReservationOutcome",
     "RetryBindingResult",
     "RetryKeyConflict",
