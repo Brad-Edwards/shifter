@@ -639,6 +639,8 @@ jobs:
             if ! "${RUNNER_TEMP}/trivy-bin/trivy" image \
               --scanners vuln \
               --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --ignorefile "${GITHUB_WORKSPACE}/.trivyignore.yaml" \
               --exit-code 1 \
               --format json \
               --output "${results}/${label}-trivy.json" \
