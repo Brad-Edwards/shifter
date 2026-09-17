@@ -871,6 +871,7 @@ class TestGcpDeployPreflightInputs(unittest.TestCase):
             step.get("env", {}).get("SHIFTER_CONFIG_GCP_DEV"),
             "${{ secrets.SHIFTER_CONFIG_GCP_DEV }}",
         )
+        self.assertIn("--component deploy", step.get("run", ""))
 
 
 class TestRangePlacementSingleSource(unittest.TestCase):
