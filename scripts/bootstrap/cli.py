@@ -53,6 +53,7 @@ HELP_YES = (
     "(issue #1639). Does NOT authorize destructive cleanup; the leftover sweep has its own opt-in."
 )
 _AWS_COMPONENTS = ("core", "range", "portal")
+_PREFLIGHT_COMPONENTS = (*_AWS_COMPONENTS, "deploy")
 
 
 def full_deployment(env: str, profile: str, dry_run: bool = False) -> None:
@@ -476,7 +477,10 @@ def _add_preflight_and_recovery_subparsers(subparsers: argparse._SubParsersActio
     preflight_parser.add_argument("--cloud", required=True, choices=[c.value for c in Cloud], help="Target cloud")
     preflight_parser.add_argument("--env", required=True, help="Environment (e.g. dev, proof, prod, gcp-dev)")
     preflight_parser.add_argument(
-        "--component", choices=sorted(_AWS_COMPONENTS), default=None, help="AWS component to scope overlay checks"
+        "--component",
+        choices=sorted(_PREFLIGHT_COMPONENTS),
+        default=None,
+        help="Deployment component or protected-environment boundary to validate",
     )
     preflight_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
 
