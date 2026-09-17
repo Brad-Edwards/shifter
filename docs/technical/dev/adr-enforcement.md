@@ -1081,3 +1081,27 @@ Other backends must supply the same sandbox boundary before tenant executable
 installation can qualify; absence is a failed prerequisite, never an ordinary
 container fallback. Live tests must establish actual sandbox execution and deny-all
 network enforcement independently of anything the plugin reports.
+
+### Broker process and guest authority (ADR-059, ADR-060)
+
+The `model_broker` process has a mandatory import-linter contract forbidding
+application domains, Django, PostgreSQL and Redis dependencies. Its only Engine
+access is the private TLS control API authenticated with Google workload ID
+tokens or a fixed, audience-bound regional STS identity assertion. Provisioner
+enrollment has a distinct principal and operation-specific audience; the broker
+principal cannot issue enrollment. Neither listener trusts forwarded peer headers.
+
+Engine stores only hashes of one-use enrollment, access and rotating refresh
+tokens. Every use checks the incumbent range generation, grant epoch, upstream
+authority projections, original hard expiry and current reserved subnet. Request
+budget and token authentication share a transaction. PostgreSQL contention tests
+cover account ceilings and one-use credential rotation. Provider output is never
+written to accounting records; incomplete usage preserves conservative holds.
+
+Vertex and Bedrock adapters implement the shared provider protocol and fixed
+origins with deployment-owned model/identity bindings. Token counting and paid
+transport each recheck a live continuation lease after credential acquisition.
+HTTP redirects, implicit retries, arbitrary URLs and unsupported billing features
+are rejected. Stream framing, CRCs, complete usage, disconnect cancellation and
+revocation are tested through the HTTP/provider boundaries. These local tests do
+not qualify effective cloud IAM, networking, guest delivery or model availability.

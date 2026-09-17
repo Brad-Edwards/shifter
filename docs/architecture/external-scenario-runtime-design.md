@@ -217,3 +217,19 @@ Completion requires all of the following:
 - Required architecture, Python, frontend, infrastructure, and workflow checks
   pass. Live cloud validation records deployed versions and cleanup observations
   privately; local tests must not be presented as a live qualification.
+
+## Broker integration checkpoint
+
+The extraction branch includes the request-accounting foundation, conservative
+settlement fixes, one-use guest enrollment, the private Engine control API and a
+separate broker process. Vertex and Bedrock wire adapters use approved targets,
+bounded Messages requests, provider token counting and complete usage evidence.
+Local tests cover malformed requests, workload identity, stolen-token subnet
+rejection, rotation races, transport fencing, disconnects and incomplete usage.
+
+Deployment projection, trusted guest-bootstrap delivery and provider inventory
+publication must be connected before this is enabled. AWS additionally requires
+sandbox-node provisioning and the RAES resource-realization path. The private
+adapter still needs its production worker and broker credential helper. Existing
+planning-library tests are migration evidence, not runtime acceptance. Both cloud
+qualification targets remain pending the user's choice of deployment and time.

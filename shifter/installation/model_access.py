@@ -23,7 +23,7 @@ DEFAULT_CATALOG_PATH = "/etc/shifter/model-access/catalog.json"
 _SCHEMA_PATHS = {
     f"model-access-policy/{version}": Path(__file__).with_name("published_contract")
     / f"model-access-policy.{version}.schema.json"
-    for version in ("v1", "v2")
+    for version in ("v1", "v2", "v3")
 }
 _ENVELOPE_KEYS = frozenset({"enabled", "catalog"})
 

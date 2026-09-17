@@ -18,10 +18,14 @@ logger = logging.getLogger(__name__)
 
 def revoke_model_authorities(fence_ids: Iterable[int]) -> int:
     """Fence each dependent pending grant once in the owner's transaction."""
-    return ModelPendingGrant.objects.filter(
+    grants = ModelPendingGrant.objects.filter(
         allocation__authorities__fence_id__in=fence_ids,
         state="pending",
-    ).update(state="revoked", grant_epoch=F("grant_epoch") + 1, revoked_at=timezone.now())
+    )
+    allocation_ids = list(grants.values_list("allocation_id", flat=True))
+    revoked = grants.update(state="revoked", grant_epoch=F("grant_epoch") + 1, revoked_at=timezone.now())
+    _fence_allocation_requests(allocation_ids)
+    return revoked
 
 
 def revoke_model_generation(range_id: UUID, *, operation_id: UUID | None = None) -> int:
@@ -29,7 +33,18 @@ def revoke_model_generation(range_id: UUID, *, operation_id: UUID | None = None)
     grants = ModelPendingGrant.objects.filter(allocation__range_id=range_id, state="pending")
     if operation_id is not None:
         grants = grants.filter(allocation__operation_id=operation_id)
-    return grants.update(state="revoked", grant_epoch=F("grant_epoch") + 1, revoked_at=timezone.now())
+    allocation_ids = list(grants.values_list("allocation_id", flat=True))
+    revoked = grants.update(state="revoked", grant_epoch=F("grant_epoch") + 1, revoked_at=timezone.now())
+    _fence_allocation_requests(allocation_ids)
+    return revoked
+
+
+def _fence_allocation_requests(allocation_ids: Iterable[UUID]) -> None:
+    """Mark in-flight request dispatch leases revoking after a grant epoch is fenced."""
+    from ._model_request_lifecycle import fence_revoked_requests
+
+    for allocation_id in allocation_ids:
+        fence_revoked_requests(allocation_id=allocation_id)
 
 
 def _release_locked(allocation: ModelAllocation, now: datetime) -> bool:
@@ -109,4 +124,16 @@ def reconcile_model_allocations(*, now: datetime | None = None, limit: int = 100
             "model_access_expiry_lag_seconds": lag,
         },
     )
+    _reconcile_requests_isolated(now=now, limit=limit)
     return released
+
+
+def _reconcile_requests_isolated(*, now: datetime, limit: int) -> None:
+    """Run the bounded request-accounting reconciliation pass, isolated from failure."""
+    from ._model_request_lifecycle import close_expired_revocations, reconcile_model_requests
+
+    try:
+        reconcile_model_requests(now=now, limit=limit)
+        close_expired_revocations(now=now, limit=limit)
+    except Exception:
+        logger.exception("model-access request reconciliation pass failed")

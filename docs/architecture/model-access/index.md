@@ -21,6 +21,7 @@ deployment ranges. Shared resources do not require shared participant tokens.
 | [Sharing authority preflight](sharing-authority-preflight-2140.md) | M20 owner-resolution, transactional fence, mutation-path, validation and security guardrails. |
 | [Allocation preflight](allocation-preflight-2120.md) | M03 transaction, shared-quota locking, pending-grant, lifecycle and cross-cutting validation guardrails. |
 | [Durable allocations](allocations.md) | M03 quota reservations, v2 provider-pool membership, pending grants and preparation authority. |
+| [Request accounting preflight](request-accounting-preflight-2121.md) | M04 budget-account contract, atomic ledger, dispatch lease, idempotency, reconciliation and cross-cutting security guardrails. |
 | [Security design](security.md) | Threats, identities, network/IAM boundaries, credential lifecycle, privacy, and negative tests. |
 | [GCP deployment package](gcp-packaging.md) | Disabled M06 identity, TLS, network, runtime and deployment-lane resources. |
 | [GCP packaging preflight](gcp-packaging-preflight-2123.md) | M06 repository integration gates for runtime isolation, IAM, egress, TLS and deployment evidence. |
@@ -60,12 +61,10 @@ storage, retention and export policy outside this broker audit boundary.
 
 ## Baseline findings that affect implementation
 
-- `shifter/engine/provisioner/gcp_range_vertex_creds.py` creates keys on a
-  preconfigured service account and supports copying a shared source key.
-  Separate secret/key objects are not separate principals.
-- `plans/external adapter_range_bootstrap.py` and `plans/_external adapter_scripts_gcp.py`
-  implement scenario-specific Vertex setup; the AWS sibling uses the
-  per-range role path from #1377. Neither is a general allocation service.
+- The former guest provider-key issuance and embedded scenario bootstrap paths
+  have been removed from core. Legacy GCP key teardown remains for draining old
+  ranges. New enrollment must use broker capabilities, with no fallback to
+  provider credentials on participant-controlled machines.
 - `ctf/services/range/capacity.py` already declares roster/spare demand and
   organizer hints, but catches declaration/assessment/admission failures.
   #668/#621 are not blank-slate implementation tasks despite remaining open.
