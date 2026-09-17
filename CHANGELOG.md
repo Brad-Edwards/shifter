@@ -12,6 +12,20 @@ are generated at release time via its release PR, not hand-edited in PRs. See
 model. The history below is preserved as-is across the towncrier to
 release-please transition (#1776).
 
+## [3.105.0](https://github.com/Brad-Edwards/shifter/compare/v3.104.0...v3.105.0) (2026-09-17)
+
+
+### Features
+
+* **audit:** add tamper-evident audit chain ([6a1eecc](https://github.com/Brad-Edwards/shifter/commit/6a1eecc99f6943f64f8e2db1d04ffbbf257ce564))
+
+
+### Bug Fixes
+
+* **openapi:** make PackRegistration digest default schema-valid ([480043f](https://github.com/Brad-Edwards/shifter/commit/480043fdeb58ee68711f1243ba9786fdcfec40b8))
+* **openapi:** make PackRegistration digest default schema-valid ([9d29347](https://github.com/Brad-Edwards/shifter/commit/9d29347241033887e50cc8da95499c698a846a96))
+* **provisioner:** remove dead DC bootstrap-plan path (drop S2583 suppression) ([6da4635](https://github.com/Brad-Edwards/shifter/commit/6da4635cae3aaa3d0c55533618231eac8c5d5231))
+
 ## [3.104.0](https://github.com/Brad-Edwards/shifter/compare/v3.103.0...v3.104.0) (2026-09-16)
 
 
