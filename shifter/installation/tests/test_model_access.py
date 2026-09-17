@@ -44,6 +44,65 @@ def test_v2_provider_membership_survives_installer_and_runtime_validation(tmp_pa
     assert loaded.provider_pools[0].shard_ids == ("vertex-primary",)
 
 
+def test_v3_account_definitions_survive_installer_and_runtime_validation(tmp_path):
+    from shared.model_access import seal_catalog
+    from shared.model_access.runtime import load_mounted_catalog
+
+    payload = _catalog()
+    payload.update(
+        contract_version="model-access-policy/v3",
+        provider_pools=[{"provider_pool_id": "classroom", "shard_ids": ["vertex-primary"]}],
+        account_definitions=[
+            {
+                "account_ref": "deployment-spend",
+                "dimension": "spend",
+                "unit": "micro_units",
+                "currency": "USD",
+                "ceiling": 5000000,
+                "window": {"kind": "utc_rolling", "period_seconds": 2592000},
+                "definition_revision": 1,
+                "authority_source": "deployment_catalog",
+            }
+        ],
+        sharing_pools=[
+            {
+                "sharing_pool_id": "cohort-pool",
+                "routing_revision": 1,
+                "spend_account_refs": ["deployment-spend"],
+            }
+        ],
+    )
+    catalog = seal_catalog(payload)
+    normalized, issues = validate_settings_block(
+        {"model_access": {"enabled": False, "catalog": catalog.model_dump(mode="json")}}
+    )
+    assert not issues
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(normalized["model_access"]["catalog"]), encoding="utf-8")
+    loaded = load_mounted_catalog(enabled=False, path=str(path), expected_digest=catalog.digest)
+    assert loaded.account_definitions[0].account_ref == "deployment-spend"
+
+
+def test_v3_unresolved_account_reference_is_rejected_by_installer():
+    from shared.model_access import ContractError, seal_catalog
+
+    payload = _catalog()
+    payload.update(
+        contract_version="model-access-policy/v3",
+        provider_pools=[{"provider_pool_id": "classroom", "shard_ids": ["vertex-primary"]}],
+        account_definitions=[],
+        sharing_pools=[
+            {
+                "sharing_pool_id": "cohort-pool",
+                "routing_revision": 1,
+                "spend_account_refs": ["missing-account"],
+            }
+        ],
+    )
+    with pytest.raises(ContractError):
+        seal_catalog(payload)
+
+
 def _catalog() -> dict:
     catalog = {
         "contract_version": "model-access-policy/v1",
