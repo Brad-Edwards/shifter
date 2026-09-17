@@ -4,6 +4,7 @@ from dataclasses import asdict
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import Q
 
 from cms.models import RaesPackageSource
 from cms.scenarios.catalog_presentation import list_catalog_presentations
@@ -18,8 +19,15 @@ from workspaces.services import get_organization_profile
 def list_runtime_plugin_packs(user, organization_uuid: UUID) -> list[dict]:
     get_organization_profile(user, organization_uuid)
     bindings = {row.pack_id: row for row in list_runtime_plugin_bindings(user, organization_uuid)}
+    available = dict(
+        RaesPackageSource.objects.filter(
+            Q(organization_uuid=organization_uuid) | Q(organization_uuid__isnull=True),
+        ).values_list("scenario_id", "organization_uuid")
+    )
     packs = []
     for entry in list_catalog_presentations(user=user):
+        if entry["id"] not in available:
+            continue
         evidence = entry.get("raes")
         if evidence is None:
             continue
@@ -29,6 +37,7 @@ def list_runtime_plugin_packs(user, organization_uuid: UUID) -> list[dict]:
                 "id": entry["id"],
                 "name": entry["name"],
                 "pack_digest": evidence["package_digest"],
+                "can_update": available[entry["id"]] == organization_uuid,
                 "binding": asdict(binding) if binding is not None else None,
             }
         )

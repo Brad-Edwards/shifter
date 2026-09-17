@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { manifestPreview } from "./adapter-manifest";
+import { PackUploadForm } from "./PackUploadForm";
 
 function bindingStatus(pack: AdapterPack): string {
   if (!pack.binding) return "No adapter assigned";
@@ -34,6 +35,7 @@ export function AdapterPackBindings({ organization, adapters }: Readonly<{ organ
     {packs.isPending ? <p role="status">Loading packs…</p> : null}
     {saved ? <p role="status">Assignment saved. Existing ranges keep their original adapter.</p> : null}
     {packs.data ? <>
+      <PackUploadForm organization={organization} packs={packs.data.results} />
       {packs.data.results.length === 0 ? <p>No accessible packs are registered.</p> : <Table>
         <TableHeader><TableRow><TableHead>Pack</TableHead><TableHead>Assignment</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
         <TableBody>{packs.data.results.map((pack) => <TableRow key={pack.id}>

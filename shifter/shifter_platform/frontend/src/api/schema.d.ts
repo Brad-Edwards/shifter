@@ -440,6 +440,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/organizations/{organization_uuid}/packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cms_organizations_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/": {
         parameters: {
             query?: never;
@@ -5294,6 +5310,8 @@ export interface components {
             name: string;
             pack_digest: string;
             binding: components["schemas"]["RuntimePluginPackBinding"] | null;
+            /** @default false */
+            can_update: boolean;
         };
         RuntimePluginPackBinding: {
             /** Format: uuid */
@@ -5313,6 +5331,8 @@ export interface components {
             name: string;
             pack_digest: string;
             binding: components["schemas"]["RuntimePluginPackBinding"] | null;
+            /** @default false */
+            can_update: boolean;
             targets: components["schemas"]["RuntimePluginTarget"][];
         };
         /** @description Reject ignored fields that could disguise attempted authority overrides. */
@@ -5526,6 +5546,25 @@ export interface components {
         TeamMemberRequest: {
             /** Format: uuid */
             participant_id: string;
+        };
+        TenantPackInstalled: {
+            scenario_id: string;
+            name: string;
+            source_kind: string;
+            contract_kind: string;
+            contract_profile: string;
+            package_version: string;
+            package_digest: string;
+            conformance_status: string;
+            created: boolean;
+        };
+        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        TenantPackUpload: {
+            name: string;
+            /** Format: uri */
+            archive: string;
+            /** @default  */
+            expected_digest: string;
         };
         /**
          * @description Explicit request body for an offboarding ownership transfer.
@@ -6694,6 +6733,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackRegistrationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TenantPackUpload"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantPackInstalled"];
                 };
             };
             /** @description Authentication failed. */

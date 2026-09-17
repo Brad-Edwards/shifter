@@ -212,6 +212,10 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
     source = _load_raes_source_or_raise(scenario)
+    if source.organization_uuid is not None:
+        from cms.scenarios.registry import check_scenario_access
+
+        check_scenario_access(scenario, user)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
@@ -249,6 +253,12 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
 
     request_id = uuid4()
     workspace_id = resolve_launch_workspace(user, workspace_uuid)
+    if source.organization_uuid is not None:
+        from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+        authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+        if authorization.organization_uuid != source.organization_uuid:
+            raise CMSError("The pack is unavailable in this workspace")
     admit_workspace_launch(
         workspace_id=workspace_id,
         user=user,

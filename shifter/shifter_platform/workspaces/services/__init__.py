@@ -19,6 +19,7 @@ from ._authorization import (
     authorize_workspace,
     authorized_workspace_ids,
 )
+from ._content_scope import content_organization_uuids
 from ._context import (
     ActorWorkspaceContext,
     OrganizationRef,
@@ -144,6 +145,7 @@ __all__ = [
     "authorize_workspace",
     "authorized_workspace_ids",
     "change_workspace_member_role",
+    "content_organization_uuids",
     "create_workspace",
     "get_organization_profile",
     "get_self_membership",

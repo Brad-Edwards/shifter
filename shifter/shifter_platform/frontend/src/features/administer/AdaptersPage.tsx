@@ -56,7 +56,7 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
     {query.isSuccess ? <>
       <AdapterInstallForm organization={organization} />
       <Button variant="outline" className="mb-4" onClick={() => setShowPacks(!showPacks)} aria-expanded={showPacks}>
-        {showPacks ? "Hide pack assignments" : "Assign adapters to packs"}
+        {showPacks ? "Hide packs" : "Install packs and assign adapters"}
       </Button>
       {showPacks ? <AdapterPackBindings organization={organization} adapters={query.data} /> : null}
       <h2 className="mb-3 text-lg font-semibold">Installed versions</h2>

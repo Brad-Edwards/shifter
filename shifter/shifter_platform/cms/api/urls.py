@@ -12,12 +12,18 @@ from cms.api import (
     range_scope,
     runtime_plugin_packs,
     runtime_plugins,
+    tenant_packs,
     views,
 )
 
 app_name = "cms"
 
 urlpatterns = [
+    path(
+        "organizations/<uuid:organization_uuid>/packs/",
+        tenant_packs.TenantPackUploadView.as_view(),
+        name="tenant-pack-upload",
+    ),
     path(
         "organizations/<uuid:organization_uuid>/plugin-packs/",
         runtime_plugin_packs.RuntimePluginPackListView.as_view(),

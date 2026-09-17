@@ -1622,6 +1622,75 @@
         ]
       }
     },
+    "/api/v1/cms/organizations/{organization_uuid}/packs/": {
+      "post": {
+        "operationId": "cms_organizations_packs_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPackUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantPackInstalled"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/": {
       "get": {
         "operationId": "cms_organizations_plugin_packs_list",
@@ -20700,6 +20769,10 @@
               }
             ],
             "nullable": true
+          },
+          "can_update": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
@@ -20770,6 +20843,10 @@
               }
             ],
             "nullable": true
+          },
+          "can_update": {
+            "type": "boolean",
+            "default": false
           },
           "targets": {
             "type": "array",
@@ -21404,6 +21481,72 @@
         },
         "required": [
           "participant_id"
+        ]
+      },
+      "TenantPackInstalled": {
+        "type": "object",
+        "properties": {
+          "scenario_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source_kind": {
+            "type": "string"
+          },
+          "contract_kind": {
+            "type": "string"
+          },
+          "contract_profile": {
+            "type": "string"
+          },
+          "package_version": {
+            "type": "string"
+          },
+          "package_digest": {
+            "type": "string"
+          },
+          "conformance_status": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "conformance_status",
+          "contract_kind",
+          "contract_profile",
+          "created",
+          "name",
+          "package_digest",
+          "package_version",
+          "scenario_id",
+          "source_kind"
+        ]
+      },
+      "TenantPackUpload": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "archive": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expected_digest": {
+            "type": "string",
+            "default": "",
+            "pattern": "^(sha256:[a-f0-9]{64})?$"
+          }
+        },
+        "required": [
+          "archive",
+          "name"
         ]
       },
       "TransferOwnershipRequest": {

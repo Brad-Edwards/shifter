@@ -20,6 +20,14 @@ explicit rebinding; it cannot silently drop the previous adapter requirement.
 Range creation retains immutable executable, pack, target and parameter pins,
 and operation inputs carry those pins through retries and destruction.
 
+Tenant admins can upload and update content archives from the same page. The
+server validates archive containment, canonical identity and contract conformance
+before registration. Organization ownership is independent of portable pack names;
+identical names can coexist in different organizations. Staff status alone does
+not disclose another organization's content. Updates require the displayed digest
+and preserve existing immutable range inputs. Content upload never installs or
+executes an adapter.
+
 The first host execution path supports RAES GCE ranges. Engine queues isolated
 validate/configure/verify planning invocations in the launch transaction. Workers
 receive only the declared node identities, OS families and non-secret parameters;
@@ -38,7 +46,7 @@ inside apply's cleanup boundary. Management keys, secret references, provider
 credentials and arbitrary output fields are not exposed by this contract.
 
 Private adapter migration, removal of existing scenario-specific core code,
-tenant pack-upload integration, additional host capabilities needed by external
+additional host capabilities needed by external
 adapters, and SDK publication remain outstanding. An installation's `ready` status means its
 compatibility probe succeeded; it does not mean a pack is runnable or a range is
 ready. This branch is not a completed cutover.

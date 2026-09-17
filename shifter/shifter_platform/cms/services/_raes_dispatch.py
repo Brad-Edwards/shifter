@@ -94,13 +94,13 @@ def dispatch_object_raes_package(
             max_archive_bytes=settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES,
             max_uncompressed_bytes=settings.RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
             max_entries=settings.RAES_PACKAGE_MAX_ENTRIES,
-            expected_pack_name=source.scenario_id,
+            expected_pack_name=source.package_identity,
         ) as pack_root:
             try:
                 validated_name = validate_pack(pack_root)
             except PackValidationError as exc:
                 raise CMSError("RAES pack failed validation") from exc
-            if validated_name != source.scenario_id:
+            if validated_name != source.package_identity:
                 raise CMSError("RAES pack identity does not match the registered scenario")
             try:
                 digest_matches = verify_pack_digest(pack_root, source.package_digest)
@@ -136,6 +136,8 @@ def _launch_pack(
     from workspaces.services import WorkspaceOperation, authorize_bound_workspace
 
     authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+    if source.organization_uuid is not None and source.organization_uuid != authorization.organization_uuid:
+        raise CMSError("The pack is unavailable in this workspace")
     plugin_scope = RuntimePluginScope(
         organization_uuid=authorization.organization_uuid,
         pack_id=source.scenario_id,

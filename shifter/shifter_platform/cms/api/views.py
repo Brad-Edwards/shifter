@@ -45,9 +45,9 @@ def _not_found(request: Request, message: str = "Scenario not found") -> Respons
     return api_error_response(code="not_found", message=message, status_code=status.HTTP_404_NOT_FOUND, request=request)
 
 
-def _raes_detail_payload(scenario_id: str) -> dict[str, Any] | None:
+def _raes_detail_payload(scenario_id: str, *, user=None) -> dict[str, Any] | None:
     """Build the read-only Scenario Catalog projection for one RAES source."""
-    entry = catalog_presentation.get_catalog_presentation(scenario_id)
+    entry = catalog_presentation.get_catalog_presentation(scenario_id, user=user)
     if entry is None:
         return None
     return {
@@ -69,7 +69,12 @@ class CatalogListView(APIView):
 
     @extend_schema(responses=CatalogEntrySerializer(many=True))
     def get(self, request: Request) -> Response:
-        return Response(CatalogEntrySerializer(catalog_presentation.list_catalog_presentations(), many=True).data)
+        return Response(
+            CatalogEntrySerializer(
+                catalog_presentation.list_catalog_presentations(user=_actor_user(request), include_unavailable=True),
+                many=True,
+            ).data
+        )
 
 
 class CatalogDetailView(APIView):
@@ -79,7 +84,7 @@ class CatalogDetailView(APIView):
 
     @extend_schema(responses=CatalogEntrySerializer)
     def get(self, request: Request, scenario_id: str) -> Response:
-        entry = catalog_presentation.get_catalog_presentation(scenario_id)
+        entry = catalog_presentation.get_catalog_presentation(scenario_id, user=_actor_user(request))
         if entry is None:
             return _not_found(request, "Catalog entry not found")
         return Response(CatalogEntrySerializer(entry).data)
@@ -134,7 +139,7 @@ class ScenarioResourceView(APIView):
 
     @extend_schema(responses=ScenarioDetailSerializer)
     def get(self, request: Request, scenario_id: str) -> Response:
-        payload = _raes_detail_payload(scenario_id)
+        payload = _raes_detail_payload(scenario_id, user=_actor_user(request))
         if payload is None:
             return _not_found(request)
         return Response(ScenarioDetailSerializer(payload).data)
@@ -147,6 +152,8 @@ class ScenarioRealizabilityView(APIView):
 
     @extend_schema(responses=ScenarioRealizabilitySerializer)
     def get(self, request: Request, scenario_id: str) -> Response:
+        if get_catalog_entry(scenario_id, user=_actor_user(request)) is None:
+            return _not_found(request)
         result = scenario_realizability.get_scenario_realizability(scenario_id)
         if result is None:
             return _not_found(request)
@@ -160,7 +167,7 @@ class ScenarioMetadataView(APIView):
 
     @extend_schema(request=ScenarioMetadataUpdateSerializer, responses=ScenarioMetadataStateSerializer)
     def patch(self, request: Request, scenario_id: str) -> Response:
-        if get_catalog_entry(scenario_id) is None:
+        if get_catalog_entry(scenario_id, user=_actor_user(request)) is None:
             return _not_found(request)
         serializer = ScenarioMetadataUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

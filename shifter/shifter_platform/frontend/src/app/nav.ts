@@ -277,7 +277,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       {
         surface: "Adapters",
         routeName: "administer:adapters",
-        purpose: "Install and manage approved executable adapters.",
+        purpose: "Install content packs and manage your organization’s executable adapters.",
         routePath: "/administer/adapters",
         permissionPolicy: "adapter_admin",
         iconKey: "boxes",

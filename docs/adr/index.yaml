@@ -1931,6 +1931,11 @@
         "id": "ADR-034-R9",
         "description": "Optional in-tenant artifact preparation (#1583) uses explicit upstream permission and exact materialization profile/specification/input identity, a separately authorized preparation operation and isolated worker, independent output verification, and fenced admission into the existing backend inventory before normal launch. Shifter maintains the adapters and concrete build material needed by its supported scenarios. Built-in and private adapters use one versioned preparation/admission interface; authorized private-pack ingestion and administrator-controlled adapter installation remain possible after setup without a Shifter release, platform rebuild or upstream publication. A pack dependency grants neither executable installation nor tenant authority. Tenant registration binds immutable manifest/adapter/image versions, backend/profile support, input/output/verifier contracts and explicit grants; each operation pins those identities. Upgrade, disable and retirement preserve exact-version in-flight execution, provenance and bounded cleanup; cancellation or emergency revocation fences admission. Runtime capability/admission projections remain validated and tenant-confined under ADR-054; private extensions never widen the provisioner identity or command policy or become public discovery metadata. Existing admitted supply is reused without a worker; missing inventory, absent concerns and exact/non-buildable artifacts never imply build permission. This preparation boundary does not relax R6/R7's prohibition on executable content/feature-delivery hooks and does not own publication, promotion, replication or distribution (ADR-053).",
         "checks": []
+      },
+      {
+        "id": "ADR-034-R10",
+        "description": "Tenant organization admins may install and update content packs through the tenant UI and session API. Uploads reuse uniform registration and canonical validation, with bounded containment-checked extraction before immutable object storage. Ownership is a Shifter sidecar separate from portable pack identity: organization membership gates catalog reads, organization-admin authority gates mutation, and launch binds the owning organization to the workspace. Staff status alone never overrides tenant ownership. Revision updates require the current digest, preserve previous objects and immutable range inputs, and require adapter rebinding when the digest changes. Content upload never installs executable adapters or grants provider authority.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1952,7 +1957,9 @@
       "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
       "docs/architecture/product-development-surfaces.md",
       "docs/ops/content-ingestion.md",
-      "docs/adr/index.yaml"
+      "docs/adr/index.yaml",
+      "shifter/shifter_platform/cms/services/_tenant_pack_upload.py",
+      "shifter/shifter_platform/tests/cms/test_tenant_pack_upload.py"
     ]
   },
   {

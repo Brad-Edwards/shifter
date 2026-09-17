@@ -419,12 +419,17 @@ resource "aws_iam_role_policy" "s3_access" {
   })
 }
 
-# Least-privilege, read-only access to the object-backed RAES package bucket
-# (#1567, ADR-034-R5). The portal pulls the single immutable pack archive at
-# launch and nothing else: GetObject is scoped to the optional key prefix, and
+# Object-backed RAES packs are read at launch. Tenant installation may create
+# and clean up only server-owned objects under the tenant-packs prefix.
+# GetObject is scoped to the optional key prefix, and
 # ListBucket is constrained by an s3:prefix condition. Created only when a
 # package bucket is configured, so deployments not using object-backed packs get
 # no additional grant.
+locals {
+  # Match the runtime resolver's normalized path prefix, with one separator.
+  raes_package_object_prefix = trim(var.raes_package_prefix, "/") == "" ? "" : "${trim(var.raes_package_prefix, "/")}/"
+}
+
 resource "aws_iam_role_policy" "raes_package_read" {
   count = var.raes_package_bucket_arn != "" ? 1 : 0
   name  = "raes-package-read"
@@ -436,7 +441,12 @@ resource "aws_iam_role_policy" "raes_package_read" {
       {
         Effect   = "Allow"
         Action   = ["s3:GetObject"]
-        Resource = "${var.raes_package_bucket_arn}/${var.raes_package_prefix}*"
+        Resource = "${var.raes_package_bucket_arn}/${local.raes_package_object_prefix}*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:DeleteObject"]
+        Resource = "${var.raes_package_bucket_arn}/${local.raes_package_object_prefix}tenant-packs/*"
       },
       {
         Effect   = "Allow"
@@ -444,7 +454,7 @@ resource "aws_iam_role_policy" "raes_package_read" {
         Resource = var.raes_package_bucket_arn
         Condition = {
           StringLike = {
-            "s3:prefix" = ["${var.raes_package_prefix}*"]
+            "s3:prefix" = ["${local.raes_package_object_prefix}*"]
           }
         }
       }

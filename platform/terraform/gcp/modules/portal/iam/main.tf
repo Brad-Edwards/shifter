@@ -169,11 +169,10 @@ locals {
     var.vmseries_bootstrap_bucket_name == "" ? {} : {
       "provisioner:vmseries" = { workload = "provisioner", bucket = var.vmseries_bootstrap_bucket_name, role = "roles/storage.objectAdmin" }
     },
-    # Object-storage-backed RAES packages (#1567, ADR-034-R5): the portal reads
-    # (never writes) the single immutable pack archive at launch. Least-privilege
-    # objectViewer, bound per named bucket (ADR-008-R7); empty disables it.
+    # Tenant installation stores validated immutable pack archives and removes
+    # failed uploads. Authority is bound to this explicit content bucket only.
     var.raes_package_bucket_name == "" ? {} : {
-      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectViewer" }
+      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectUser" }
     },
     # Native CTF content bundles are a distinct deployment concern from RAES
     # packages. The portal needs read-only access to the explicitly configured

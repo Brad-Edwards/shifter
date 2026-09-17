@@ -45,6 +45,7 @@ class RuntimePluginPackSerializer(serializers.Serializer):
     name = serializers.CharField()
     pack_digest = serializers.CharField()
     binding = RuntimePluginPackBindingSerializer(allow_null=True)
+    can_update = serializers.BooleanField(default=False)
 
 
 class RuntimePluginTargetSerializer(serializers.Serializer):
