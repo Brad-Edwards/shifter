@@ -355,6 +355,7 @@ modelBroker:
   catalog_digest: ""
   identities_json: ""
   providers_json: ""
+  enrollment_env: {}
   provisioner_subject: ""
   fingerprint_secret_name: ""
   fingerprint_key_version: ""

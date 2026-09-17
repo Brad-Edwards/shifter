@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
@@ -220,7 +221,7 @@ def project_model_broker(
     if result["control_env"]["MODEL_ACCESS_ENABLED"] == "true":
         import re
 
-        from .model_broker_runtime import project_broker_runtime
+        from .model_broker_runtime import project_broker_runtime, project_enrollment_env
 
         subject = output.get("provisioner_subject", "")
         platform_project = str(output["gsa"]).partition("@")[2]
@@ -235,7 +236,9 @@ def project_model_broker(
                 runtime_settings, catalog_json=catalog_json, provider="gcp", model_identities=output["model_identities"]
             )
         )
+        result["enrollment_env"] = project_enrollment_env(runtime_settings, hostname=result["hostname"])
     validate_broker_configmap_payload(
-        result["catalog_json"], result["identities_json"] + result.get("providers_json", "")
+        result["catalog_json"],
+        result["identities_json"] + result.get("providers_json", "") + json.dumps(result.get("enrollment_env", {})),
     )
     return result

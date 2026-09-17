@@ -76,12 +76,15 @@ class PluginManifest(ClosedModel):
     capabilities: list[Capability] = Field(min_length=1, max_length=2)
     required_bindings: list[Identifier] = Field(min_length=1, max_length=64)
     required_parameters: list[Identifier] = Field(default_factory=list, max_length=64)
+    model_bindings: dict[Identifier, Identifier] = Field(default_factory=dict, max_length=16)
 
     @model_validator(mode="after")
     def unique_declarations(self) -> Self:
         for values in (self.capabilities, self.required_bindings, self.required_parameters):
             if len(values) != len(set(values)):
                 raise ValueError("plugin declarations must be unique")
+        if not set(self.model_bindings.values()).issubset(self.required_bindings):
+            raise ValueError("model bindings must name declared guest bindings")
         if "guest.verify" not in self.capabilities:
             raise ValueError("a runtime plugin must provide readiness verification")
         return self

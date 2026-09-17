@@ -6,11 +6,11 @@ from pathlib import Path
 
 from model_broker.control import ControlClient
 from model_broker.identity import WorkloadIdentity
-from shared.model_access.provider_runtime import ProviderInventory
 from model_broker.provider_credentials import ProviderCredentials
 from model_broker.providers import ProviderRegistry
 from model_broker.server import BrokerApplication
 from shared.model_access.messages import strict_json
+from shared.model_access.provider_runtime import ProviderInventory
 from shared.model_access.runtime import load_mounted_catalog
 
 

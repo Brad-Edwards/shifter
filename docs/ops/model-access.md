@@ -366,5 +366,13 @@ provisioner Jobs may reach the enrollment control endpoint alongside the broker;
 plugin workers receive neither control authority nor enrollment credentials.
 
 Local rendering and transport tests do not establish live model/client
-compatibility. AWS deployment wiring and trusted guest delivery must be qualified
+compatibility. AWS deployment wiring and guest delivery must be qualified
 before advertising operational support on either cloud.
+
+`settings.model_broker_runtime.guest_trust_ca_pem` supplies the public PEM CA used
+by the enrollment control and guest broker listeners. It must match the existing
+TLS trust ConfigMap. The deploy renderers encode this public certificate and
+fixed private HTTPS coordinates in the runtime ConfigMap, which the provisioner
+Job admission policy matches exactly. No CA private key belongs in root config.
+Leaving this value empty prevents mapped guest enrollment before cloud mutation.
+The broker/control TLS Secrets and public trust ConfigMap remain deployment-owned.

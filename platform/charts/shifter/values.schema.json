@@ -36,6 +36,7 @@
         "enabled"
       ],
       "properties": {
+        "enrollment_env": {"type": "object", "additionalProperties": false, "properties": {"MODEL_BROKER_GUEST_URL": {"type": "string"}, "MODEL_ENROLLMENT_CONTROL_URL": {"type": "string"}, "MODEL_ENROLLMENT_CA_PEM_B64": {"type": "string"}}, "oneOf": [{"maxProperties": 0}, {"required": ["MODEL_BROKER_GUEST_URL", "MODEL_ENROLLMENT_CONTROL_URL", "MODEL_ENROLLMENT_CA_PEM_B64"]}]},
         "providers_json": {"type": "string"},
         "provisioner_subject": {"type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$|^$"},
         "fingerprint_secret_name": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^$"},

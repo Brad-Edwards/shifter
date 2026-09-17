@@ -96,6 +96,10 @@ function PackAssignmentForm({ organization, pack, adapters, onSaved }: Readonly<
         {pack.targets.map((target) => <option key={target.address} value={target.address}>{target.address} ({target.os_family})</option>)}
       </select>
     </div>)}
+    {Object.entries(manifest?.model_bindings ?? {}).map(([role, binding]) => <p key={role}>
+      Model access for {role} will be delivered to {targets[binding] || `the guest selected for ${binding}`}.
+      The deployment’s model policy and budget still apply.
+    </p>)}
     {requiredParameters.length ? <p>Enter the adapter configuration values. Passwords, access tokens and private keys are not supported here.</p> : null}
     {requiredParameters.map((name) => <div key={name} className="space-y-2">
       <Label htmlFor={`plugin-parameter-${name}`}>{name}</Label>

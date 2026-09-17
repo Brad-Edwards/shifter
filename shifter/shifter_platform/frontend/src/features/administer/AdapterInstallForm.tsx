@@ -79,6 +79,10 @@ export function AdapterInstallForm({ organization }: Readonly<{ organization: st
             <dt className="font-semibold">Protocol</dt><dd>{preview.protocol}</dd>
             <dt className="font-semibold">Executable image</dt><dd>{preview.worker_image}</dd>
             <dt className="font-semibold">Requested capabilities</dt><dd>{preview.capabilities.join(", ")}</dd>
+            {Object.keys(preview.model_bindings ?? {}).length ? <>
+              <dt className="font-semibold">Model access</dt><dd>{Object.keys(preview.model_bindings ?? {}).join(", ")}
+                {" · Subject to deployment policy and budget"}</dd>
+            </> : null}
           </dl> : null}
           <Button type="submit" disabled={!preview || !validCredentials || install.isPending}>Review installation</Button>
         </form>

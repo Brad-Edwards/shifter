@@ -34,6 +34,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from shared.model_access.guest_binding import ModelGuestBinding
 from shared.raes.artifact_binding import MAX_ARTIFACT_BINDINGS, ArtifactBinding, ArtifactBindingError
 from shared.raes.content_delivery import ContentDeliveryError, DeliveryBinding
 from shared.raes.participant_access import (
@@ -78,6 +79,7 @@ class RaesInputBindings:
     access: Sequence[ParticipantAccessBinding] = ()
     artifact: Sequence[ArtifactBinding] = ()
     runtime_plugin: RuntimePluginPin | None = None
+    model_enrollments: tuple[ModelGuestBinding, ...] = ()
 
 
 # Bounded per ADR-043-R2/R7: the input is a reference-only projection, never a
@@ -98,6 +100,7 @@ _INPUT_KEYS = frozenset(
         "legacy_range_id",
         "egress_mode",
         "runtime_plugin",
+        "model_enrollments",
     }
 )
 
@@ -111,7 +114,7 @@ _INPUT_KEYS = frozenset(
 # deployment baseline) -- the exact pre-feature behavior, never a silent
 # *weakening*: a ``none`` zero-egress or an active egress posture is always carried
 # explicitly, so a missing field can never be read as "allow egress".
-_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings", "egress_mode", "runtime_plugin"})
+_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings", "egress_mode", "runtime_plugin", "model_enrollments"})
 
 # Mirrors ``installation.range_egress.RangeEgressMode`` without importing it (the
 # provisioner image does not load the installation/pydantic machinery, exactly as
@@ -243,6 +246,7 @@ class RaesOperationInput:
     egress_mode: str
     _image_candidates: dict[str, tuple[dict[str, Any], ...]]
     runtime_plugin: RuntimePluginPin | None = None
+    model_enrollments: tuple[ModelGuestBinding, ...] = ()
 
     def artifact_binding_for(self, target: str) -> ArtifactBinding | None:
         """Return the fenced artifact binding for a node address, or None.
@@ -442,6 +446,30 @@ def _validated_candidates(value: object) -> dict[str, tuple[dict[str, Any], ...]
     return projected
 
 
+def _model_enrollments(obj, plugin) -> tuple[ModelGuestBinding, ...]:
+    try:
+        rows = obj.get("model_enrollments", [])
+        if not isinstance(rows, list) or len(rows) > 16:
+            raise ValueError
+        bindings = tuple(ModelGuestBinding.model_validate(row) for row in rows)
+        if len({row.allocation_id for row in bindings}) != len(bindings):
+            raise ValueError
+        if len({row.workload_role for row in bindings}) != len(bindings):
+            raise ValueError
+        for row in bindings:
+            if plugin is None:
+                raise ValueError
+            name = plugin.manifest.model_bindings[row.workload_role]
+            if row.target_address != plugin.bindings.targets[name]:
+                raise ValueError
+            guest = obj["plan"]["resources"][row.target_address]["payload"]
+            if guest["os_family"] != "linux":
+                raise ValueError
+        return bindings
+    except (ValueError, KeyError, TypeError):
+        raise RaesOperationInputError("raes model enrollment binding is invalid") from None
+
+
 def parse_raes_operation_input(payload: object) -> RaesOperationInput:
     """Validate an RAES operation-input payload and return the parsed projection.
 
@@ -470,6 +498,7 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
         egress_mode=_validated_egress_mode(obj.get("egress_mode")),
         _image_candidates=_validated_candidates(obj["image_candidates"]),
         runtime_plugin=plugin,
+        model_enrollments=_model_enrollments(obj, plugin),
     )
 
 
@@ -508,5 +537,7 @@ def build_raes_operation_input(
         payload["artifact_bindings"] = [binding.to_transport() for binding in bindings.artifact]
     if bindings.runtime_plugin is not None:
         payload["runtime_plugin"] = bindings.runtime_plugin.model_dump(mode="json")
+    if bindings.model_enrollments:
+        payload["model_enrollments"] = [row.model_dump(mode="json") for row in bindings.model_enrollments]
     parse_raes_operation_input(payload)
     return payload

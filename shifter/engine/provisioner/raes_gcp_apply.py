@@ -96,6 +96,7 @@ class RaesGceApplyOptions:
     operating_system_observer: Callable[..., list[dict[str, str]]] = observe_operating_systems
     substrate_observer: Callable[..., list[dict[str, str]]] = observe_gce_substrates
     runtime_plugin: Callable[..., None] | None = None
+    model_enrollment: Callable[..., None] | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,7 @@ class _RaesGceApplyRuntime:
     substrate_observer: Callable[..., list[dict[str, str]]]
     allocated_network_cidr: str | None
     runtime_plugin: Callable[..., None] | None
+    model_enrollment: Callable[..., None] | None
 
 
 def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
@@ -133,6 +135,7 @@ def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
         substrate_observer=options.substrate_observer,
         allocated_network_cidr=options.allocated_network_cidr,
         runtime_plugin=options.runtime_plugin,
+        model_enrollment=options.model_enrollment,
     )
 
 
@@ -458,6 +461,8 @@ def apply_raes_range_cell(
         )
         verified = set(_realize_directory(plan, raes_plan, instance_outputs, runtime))
         verified.update(_realize_content_delivery(raes_plan, instance_outputs, delivery_bindings, runtime))
+        if runtime.model_enrollment is not None:
+            runtime.model_enrollment(raes_plan, instance_outputs)
         if runtime.runtime_plugin is not None:
             runtime.runtime_plugin(raes_plan, instance_outputs)
         verified.update(runtime.composition_verifier(raes_plan, instance_outputs))

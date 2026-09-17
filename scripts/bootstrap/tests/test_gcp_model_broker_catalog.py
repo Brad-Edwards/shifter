@@ -37,6 +37,27 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
         "trust_configmap_name": "model-ca-v1",
         "model_projects": {"models-example": "model-invoke"},
     }
+    ca_path = tmp_path / "broker-ca.pem"
+    subprocess.run(
+        [
+            "/usr/bin/openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(tmp_path / "test-key.pem"),
+            "-out",
+            str(ca_path),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=Example test CA",
+        ],
+        check=True,
+        capture_output=True,
+    )
     runtime = {
         "provider_inventory": {
             "contract_version": "model-broker-providers/v1",
@@ -56,6 +77,7 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
         },
         "fingerprint_secret_name": "broker-fingerprint-v1",
         "fingerprint_key_version": "v1",
+        "guest_trust_ca_pem": ca_path.read_text(),
         "fingerprint_previous_secret_name": "broker-fingerprint-retained",
     }
     root_path = tmp_path / "shifter.yaml"
@@ -184,6 +206,17 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
     )
     assert broker_deployment["spec"]["replicas"] == (2 if enabled else 0)
     if enabled:
+        import base64
+
+        runtime_config = next(
+            doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "platform-runtime"
+        )
+        assert runtime_config["data"]["MODEL_BROKER_GUEST_URL"] == "https://models.example.test"
+        assert base64.b64decode(runtime_config["data"]["MODEL_ENROLLMENT_CA_PEM_B64"]).decode() == ca_path.read_text()
+        assert (
+            runtime_config["data"]["MODEL_ENROLLMENT_CONTROL_URL"]
+            == "https://model-access-control.shifter-platform.svc:8444"
+        )
         broker_pod = broker_deployment["spec"]["template"]["spec"]
         secret_names = {volume["secret"]["secretName"] for volume in broker_pod["volumes"] if "secret" in volume}
         assert {"broker-fingerprint-v1", "broker-fingerprint-retained"} <= secret_names

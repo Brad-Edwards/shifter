@@ -9,11 +9,11 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from shared.model_access.provider_runtime import ProviderTarget
 from model_broker.provider_usage import StreamUsage, bedrock_events, usage_from_message, vertex_events
 from model_broker.providers import MessagesProvider
 from shared.model_access import ContractError
 from shared.model_access.messages import parse_messages
+from shared.model_access.provider_runtime import ProviderTarget
 from tests.engine.services.test_model_request_accounting import _limits
 
 pytestmark = pytest.mark.asyncio

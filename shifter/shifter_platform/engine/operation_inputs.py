@@ -187,16 +187,19 @@ def _raes_input_payload(target: Range, request: Request, *, suppress_access: boo
     access; warm activation later carries the access bindings and realizes the
     claimant's fresh access.
     """
+    from engine.services._model_guest_bindings import project_model_guest_bindings
     from engine.services._runtime_plugin_bindings import retained_runtime_plugin_pin
 
     plan = target.range_config or {}
+    pin = retained_runtime_plugin_pin(target)
     return build_raes_operation_input(
         plan=plan,
         bindings=RaesInputBindings(
             delivery=_raes_delivery_bindings(target),
             access=() if suppress_access else _raes_access_bindings(target),
             artifact=_raes_artifact_bindings(target),
-            runtime_plugin=retained_runtime_plugin_pin(target),
+            runtime_plugin=pin,
+            model_enrollments=project_model_guest_bindings(target, pin) if not suppress_access else (),
         ),
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),

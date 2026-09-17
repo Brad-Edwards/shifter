@@ -2430,6 +2430,48 @@
           "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
+          "description": "Public GCP runtime configuration value (MODEL_BROKER_GUEST_URL) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_GUEST_URL",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (MODEL_ENROLLMENT_CA_PEM_B64) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_ENROLLMENT_CA_PEM_B64",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (MODEL_ENROLLMENT_CONTROL_URL) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_ENROLLMENT_CONTROL_URL",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public GCP runtime configuration value (PORTAL_NETWORK_CIDRS) emitted into the platform runtime environment.",
           "destination": "runtime-env",
           "kind": "runtime-env",
@@ -3580,6 +3622,12 @@
               "fingerprint_secret_name": {
                 "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
                 "title": "Fingerprint Secret Name",
+                "type": "string"
+              },
+              "guest_trust_ca_pem": {
+                "default": "",
+                "maxLength": 16384,
+                "title": "Guest Trust Ca Pem",
                 "type": "string"
               },
               "provider_inventory": {

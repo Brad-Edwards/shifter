@@ -5,6 +5,7 @@ export interface AdapterManifestPreview {
   readonly protocol: string;
   readonly worker_image: string;
   readonly capabilities: string[];
+  readonly model_bindings?: Readonly<Record<string, string>>;
 }
 
 export function manifestPreview(value: unknown): AdapterManifestPreview | null {
@@ -15,5 +16,8 @@ export function manifestPreview(value: unknown): AdapterManifestPreview | null {
   if (!Array.isArray(record.capabilities) || record.capabilities.some((item) => typeof item !== "string")) {
     return null;
   }
+  if (record.model_bindings !== undefined && (typeof record.model_bindings !== "object"
+    || record.model_bindings === null || Array.isArray(record.model_bindings)
+    || Object.values(record.model_bindings).some((binding) => typeof binding !== "string"))) return null;
   return record as unknown as AdapterManifestPreview;
 }

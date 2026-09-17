@@ -78,14 +78,15 @@ def _resolver(node):
     return GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1")
 
 
-def test_plugin_failure_enters_resource_and_secret_cleanup_before_readiness():
+@pytest.mark.parametrize("phase", ["runtime_plugin", "model_enrollment"])
+def test_plugin_failure_enters_resource_and_secret_cleanup_before_readiness(phase):
     from runtime_plugin_execution import RuntimePluginExecutionError
 
     clients = _clients(exists=True)
     secrets, secret_calls = _secret_ops()
     plugin = MagicMock(side_effect=RuntimePluginExecutionError("Runtime plugin guest execution failed"))
     composition = MagicMock()
-    options = _apply_options(_config(), clients, secrets, runtime_plugin=plugin, composition_verifier=composition)
+    options = _apply_options(_config(), clients, secrets, **{phase: plugin}, composition_verifier=composition)
     with pytest.raises(RuntimePluginExecutionError):
         apply_raes_range_cell("req-plugin", 7, _plan(), _resolver, options)
     assert clients.instances.delete.call_count == 2

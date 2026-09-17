@@ -16,7 +16,7 @@ const adapter: Adapter = {
   has_registry_credentials: false,
   manifest: { plugin_id: "example.adapter", version: "2", protocol: "shifter.runtime-plugin/v1",
     worker_image: "registry.example.test/image@sha256:digest", capabilities: ["guest.configure", "guest.verify"],
-    required_bindings: ["server"], required_parameters: ["mode"] },
+    required_bindings: ["server"], required_parameters: ["mode"], model_bindings: { participant: "server" } },
 };
 const digest = `sha256:${"a".repeat(64)}`;
 const pack = { id: "example", name: "Example pack", pack_digest: digest, binding: null };
@@ -40,6 +40,7 @@ describe("pack adapter assignments", () => {
   it("provides accessible guest selectors and confirms the exact pack version before saving", async () => {
     const { container } = renderRoute(<AdapterPackBindings organization="org-1" adapters={[adapter]} />);
     await fillAssignment();
+    expect(screen.getByText(/Model access for participant will be delivered to node.web/)).toBeInTheDocument();
     const accessibility = await axe(container, { rules: { "color-contrast": { enabled: false } } });
     expect(accessibility.violations).toEqual([]);
     expect(mockApi.mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);

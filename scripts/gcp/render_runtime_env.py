@@ -537,6 +537,11 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values.update(_email_runtime_values(outputs))
     values.update(_optional_gce_range_values())
     values.update(_ctf_content_runtime_values(outputs))
+    # Populated from validated broker projection after this common renderer;
+    # empty values revoke stale coordinates when the broker is disabled.
+    values["MODEL_BROKER_GUEST_URL"] = ""
+    values["MODEL_ENROLLMENT_CONTROL_URL"] = ""
+    values["MODEL_ENROLLMENT_CA_PEM_B64"] = ""
     values.update(_model_access_runtime_values())
     values.update(_mission_control_lease_runtime_values())
     # These references originate in the same validated shifter.yaml map that

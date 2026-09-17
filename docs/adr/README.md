@@ -649,3 +649,13 @@ bindings. GCP deployment cleanup also removes the narrowly scoped provisioner-to
 control enrollment egress policy. Standby infrastructure renders zero broker and
 control replicas until model access is enabled; no executable deployment or cloud
 qualification is implied by rendering. See [model access operations](../ops/model-access.md).
+
+Guest model enrollment is projected as allocation/role/target identities alongside
+an immutable operation input. The tenant-approved adapter manifest declares role
+bindings; only Engine's admitted allocations can populate them. A trusted SSH
+stdin channel delivers a one-use token after realization, and Linux tmpfs holds
+the guest's rotating broker tokens. GCP provisioner admission now permits three
+non-secret enrollment coordinate/trust values only when they exactly match the
+runtime ConfigMap. The broker renderer supplies those values for both Helm and
+Actions. Real TLS helper tests cover trust failure, redirect refusal, state-file
+permissions and serialized refresh. AWS SSM does not qualify as secret delivery.

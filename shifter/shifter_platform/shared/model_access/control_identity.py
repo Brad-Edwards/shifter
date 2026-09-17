@@ -7,8 +7,6 @@ import json
 import re
 from datetime import UTC, datetime
 
-from defusedxml import ElementTree
-
 from shared.model_access import ContractError
 from shared.model_access.messages import strict_json
 
@@ -53,6 +51,8 @@ def verify_aws_control_assertion(
     now: datetime | None = None,
 ) -> None:
     """Replay only a fixed, bounded signed STS call; never a caller URL or body."""
+    from defusedxml import ElementTree
+
     try:
         if not assertion.startswith("AWS-STS ") or len(assertion) > 12_000:
             raise ValueError

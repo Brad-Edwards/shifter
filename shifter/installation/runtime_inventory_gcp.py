@@ -10,6 +10,9 @@ from __future__ import annotations
 
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "ACCESS_NETWORK_CIDRS",
         "APP_SECRET_ID",
         "AUDIT_DEPLOYMENT_SCOPE",
@@ -156,6 +159,9 @@ GCP_SECRET_RUNTIME_ENV_KEYS: frozenset[str] = frozenset()
 # range-task for the ``GCP_RANGE_*`` guest-configuration keys among them).
 GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "ACCESS_NETWORK_CIDRS",
         "AGENT_STORAGE_BUCKET",
         "CLOUD_PROJECT_ID",

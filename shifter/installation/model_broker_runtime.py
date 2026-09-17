@@ -1,8 +1,10 @@
 """Non-secret broker execution configuration, separate from infrastructure state."""
 
+import base64
 import json
+import ssl
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from shared.model_access import load_catalog_json
 from shared.model_access.core_models import Identifier
 from shared.model_access.provider_runtime import ProviderInventory
@@ -18,6 +20,18 @@ class ModelBrokerRuntimeSettings(BaseModel):
     fingerprint_secret_name: ResourceName
     fingerprint_key_version: Identifier
     fingerprint_previous_secret_name: ResourceName = ""
+    guest_trust_ca_pem: str = Field(default="", max_length=16384)
+
+    @field_validator("guest_trust_ca_pem")
+    @classmethod
+    def validate_guest_ca(cls, value):
+        if value:
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                context.load_verify_locations(cadata=value)
+            except (ValueError, ssl.SSLError):
+                raise ValueError("guest trust requires a PEM CA certificate") from None
+        return value
 
 
 def project_broker_runtime(value, *, catalog_json, provider, model_identities=None):
@@ -43,8 +57,20 @@ def project_broker_runtime(value, *, catalog_json, provider, model_identities=No
         prices = {price.component: price.price_micro_units for price in schedules[alias.price_schedule_id].prices}
         if not {"input_tokens", "output_tokens", "request"}.issubset(prices) or prices["request"] != 0:
             raise ValueError("Messages delivery needs input/output prices and free token-count request pricing")
-    result = settings.model_dump(mode="json", exclude={"provider_inventory"})
+    result = settings.model_dump(mode="json", exclude={"provider_inventory", "guest_trust_ca_pem"})
     result["providers_json"] = json.dumps(
         settings.provider_inventory.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     )
     return result
+
+
+def project_enrollment_env(runtime_settings, *, hostname):
+    """Public TLS trust and fixed private service coordinates; no capabilities."""
+    ca = ModelBrokerRuntimeSettings.model_validate(runtime_settings).guest_trust_ca_pem
+    if not ca:
+        return {}
+    return {
+        "MODEL_BROKER_GUEST_URL": f"https://{hostname}",
+        "MODEL_ENROLLMENT_CONTROL_URL": "https://model-access-control.shifter-platform.svc:8444",
+        "MODEL_ENROLLMENT_CA_PEM_B64": base64.b64encode(ca.encode("ascii")).decode("ascii"),
+    }

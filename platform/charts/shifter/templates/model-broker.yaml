@@ -11,7 +11,7 @@
 {{- $_ := required (printf "modelBroker.%s is required" $key) (index $b $key) }}
 {{- end }}
 {{- if not $b.admitted_subnets }}{{ fail "modelBroker.admitted_subnets is required" }}{{ end }}
-{{- if gt (add (len $b.catalog_json) (len $b.identities_json) (len $b.providers_json)) 98304 }}
+{{- if gt (add (len $b.catalog_json) (len $b.identities_json) (len $b.providers_json) (len (toJson $b.enrollment_env))) 98304 }}
 {{- fail "model broker ConfigMap transport exceeds its 96 KiB payload budget" }}
 {{- end }}
 {{- if eq $b.tls_secret_name $b.control_tls_secret_name }}
@@ -54,6 +54,7 @@ metadata:
 data:
   catalog.json: {{ $b.catalog_json | quote }}
   identities.json: {{ $b.identities_json | quote }}
+  enrollment.json: {{ toJson $b.enrollment_env | quote }}
   providers.json: {{ default "{}" $b.providers_json | quote }}
 ---
 apiVersion: apps/v1

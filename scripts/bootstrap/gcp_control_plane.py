@@ -691,14 +691,16 @@ def render_gcp_helm_values(
     # the range-access egress policy unrendered.
     range_access_cidrs = _unique_nonempty_strings([str(_get_output_value(outputs, "range_network_cidr")).strip()])
 
+    broker = project_model_broker(
+        outputs.get("model_broker", {}).get("value"),
+        catalog_json=artifacts.model_access_catalog_json,
+        model_access_env=artifacts.model_access_env,
+        runtime_settings=artifacts.model_broker_runtime,
+    )
+    runtime_env.update(broker.get("enrollment_env", {}))
     return {
         "releaseNamespace": "shifter-system",
-        "modelBroker": project_model_broker(
-            outputs.get("model_broker", {}).get("value"),
-            catalog_json=artifacts.model_access_catalog_json,
-            model_access_env=artifacts.model_access_env,
-            runtime_settings=artifacts.model_broker_runtime,
-        ),
+        "modelBroker": broker,
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
         # Reference only: the guacamole-runtime Kubernetes Secret is synced out

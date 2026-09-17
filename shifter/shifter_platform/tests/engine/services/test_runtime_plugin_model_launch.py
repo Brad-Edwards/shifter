@@ -42,6 +42,7 @@ def _prepared_plugin_launch(django_user_model):
             "worker_image": "registry.example.test/adapter@sha256:" + "a" * 64,
             "capabilities": ["guest.configure", "guest.verify"],
             "required_bindings": ["server"],
+            "model_bindings": {"participant": "server"},
         },
     )
     RuntimePluginInstallation.objects.filter(pk=installed.id).update(state="ready")
@@ -73,7 +74,15 @@ def test_model_grant_and_plugin_invocations_use_the_same_committed_generation(dj
     allocation = ModelAllocation.objects.get()
     assert allocation.operation_id == intent.operation_id
     assert allocation.grant.state == "pending"
-    assert OperationInput.objects.filter(operation_id=intent.operation_id).exists()
+    projected = OperationInput.objects.get(operation_id=intent.operation_id).envelope["payload"]
+    assert projected["model_enrollments"] == [
+        {
+            "allocation_id": str(allocation.pk),
+            "workload_role": "participant",
+            "target_address": "node.web",
+        }
+    ]
+    assert "token" not in str(projected["model_enrollments"])
     invocations = RuntimePluginInvocation.objects.all()
     assert set(invocations.values_list("phase", flat=True)) == {"validate", "configure", "verify"}
     assert set(invocations.values_list("operation_id", flat=True)) == {intent.operation_id}
@@ -91,7 +100,9 @@ def test_rejected_launch_rolls_back_grant_input_intent_and_plugin_work(django_us
         # represent this OS. Rejection occurs after allocation in the same txn.
         target.range_config["resources"]["node.web"]["payload"]["os_family"] = "unsupported"
         target.save(update_fields=["range_config"])
-        error = ValueError
+        from shared.raes.operation_input import RaesOperationInputError
+
+        error = RaesOperationInputError
     with pytest.raises(error):
         enqueue_provisioner_launch(["raes-range", "provision", "--request-id", str(request.request_id)])
     assert not ModelAllocation.objects.exists()
@@ -101,3 +112,20 @@ def test_rejected_launch_rolls_back_grant_input_intent_and_plugin_work(django_us
     assert not RuntimePluginInvocation.objects.exists()
     target.refresh_from_db()
     assert target.provisioner_operation_id is None
+
+
+@pytest.mark.parametrize("fault", ["target", "role", "duplicate", "allocation"])
+def test_guest_enrollment_projection_rejects_foreign_or_ambiguous_bindings(django_user_model, fault):
+    from shared.raes.operation_input import RaesOperationInputError, parse_raes_operation_input
+
+    request, _ = _prepared_plugin_launch(django_user_model)
+    enqueue_provisioner_launch(["raes-range", "provision", "--request-id", str(request.request_id)])
+    payload = OperationInput.objects.get().envelope["payload"]
+    row = payload["model_enrollments"][0]
+    if fault == "duplicate":
+        payload["model_enrollments"].append(dict(row))
+    else:
+        field = {"target": "target_address", "role": "workload_role", "allocation": "allocation_id"}[fault]
+        row[field] = "foreign"
+    with pytest.raises(RaesOperationInputError):
+        parse_raes_operation_input(payload)

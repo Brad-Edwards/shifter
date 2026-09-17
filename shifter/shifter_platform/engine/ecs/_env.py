@@ -22,6 +22,9 @@ from django.conf import settings
 from installation.runtime_inventory import AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
 
 _GCP_PROVISIONER_ENV_KEYS = (
+    "MODEL_BROKER_GUEST_URL",
+    "MODEL_ENROLLMENT_CONTROL_URL",
+    "MODEL_ENROLLMENT_CA_PEM_B64",
     "CLOUD_PROVIDER",
     "ENVIRONMENT",
     "CLOUD_REGION",
