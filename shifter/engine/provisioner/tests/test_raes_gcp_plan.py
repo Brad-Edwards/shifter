@@ -262,6 +262,25 @@ class TestInstances:
         assert instance["host_ssh_username"] == "ubuntu"
         assert instance["ssh_port"] == 2200
 
+    def test_prepromoted_dc_is_driven_as_windows_administrator(self):
+        """A promoted DC has no local SAM, so raes@22 is refused.
+
+        Guest setup connects as the built-in domain Administrator, authorized via
+        the Windows boot script's administrators_authorized_keys.
+        """
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/polaris-dc",
+            bootstrap_capability="prepromoted-domain-controller",
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(os_family="windows"),), (_network(),)), _resolver(profile), _config()
+        )
+        instance = plan["instances"][0]
+        assert instance["host_ssh_username"] == "Administrator"
+        assert instance["ssh_port"] == 22
+        # The DC holds no attached identity; only the polaris docker-host does.
+        assert instance["attach_service_account"] is False
+
     def test_preconfigured_machine_host_is_rejected_before_raes_realization(self):
         """RAES cannot publish READY without the participant image canary."""
         profile = GCERangeImageProfile(

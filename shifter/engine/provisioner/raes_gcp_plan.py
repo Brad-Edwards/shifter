@@ -28,6 +28,7 @@ from typing import cast
 from config import (
     GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+    GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCERangeCellConfig,
     GCERangeImageProfile,
     gce_image_profile_fingerprint,
@@ -77,6 +78,15 @@ _DEFAULT_SSH_PORT = 22
 #: it lands on the container's sshd / a closed port. Mirrors the legacy
 #: gcp_range_cell_scenario docker-host access model on the RAES-native path.
 _DOCKER_HOST_SSH_USERNAME = "ubuntu"
+
+#: A prepromoted-domain-controller guest is a pre-baked Windows DC. Its accounts
+#: are domain accounts (a promoted DC has no local SAM), so the GCE guest agent
+#: cannot create the "raes" local user the standard RAES node setup connects as,
+#: and raes@22 is refused. The Windows boot script authorizes the provisioner key
+#: via ``administrators_authorized_keys`` (any Administrators-group member), so
+#: guest setup connects as the built-in domain "Administrator". Mirrors the legacy
+#: get_ssh_username(role="dc") host access on the RAES-native path.
+_WINDOWS_DC_ADMIN_USERNAME = "Administrator"
 
 
 class RaesGcePlanError(RuntimeError):
@@ -407,6 +417,9 @@ def _instance_plans_for_node(
     if is_polaris_host:
         host_ssh_username = _DOCKER_HOST_SSH_USERNAME
         host_ssh_port = config.host_mgmt_ssh_port
+    elif profile.bootstrap_capability == GCE_BOOTSTRAP_PREPROMOTED_DC:
+        host_ssh_username = _WINDOWS_DC_ADMIN_USERNAME
+        host_ssh_port = _DEFAULT_SSH_PORT
     else:
         host_ssh_username = _DEFAULT_SSH_USERNAME
         host_ssh_port = _DEFAULT_SSH_PORT
