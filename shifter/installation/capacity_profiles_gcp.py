@@ -8,7 +8,6 @@ only non-secret deployment policy.
 
 from __future__ import annotations
 
-import re
 from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -25,10 +24,14 @@ KubernetesQuantity = Annotated[str, Field(pattern=_K8S_QUANTITY)]
 
 
 class _ClosedModel(BaseModel):
+    """Immutable base model that rejects undeclared capacity fields."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class ResourceQuantity(_ClosedModel):
+    """CPU, memory, and ephemeral-storage quantities for one resource scope."""
+
     cpu: KubernetesQuantity
     memory: KubernetesQuantity
     ephemeral_storage: KubernetesQuantity = "256Mi"
@@ -42,6 +45,8 @@ class ResourceQuantity(_ClosedModel):
 
 
 class WorkloadResources(_ClosedModel):
+    """Kubernetes request and limit quantities for one workload container."""
+
     requests: ResourceQuantity
     limits: ResourceQuantity
 
@@ -50,6 +55,8 @@ class WorkloadResources(_ClosedModel):
 
 
 class AutoscalingPolicy(_ClosedModel):
+    """Horizontal pod autoscaling bounds and stabilization policy."""
+
     enabled: bool = True
     min_replicas: int = Field(ge=1)
     max_replicas: int = Field(ge=1)
@@ -73,6 +80,8 @@ class AutoscalingPolicy(_ClosedModel):
 
 
 class PortalCapacity(_ClosedModel):
+    """Portal replicas, process concurrency, resources, and autoscaling policy."""
+
     replicas: int = Field(ge=1)
     resources: WorkloadResources
     web_workers: int = Field(ge=1, le=32)
@@ -81,12 +90,16 @@ class PortalCapacity(_ClosedModel):
 
 
 class GuacdCapacity(_ClosedModel):
+    """Guacd replicas, resources, and autoscaling policy."""
+
     replicas: int = Field(ge=1)
     resources: WorkloadResources
     autoscaling: AutoscalingPolicy
 
 
 class GuacamoleClientCapacity(_ClosedModel):
+    """Guacamole web client resources and database connection ceiling."""
+
     replicas: Literal[1] = 1
     resources: WorkloadResources
     jdbc_pool_active_connections: Literal[10] = 10
@@ -94,6 +107,8 @@ class GuacamoleClientCapacity(_ClosedModel):
 
 
 class CloudSqlCapacity(_ClosedModel):
+    """Cloud SQL sizing, availability, connection, and utilization limits."""
+
     tier: str = Field(pattern=r"^db-custom-[1-9][0-9]*-[1-9][0-9]*$")
     availability_type: Literal["ZONAL", "REGIONAL"]
     disk_size_gb: int = Field(ge=20, description="Minimum disk size; Cloud SQL storage is non-shrinking")
@@ -103,6 +118,8 @@ class CloudSqlCapacity(_ClosedModel):
 
 
 class RedisCapacity(_ClosedModel):
+    """Memorystore sizing, availability, connection, and utilization limits."""
+
     tier: Literal["BASIC", "STANDARD_HA"]
     memory_size_gb: int = Field(ge=1)
     connection_budget: int = Field(ge=20)
@@ -110,6 +127,8 @@ class RedisCapacity(_ClosedModel):
 
 
 class AccessNodeCapacity(_ClosedModel):
+    """GKE access-node machine type and autoscaling bounds."""
+
     machine_type: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
     minimum_nodes: int = Field(ge=1)
     maximum_nodes: int = Field(ge=1)
@@ -122,6 +141,8 @@ class AccessNodeCapacity(_ClosedModel):
 
 
 class TimeoutCapacity(_ClosedModel):
+    """Coordinated backend, WebSocket, process, pod, and drain timeouts."""
+
     portal_backend_seconds: int = Field(ge=60)
     guacamole_backend_seconds: int = Field(ge=60)
     websocket_ping_interval_seconds: int = Field(ge=5)
@@ -132,6 +153,8 @@ class TimeoutCapacity(_ClosedModel):
 
 
 class GateCapacity(_ClosedModel):
+    """Public-path load target and pass/fail thresholds for an event tier."""
+
     concurrency: int = Field(ge=1)
     ramp_seconds: int = Field(ge=0)
     hold_seconds: int = Field(ge=60)
@@ -146,6 +169,8 @@ class GateCapacity(_ClosedModel):
 
 
 class GcpSharedServiceCapacityProfile(_ClosedModel):
+    """Immutable cross-layer capacity contract for one GCP event tier."""
+
     profile_id: CapacityProfileId
     participant_count: Literal[10, 30, 50, 100]
     portal: PortalCapacity
@@ -159,31 +184,12 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
 
     @model_validator(mode="after")
     def validate_coupled_limits(self) -> GcpSharedServiceCapacityProfile:
-        expected_count = int(re.search(r"p([0-9]+)$", self.profile_id).group(1))  # type: ignore[union-attr]
-        if expected_count != self.participant_count or self.gate.concurrency != self.participant_count:
-            raise ValueError("profile identity, participant count, and gate concurrency must agree")
-        if self.portal.autoscaling.min_replicas != self.portal.replicas:
-            raise ValueError("portal minimum replicas must carry the gate before autoscaling")
-        if self.guacd.autoscaling.min_replicas != self.guacd.replicas:
-            raise ValueError("guacd minimum replicas must carry the gate before autoscaling")
-        cadence = self.timeouts.websocket_ping_interval_seconds + self.timeouts.websocket_ping_timeout_seconds
-        if cadence >= min(self.timeouts.portal_backend_seconds, self.timeouts.guacamole_backend_seconds):
-            raise ValueError("WebSocket cadence must remain below both public backend timeouts")
-        if self.timeouts.pod_termination_grace_seconds < self.timeouts.connection_draining_seconds:
-            raise ValueError("pod termination grace must cover connection draining")
-        if self.timeouts.pod_termination_grace_seconds <= self.timeouts.process_graceful_timeout_seconds:
-            raise ValueError("pod termination grace must exceed the process graceful timeout")
-        portal_contexts = self.portal.replicas * (self.portal.web_workers + self.portal.bootstrap_workers)
-        required_sql = (
-            portal_contexts + self.guacamole_client.jdbc_pool_active_connections + self.cloud_sql.reserved_connections
-        )
-        if self.cloud_sql.connection_budget < required_sql:
-            raise ValueError("SQL connection budget does not cover portal, Guacamole, and reserve contexts")
-        required_redis = self.portal.replicas * self.portal.web_workers * 2
-        if self.redis.connection_budget < required_redis:
-            raise ValueError("Redis connection budget does not cover portal processes and reconnect headroom")
-        if self.gate.required_guacd_replicas > self.guacd.replicas:
-            raise ValueError("gate requires more guacd replicas than the ready minimum")
+        """Validate invariants that couple otherwise independent profile sections."""
+        _validate_profile_identity(self)
+        _validate_ready_replica_floors(self)
+        _validate_timeout_ordering(self)
+        _validate_connection_budgets(self)
+        _validate_gate_replica_floor(self)
         return self
 
     def terraform_projection(self) -> dict[str, object]:
@@ -303,7 +309,54 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
         }
 
 
+def _validate_profile_identity(profile: GcpSharedServiceCapacityProfile) -> None:
+    """Require the profile suffix, participant count, and gate target to agree."""
+    expected_count = int(profile.profile_id.rsplit("p", 1)[1])
+    if expected_count != profile.participant_count or profile.gate.concurrency != profile.participant_count:
+        raise ValueError("profile identity, participant count, and gate concurrency must agree")
+
+
+def _validate_ready_replica_floors(profile: GcpSharedServiceCapacityProfile) -> None:
+    """Require ready replicas to carry the gate before autoscaling reacts."""
+    if profile.portal.autoscaling.min_replicas != profile.portal.replicas:
+        raise ValueError("portal minimum replicas must carry the gate before autoscaling")
+    if profile.guacd.autoscaling.min_replicas != profile.guacd.replicas:
+        raise ValueError("guacd minimum replicas must carry the gate before autoscaling")
+
+
+def _validate_timeout_ordering(profile: GcpSharedServiceCapacityProfile) -> None:
+    """Require heartbeat, drain, process, and pod timeouts to remain ordered."""
+    timeouts = profile.timeouts
+    cadence = timeouts.websocket_ping_interval_seconds + timeouts.websocket_ping_timeout_seconds
+    if cadence >= min(timeouts.portal_backend_seconds, timeouts.guacamole_backend_seconds):
+        raise ValueError("WebSocket cadence must remain below both public backend timeouts")
+    if timeouts.pod_termination_grace_seconds < timeouts.connection_draining_seconds:
+        raise ValueError("pod termination grace must cover connection draining")
+    if timeouts.pod_termination_grace_seconds <= timeouts.process_graceful_timeout_seconds:
+        raise ValueError("pod termination grace must exceed the process graceful timeout")
+
+
+def _validate_connection_budgets(profile: GcpSharedServiceCapacityProfile) -> None:
+    """Require SQL and Redis budgets to cover all configured process contexts."""
+    portal_contexts = profile.portal.replicas * (profile.portal.web_workers + profile.portal.bootstrap_workers)
+    required_sql = (
+        portal_contexts + profile.guacamole_client.jdbc_pool_active_connections + profile.cloud_sql.reserved_connections
+    )
+    if profile.cloud_sql.connection_budget < required_sql:
+        raise ValueError("SQL connection budget does not cover portal, Guacamole, and reserve contexts")
+    required_redis = profile.portal.replicas * profile.portal.web_workers * 2
+    if profile.redis.connection_budget < required_redis:
+        raise ValueError("Redis connection budget does not cover portal processes and reconnect headroom")
+
+
+def _validate_gate_replica_floor(profile: GcpSharedServiceCapacityProfile) -> None:
+    """Require the public-path gate to demand no more guacd pods than ready."""
+    if profile.gate.required_guacd_replicas > profile.guacd.replicas:
+        raise ValueError("gate requires more guacd replicas than the ready minimum")
+
+
 def _resources(request_cpu: str, request_memory: str, limit_cpu: str, limit_memory: str) -> WorkloadResources:
+    """Build one workload resource request/limit pair."""
     return WorkloadResources(
         requests=ResourceQuantity(cpu=request_cpu, memory=request_memory),
         limits=ResourceQuantity(cpu=limit_cpu, memory=limit_memory),
@@ -311,6 +364,7 @@ def _resources(request_cpu: str, request_memory: str, limit_cpu: str, limit_memo
 
 
 def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityProfile:
+    """Build one immutable catalog entry from its supported participant tier."""
     sizes = {
         10: (2, 1, 2, 4, "db-custom-2-7680", "ZONAL", 2, 100),
         30: (5, 2, 3, 8, "db-custom-4-15360", "REGIONAL", 8, 200),
@@ -398,6 +452,7 @@ CAPACITY_PROFILES: dict[CapacityProfileId, GcpSharedServiceCapacityProfile] = {
 
 
 def resolve_capacity_profile(profile_id: str) -> GcpSharedServiceCapacityProfile:
+    """Resolve one known profile id or fail closed with the supported catalog."""
     try:
         return CAPACITY_PROFILES[profile_id]  # type: ignore[index]
     except KeyError as exc:
