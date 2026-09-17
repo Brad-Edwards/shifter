@@ -166,6 +166,11 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | secret | no | Comma-separated list of emails elevated to `is_superuser`. |
 | `SMOKE_TEST_USER_EMAIL` | secret | no | Post-deploy smoke user for the advisory `post-deploy-smoke` job. Same contract as AWS dev smoke; see [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
 
+The prepare job scopes its shared preflight to the deployment Environment. The
+exact-release scanner validates `GCP_RELEASE_SCAN_SERVICE_ACCOUNT` and its WIF
+provider inside the separate `gcp-release-scan-<deployment>` Environment, so
+the scanner identity never has to be copied into the deploy Environment.
+
 `SHIFTER_CONFIG_GCP_DEV` is also required by both deploy and destroy. Its GCP
 settings must include `dynamic_secret_project_id`; no separate GitHub variable
 or tfvars override owns that value. The project is a pre-existing,

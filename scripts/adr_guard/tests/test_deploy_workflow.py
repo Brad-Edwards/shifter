@@ -212,15 +212,22 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul"}
 
     @classmethod
     def setUpClass(cls):
         cls.deploy = _load("deploy.yml")
+        cls.gcp = _load("_gcp-dev.yml")
         cls.script = ADR_GUARD._dw_extract_set_environment_script(cls.deploy)
 
-    def env(self, event_name, ref="", base_ref=""):
-        return ADR_GUARD._dw_evaluate_env(self.script, event_name, ref=ref, base_ref=base_ref)
+    def env(self, event_name, ref="", base_ref="", environment_input=""):
+        return ADR_GUARD._dw_evaluate_env(
+            self.script,
+            event_name,
+            ref=ref,
+            base_ref=base_ref,
+            environment_input=environment_input,
+        )
 
     def test_push_never_deploys(self):
         for ref in ("refs/heads/dev", "refs/heads/main"):
@@ -259,6 +266,43 @@ class TestManualDeployDispatch(unittest.TestCase):
         env_input = self.deploy["on"]["workflow_dispatch"]["inputs"]["environment"]
         self.assertEqual(env_input["type"], "choice")
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
+
+    def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
+        for environment in ("gcp-dev", "nazgul"):
+            with self.subTest(environment=environment):
+                out = self.env(
+                    "workflow_dispatch",
+                    ref=f"refs/heads/{environment}",
+                    environment_input=environment,
+                )
+
+                self.assertEqual(out["gcp_environment"], environment)
+                self.assertEqual(out["gcp_github_environment"], environment)
+                expected_scan_environment = f"gcp-release-scan-{environment.removeprefix('gcp-')}"
+                self.assertEqual(
+                    out["gcp_release_scan_github_environment"],
+                    expected_scan_environment,
+                )
+                self.assertEqual(out["run_gcp"], "true")
+                self.assertEqual(out["deploy_gcp"], "true")
+
+    def test_gcp_reusable_workflow_uses_selected_scanner_environment(self):
+        call = self.deploy["jobs"]["gcp-dev"]["with"]
+        self.assertEqual(
+            call["release_scan_github_environment"],
+            "${{ needs.changes.outputs.gcp_release_scan_github_environment }}",
+        )
+        self.assertEqual(
+            self.gcp["jobs"]["release_scan"]["environment"],
+            "${{ inputs.release_scan_github_environment }}",
+        )
+
+    def test_gcp_identity_jobs_accept_inventory_variable_bindings(self):
+        for job_id in ("prepare", "release_scan", "deploy", "post-deploy-smoke"):
+            with self.subTest(job=job_id):
+                rendered = str(self.gcp["jobs"][job_id])
+                self.assertIn("vars.GCP_WIF_PROVIDER", rendered)
+                self.assertIn("vars.GCP_SERVICE_ACCOUNT", rendered)
 
     def test_deploy_jobs_stay_pull_request_denied(self):
         # Unchanged trust invariant: no deploy job runs on a pull_request event.
@@ -584,7 +628,7 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             self.assertIn(digest, workflow)
         self.assertIn("--exit-code 1", workflow)
         self.assertIn("--severity HIGH,CRITICAL", workflow)
-        self.assertEqual(scanner["environment"], "gcp-release-scan-dev")
+        self.assertEqual(scanner["environment"], "${{ inputs.release_scan_github_environment }}")
         self.assertIn("release_scan", deploy["needs"])
         scan_env = "\n".join(str(step.get("env", "")) for step in scanner["steps"])
         self.assertNotIn("GCP_DEPLOY_SERVICE_ACCOUNT", scan_env)
@@ -827,6 +871,7 @@ class TestGcpDeployPreflightInputs(unittest.TestCase):
             step.get("env", {}).get("SHIFTER_CONFIG_GCP_DEV"),
             "${{ secrets.SHIFTER_CONFIG_GCP_DEV }}",
         )
+        self.assertIn("--component deploy", step.get("run", ""))
 
 
 class TestRangePlacementSingleSource(unittest.TestCase):

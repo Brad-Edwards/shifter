@@ -62,7 +62,7 @@ must not be treated as passing the others.
   contract tests.
 - Terraform consumers currently pin three toolchain versions: AWS deploy CI
   uses 1.13.3, GCP validation/deploy uses 1.16.1, and the provisioner runtime
-  image uses 1.14.3. One unqualified CI version would validate some roots with
+  image uses 1.16.3. One unqualified CI version would validate some roots with
   a different parser/runtime than their consumer.
 
 ## Architecture Decisions And Guardrails
@@ -88,7 +88,7 @@ must not be treated as passing the others.
 - Named toolchain profiles own the Terraform CLI version and provider-family
   environment hardening. A root references a profile; workflow YAML must not
   contain a parallel root-to-version case statement. The existing 1.13.3,
-  1.16.1, and 1.14.3 consumer differences must either be represented or be
+  1.16.1, and 1.16.3 consumer differences must either be represented or be
   deliberately unified and verified before the generic gate becomes
   authoritative.
 - Every root validation uses its committed lockfile and the equivalent of:
