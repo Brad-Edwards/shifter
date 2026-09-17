@@ -18,7 +18,8 @@ from shared.model_access.reservation import (
     ModelQuotaObservation,
 )
 
-from ._model_allocation import _validated, allocate_model_access
+from ._model_allocation import allocate_model_access
+from ._model_allocation_contracts import validated
 from ._model_allocation_lifecycle import revoke_model_generation
 
 _INTENT_CONFLICT = "allocation.intent_conflict"
@@ -56,7 +57,7 @@ def record_model_observations(
     if connection.in_atomic_block:
         raise ContractError("allocation.observation_in_transaction")
     catalog = validate_catalog(catalog.model_dump(mode="json"))
-    readings = tuple(_validated(ModelQuotaObservation, item) for item in observer(catalog))
+    readings = tuple(validated(ModelQuotaObservation, item) for item in observer(catalog))
     pool_ids = {pool.quota_pool_id for pool in catalog.quota_pools}
     if len({item.quota_pool_id for item in readings}) != len(readings):
         raise ContractError("allocation.duplicate_observation")
@@ -92,7 +93,7 @@ def prepare_model_launch(
     replace_revoked: bool = False,
 ) -> ModelLaunchPreparationRecord:
     """Store reviewed downward inputs; this is not a grant or allocation."""
-    intent = _validated(
+    intent = validated(
         ModelLaunchPreparation,
         {
             "request_id": request_id,
@@ -131,7 +132,7 @@ def disable_optional_model_preparation(
     *, request_id: UUID, owner_ref: OwnedReference, needs: tuple[ScenarioNeed, ...]
 ) -> None:
     """Persist a replay-stable optional denial without fabricating policy scope."""
-    intent = _validated(
+    intent = validated(
         ModelLaunchPreparation,
         {
             "request_id": request_id,
@@ -184,7 +185,7 @@ def _load_launch_preparation(
     else:
         prepared = ModelLaunchPreparationRecord.objects.filter(request_id=request_id).first()
         if prepared is not None:
-            intent = _validated(ModelLaunchPreparation, prepared.intent)
+            intent = validated(ModelLaunchPreparation, prepared.intent)
             if intent.unavailable_reason:
                 for need in intent.needs:
                     _record_absence(

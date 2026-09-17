@@ -79,10 +79,10 @@ def get_model_launch_preparation(request_id: UUID) -> ModelLaunchPreparation | N
     from engine.models import ModelLaunchPreparationRecord
     from shared.model_access.reservation import ModelLaunchPreparation
 
-    from ._model_allocation import _validated
+    from ._model_allocation_contracts import validated
 
     row = ModelLaunchPreparationRecord.objects.filter(request_id=request_id).first()
-    return _validated(ModelLaunchPreparation, row.intent) if row is not None else None
+    return validated(ModelLaunchPreparation, row.intent) if row is not None else None
 
 
 def disable_optional_model_preparation(

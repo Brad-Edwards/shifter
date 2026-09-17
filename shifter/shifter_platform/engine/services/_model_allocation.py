@@ -8,7 +8,6 @@ from time import perf_counter
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
-from pydantic import BaseModel, ValidationError
 
 from engine.models import (
     AllocationGroup,
@@ -28,17 +27,10 @@ from shared.model_access.policy import intersect_profile
 from shared.model_access.reservation import ModelAllocationRequest, ModelQuotaObservation
 
 from ._model_allocation_authority import lock_assignment_groups, locked_policy
+from ._model_allocation_contracts import normalize_observations, validated
 from ._model_quota import add_shard_demand, lock_quotas, persist_draws, vector_fits
 
 logger = logging.getLogger(__name__)
-
-
-def _validated[TContractModel: BaseModel](model: type[TContractModel], value: object) -> TContractModel:
-    """Normalize one service-boundary value through its closed contract."""
-    try:
-        return model.model_validate(value.model_dump(mode="json") if isinstance(value, model) else value)
-    except (ValueError, TypeError, ValidationError):
-        raise ContractError("allocation.invalid_input") from None
 
 
 def _lock_range(request: ModelAllocationRequest) -> Range:
@@ -331,17 +323,6 @@ def _admission_metric(outcome: str, started: float) -> None:
     )
 
 
-def _normalize_observations(
-    observations: tuple[object, ...],
-) -> dict[str, ModelQuotaObservation]:
-    """Validate readings and reject ambiguous duplicates before locking."""
-    validated = tuple(_validated(ModelQuotaObservation, item) for item in observations)
-    observed = {item.quota_pool_id: item for item in validated}
-    if len(observed) != len(validated):
-        raise ContractError("allocation.duplicate_observation")
-    return observed
-
-
 def _previous_allocations(
     request: ModelAllocationRequest, retire_previous: bool
 ) -> tuple[list[ModelAllocation], set[str]]:
@@ -467,8 +448,8 @@ def _allocate_model_access(
     retire_previous: bool = False,
 ) -> ModelAllocation:
     """Commit all alias effects or none; caller may join the launch transaction."""
-    request = _validated(ModelAllocationRequest, request)
-    observed = _normalize_observations(observations)
+    request = validated(ModelAllocationRequest, request)
+    observed = normalize_observations(observations)
     intent_digest = compute_digest(request)
     with transaction.atomic():
         range_obj = _lock_range(request)
