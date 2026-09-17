@@ -354,6 +354,7 @@ def _warm_prepare_dispatch(
                 workspace_id=cms_request.workspace_id,
                 range_source=WARM_RANGE_SOURCE.value,
                 range_spec=None,
+                model_package_digest=source.package_digest,
             )
 
         _rid, _req, _ri, egress_mode = _reserve_active_range_slot(

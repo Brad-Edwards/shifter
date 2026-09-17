@@ -7,6 +7,7 @@ image profile, neutral labels only), and fail-loud placement errors. The image
 resolver is injected (pure), so no registry/DB is touched.
 """
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
+    GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_PARTICIPANT_READINESS_CONTRACT_V1,
     GCERangeCellConfig,
@@ -237,6 +239,47 @@ class TestInstances:
         config_2 = _config()
         with pytest.raises(RaesGcePlanError, match="usable addresses"):
             build_raes_range_cell_plan("req-1", 7, plan_2, resolver_2, config_2)
+
+    def test_standard_node_is_driven_as_raes_on_port_22(self):
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config())
+        instance = plan["instances"][0]
+        assert instance["host_ssh_username"] == "raes"
+        assert instance["ssh_port"] == 22
+
+    def test_polaris_docker_host_is_driven_on_the_configured_mgmt_channel(self):
+        """The pre-baked Docker host's management sshd is ubuntu@mgmt-port, not raes@22.
+
+        :22 belongs to the published container, so guest setup must target the
+        host mgmt port sourced from config -- proven by a non-default port.
+        """
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/polaris-vm",
+            bootstrap_capability=GCE_BOOTSTRAP_POLARIS_HOST,
+        )
+        config = dataclasses.replace(_config(), host_mgmt_ssh_port=2200)
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), config)
+        instance = plan["instances"][0]
+        assert instance["host_ssh_username"] == "ubuntu"
+        assert instance["ssh_port"] == 2200
+
+    def test_prepromoted_dc_is_driven_as_windows_administrator(self):
+        """A promoted DC has no local SAM, so raes@22 is refused.
+
+        Guest setup connects as the built-in domain Administrator, authorized via
+        the Windows boot script's administrators_authorized_keys.
+        """
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/polaris-dc",
+            bootstrap_capability="prepromoted-domain-controller",
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(os_family="windows"),), (_network(),)), _resolver(profile), _config()
+        )
+        instance = plan["instances"][0]
+        assert instance["host_ssh_username"] == "Administrator"
+        assert instance["ssh_port"] == 22
+        # The DC holds no attached identity; only the polaris docker-host does.
+        assert instance["attach_service_account"] is False
 
     def test_preconfigured_machine_host_is_rejected_before_raes_realization(self):
         """RAES cannot publish READY without the participant image canary."""

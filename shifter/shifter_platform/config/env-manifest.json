@@ -13,6 +13,11 @@
       "source_file": "config/_api_token_settings.py"
     },
     {
+      "default": "''",
+      "name": "AUDIT_DEPLOYMENT_SCOPE",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "1",
       "name": "AUDIT_TRUSTED_PROXY_HOPS",
       "source_file": "config/settings.py"

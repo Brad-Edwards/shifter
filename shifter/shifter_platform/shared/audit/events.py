@@ -30,6 +30,7 @@ class AuditEvent:
     source_ip: str | None = None
     user_agent: str = ""
     request_id: str = ""
+    entity_ref: str = ""
 
 
 @dataclass(frozen=True)

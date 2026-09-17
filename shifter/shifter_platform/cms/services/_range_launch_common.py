@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from cms.models import Request
     from shared.enums import RangeSource
     from shared.model_access import OwnedReference
+    from shared.model_access.reservation import ModelLaunchScope
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class LaunchOptions:
     # so required-model admission resolves the sharing overlap against the real
     # launch subject rather than the launcher identity.
     model_admission_subject: OwnedReference | None = None
+    model_launch_scope: ModelLaunchScope | None = None
 
 
 def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR

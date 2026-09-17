@@ -1,8 +1,19 @@
 # Audit system architecture
 
 Shifter records security-relevant platform events in a durable, append-only
-audit log owned by the `shared` Django app. Audit logging is a cross-cutting
+audit log owned by the `shared` Django app. Every row belongs to a versioned
+SHA-256 chain serialized by a database-owned head, so offline verification
+detects changed, deleted, inserted, reordered, or cross-deployment evidence.
+PostgreSQL triggers reject committed-row mutation and constrain each head
+advance to the matching appended record. Audit logging is a cross-cutting
 platform capability; it is not coupled to a product feature.
+
+This hot-ledger guarantee does not by itself provide externally anchored
+immutable compliance evidence. The legacy S3 export is deterministic and
+create-only, but its destination is not yet a provider-enforced write-once
+checkpoint. The command therefore retains every database row. The full trust
+boundary and future evidence-store seam are documented in
+[`audit-tamper-detection-preflight-327.md`](audit-tamper-detection-preflight-327.md).
 
 ## Ownership
 
@@ -10,8 +21,11 @@ platform capability; it is not coupled to a product feature.
 | --- | --- |
 | Event vocabulary and emission policy | `shared.audit` |
 | Durable row model | `shared.models.AuditLog` |
+| Chain serialization state | `shared.models.AuditChainHead` |
+| Canonical bytes and verification | `shared.audit.integrity` |
 | Django persistence writer | `shared.audit_adapter` |
-| Archive command | `shared.management.commands.audit_archive` |
+| Verification command | `shared.management.commands.audit_verify` |
+| Export command | `shared.management.commands.audit_archive` |
 | Operator read access | Django admin and `shared.api.audit` |
 | Process health state | `shared.audit.health` |
 
@@ -40,12 +54,71 @@ The API accepts filters for `entity_type`, `entity_id`, `action`, `actor_type`,
 are serialized as strings so rows written with historical vocabulary remain
 readable after the active vocabulary changes.
 
-## Retention
+## Integrity chain
 
-The `audit_archive` management command compresses old rows as JSONL, uploads
-them to the configured logs bucket, and deletes only rows from a successfully
-uploaded batch. Operators choose the retention cutoff and may use dry-run or
-no-delete modes.
+The bound writer validates each `AuditEvent`, locks the singleton chain head in
+the same database transaction, and assigns the next sequence. Canonical JSON
+version 1 covers the stable event id, deployment scope, chain generation,
+sequence, recorded time, predecessor digest, target and actor attribution,
+request correlation, state summaries, context, source IP, and user agent. JSON
+object keys are sorted, timestamps are UTC with microsecond precision, NaN and
+non-JSON values are rejected, and the encoded bytes are hashed with SHA-256.
+
+The event validator accepts only active vocabulary for new writes, bounded
+single-line context/reference fields, non-negative identifiers, recursively
+bounded JSON state, and no direct secret-bearing fields. Historical rows keep
+their original vocabulary. UUID and other opaque target identities use
+`entity_ref`; the integer `entity_id` remains for v1 compatibility.
+
+`AUDIT_DEPLOYMENT_SCOPE` binds the chain to the installed control plane rather
+than to a pod, VM, database, or client value. AWS EKS renders
+`aws:<account>:<region>:<profile>`, the legacy AWS portal renders
+`aws:<account>:<region>:<environment>`, and GCP renders
+`gcp:<project-id>`. Deployed configurations that expose cloud secret references
+fail closed if they would use the local-development sentinel. Existing GCP and
+warm-pool deployment identities remain compatible inputs for installations
+that have not yet adopted the explicit setting.
+
+Run the complete hot-ledger verifier with:
+
+```bash
+python manage.py audit_verify
+```
+
+It checks every sequence and predecessor, recomputes every digest, checks the
+deployment/generation/version binding, and compares the terminal record with
+the chain head. Any mismatch exits non-zero. Verification never repairs rows,
+recalculates stored digests, or starts another genesis.
+
+PostgreSQL supplies the production concurrency and append-only guarantees.
+`portal_runtime` can read and insert audit rows and can advance the chain head;
+it cannot update or delete committed evidence, insert/delete a head, or advance
+the head by anything other than one matching record. AWS already separates its
+runtime and migration database principals. GCP now creates `portal_runtime`
+separately from the schema owner and runs migrations as a one-off hardened Job
+through the dedicated `migrator` workload identity. Long-lived portal and worker
+pods receive only the runtime database secret and set `SKIP_MIGRATIONS=1`; the
+migrator alone receives the schema-owner secret.
+
+The migration/schema owner remains privileged break-glass authority, so
+independent write-once checkpoint storage is still needed to detect an owner
+who disables database enforcement. Tests exercise the effective
+`portal_runtime` role against real PostgreSQL and prove that it cannot disable
+the append-only trigger or rewrite committed evidence.
+
+## Export and retention
+
+The `audit_archive` management command renders old rows as deterministic
+canonical JSONL, applies gzip with fixed metadata, uploads with a SHA-256
+checksum and create-only precondition, and uses a key bound to the sequence
+range and terminal chain digest. Operators choose the export cutoff and may use
+dry-run mode. The legacy `--no-delete` flag remains accepted as a compatibility
+no-op.
+
+This remains an AWS-only export utility, not a write-once compliance store. The
+current central logs bucket is overwrite/delete capable under its retention
+model, so the command never deletes hot rows. Do not treat successful export as
+an immutable checkpoint or tamper-verification result.
 
 ## Schema migration
 
@@ -61,9 +134,18 @@ The migration removes the retired feature's non-audit tables. It does not
 create compatibility views, model aliases, routes, permissions, scopes, or
 settings.
 
+Migration `shared.0020_audit_integrity_chain` backfills stable event ids and one
+contiguous chain in `(timestamp, id)` order, records the deployment-bound head,
+installs the PostgreSQL mutation guards, and narrows `portal_runtime` effective
+privileges. It resolves the audit table's owned identity sequence instead of
+assuming a sequence name, preserving upgrades whose table was renamed from the
+retired app. It fails the migration rather than omitting an uncanonicalizable
+legacy row.
+
 ## Adding an event
 
 Use the nearest helper in `shared.audit` and the existing entity/action
 vocabulary. Add a new vocabulary value only when no current value accurately
-describes the event, and include persistence and authorization tests. Do not
-write `AuditLog` directly from feature code.
+describes the event, set `entity_ref` for UUID/opaque targets, and include
+persistence and authorization tests. Do not write `AuditLog` directly from
+feature code.

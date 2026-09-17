@@ -105,3 +105,29 @@ decision yet); the zero-egress admitted-broker exception and the
 demand-strategy/allocation threading are revisited when the broker capability
 lands. See
 [architecture § Launch-time model admission](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/architecture.md#launch-time-model-admission-m02-2119).
+
+The [M03 allocation preflight](../architecture/model-access/allocation-preflight-2120.md)
+records the current repository gaps and applies this decision to atomic
+launch-intent persistence, real-quota serialization, authoritative sharing
+resolution, generation-scoped release and configuration/error boundaries.
+Existing compute-capacity helpers and sharing previews do not by themselves
+establish those enforcing guarantees. This guidance does not change the ADR's
+proposed status or claim runtime enforcement.
+
+M03 (#2120) adds the [durable allocation boundary](../architecture/model-access/allocations.md).
+The explicit provider-pool-to-shard inventory uses `model-access-policy/v2`;
+v1 catalogs retain their original digests. Provider pools restrict eligibility
+without creating quota. Engine joins exact reservations, immutable snapshots and
+non-usable pending grants to the existing launch transaction. CTF-owned spare
+preparation uses explicit event/spare authority for inactive system accounts;
+it neither activates those accounts nor authorizes participant use. Warm-pool
+preparation uses a distinct authority bound to its existing generation ledger.
+Claim revokes preparation grants atomically before fresh claimant admission;
+it does not transfer system authority or enable the managed account. Broker
+request accounting and live qualification are not established by these changes.
+The durable preparation identity binds the captured package needs and catalog
+digest for lifecycle refresh. Native range pause/resume remains the executor;
+local development dispatch drains the same outbox only after transaction commit.
+Range selector freshness is distinct from generation-stable launch authority:
+routine status transitions do not revoke their own or sibling model grants,
+while ownership, destruction and owner-service mutations remain revoking fences.
