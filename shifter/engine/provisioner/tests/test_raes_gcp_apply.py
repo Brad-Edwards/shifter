@@ -17,9 +17,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import raes_gcp_polaris
 from config import GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
+from gcp_range_cell_credentials import GCEVertexCredentialOps
 from raes_account_credentials import RaesAccountCredentialOps, install_instance_account_credentials
 from raes_active_directory import RaesDirectorySecretOps
 from raes_gcp_apply import (
@@ -119,6 +121,14 @@ def _secret_ops() -> tuple[RaesGceSecretOps, SimpleNamespace]:
     return RaesGceSecretOps(ensure_ssh=mocks.ensure_ssh, delete_ssh=mocks.delete_ssh), mocks
 
 
+def _vertex_ops() -> tuple[GCEVertexCredentialOps, SimpleNamespace]:
+    mocks = SimpleNamespace(
+        ensure=MagicMock(return_value="projects/proj-1/secrets/shifter-range-7-vertex-key"),
+        delete=MagicMock(),
+    )
+    return GCEVertexCredentialOps(ensure=mocks.ensure, delete=mocks.delete), mocks
+
+
 def _apply_options(
     config: GCERangeCellConfig,
     clients: SimpleNamespace,
@@ -126,6 +136,7 @@ def _apply_options(
     **overrides,
 ) -> RaesGceApplyOptions:
     """Build injectable RAES apply options for fake-GCP tests."""
+    overrides.setdefault("vertex_ops", _vertex_ops()[0])
     overrides.setdefault(
         "composition_verifier",
         lambda plan, _outputs: frozenset(
@@ -269,6 +280,38 @@ def _plan_with_domain(*, include_local: bool = False) -> RaesPlan:
         accounts=(authority, service, *((local_operator,) if include_local else ())),
         domains=(domain,),
     )
+
+
+class TestVertexCredential:
+    def test_mints_per_range_vertex_key_and_persists_ref_when_configured(self):
+        """Polaris' in-container agent needs a per-range Vertex key.
+
+        When a Vertex SA is configured, the apply mints the key (granting the
+        attached range-cell SA secretAccessor) and persists the ref on every
+        instance output, mirroring the legacy scenario path.
+        """
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        vertex_ops, vertex_mocks = _vertex_ops()
+        config = replace(_config(), vertex_service_account_email="vertex@proj-1.iam.gserviceaccount.com")
+        output = apply_raes_range_cell(
+            "req-1", 7, _plan(), _resolver, _apply_options(config, clients, secret_ops, vertex_ops=vertex_ops)
+        )
+        vertex_mocks.ensure.assert_called_once_with(
+            7, "vertex@proj-1.iam.gserviceaccount.com", "proj-1", "host@proj-1.iam.gserviceaccount.com"
+        )
+        for instance in output["instances"]:
+            assert instance["gcp_vertex_secret_ref"] == "projects/proj-1/secrets/shifter-range-7-vertex-key"
+
+    def test_no_vertex_key_when_tenant_configures_no_vertex_sa(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        vertex_ops, vertex_mocks = _vertex_ops()
+        # Default _config() has no vertex_service_account_email.
+        apply_raes_range_cell(
+            "req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops, vertex_ops=vertex_ops)
+        )
+        vertex_mocks.ensure.assert_not_called()
 
 
 class TestApply:
@@ -922,7 +965,9 @@ class TestServiceFirewallLifecycle:
             "req-1",
             7,
             _plan_with_service(),
-            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+            RaesGceDestroyOptions(
+                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
         deleted = {call.kwargs.get("firewall") for call in clients.firewalls.delete.call_args_list}
         assert service_names[0] in deleted
@@ -933,7 +978,12 @@ class TestDestroy:
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
         destroy_raes_range_cell(
-            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops)
+            "req-1",
+            7,
+            _plan(),
+            RaesGceDestroyOptions(
+                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
 
         assert clients.instances.delete.call_count == 2
@@ -953,7 +1003,9 @@ class TestDestroy:
             "req-1",
             7,
             _plan(),
-            RaesGceDestroyOptions(config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops),
+            RaesGceDestroyOptions(
+                config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
         assert not clients.networks.delete.called
 
@@ -971,6 +1023,7 @@ class TestDestroy:
                 config=_config(),
                 clients=clients,
                 secret_ops=ssh_ops,
+                vertex_ops=_vertex_ops()[0],
                 account_secret_ops=account_ops,
             ),
         )
@@ -994,7 +1047,9 @@ class TestDestroy:
             "req-1",
             7,
             _plan_with_content(content),
-            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+            RaesGceDestroyOptions(
+                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+            ),
         )
 
         assert clients.instances.delete.call_count == 1
@@ -1103,3 +1158,68 @@ class TestParticipantAccessRealization:
         instance = output["instances"][0]
         assert instance["participant_access_channels"] == []
         assert instance["ssh_key_secret_arn"] == ""
+
+
+class TestPolarisPostProvision:
+    """RAES-path polaris post-provision (BigRAE): reuse the reviewed
+    PolarisRangeBootstrapPlan on a polaris-docker-host guest, keyed off the
+    profile bootstrap capability, with the DC IP taken from the peer instance."""
+
+    @staticmethod
+    def _outputs():
+        return [
+            {
+                "instance_id": "kali-vm",
+                "private_ip": "10.50.0.10",
+                "public_key": "ssh-ed25519 AAAATEST",
+                "gcp_bootstrap_capability": "polaris-docker-host",
+            },
+            {
+                "instance_id": "dc-vm",
+                "private_ip": "10.50.0.11",
+                "public_key": "",
+                "gcp_bootstrap_capability": "prepromoted-domain-controller",
+            },
+        ]
+
+    def test_runs_bootstrap_on_polaris_host_with_peer_dc_ip(self, monkeypatch):
+        boot = MagicMock()
+        password = MagicMock()
+        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", boot)
+        monkeypatch.setattr(raes_gcp_polaris, "_set_attacker_container_password_after_bootstrap", password)
+
+        raes_gcp_polaris._run_polaris_post_provision(self._outputs(), range_id=7)
+
+        boot.assert_called_once()
+        assert boot.call_args.kwargs["instance_id"] == "kali-vm"
+        assert boot.call_args.kwargs["dc_ip"] == "10.50.0.11"
+        assert boot.call_args.kwargs["public_key"] == "ssh-ed25519 AAAATEST"
+        assert boot.call_args.kwargs["range_id"] == 7
+        password.assert_called_once()
+        assert password.call_args.kwargs["container_name"] == "a14-kali"
+
+    def test_noop_for_a_range_with_no_polaris_host(self, monkeypatch):
+        boot = MagicMock()
+        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", boot)
+
+        raes_gcp_polaris._run_polaris_post_provision(
+            [{"instance_id": "u", "gcp_bootstrap_capability": "standard"}], range_id=1
+        )
+
+        boot.assert_not_called()
+
+    def test_polaris_host_without_a_dc_peer_fails_closed(self, monkeypatch):
+        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", MagicMock())
+
+        with pytest.raises(RaesGcePlanError):
+            raes_gcp_polaris._run_polaris_post_provision(
+                [
+                    {
+                        "instance_id": "kali-vm",
+                        "private_ip": "10.50.0.10",
+                        "public_key": "k",
+                        "gcp_bootstrap_capability": "polaris-docker-host",
+                    }
+                ],
+                range_id=1,
+            )

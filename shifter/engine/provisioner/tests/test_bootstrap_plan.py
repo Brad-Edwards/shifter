@@ -263,6 +263,31 @@ class TestPolarisRangeBootstrapPlan:
         assert context["aws_agent_compose_block"] == ""
         assert "oauth2.googleapis.com:199.36.153.8" in context["gcp_agent_compose_block"]
 
+    def test_bootstrap_resolves_flat_or_canonical_compose_layout(self):
+        """The image ships the stack flat (.../build) or canonical (.../build/polaris/build).
+
+        verify-stack.sh (the bake) resolves both; the runtime must too, or
+        `docker compose` runs with no compose file. Regression for the nazgul
+        polaris-vm, which shipped the canonical build-v1 layout.
+        """
+        from orchestrators.setup_orchestrator import SetupOrchestrator
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
+            context = PolarisRangeBootstrapPlan(provider="gcp").get_context(MockPolarisInstance())
+        context.update({"dc_ip": "10.1.2.7", "public_key": "ssh-rsa AAAA"})
+        bootstrap = SetupOrchestrator._render_script(POLARIS_RANGE_BOOTSTRAP_SCRIPT, context, "polaris_range_bootstrap")
+
+        base = "/opt/polaris/scenario-dev/polaris/build"
+        assert 'if [[ -f "$POLARIS_COMPOSE_BASE/docker-compose.yml" ]]; then' in bootstrap
+        assert 'elif [[ -f "$POLARIS_COMPOSE_BASE/polaris/build/docker-compose.yml" ]]; then' in bootstrap
+        assert f"POLARIS_COMPOSE_BASE={base}" in bootstrap
+        # Fail closed when neither layout is present, rather than running compose
+        # from a directory with no compose file.
+        assert "no docker-compose.yml at $POLARIS_COMPOSE_BASE" in bootstrap
+
     def test_gcp_context_uses_persisted_cross_project_vertex_secret_ref(self):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 

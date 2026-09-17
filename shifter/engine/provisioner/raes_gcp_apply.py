@@ -32,6 +32,7 @@ from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops, mint_range_vertex_key
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
@@ -63,6 +64,7 @@ from raes_content_delivery import assert_content_delivery_bindings_complete, rea
 from raes_gcp_composition import node_bootstrap_script
 from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
 from raes_gcp_plan import RaesGcePlanError, RaesGcePlanOptions, build_raes_range_cell_plan
+from raes_gcp_polaris import _run_polaris_post_provision
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_operating_system import observe_operating_systems, validate_operating_systems
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
@@ -80,6 +82,7 @@ class RaesGceApplyOptions:
     config: GCERangeCellConfig | None = None
     clients: GCEClients | None = None
     secret_ops: RaesGceSecretOps | None = None
+    vertex_ops: GCEVertexCredentialOps | None = None
     # Effective range egress posture pinned at create (PLAT-238), carried here so
     # the apply seam stays within the parameter budget; a `none` range gets no
     # public-web/allow-CIDR firewall lane and no range-owned Cloud NAT.
@@ -104,6 +107,7 @@ class _RaesGceApplyRuntime:
     config: GCERangeCellConfig
     clients: GCEClients
     secret_ops: RaesGceSecretOps
+    vertex_ops: GCEVertexCredentialOps
     account_secret_ops: RaesAccountCredentialOps
     credential_installer: Callable[..., dict[str, str]]
     directory_secret_ops: RaesDirectorySecretOps
@@ -121,6 +125,7 @@ def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
         config=options.config or load_gce_range_cell_config(),
         clients=options.clients or _build_clients(),
         secret_ops=options.secret_ops or _default_secret_ops(),
+        vertex_ops=options.vertex_ops or _default_vertex_ops(),
         account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
         credential_installer=options.credential_installer,
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
@@ -229,6 +234,9 @@ def _provision_raes_resources(
     authored account credential installed and verified on the guest, so a
     declared endpoint never appears with a credential that was never realized.
     """
+    # Per-range Vertex agent credential (polaris docker-host); persisted on every
+    # instance output (only the polaris host reads it), mirroring the legacy path.
+    vertex_secret_ref = mint_range_vertex_key(plan["range_id"], plan["project_id"], runtime.config, runtime.vertex_ops)
     if plan["manage_network"]:
         _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
@@ -258,6 +266,7 @@ def _provision_raes_resources(
                 host_public_key=host_public_key,
             ),
             runtime.config,
+            vertex_secret_ref=vertex_secret_ref,
         )
         node_address = _node_address_of(instance)
         accounts = accounts_by_node.get(node_address, ())
@@ -386,6 +395,7 @@ def _cleanup_failed_apply(
             config=runtime.config,
             clients=runtime.clients,
             secret_ops=runtime.secret_ops,
+            vertex_ops=runtime.vertex_ops,
             account_secret_ops=runtime.account_secret_ops,
             directory_secret_ops=runtime.directory_secret_ops,
             allocated_network_cidr=runtime.allocated_network_cidr,
@@ -448,6 +458,10 @@ def apply_raes_range_cell(
             _accounts_by_node(raes_plan),
             _access_by_node(realized_access),
         )
+        # Per-scenario post-provision: a polaris-docker-host guest needs its baked
+        # compose stack rewired to this range's DC IP + participant key before the
+        # composition is verified. No-op for standard ranges.
+        _run_polaris_post_provision(instance_outputs, range_id)
         verified = set(_realize_directory(plan, raes_plan, instance_outputs, runtime))
         verified.update(_realize_content_delivery(raes_plan, instance_outputs, delivery_bindings, runtime))
         verified.update(runtime.composition_verifier(raes_plan, instance_outputs))

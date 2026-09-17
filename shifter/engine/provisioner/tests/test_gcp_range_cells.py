@@ -385,6 +385,64 @@ def test_render_range_cell_plan_selects_bounded_machine_host_identity():
     assert output["gcp_participant_readiness_manifest_sha256"] == "a" * 64
 
 
+def test_instance_output_emits_container_name_for_a_source_image_docker_host():
+    """A source_image polaris docker-host must carry its participant container name.
+
+    OS-integrity observation probes that container (kali), not the host substrate;
+    the field previously travelled only on the source_machine_image path.
+    """
+    profile = GCERangeImageProfile(
+        source_image="projects/shifter/global/images/polaris-vm",
+        machine_type="e2-standard-8",
+        disk_size_gb=210,
+        disk_type="pd-balanced",
+        bootstrap_capability="polaris-docker-host",
+        participant_container_name="a14-kali",
+    )
+    instance = {
+        "uuid": "provision.node.a14-kali#0",
+        "name": "a14-kali",
+        "role": "raes-node",
+        "os_type": "linux",
+        "subnet_name": "lan",
+        "subnet_resource_name": "shifter-r-42-lan",
+        "subnetwork_link": _POLARIS_SUBNETWORK_SELF_LINK,
+        "resource_name": "shifter-r-42-lan-a14-kali-0",
+        "address_name": "shifter-r-42-lan-a14-kali-0-ip",
+        "private_ip": "10.50.0.3",
+        "participant_access_channels": [],
+        "participant_access_usernames": {},
+        "ssh_username": "raes",
+        "host_ssh_username": "ubuntu",
+        "ssh_port": 2222,
+        "tags": ["shifter-range-42"],
+        "image_key": "",
+        "image_profile_fingerprint": "fp",
+        "profile": profile,
+        "attach_service_account": True,
+    }
+    plan = {
+        "project_id": "test-project",
+        "region": "us-central1",
+        "zone": "us-central1-a",
+        "network": {"name": "shifter-range-42", "self_link": "projects/test-project/global/networks/shifter-range-42"},
+    }
+
+    output = instance_output(
+        plan,
+        instance,
+        InstanceCredentials(
+            host_ssh_secret_ref="projects/test/secrets/host-ssh",
+            participant_ssh_secret_ref=None,
+            rdp_password_secret_ref=None,
+            ssh_public_key="ssh-ed25519 HOST",
+        ),
+        _sample_config(),
+    )
+    assert output["gcp_bootstrap_capability"] == "polaris-docker-host"
+    assert output["gcp_participant_container_name"] == "a14-kali"
+
+
 def test_render_range_cell_plan_shards_machine_hosts_across_bounded_identity_pool():
     base = _sample_config()
     nested_profile = GCERangeImageProfile(
