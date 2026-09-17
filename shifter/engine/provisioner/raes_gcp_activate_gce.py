@@ -11,6 +11,7 @@ GCE range (the repository's verification norm for provisioner cloud effects).
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -27,7 +28,7 @@ class GceActivationOps:
     """Production activation ops for the GCE range-cell backend."""
 
     config: GCERangeCellConfig | None = None
-    allocated_network_cidr: str | None = None
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
 
     @staticmethod
     def scrub_pre_claim_access(activation: ActivationInput, prepared_generation: UUID) -> None:
@@ -75,7 +76,7 @@ class GceActivationOps:
             activation,
             activate_generation,
             config=self.config,
-            allocated_network_cidr=self.allocated_network_cidr,
+            allocated_network_cidrs=self.allocated_network_cidrs,
         )
 
     @staticmethod

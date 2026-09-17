@@ -18,6 +18,9 @@ login (Cognito MFA cannot be driven headlessly).
   a known-up example range: an interactive terminal that exchanges real data with a
   range host, and a Guacamole session driven to a client-level connection. Fully
   automated and operator-invoked; it gates no deploy.
+- [GCP Event Capacity Gate](../ops/gcp-event-capacity)—30 real participant
+  login/bootstrap/RDP display-sync/hold journeys plus fail-closed provider and
+  workload health budgets.
 
 !!! note "Scope"
     These protocols validate the **native** Shifter platform. The standalone

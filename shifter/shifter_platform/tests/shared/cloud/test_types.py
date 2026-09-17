@@ -9,35 +9,6 @@ from shared.cloud.types import (
 )
 
 
-class TestProtocolsAreRuntimeCheckable:
-    """Verify all protocols are @runtime_checkable for isinstance() checks."""
-
-    def test_object_storage_is_runtime_checkable(self):
-        assert getattr(ObjectStorage, "__protocol_attrs__", None) is not None or hasattr(
-            ObjectStorage, "_is_runtime_protocol"
-        )
-
-    def test_task_runner_is_runtime_checkable(self):
-        assert getattr(TaskRunner, "__protocol_attrs__", None) is not None or hasattr(
-            TaskRunner, "_is_runtime_protocol"
-        )
-
-    def test_queue_consumer_is_runtime_checkable(self):
-        assert getattr(QueueConsumer, "__protocol_attrs__", None) is not None or hasattr(
-            QueueConsumer, "_is_runtime_protocol"
-        )
-
-    def test_queue_publisher_is_runtime_checkable(self):
-        assert getattr(QueuePublisher, "__protocol_attrs__", None) is not None or hasattr(
-            QueuePublisher, "_is_runtime_protocol"
-        )
-
-    def test_secrets_store_is_runtime_checkable(self):
-        assert getattr(SecretsStore, "__protocol_attrs__", None) is not None or hasattr(
-            SecretsStore, "_is_runtime_protocol"
-        )
-
-
 class TestProtocolStructuralTyping:
     """Verify classes implementing the right methods satisfy isinstance() checks."""
 
