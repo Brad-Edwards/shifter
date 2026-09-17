@@ -1,0 +1,45 @@
+# Exact-release image scan — exposure-management policy
+# ---------------------------------------------------------------------------
+# Consumed by the exact-release Trivy gate (`.github/workflows/_gcp-dev.yml`,
+# "Scan exact release digests") via `--ignorefile`. This file is the ONLY
+# sanctioned way to accept a HIGH/CRITICAL finding the gate would otherwise
+# block on. Every entry is a deliberate, documented, time-boxed exposure
+# decision — not a silent suppression.
+#
+# GATE POLICY
+#   The gate runs: trivy image --scanners vuln --severity HIGH,CRITICAL
+#                  --ignore-unfixed --ignorefile <this file> --exit-code 1
+#
+#   * BLOCKS on any HIGH/CRITICAL that has an available fix (a patched package
+#     / dependency version). Fixable findings must be remediated, not ignored —
+#     an entry here for a *fixable* CVE is a deliberate, temporary risk
+#     acceptance and MUST carry a near-term `expired_at` plus a tracking issue.
+#   * DOES NOT block on findings with no upstream fix available
+#     (`--ignore-unfixed`). These cannot be acted on; they are surfaced in the
+#     scan evidence and re-evaluated whenever a fix ships. List one here only
+#     when you want it explicitly acknowledged/annotated.
+#
+# ENTRY RULES (enforced by review, not tooling)
+#   - `id`:         the exact CVE / advisory id.
+#   - `statement`:  why this exposure is accepted right now — the risk decision
+#                   and any compensating control. No "inconvenient"/"later".
+#   - `expired_at`: YYYY-MM-DD. Once past, Trivy stops honoring the entry and
+#                   the gate blocks again, forcing re-review. Keep it short
+#                   (<= 90 days) for fixable CVEs; longer only for genuinely
+#                   unfixable base-OS exposure with a compensating control.
+#   Prefer fixing over listing. A false positive is a different thing: state
+#   *why it is false* in `statement`.
+#
+# Example (remove when adding real entries):
+#   vulnerabilities:
+#     - id: CVE-2025-00000
+#       statement: >-
+#         No upstream fix in the debian13 base for <pkg>; not reachable from the
+#         portal request path (component is build-only). Re-evaluate at expiry.
+#         Tracking: #NNNN.
+#       expired_at: 2026-03-31
+
+vulnerabilities: []
+misconfigurations: []
+secrets: []
+licenses: []
