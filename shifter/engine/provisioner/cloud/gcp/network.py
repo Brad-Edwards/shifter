@@ -38,11 +38,30 @@ class _SubnetworksClient(Protocol):
         """Return Compute subnetworks grouped by regional scope for a project."""
 
 
+class _GdcCustomObjectsApi(Protocol):
+    """Subset of the Kubernetes custom-objects client used by inventory."""
+
+    def list_cluster_custom_object(
+        self,
+        *,
+        group: str,
+        version: str,
+        plural: str,
+    ) -> InventoryItem:
+        """Return cluster-scoped objects for one custom-resource kind."""
+
+
 class GCPNetworkInventory:
     """GCP network inventory implementation of NetworkInventory."""
 
-    def __init__(self, *, gce_subnetworks_client_factory: Callable[[], _SubnetworksClient] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        gce_subnetworks_client_factory: Callable[[], _SubnetworksClient] | None = None,
+        gdc_custom_objects_api_factory: Callable[[str], _GdcCustomObjectsApi] | None = None,
+    ) -> None:
         self._gce_subnetworks_client_factory = gce_subnetworks_client_factory
+        self._gdc_custom_objects_api_factory = gdc_custom_objects_api_factory
 
     def list_subnet_cidrs(self, network_id: str) -> list[str]:
         """List provisioned subnet CIDRs for the active GCP range backend."""
@@ -72,15 +91,20 @@ class GCPNetworkInventory:
             logger.exception("list_subnet_cidrs: failed to list GCE subnetworks for %s: %s", network_id, e)
             raise CloudNetworkInventoryError(f"Failed to read GCE subnetwork inventory: {e}") from e
 
+        return self._gce_subnet_cidrs(response, network_id)
+
+    @classmethod
+    def _gce_subnet_cidrs(cls, response: Iterable[tuple[str, object]], network_id: str) -> list[str]:
+        """Extract CIDRs on the requested VPC from an aggregated response."""
         cidrs: list[str] = []
         for _scope, scoped in response:
-            subnetworks = self._get_field(scoped, "subnetworks") or ()
+            subnetworks = cls._get_field(scoped, "subnetworks") or ()
             if not isinstance(subnetworks, Iterable) or isinstance(subnetworks, (str, bytes, dict)):
                 continue
             for item in subnetworks:
-                if not self._matches_requested_network(item, network_id):
+                if not cls._matches_requested_network(item, network_id):
                     continue
-                cidr = self._get_field(item, "ip_cidr_range", "ipCidrRange")
+                cidr = cls._get_field(item, "ip_cidr_range", "ipCidrRange")
                 if cidr:
                     cidrs.append(str(cidr))
         return cidrs
@@ -95,37 +119,42 @@ class GCPNetworkInventory:
     def _list_gdc_network_cidrs(self, network_id: str, kubeconfig_yaml: str) -> list[str]:
         """List managed GDC Network CIDRs from the runtime cluster."""
         try:
-            import yaml
-            from kubernetes import client, config
-            from kubernetes.client.exceptions import ApiException
-        except ImportError as e:
-            raise CloudNetworkInventoryError("GDC network inventory requires kubernetes and PyYAML") from e
-
-        try:
-            kubeconfig_dict = yaml.safe_load(kubeconfig_yaml)
-            loader = config.kube_config.KubeConfigLoader(config_dict=kubeconfig_dict)
-            configuration = client.Configuration()
-            loader.load_and_set(configuration)
-            api_client = client.ApiClient(configuration=configuration)
-            custom_api = client.CustomObjectsApi(api_client)
+            custom_api = self._build_gdc_custom_objects_api(kubeconfig_yaml)
             response = custom_api.list_cluster_custom_object(
                 group="networking.gke.io",
                 version="v1",
                 plural="networks",
             )
-        except ApiException as e:
-            logger.exception("list_subnet_cidrs: failed to list GDC Network objects for %s: %s", network_id, e)
-            raise CloudNetworkInventoryError(f"Failed to list GDC scenario networks: {e}") from e
+        except ImportError as e:
+            raise CloudNetworkInventoryError("GDC network inventory requires kubernetes and PyYAML") from e
         except Exception as e:
             logger.exception("list_subnet_cidrs: failed to build GDC client for %s: %s", network_id, e)
             raise CloudNetworkInventoryError(f"Failed to read GDC network inventory: {e}") from e
 
         cidrs: list[str] = []
-        for item in response.get("items", []):
+        items = response.get("items", [])
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
             if not self._is_managed_gdc_network(item):
                 continue
             cidrs.extend(self._managed_network_cidrs(item))
         return cidrs
+
+    def _build_gdc_custom_objects_api(self, kubeconfig_yaml: str) -> _GdcCustomObjectsApi:
+        """Build or inject the GDC custom-objects client from a kubeconfig."""
+        if self._gdc_custom_objects_api_factory:
+            return self._gdc_custom_objects_api_factory(kubeconfig_yaml)
+
+        import yaml
+        from kubernetes import client, config
+
+        kubeconfig_dict = yaml.safe_load(kubeconfig_yaml)
+        loader = config.kube_config.KubeConfigLoader(config_dict=kubeconfig_dict)
+        configuration = client.Configuration()
+        loader.load_and_set(configuration)
+        api_client = client.ApiClient(configuration=configuration)
+        return cast(_GdcCustomObjectsApi, client.CustomObjectsApi(api_client))
 
     @staticmethod
     def _is_managed_gdc_network(item: InventoryItem) -> bool:

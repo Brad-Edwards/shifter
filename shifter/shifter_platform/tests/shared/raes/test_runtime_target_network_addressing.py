@@ -56,3 +56,13 @@ def test_duplicate_static_address_across_nodes_is_rejected() -> None:
 
     assert serialized is None
     assert any(item.code == _CODE for item in diagnostics)
+
+
+@pytest.mark.parametrize("address", ["10.50.0.0", "10.50.0.1", "10.50.0.2", "10.50.0.253"])
+def test_reserved_static_address_fails_before_dispatch(address: str) -> None:
+    serialized, diagnostics = _interpret(_addressed_plan([{"lan": address}]))
+
+    assert serialized is None
+    errors = [item for item in diagnostics if item.code == _CODE]
+    assert errors
+    assert all("reserved or unavailable" in item.message for item in errors)

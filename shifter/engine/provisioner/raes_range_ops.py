@@ -65,6 +65,7 @@ from raes_gcp_network_allocation import (
     allocated_networks_for_provision as _allocated_networks_for_provision,
 )
 from raes_plan import RaesPlan, RaesPlanNode, parse_plan
+from raes_range_members import realized_members as _realized_members
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
 from range_subnet_allocation import _release_subnet_allocations_best_effort
@@ -290,6 +291,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         )
 
         def release_pre_mutation_allocation() -> None:
+            """Release this generation's reservation before provider mutation."""
             nonlocal pre_mutation_release_attempted
             pre_mutation_release_attempted = True
             _release_subnet_allocations_best_effort(request_id, operation_id=generation)
@@ -347,44 +349,6 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         ResultStep.RAES_TERMINAL_READY,
         {"raes_status": "succeeded", "members": members, "completion": completion},
     )
-
-
-def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]]:
-    """Project realized instances into the bounded member/access result (#1710).
-
-    Carries only what ``Range.provisioned_instances`` needs for the portal to
-    authorize and dial, and secret *references* only -- never a credential value,
-    the reserved management secret, or a raw provider response.
-    """
-    instances = apply_result.get("instances")
-    if not isinstance(instances, list):
-        raise RaesRealizationError("realized instance outputs are invalid")
-    members: list[dict[str, object]] = []
-    for instance in instances:
-        if not isinstance(instance, dict):
-            raise RaesRealizationError("realized instance outputs are invalid")
-        channels = list(instance.get("participant_access_channels") or [])
-        member: dict[str, object] = {
-            "uuid": str(instance.get("uuid", "")),
-            "name": str(instance.get("name", "")),
-            "os_type": str(instance.get("os", "")),
-            "private_ip": str(instance.get("private_ip", "")),
-            "instance_id": str(instance.get("instance_id", "")),
-            "subnet_name": str(instance.get("subnet_name", "")),
-            "participant_access_channels": channels,
-            "participant_access_usernames": dict(instance.get("participant_access_usernames") or {}),
-        }
-        host_public_key = str(instance.get("gcp_host_public_key", ""))
-        if host_public_key:
-            member["host_public_key"] = host_public_key
-        sftp_root_directory = str(instance.get("sftp_root_directory", ""))
-        if sftp_root_directory:
-            member["sftp_root_directory"] = sftp_root_directory
-        for channel, key in (("ssh", "ssh_key_secret_arn"), ("rdp", "rdp_password_secret_arn")):
-            if channel in channels:
-                member[key] = str(instance.get(key, ""))
-        members.append(member)
-    return members
 
 
 def run_raes_range_activate(request_id: str, *, operation_id: str | None = None) -> None:

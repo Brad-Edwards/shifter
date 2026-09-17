@@ -186,6 +186,15 @@ class TestProvision:
             ResultStep.RAES_TERMINAL_READY,
         ]
 
+    @pytest.mark.parametrize("instances", [{"not": "a-list"}, ["not-a-mapping"]])
+    def test_malformed_realized_instances_fail_before_ready(self, patched, instances):
+        patched.apply.return_value = {**patched.apply.return_value, "instances": instances}
+
+        with pytest.raises(raes_range_ops.RaesRealizationError, match="realized instance outputs are invalid"):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        assert ResultStep.RAES_TERMINAL_READY not in _steps(patched)
+
     def test_open_network_uses_shared_vpc_allocator_before_apply(self, patched):
         patched.config.network_mode = "shared-vpc"
         patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())

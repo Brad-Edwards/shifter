@@ -56,6 +56,8 @@ from gcp_range_cell_types import (
 )
 from raes_access import RealizedAccessBinding
 from raes_gcp_adapter import RaesGceAdapterError, adapt_raes_plan_for_gce
+from raes_gcp_addressing import instance_key as _instance_key
+from raes_gcp_addressing import ip_assignments as _ip_assignments
 from raes_gcp_firewall import (
     acl_cidr_lookup,
     build_acl_firewalls,
@@ -63,6 +65,7 @@ from raes_gcp_firewall import (
     node_tag,
     service_base_priority,
 )
+from raes_gcp_plan_errors import RaesGcePlanError
 from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 
 #: Default guest login user the provisioner injects (management reachability). The
@@ -87,10 +90,6 @@ _DOCKER_HOST_SSH_USERNAME = "ubuntu"
 #: guest setup connects as the built-in domain "Administrator". Mirrors the legacy
 #: get_ssh_username(role="dc") host access on the RAES-native path.
 _WINDOWS_DC_ADMIN_USERNAME = "Administrator"
-
-
-class RaesGcePlanError(RuntimeError):
-    """Raised when an RAES plan cannot be realized as a GCE range-cell plan."""
 
 
 @dataclass(frozen=True)
@@ -348,11 +347,6 @@ def _instance_keys(nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode]) -> list
     return [_instance_key(node, index) for node in nodes for index in range(node.count)]
 
 
-def _instance_key(node: RaesPlanNode, index: int) -> str:
-    """Return the stable IP-assignment key for one instance of a node."""
-    return f"{node.address}#{index}"
-
-
 def _subnet_plan(
     network: RaesPlanNetwork,
     authored_network: RaesPlanNetwork | None,
@@ -389,70 +383,6 @@ def _subnet_plan(
         "ip_assignments": assignments,
         "instances": [],
     }
-
-
-def _ip_assignments(
-    network: RaesPlanNetwork,
-    authored_network: RaesPlanNetwork | None,
-    nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode],
-    keys: list[str],
-    usable: list[str],
-) -> dict[str, str]:
-    """Rebase authored static IPs, then fill remaining instances deterministically."""
-    explicit: dict[str, str] = {}
-    used: set[str] = set()
-    for node in nodes:
-        rebased = _rebased_static_ip(node, network, authored_network, usable)
-        if rebased is None:
-            continue
-        if rebased in used:
-            raise RaesGcePlanError("static GCE address is duplicated within its allocated network")
-        explicit[_instance_key(node, 0)] = rebased
-        used.add(rebased)
-
-    available = iter(address for address in usable if address not in used)
-    assignments: dict[str, str] = {}
-    for key in keys:
-        if key in explicit:
-            assignments[key] = explicit[key]
-            continue
-        try:
-            assignments[key] = next(available)
-        except StopIteration as exc:
-            raise RaesGcePlanError("GCE range subnet has too few assignable addresses") from exc
-    return assignments
-
-
-def _rebased_static_ip(
-    node: RaesPlanNode,
-    network: RaesPlanNetwork,
-    authored_network: RaesPlanNetwork | None,
-    usable: list[str],
-) -> str | None:
-    """Return one node's authored host offset in the realized subnet."""
-    requested = dict(node.network_ip_assignments).get(network.address)
-    if requested is None:
-        return None
-    if node.count != 1 or authored_network is None or not authored_network.cidr or not network.cidr:
-        raise RaesGcePlanError("static GCE address has no unambiguous authored network")
-    try:
-        authored = ipaddress.ip_network(authored_network.cidr, strict=True)
-        realized = ipaddress.ip_network(network.cidr, strict=True)
-        address = ipaddress.ip_address(requested)
-    except ValueError as exc:
-        raise RaesGcePlanError("static GCE address must use canonical IPv4 network intent") from exc
-    if not (
-        isinstance(authored, ipaddress.IPv4Network)
-        and isinstance(realized, ipaddress.IPv4Network)
-        and isinstance(address, ipaddress.IPv4Address)
-    ):
-        raise RaesGcePlanError("static GCE address must use IPv4")
-    if address not in authored:
-        raise RaesGcePlanError("static GCE address is outside its authored network")
-    rebased = str(ipaddress.IPv4Address(int(realized.network_address) + int(address) - int(authored.network_address)))
-    if rebased not in usable:
-        raise RaesGcePlanError("static GCE address is reserved or outside its allocated network")
-    return rebased
 
 
 def _access_by_node(

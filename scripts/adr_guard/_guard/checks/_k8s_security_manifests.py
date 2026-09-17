@@ -4,6 +4,7 @@ Split out of ``k8s_security.py`` to keep each module under the file-length
 limit; every public name here is re-imported by that module so the package
 surface is unchanged.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -18,9 +19,8 @@ from .._common import (
 
 K8S_BASE_DEPLOYMENT_DIR = "platform/k8s/gcp/base"
 HELM_CHART_DIR = "platform/charts/shifter"
-# Values files to render for ADR-006-R2 validation. Mirrors the helm-lint
-# pre-commit hook's input set so the guard validates the same chart-rendered
-# output devs already lint locally.
+# Values files to render for ADR-006-R2 validation. This is the canonical CI
+# set for chart-rendered security-context validation.
 HELM_VALUES_FILES = (
     "platform/charts/shifter/values-aws-dev.yaml",
     "platform/charts/shifter/values-aws-proof.yaml",
@@ -53,7 +53,9 @@ def _check_k8s_pod_security(pod_sc: dict[str, object], rel: str) -> list[Violati
     return []
 
 
-def _effective_field(container_sc: dict[str, object], pod_sc: dict[str, object], key: str) -> object:
+def _effective_field(
+    container_sc: dict[str, object], pod_sc: dict[str, object], key: str
+) -> object:
     """Resolve a securityContext field that K8s lets the pod default cover.
 
     Per the Pod spec, container-level overrides take precedence; if the
@@ -65,7 +67,9 @@ def _effective_field(container_sc: dict[str, object], pod_sc: dict[str, object],
     return pod_sc.get(key)
 
 
-def _coerce_container_sc(raw_sc: object, label: str) -> tuple[dict[str, object], list[Violation]]:
+def _coerce_container_sc(
+    raw_sc: object, label: str
+) -> tuple[dict[str, object], list[Violation]]:
     """Coerce a container's `securityContext` into a dict, surfacing structural problems.
 
     Non-mapping values (YAML aliases resolved to scalars, malformed shapes)
@@ -127,15 +131,21 @@ def _check_container_seccomp(sc: dict[str, object], label: str) -> list[str]:
         return [f"{label} securityContext.seccompProfile must be a mapping if set"]
     seccomp_type = (block or {}).get("type")
     if seccomp_type is not None and seccomp_type != "RuntimeDefault":
-        return [f"{label} container-level seccompProfile.type must be 'RuntimeDefault' if set (got {seccomp_type!r})"]
+        return [
+            f"{label} container-level seccompProfile.type must be 'RuntimeDefault' if set (got {seccomp_type!r})"
+        ]
     return []
 
 
-def _check_container_identity(sc: dict[str, object], pod_sc: dict[str, object], label: str) -> list[str]:
+def _check_container_identity(
+    sc: dict[str, object], pod_sc: dict[str, object], label: str
+) -> list[str]:
     """runAsNonRoot, runAsUser, runAsGroup with pod-level inheritance."""
     msgs: list[str] = []
     if _effective_field(sc, pod_sc, "runAsNonRoot") is not True:
-        msgs.append(f"{label} must set runAsNonRoot: true (directly or via pod-level securityContext)")
+        msgs.append(
+            f"{label} must set runAsNonRoot: true (directly or via pod-level securityContext)"
+        )
     run_as_user = _effective_field(sc, pod_sc, "runAsUser")
     if not _is_real_int(run_as_user) or run_as_user <= 0:
         msgs.append(
@@ -164,7 +174,9 @@ def _check_k8s_container_security(
     """
     name = container.get("name", "<unnamed>")
     label = f"{role} {name!r}"
-    sc, structural_violations = _coerce_container_sc(container.get("securityContext"), label)
+    sc, structural_violations = _coerce_container_sc(
+        container.get("securityContext"), label
+    )
 
     field_msgs: list[str] = []
     field_msgs += _check_container_basic_fields(sc, label)
@@ -172,7 +184,10 @@ def _check_k8s_container_security(
     field_msgs += _check_container_seccomp(sc, label)
     field_msgs += _check_container_identity(sc, pod_sc, label)
 
-    violations = [Violation("k8s-deployment-security-context", "ADR-006-R2", rel, msg) for msg in field_msgs]
+    violations = [
+        Violation("k8s-deployment-security-context", "ADR-006-R2", rel, msg)
+        for msg in field_msgs
+    ]
     # Re-stamp rel onto any structural violations from the coercion step.
     for v in structural_violations:
         violations.append(Violation(v.check, v.rule_id, rel, v.message))
@@ -219,25 +234,35 @@ def _v(rel: str, msg: str) -> Violation:
     return Violation("k8s-deployment-security-context", "ADR-006-R2", rel, msg)
 
 
-def _mapping_level(value: object, label: str, rel: str) -> tuple[dict[str, object] | None, list[Violation]]:
+def _mapping_level(
+    value: object, label: str, rel: str
+) -> tuple[dict[str, object] | None, list[Violation]]:
     """Coerce one manifest nesting level to a mapping.
 
     Returns ``(mapping, [])`` — an absent level becomes ``{}`` — or
     ``(None, [violation])`` when the level is present but not a mapping.
     """
     if value is not None and not isinstance(value, dict):
-        return None, [_v(rel, f"{label} must be a mapping (got {type(value).__name__})")]
+        return None, [
+            _v(rel, f"{label} must be a mapping (got {type(value).__name__})")
+        ]
     return value or {}, []
 
 
-def _resolve_pod_spec(doc: dict[str, object], rel: str) -> tuple[dict[str, object] | None, list[Violation]]:
+def _resolve_pod_spec(
+    doc: dict[str, object], rel: str
+) -> tuple[dict[str, object] | None, list[Violation]]:
     """Walk doc.spec.template.spec, validating each level is a mapping.
 
     Returns (pod_spec_or_None, violations). When any level is non-mapping,
     pod_spec is None and the caller skips the per-document checks.
     """
     level: dict[str, object] = doc
-    for key, label in (("spec", "spec"), ("template", "spec.template"), ("spec", "spec.template.spec")):
+    for key, label in (
+        ("spec", "spec"),
+        ("template", "spec.template"),
+        ("spec", "spec.template.spec"),
+    ):
         resolved, violations = _mapping_level(level.get(key), label, rel)
         if resolved is None:
             return None, violations
@@ -245,7 +270,9 @@ def _resolve_pod_spec(doc: dict[str, object], rel: str) -> tuple[dict[str, objec
     return level, []
 
 
-def _resolve_pod_sc(pod_spec: dict[str, object], rel: str) -> tuple[dict[str, object], list[Violation]]:
+def _resolve_pod_sc(
+    pod_spec: dict[str, object], rel: str
+) -> tuple[dict[str, object], list[Violation]]:
     """Coerce pod_spec.securityContext to a dict, surfacing structural problems."""
     pod_sc = pod_spec.get("securityContext") or {}
     if not isinstance(pod_sc, dict):
@@ -260,7 +287,13 @@ def _resolve_pod_sc(pod_spec: dict[str, object], rel: str) -> tuple[dict[str, ob
 
 
 def _validate_containers_list(
-    pod_spec: dict[str, object], pod_sc: dict[str, object], rel: str, key: str, role: str, *, required: bool
+    pod_spec: dict[str, object],
+    pod_sc: dict[str, object],
+    rel: str,
+    key: str,
+    role: str,
+    *,
+    required: bool,
 ) -> list[Violation]:
     """Validate every container entry in pod_spec[key]. `required=True` rejects empty/missing."""
     raw = pod_spec.get(key)
@@ -277,7 +310,9 @@ def _validate_containers_list(
     violations: list[Violation] = []
     for entry in raw:
         if not isinstance(entry, dict):
-            violations.append(_v(rel, f"{role} entry must be a mapping (got {type(entry).__name__})"))
+            violations.append(
+                _v(rel, f"{role} entry must be a mapping (got {type(entry).__name__})")
+            )
             continue
         violations.extend(_check_k8s_container_security(entry, pod_sc, rel, role))
     return violations
@@ -301,9 +336,15 @@ def _validate_deployment_documents(docs: list[object], rel: str) -> list[Violati
         pod_sc, sc_violations = _resolve_pod_sc(pod_spec, rel)
         violations.extend(sc_violations)
         violations.extend(_check_k8s_pod_security(pod_sc, rel))
-        violations.extend(_validate_containers_list(pod_spec, pod_sc, rel, "containers", "container", required=True))
         violations.extend(
-            _validate_containers_list(pod_spec, pod_sc, rel, "initContainers", "initContainer", required=False)
+            _validate_containers_list(
+                pod_spec, pod_sc, rel, "containers", "container", required=True
+            )
+        )
+        violations.extend(
+            _validate_containers_list(
+                pod_spec, pod_sc, rel, "initContainers", "initContainer", required=False
+            )
         )
     return violations
 
@@ -384,24 +425,32 @@ def _render_chart_for_validation(
     return rendered, violations
 
 
-def _scan_targets(repo_root: Path, files: list[str] | None) -> tuple[bool, bool, list[Path]]:
+def _scan_targets(
+    repo_root: Path, files: list[str] | None
+) -> tuple[bool, bool, list[Path]]:
     """Decide whether to scan base manifests, chart, and which base files to read.
 
     --all/CI mode (`files is None`) always exercises the chart branch so a
-    missing chart directory surfaces as a violation. files-mode (pre-commit)
-    triggers each branch only when the changed file set actually overlaps.
+    missing chart directory surfaces as a violation. Targeted files-mode runs
+    trigger each branch only when the changed file set actually overlaps.
     """
     base_dir = repo_root / K8S_BASE_DEPLOYMENT_DIR
     if files is None:
         scan_base = base_dir.exists()
-        base_files = sorted(list(base_dir.rglob("*.yaml")) + list(base_dir.rglob("*.yml"))) if scan_base else []
+        base_files = (
+            sorted(list(base_dir.rglob("*.yaml")) + list(base_dir.rglob("*.yml")))
+            if scan_base
+            else []
+        )
         return scan_base, True, base_files
 
     scan_base = False
     scan_chart = False
     base_files: list[Path] = []
     for f in files:
-        if f.startswith(K8S_BASE_DEPLOYMENT_DIR + "/") and f.endswith((".yaml", ".yml")):
+        if f.startswith(K8S_BASE_DEPLOYMENT_DIR + "/") and f.endswith(
+            (".yaml", ".yml")
+        ):
             scan_base = True
             full = repo_root / f
             if full.exists():
@@ -416,7 +465,9 @@ def _validate_base_files(repo_root: Path, base_files: list[Path]) -> list[Violat
     violations: list[Violation] = []
     for path in base_files:
         rel = _repo_relative(path, repo_root)
-        docs, parse_violations = _iter_yaml_documents(path.read_text(encoding="utf-8"), rel)
+        docs, parse_violations = _iter_yaml_documents(
+            path.read_text(encoding="utf-8"), rel
+        )
         violations.extend(parse_violations)
         violations.extend(_validate_deployment_documents(docs, rel))
     return violations
@@ -425,7 +476,9 @@ def _validate_base_files(repo_root: Path, base_files: list[Path]) -> list[Violat
 def _validate_chart_renders(repo_root: Path) -> list[Violation]:
     """Validate Deployment security contexts in every rendered chart output."""
     violations: list[Violation] = []
-    rendered, render_violations = _render_chart_for_validation(repo_root, HELM_VALUES_FILES)
+    rendered, render_violations = _render_chart_for_validation(
+        repo_root, HELM_VALUES_FILES
+    )
     violations.extend(render_violations)
     for docs, label in rendered:
         violations.extend(_validate_deployment_documents(docs, label))

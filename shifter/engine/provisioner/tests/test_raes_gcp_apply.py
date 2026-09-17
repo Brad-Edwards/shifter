@@ -722,7 +722,7 @@ class TestContentDeliveryIntegration:
             networks=base.networks,
             features=(feature,),
         )
-        apply_raes_range_cell(
+        result = apply_raes_range_cell(
             "req-1",
             7,
             plan,
@@ -730,6 +730,11 @@ class TestContentDeliveryIntegration:
             _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
         )
         realizer.assert_called_once()
+        assert realizer.call_args.kwargs["raes_plan"] is plan
+        assert realizer.call_args.kwargs["instance_outputs"] == result["instances"]
+        assert {item["uuid"] for item in result["instances"]} == {"node.web#0", "node.web#1"}
+        assert realizer.call_args.kwargs["delivery_bindings"] is None
+        assert result["composition_verified_addresses"] == ["feature.nginx"]
 
     def test_realizer_failure_triggers_cleanup_and_reraises(self):
         content = _source_backed_content()

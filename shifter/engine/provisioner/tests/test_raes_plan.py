@@ -309,6 +309,20 @@ class TestParseValid:
         with pytest.raises(RaesPlanError, match=message):
             parse_plan(_serialized(network, _resource("provision.node.web", "node", payload)))
 
+    @pytest.mark.parametrize("address", ["10.50.0.0", "10.50.0.1", "10.50.0.2", "10.50.0.253"])
+    def test_reserved_static_network_address_fails_closed(self, address):
+        network = _resource(
+            "provision.network.lan",
+            "network",
+            {"name": "lan", "spec": {"infrastructure": {"properties": {"cidr": "10.50.0.0/24"}}}},
+        )
+        payload = _node_payload()
+        payload["count"] = 1
+        payload["spec"]["infrastructure"] = {"links": ["lan"], "properties": [{"lan": address}]}
+
+        with pytest.raises(RaesPlanError, match="reserved or unavailable"):
+            parse_plan(_serialized(network, _resource("provision.node.web", "node", payload)))
+
 
 class TestAclExtraction:
     def _node_with_acls(self, *acls: dict) -> dict:

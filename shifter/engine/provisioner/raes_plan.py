@@ -28,7 +28,6 @@ they are re-exported here so callers keep importing from ``raes_plan``.
 
 from __future__ import annotations
 
-import ipaddress
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import replace
@@ -46,6 +45,7 @@ from raes_composition import (
     build_content,
     build_feature,
 )
+from raes_plan_addressing import network_ip_assignments as _network_ip_assignments
 from raes_plan_resources import (
     ACCOUNT_RESOURCE_TYPE,
     CONTENT_RESOURCE_TYPE,
@@ -355,56 +355,6 @@ def _node(
         domain_netbios_name=raes_plan_domain.topology_text(topology, "netbios_name") or None,
         authority_account_address=raes_plan_domain.topology_text(topology, "authority_account_address") or None,
     )
-
-
-def _network_ip_assignments(
-    address: str,
-    payload: Mapping[str, Any],
-    network_lookup: Mapping[str, str],
-    network_by_address: Mapping[str, RaesPlanNetwork],
-    resolved_networks: tuple[str, ...],
-    count: int,
-) -> tuple[tuple[str, str], ...]:
-    """Read the exact RAES 3.5 static-address property shape, fail closed."""
-    raw = _infrastructure_spec(payload).get("properties")
-    if raw in (None, []):
-        return ()
-    if not isinstance(raw, list | tuple):
-        raise RaesPlanError(f"node {address} network properties must be a list")
-    if count != 1:
-        raise RaesPlanError(f"node {address} with a static network address must have count 1")
-    if len(raw) != 1:
-        raise RaesPlanError(f"node {address} static address must uniquely target its primary network")
-    entry = raw[0]
-    if not isinstance(entry, Mapping) or len(entry) != 1:
-        raise RaesPlanError(f"node {address} network property must name one network and IPv4 address")
-    ref, value = next(iter(entry.items()))
-    if not isinstance(ref, str) or not ref.strip() or not isinstance(value, str) or not value.strip():
-        raise RaesPlanError(f"node {address} network property must name one network and IPv4 address")
-    network_address = network_lookup.get(ref)
-    if network_address is None or network_address not in resolved_networks:
-        raise RaesPlanError(f"node {address} static address references an unknown or unattached network")
-    if not resolved_networks or network_address != resolved_networks[0]:
-        raise RaesPlanError(f"node {address} static address must target its primary network")
-    try:
-        ip = ipaddress.ip_address(value.strip())
-    except ValueError as exc:
-        raise RaesPlanError(f"node {address} static network address must be IPv4") from exc
-    if not isinstance(ip, ipaddress.IPv4Address):
-        raise RaesPlanError(f"node {address} static network address must be IPv4")
-    network = network_by_address[network_address]
-    if not network.cidr:
-        raise RaesPlanError(f"node {address} static address requires an authored network CIDR")
-    try:
-        authored = ipaddress.ip_network(network.cidr, strict=True)
-    except ValueError as exc:
-        raise RaesPlanError(f"node {address} static address requires a canonical IPv4 network") from exc
-    if not isinstance(authored, ipaddress.IPv4Network) or ip not in authored:
-        raise RaesPlanError(f"node {address} static address must belong to its authored IPv4 network")
-    offset = int(ip) - int(authored.network_address)
-    if offset < 3 or offset > authored.num_addresses - 4:
-        raise RaesPlanError(f"node {address} static address is reserved or unavailable on GCE")
-    return ((network_address, str(ip)),)
 
 
 def _resolved_networks(
