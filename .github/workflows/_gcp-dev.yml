@@ -894,11 +894,8 @@ jobs:
           GCP_RANGE_WINDOWS_IMAGE: ${{ vars.GCP_RANGE_WINDOWS_IMAGE }}
           GCP_RANGE_DC_IMAGE: ${{ vars.GCP_RANGE_DC_IMAGE }}
           GCP_RANGE_PRIVATE_GOOGLE_ACCESS: ${{ vars.GCP_RANGE_PRIVATE_GOOGLE_ACCESS }}
-          # Host SA and Vertex SA are independent inputs and MAY be the same
-          # service account in accounts that require it.
+          # Legacy cloud-enabled hosts only; native guests have no cloud identity.
           GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL: ${{ vars.GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL }}
-          GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL: ${{ vars.GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL }}
-          GCP_RANGE_VERTEX_PROJECT_ID: ${{ vars.GCP_RANGE_VERTEX_PROJECT_ID }}
         run: |
           # The GCP portal runtime is always production-secure (DEBUG off,
           # secure cookies, Identity Platform auth, SITE_URL=https://<hostname>).

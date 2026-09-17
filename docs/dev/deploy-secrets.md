@@ -182,7 +182,6 @@ settings:
     GDC_ACCESS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-access
     GDC_VM_IMAGE_GCS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-vm-image-gcs
     GDC_VMSERIES_IMAGE_GCS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-vm-image-gcs
-    GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID: projects/vertex-project/secrets/shared-vertex-key
 ```
 
 Omit unused keys. Values are secret references, never payloads, and must identify
@@ -696,14 +695,15 @@ fall back to the code defaults in `config.py`. See
 | `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed guests use the structured map below. |
 | `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image. |
 | `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile. Normal images use `source_image`, sizing, disk policy, and a typed capability. Preconfigured hosts use an exact `source_machine_image`, machine type, host login, participant container/account, the closed `participant-readiness/v1` contract, and a lowercase SHA-256 readiness-manifest digest. Any profile may opt into public TCP 80/443 with `allow_public_web_egress` (default false). Maximum 32,768 bytes and 64 entries. Unknown keys, unsupported capabilities, and malformed profiles fail before cloud mutation. Use an Actions environment secret when resource names or logical selectors are confidential; the deploy workflow prefers that secret over the repository variable. The value is runtime configuration, not a credential, and is emitted into the private platform ConfigMap. See `docs/dev/gcp-range-cell-deploy.md`. |
-| `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | yes | Service account attached to range guests. Minimal scope: logging and monitoring write. |
+| `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | legacy hosts | Identity for an explicitly selected cloud-enabled host capability. Native guests have no attached service account. |
 | `GCP_RANGE_HOST_IDENTITY_POOL_SIZE` | machine-image hosts | Number of Terraform-created `sh-range-host-<slot>` identities. Must equal `range_host_identity_pool_size`; zero disables preconfigured machine-image hosts. |
-| `GCP_RANGE_VERTEX_PROJECT_ID` | no | Vertex project. Defaults to `GCP_RANGE_CELL_PROJECT_ID`, then the control-plane project. |
-| `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach Vertex AI and Cloud Storage over Private Google Access. |
+| `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach approved Google APIs over Private Google Access. Model inference uses the private broker. |
 
-The host and Vertex service accounts are **independent** inputs. Accounts that
-require it may point both at the same service account; the render and the
-provisioner never assume they differ.
+Native guests carry no provider identity. Participant model access requires the
+deployment broker, an admitted allocation and trusted one-use guest enrollment.
+The legacy invocation service account and provisioner key-admin grants are
+removed on Terraform apply. Revoke externally managed shared keys through their
+owning deployment before declaring migration complete.
 
 ## Local development
 

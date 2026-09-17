@@ -50,7 +50,6 @@ GcpProvisionerStaticSecretKey = Literal[
     "GDC_VM_IMAGE_GCS_SECRET_ID",
     "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
     "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-    "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
 ]
 GcpNamedResourceRef = Annotated[
     str,
@@ -101,7 +100,7 @@ class GcpBackendSettings(BaseModel):
         alias="provisioner_static_secret_refs",
         default_factory=dict,
         description=(
-            "Closed map of operator-created GDC and Vertex input references. The same full references drive "
+            "Closed map of operator-created GDC input references. The same full references drive "
             "per-secret provisioner IAM and runtime environment publication."
         ),
     )

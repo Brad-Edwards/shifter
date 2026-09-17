@@ -101,11 +101,6 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_EGRESS_ALLOW_CIDRS": "10.60.0.0/16",
         "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
         "GCP_RANGE_HOST_MGMT_SSH_PORT": "2222",
-        "GCP_RANGE_VERTEX_PROJECT_ID": "shifter-gcp-dev",
-        "GCP_RANGE_VERTEX_REGION": "us-east5",
-        "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL": "range-vertex@shifter-gcp-dev.iam.gserviceaccount.com",
-        "GCP_RANGE_KALI_ANTHROPIC_MODEL": "claude-sonnet-4-6",
-        "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -261,15 +256,15 @@ def test_render_env_publishes_static_refs_from_terraform_and_ignores_env_overrid
     outputs["provisioner_static_secret_refs"] = {
         "value": {
             "GDC_ACCESS_SECRET_ID": "projects/owner-project/secrets/gdc-access",
-            "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID": "projects/vertex-project/secrets/shared-key",
+            "GDC_VM_IMAGE_GCS_SECRET_ID": "projects/image-project/secrets/image-key",
         }
     }
-    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "projects/wrong-project/secrets/wrong-key")
+    monkeypatch.setenv("GDC_VM_IMAGE_GCS_SECRET_ID", "projects/wrong-project/secrets/wrong-key")
 
     rendered = module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
 
     assert "GDC_ACCESS_SECRET_ID=projects/owner-project/secrets/gdc-access\n" in rendered
-    assert "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID=projects/vertex-project/secrets/shared-key\n" in rendered
+    assert "GDC_VM_IMAGE_GCS_SECRET_ID=projects/image-project/secrets/image-key\n" in rendered
     assert "wrong-project" not in rendered
 
 
@@ -277,14 +272,29 @@ def test_render_env_drops_static_ref_missing_from_terraform_grant_map(monkeypatc
     module = _load_module("render_runtime_env.py", "render_runtime_env_without_static_override")
     outputs = _outputs()
     monkeypatch.setenv(
-        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+        "GDC_VM_IMAGE_GCS_SECRET_ID",
         "projects/ungranted-project/secrets/ungranted-key",
     )
 
     rendered = module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
 
-    assert "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID=" not in rendered
+    assert "GDC_VM_IMAGE_GCS_SECRET_ID=" not in rendered
     assert "ungranted-project" not in rendered
+
+
+def test_retired_guest_model_inputs_cannot_reenter_runtime(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_without_guest_provider")
+    monkeypatch.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "retired-project")
+    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "projects/retired-project/secrets/shared-key")
+    monkeypatch.setenv("GCP_RANGE_KALI_ANTHROPIC_MODEL", "retired-model")
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    assert "retired-" not in rendered
+    outputs = _outputs()
+    outputs["provisioner_static_secret_refs"] = {
+        "value": {"GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID": "projects/retired-project/secrets/shared-key"}
+    }
+    with pytest.raises(ValueError):
+        module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
 
 
 @pytest.mark.parametrize(
@@ -398,7 +408,6 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
                 "GDC_VM_IMAGE_GCS_SECRET_ID",
                 "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
                 "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-                "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
             )
         }
     }

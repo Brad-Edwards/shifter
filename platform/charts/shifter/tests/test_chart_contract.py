@@ -45,9 +45,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for ADR-041 tenant plugin installation: dedicated restricted
 # namespace, network denial, quotas, controller RBAC and worker admission policy.
 # Regenerated for mandatory gVisor placement and guest-enrollment admission keys.
+# Regenerated after removing retired direct-provider configuration from Job admission.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "57cf31f7eece98b8de5309a06ad94606bccf5dc889cfe7464b59dab25a539b1c",
-    "gcp-prod": "1a697ef9dbfa85ca9bcee66bf730c0ab334f7fd2ebc550e264b8c5490c147f5c",
+    "gcp-dev": "e4558086abb0d58af58dbcbcc474872e919724e1cc74e7d4c7e5c5ac0bd15a83",
+    "gcp-prod": "81fd1db4c9d59b59b62245e2b1639ed8cba7ba349700d8097f8dccc55e4a91ce",
 }
 
 

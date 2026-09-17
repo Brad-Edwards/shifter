@@ -42,7 +42,6 @@ settings:
   #   GDC_ACCESS_SECRET_ID: projects/your-gcp-project/secrets/shifter-prod-gdc-access
   #   GDC_VM_IMAGE_GCS_SECRET_ID: projects/your-gcp-project/secrets/shifter-prod-gdc-vm-image-gcs
   #   GDC_VMSERIES_IMAGE_GCS_SECRET_ID: projects/your-gcp-project/secrets/shifter-prod-gdc-vm-image-gcs
-  #   GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID: projects/vertex-project/secrets/shared-vertex-key
 
   # PLAT-220: range network egress policy. Same shape on AWS and GCP. Omit the
   # block entirely (or set mode: status-quo) to preserve the backend's existing

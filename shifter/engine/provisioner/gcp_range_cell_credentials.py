@@ -45,9 +45,8 @@ def _default_secret_ops() -> GCEGuestSecretOps:
 class GCEVertexCredentialOps:
     """Legacy provider-credential teardown used by the GCE backend.
 
-    ``delete`` takes the range project id so the SA key and Secret
-    Manager secret are managed in the range project, not the control-plane
-    project (which may be a deploy-overlay placeholder).
+    ``delete`` removes only range-owned Secret Manager copies. Provider keys
+    are revoked by their deployment owner; the provisioner has no key-admin IAM.
     """
 
     delete: Callable[[int, str], None]

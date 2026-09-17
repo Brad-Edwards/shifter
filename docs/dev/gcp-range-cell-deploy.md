@@ -139,15 +139,17 @@ compatibility are separate from range readiness; see the
 
 The deployment `shifter.yaml` must also set
 `settings.dynamic_secret_project_id` to the pre-existing, deployment-only
-range-secret project. This is distinct from `GCP_RANGE_CELL_PROJECT_ID` (Compute
-resources), `GCP_RANGE_VERTEX_PROJECT_ID` (Vertex API/quota), and the project in
-an optional full `GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID` reference. Equal values
-in a small deployment do not merge those ownership concepts. New guest,
-RAES/GDC, Vertex, VM-Series, and VPN secrets use canonical deployment- and
-audience-prefixed names in that project; persisted full references remain the
-authority for bootstrap and portal access.
+range-secret project. This is distinct from the guest compute project and the
+broker's dedicated model invocation projects. New guest, RAES/GDC, VM-Series
+and VPN secrets use canonical deployment- and audience-prefixed names in that
+project; persisted full references remain authoritative for guest access.
 
-When GDC access/image inputs or a shared Vertex source are enabled, declare the
+Direct guest provider credentials are retired. Applying the deployment removes
+the old invocation service account and its provisioner key-admin grants. Revoke
+any externally owned shared keys through their owner. Legacy range teardown
+removes only the range's stored copies; it never reads or reissues provider keys.
+
+When GDC access/image inputs are enabled, declare the
 full versionless refs under `settings.provisioner_static_secret_refs`. Do not add
 a broad Secret Manager role to compensate for a missing entry. The migration,
 permission-probe, quota, audit-cost, and revocation procedure is documented in
