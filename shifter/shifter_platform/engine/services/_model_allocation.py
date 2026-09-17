@@ -4,17 +4,26 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
-from typing import Any
 
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from engine.models import ModelAliasAssignment, ModelAllocation, ModelAllocationAuthority, ModelPendingGrant, Range
-from shared.model_access import ContractError, compute_digest, validate_catalog
+from engine.models import (
+    AllocationGroup,
+    ModelAliasAssignment,
+    ModelAllocation,
+    ModelAllocationAuthority,
+    ModelPendingGrant,
+    ModelQuotaIdentity,
+    Range,
+    SharingAuthorityFence,
+)
+from shared.model_access import ContractError, ModelAccessCatalog, compute_digest, validate_catalog
 from shared.model_access.allocation import ShardWeight, rank_weighted_rendezvous
-from shared.model_access.core_models import AllocationStrategy
+from shared.model_access.core_models import AllocationStrategy, EffectiveProfile, ModelAlias, ModelShard, PriceSchedule
+from shared.model_access.effective_policy import EffectivePolicy
 from shared.model_access.policy import intersect_profile
 from shared.model_access.reservation import ModelAllocationRequest, ModelQuotaObservation
 
@@ -24,7 +33,7 @@ from ._model_quota import add_shard_demand, lock_quotas, persist_draws, vector_f
 logger = logging.getLogger(__name__)
 
 
-def _validated(model: type[Any], value: Any) -> Any:
+def _validated[TContractModel: BaseModel](model: type[TContractModel], value: object) -> TContractModel:
     """Normalize one service-boundary value through its closed contract."""
     try:
         return model.model_validate(value.model_dump(mode="json") if isinstance(value, model) else value)
@@ -66,7 +75,9 @@ def _replay(request: ModelAllocationRequest, intent_digest: str) -> ModelAllocat
     return existing
 
 
-def _effective_profile(request: ModelAllocationRequest, catalog: Any, sharing: Any) -> Any:
+def _effective_profile(
+    request: ModelAllocationRequest, catalog: ModelAccessCatalog, sharing: EffectivePolicy
+) -> EffectiveProfile:
     """Intersect authored need with catalog and incumbent sharing policy."""
     profile = next((item for item in catalog.profiles if item.profile_id == request.need.profile_id), None)
     if profile is None or not catalog.enabled or not sharing.admissible:
@@ -92,12 +103,12 @@ def _effective_profile(request: ModelAllocationRequest, catalog: Any, sharing: A
 
 
 def _rank(
-    alias: Any,
+    alias: ModelAlias,
     request: ModelAllocationRequest,
-    catalog: Any,
+    catalog: ModelAccessCatalog,
     policy_digest: str,
-    group: Any = None,
-) -> list[Any]:
+    group: AllocationGroup | None = None,
+) -> list[ModelShard]:
     """Rank eligible shards under the catalog's declared strategy."""
     if request.demand.allowed_strategy != alias.strategy:
         raise ContractError("allocation.strategy_not_allowed")
@@ -115,7 +126,12 @@ def _rank(
     return [by_id[item.shard_id] for item in ranks]
 
 
-def _eligible(shard: Any, profile: Any, observations: dict[str, Any], now: datetime) -> bool:
+def _eligible(
+    shard: ModelShard,
+    profile: EffectiveProfile,
+    observations: dict[str, ModelQuotaObservation],
+    now: datetime,
+) -> bool:
     """Check immutable shard policy plus fresh provider observations."""
     return (
         shard.enabled
@@ -130,7 +146,7 @@ def _eligible(shard: Any, profile: Any, observations: dict[str, Any], now: datet
     )
 
 
-def _provider_candidates(catalog: Any, sharing: Any) -> set[str]:
+def _provider_candidates(catalog: ModelAccessCatalog, sharing: EffectivePolicy) -> set[str]:
     """Intersect a declared provider pool; absent legacy mappings fail closed."""
     if sharing.provider_pool_ref is None:
         return {shard.shard_id for shard in catalog.shards}
@@ -140,7 +156,7 @@ def _provider_candidates(catalog: Any, sharing: Any) -> set[str]:
     raise ContractError("allocation.provider_pool_unavailable")
 
 
-def _policy_digest(request: ModelAllocationRequest, catalog: Any, profile: Any) -> str:
+def _policy_digest(request: ModelAllocationRequest, catalog: ModelAccessCatalog, profile: EffectiveProfile) -> str:
     """Bind the routing decision to its exact catalog, need, and profile."""
     return compute_digest(
         {
@@ -156,18 +172,75 @@ class _SelectionContext:
     """Immutable routing and capacity inputs shared across alias choices."""
 
     request: ModelAllocationRequest
-    catalog: Any
-    sharing: Any
-    profile: Any
-    locked: dict[str, Any]
+    catalog: ModelAccessCatalog
+    sharing: EffectivePolicy
+    profile: EffectiveProfile
+    locked: dict[str, ModelQuotaIdentity]
     observations: dict[str, ModelQuotaObservation]
-    groups: dict[str, Any]
+    groups: dict[str, AllocationGroup]
     policy_digest: str
-    prices: dict[str, Any]
+    prices: dict[str, PriceSchedule]
     allowed_shards: set[str]
 
 
-def _select_alias(alias: Any, vector: dict[str, int], context: _SelectionContext) -> tuple[Any, dict[str, int]]:
+def _alias_candidates(
+    alias: ModelAlias,
+    context: _SelectionContext,
+    group: AllocationGroup | None,
+    assignment: ModelAliasAssignment | None,
+) -> list[ModelShard]:
+    """Apply provider-pool and any prior shared assignment constraints."""
+    candidates = [
+        shard
+        for shard in _rank(alias, context.request, context.catalog, context.policy_digest, group)
+        if shard.shard_id in context.allowed_shards
+    ]
+    if assignment is None:
+        return candidates
+    candidates = [shard for shard in candidates if shard.model_dump(mode="json") == assignment.shard]
+    if not candidates or not _eligible(candidates[0], context.profile, context.observations, timezone.now()):
+        raise ContractError("allocation.shared_assignment_incompatible")
+    return candidates
+
+
+def _candidate_vector(shard: ModelShard, vector: dict[str, int], context: _SelectionContext) -> dict[str, int] | None:
+    """Return the feasible demand vector for one healthy candidate."""
+    if not _eligible(shard, context.profile, context.observations, timezone.now()):
+        return None
+    candidate = add_shard_demand(vector, shard, context.catalog, context.request.demand)
+    if not vector_fits(
+        candidate,
+        request=context.request,
+        effective=context.sharing,
+        catalog=context.catalog,
+        locked=context.locked,
+        observations=context.observations,
+    ):
+        return None
+    return candidate
+
+
+def _persist_group_assignment(
+    *,
+    group: AllocationGroup | None,
+    assignment: ModelAliasAssignment | None,
+    alias: ModelAlias,
+    shard: ModelShard,
+    policy_digest: str,
+) -> None:
+    """Pin the first shared alias choice after it passes capacity checks."""
+    if group is not None and assignment is None:
+        ModelAliasAssignment.objects.create(
+            group=group,
+            logical_alias=alias.logical_alias,
+            shard=shard.model_dump(mode="json"),
+            policy_digest=policy_digest,
+        )
+
+
+def _select_alias(
+    alias: ModelAlias, vector: dict[str, int], context: _SelectionContext
+) -> tuple[ModelShard, dict[str, int]]:
     """Choose one alias without exposing a partial persisted assignment."""
     price = context.prices[alias.price_schedule_id]
     if price.valid_until < context.request.window_end or price.currency != context.profile.limits.currency:
@@ -176,50 +249,33 @@ def _select_alias(alias: Any, vector: dict[str, int], context: _SelectionContext
     assignment = (
         ModelAliasAssignment.objects.filter(group=group, logical_alias=alias.logical_alias).first() if group else None
     )
-    candidates = [
-        shard
-        for shard in _rank(alias, context.request, context.catalog, context.policy_digest, group)
-        if shard.shard_id in context.allowed_shards
-    ]
-    if assignment:
-        candidates = [shard for shard in candidates if shard.model_dump(mode="json") == assignment.shard]
-        if not candidates or not _eligible(candidates[0], context.profile, context.observations, timezone.now()):
-            raise ContractError("allocation.shared_assignment_incompatible")
-    for shard in candidates:
-        if not _eligible(shard, context.profile, context.observations, timezone.now()):
+    for shard in _alias_candidates(alias, context, group, assignment):
+        candidate = _candidate_vector(shard, vector, context)
+        if candidate is None:
             continue
-        candidate = add_shard_demand(vector, shard, context.catalog, context.request.demand)
-        if vector_fits(
-            candidate,
-            request=context.request,
-            effective=context.sharing,
-            catalog=context.catalog,
-            locked=context.locked,
-            observations=context.observations,
-        ):
-            if group and assignment is None:
-                ModelAliasAssignment.objects.create(
-                    group=group,
-                    logical_alias=alias.logical_alias,
-                    shard=shard.model_dump(mode="json"),
-                    policy_digest=context.policy_digest,
-                )
-            return shard, candidate
+        _persist_group_assignment(
+            group=group,
+            assignment=assignment,
+            alias=alias,
+            shard=shard,
+            policy_digest=context.policy_digest,
+        )
+        return shard, candidate
     raise ContractError("allocation.capacity_unavailable")
 
 
 def _select(
     request: ModelAllocationRequest,
-    catalog: Any,
-    sharing: Any,
-    profile: Any,
-    locked: dict[str, Any],
+    catalog: ModelAccessCatalog,
+    sharing: EffectivePolicy,
+    profile: EffectiveProfile,
+    locked: dict[str, ModelQuotaIdentity],
     observations: dict[str, ModelQuotaObservation],
-    groups: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, int]]:
+    groups: dict[str, AllocationGroup],
+) -> tuple[dict[str, ModelShard], dict[str, int]]:
     """Choose a complete feasible alias map without partial effects."""
     policy_digest = _policy_digest(request, catalog, profile)
-    selected: dict[str, Any] = {}
+    selected: dict[str, ModelShard] = {}
     vector: dict[str, int] = {}
     aliases = [alias for alias in catalog.aliases if alias.profile_id == request.need.profile_id]
     if not aliases:
@@ -246,8 +302,8 @@ def _select(
 def allocate_model_access(
     request: ModelAllocationRequest,
     *,
-    catalog: Any,
-    observations: tuple[Any, ...],
+    catalog: ModelAccessCatalog,
+    observations: tuple[object, ...],
     retire_previous: bool = False,
 ) -> ModelAllocation:
     """Record bounded admission timing without provider, prompt or identity labels."""
@@ -276,7 +332,7 @@ def _admission_metric(outcome: str, started: float) -> None:
 
 
 def _normalize_observations(
-    observations: tuple[Any, ...],
+    observations: tuple[object, ...],
 ) -> dict[str, ModelQuotaObservation]:
     """Validate readings and reject ambiguous duplicates before locking."""
     validated = tuple(_validated(ModelQuotaObservation, item) for item in observations)
@@ -311,14 +367,14 @@ class _CommitContext:
 
     request: ModelAllocationRequest
     range_obj: Range
-    catalog: Any
-    sharing: Any
-    profile: Any
-    locked: dict[str, Any]
+    catalog: ModelAccessCatalog
+    sharing: EffectivePolicy
+    profile: EffectiveProfile
+    locked: dict[str, ModelQuotaIdentity]
     observed: dict[str, ModelQuotaObservation]
-    fences: list[Any]
-    revision_vector: dict[str, Any]
-    selected: dict[str, Any]
+    fences: list[SharingAuthorityFence]
+    revision_vector: dict[str, object]
+    selected: dict[str, ModelShard]
     vector: dict[str, int]
     intent_digest: str
     policy_digest: str
@@ -327,7 +383,7 @@ class _CommitContext:
 def _assert_current(context: _CommitContext) -> None:
     """Recheck time, health, and headroom after every potentially waiting lock."""
     now = timezone.now()
-    if now >= datetime.fromisoformat(context.revision_vector["fresh_until"]):
+    if now >= datetime.fromisoformat(str(context.revision_vector["fresh_until"])):
         raise ContractError("allocation.authority_unavailable")
     shards_healthy = all(
         _eligible(shard, context.profile, context.observed, now) for shard in context.selected.values()
@@ -356,7 +412,7 @@ def _persist_allocation(context: _CommitContext) -> ModelAllocation:
         workload_role=request.need.workload_role,
         intent_digest=context.intent_digest,
         policy_digest=context.policy_digest,
-        deadline=min(request.window_end, datetime.fromisoformat(context.revision_vector["fresh_until"])),
+        deadline=min(request.window_end, datetime.fromisoformat(str(context.revision_vector["fresh_until"]))),
         alias_shards={alias: shard.shard_id for alias, shard in context.selected.items()},
         snapshot={
             "request": request.model_dump(mode="json"),
@@ -406,8 +462,8 @@ def _persist_allocation(context: _CommitContext) -> ModelAllocation:
 def _allocate_model_access(
     request: ModelAllocationRequest,
     *,
-    catalog: Any,
-    observations: tuple[Any, ...],
+    catalog: ModelAccessCatalog,
+    observations: tuple[object, ...],
     retire_previous: bool = False,
 ) -> ModelAllocation:
     """Commit all alias effects or none; caller may join the launch transaction."""

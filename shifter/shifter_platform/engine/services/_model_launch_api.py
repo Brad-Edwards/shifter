@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 if TYPE_CHECKING:
     from engine.models import ModelLaunchPreparationRecord, SharingAuthorityFence
-    from shared.model_access import ModelAccessCatalog, OwnedReference
+    from shared.model_access import ModelAccessCatalog, OwnedReference, SharingBinding
+    from shared.model_access.core_models import ScenarioNeed
     from shared.model_access.reservation import (
         AuthorityRevision,
         ModelLaunchPreparation,
+        ModelLaunchScope,
         ModelQuotaObservation,
         ModelWarmScope,
     )
@@ -34,7 +36,7 @@ def fence_model_policy_publication(deployment_id: UUID) -> SharingAuthorityFence
     return lock_policy_publication(deployment_id, writing=True)
 
 
-def list_model_launch_refreshes(deployment_id: UUID) -> tuple[Any, ...]:
+def list_model_launch_refreshes(deployment_id: UUID) -> tuple[SharingBinding, ...]:
     """Read the published definitions whose current owner evidence needs refreshing."""
     from ._model_allocation_authority import list_model_launch_refreshes as read
 
@@ -52,8 +54,8 @@ def prepare_model_launch(
     *,
     request_id: UUID,
     owner_ref: OwnedReference,
-    needs: tuple[Any, ...],
-    scope: Any,
+    needs: tuple[ScenarioNeed, ...],
+    scope: ModelLaunchScope,
     authority_revisions: tuple[AuthorityRevision, ...],
     catalog: ModelAccessCatalog,
     replace_revoked: bool = False,
@@ -83,7 +85,9 @@ def get_model_launch_preparation(request_id: UUID) -> ModelLaunchPreparation | N
     return _validated(ModelLaunchPreparation, row.intent) if row is not None else None
 
 
-def disable_optional_model_preparation(*, request_id: UUID, owner_ref: OwnedReference, needs: tuple[Any, ...]) -> None:
+def disable_optional_model_preparation(
+    *, request_id: UUID, owner_ref: OwnedReference, needs: tuple[ScenarioNeed, ...]
+) -> None:
     """Persist optional policy absence without erasing the original package needs."""
     from ._model_allocation_launch import disable_optional_model_preparation as disable
 

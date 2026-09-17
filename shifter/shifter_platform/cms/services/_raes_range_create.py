@@ -186,7 +186,7 @@ def create_raes_native_range(
 
 
 def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch service boundary.
-    user: User,
+    user: User,  # NOSONAR -- stable launch boundary intentionally carries all reviewed inputs.
     scenario: str,
     *,
     range_source: RangeSource | None,
@@ -341,7 +341,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
 
 
 def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained for existing callers.
-    user: User,
+    user: User,  # NOSONAR -- compatibility facade retains its established public signature.
     scenario: str,
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,

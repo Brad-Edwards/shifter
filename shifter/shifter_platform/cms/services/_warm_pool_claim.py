@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from django.contrib.auth.models import User
@@ -48,6 +48,13 @@ if TYPE_CHECKING:
     from shared.model_access.reservation import ModelLaunchScope
 
 logger = logging.getLogger(__name__)
+
+
+class _WarmGeneration(Protocol):
+    """Narrow structural view received from the Engine claim service."""
+
+    request_id: UUID
+
 
 # Reconciler assumptions the warm-prepare side stamps its generations with; the
 # launch side must derive the same values for a claim to match. Warm v1 serves
@@ -259,7 +266,7 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
 
 def _admit_claim_models(
     request: WarmClaimRequest,
-    generation: Any,
+    generation: _WarmGeneration,
     instance: RangeInstance,
 ) -> bool:
     """Commit model grant/allocation and activation with the claim, or roll it all back."""

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any
 from uuid import UUID
 
 from django.db import connection, transaction
 
 from engine.models import ModelAllocation, ModelLaunchPreparationRecord, ModelOptionalAbsence, ModelQuotaReading, Range
 from shared.model_access import ContractError, ModelAccessCatalog, OwnedReference, compute_digest, validate_catalog
+from shared.model_access.core_models import ScenarioNeed
 from shared.model_access.reservation import (
     AuthorityRevision,
     ModelAllocationRequest,
@@ -85,7 +85,7 @@ def prepare_model_launch(
     *,
     request_id: UUID,
     owner_ref: OwnedReference,
-    needs: tuple[Any, ...],
+    needs: tuple[ScenarioNeed, ...],
     scope: ModelLaunchScope,
     authority_revisions: tuple[AuthorityRevision, ...],
     catalog: ModelAccessCatalog,
@@ -127,7 +127,9 @@ def prepare_model_launch(
     return row
 
 
-def disable_optional_model_preparation(*, request_id: UUID, owner_ref: OwnedReference, needs: tuple[Any, ...]) -> None:
+def disable_optional_model_preparation(
+    *, request_id: UUID, owner_ref: OwnedReference, needs: tuple[ScenarioNeed, ...]
+) -> None:
     """Persist a replay-stable optional denial without fabricating policy scope."""
     intent = _validated(
         ModelLaunchPreparation,
@@ -155,7 +157,7 @@ def disable_optional_model_preparation(*, request_id: UUID, owner_ref: OwnedRefe
         record.save(update_fields=["intent", "intent_digest", "catalog", "updated_at"])
 
 
-def _record_absence(key: dict[str, Any], digest: str, reason: str) -> None:
+def _record_absence(key: dict[str, object], digest: str, reason: str) -> None:
     """Persist one replay-stable optional absence decision."""
     row, created = ModelOptionalAbsence.objects.get_or_create(
         **key, defaults={"intent_digest": digest, "reason": reason}
@@ -164,7 +166,7 @@ def _record_absence(key: dict[str, Any], digest: str, reason: str) -> None:
         raise ContractError(_INTENT_CONFLICT)
 
 
-def _model_launch_request_id(payload: dict[str, Any]) -> UUID | None:
+def _model_launch_request_id(payload: dict[str, object]) -> UUID | None:
     """Return a request identity only for model-aware launch resources."""
     if payload.get("resource") not in {"range", "raes-range"} or "request_id" not in payload:
         return None
@@ -176,25 +178,30 @@ def _load_launch_preparation(
 ) -> tuple[Range, ModelLaunchPreparationRecord, ModelLaunchPreparation] | None:
     """Apply non-allocation operations and load one usable preparation."""
     range_obj = Range.objects.select_for_update().get(request__request_id=request_id)
+    result = None
     if operation in {"pause", "destroy"}:
         revoke_model_generation(range_obj.uuid)
-        return None
-    prepared = ModelLaunchPreparationRecord.objects.filter(request_id=request_id).first()
-    if prepared is None:
-        return None
-    intent = _validated(ModelLaunchPreparation, prepared.intent)
-    if intent.unavailable_reason:
-        for need in intent.needs:
-            _record_absence(
-                {"request_id": request_id, "operation_id": operation_id, "workload_role": need.workload_role},
-                compute_digest({"preparation": prepared.intent_digest, "operation_id": str(operation_id)}),
-                intent.unavailable_reason,
-            )
-        return None
-    return range_obj, prepared, intent
+    else:
+        prepared = ModelLaunchPreparationRecord.objects.filter(request_id=request_id).first()
+        if prepared is not None:
+            intent = _validated(ModelLaunchPreparation, prepared.intent)
+            if intent.unavailable_reason:
+                for need in intent.needs:
+                    _record_absence(
+                        {
+                            "request_id": request_id,
+                            "operation_id": operation_id,
+                            "workload_role": need.workload_role,
+                        },
+                        compute_digest({"preparation": prepared.intent_digest, "operation_id": str(operation_id)}),
+                        intent.unavailable_reason,
+                    )
+            else:
+                result = range_obj, prepared, intent
+    return result
 
 
-def allocate_launch_models(payload: dict[str, Any], operation_id: UUID) -> tuple[ModelAllocation, ...]:
+def allocate_launch_models(payload: dict[str, object], operation_id: UUID) -> tuple[ModelAllocation, ...]:
     """Called inside enqueue_provisioner_launch, before input and intent commit."""
     request_id = _model_launch_request_id(payload)
     if request_id is None:
@@ -243,7 +250,7 @@ def allocate_launch_models(payload: dict[str, Any], operation_id: UUID) -> tuple
 def _allocate_workload(
     request: ModelAllocationRequest,
     catalog: ModelAccessCatalog,
-    observations: tuple[Any, ...],
+    observations: tuple[object, ...],
 ) -> ModelAllocation | None:
     """Record optional absence atomically, so a retry cannot turn it into access."""
     key = {

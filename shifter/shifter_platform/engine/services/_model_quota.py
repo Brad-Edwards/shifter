@@ -5,23 +5,32 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 from django.db.models import Sum
 from django.utils import timezone
 
-from engine.models import CapacityAssessment, ModelCapacityDraw, ModelCapacityReservation, ModelQuotaIdentity
-from shared.model_access import ContractError, compute_digest
+from engine.models import (
+    CapacityAssessment,
+    ModelAllocation,
+    ModelCapacityDraw,
+    ModelCapacityReservation,
+    ModelQuotaIdentity,
+)
+from shared.model_access import ContractError, ModelAccessCatalog, compute_digest
+from shared.model_access.admission import EventModelDemand
+from shared.model_access.core_models import ModelShard, QuotaPool
+from shared.model_access.effective_policy import EffectivePolicy
+from shared.model_access.reservation import ModelAllocationRequest, ModelQuotaObservation
 
 
 def lock_quotas(
-    catalog: Any,
+    catalog: ModelAccessCatalog,
     profile_id: str | None = None,
     allowed_shards: set[str] | None = None,
     retained_ids: set[str] | tuple[str, ...] = (),
 ) -> dict[str, ModelQuotaIdentity]:
     """Lock identities rather than possibly empty reservation queries."""
-    identities: dict[str, tuple[str, dict[str, Any] | None]] = {}
+    identities: dict[str, tuple[str, dict[str, str] | None]] = {}
     candidates = {
         shard_id
         for alias in catalog.aliases
@@ -51,7 +60,7 @@ def lock_quotas(
     return locked
 
 
-def metric_amount(pool: Any, demand: Any) -> int:
+def metric_amount(pool: QuotaPool, demand: EventModelDemand) -> int:
     """Map only supported exact dimensions and units; unknown means no admission."""
     values = {
         ("requests", "requests/minute"): demand.per_participant_requests,
@@ -65,7 +74,7 @@ def metric_amount(pool: Any, demand: Any) -> int:
     return value
 
 
-def capacity_scope(request: Any, effective: Any) -> tuple[str, ...]:
+def capacity_scope(request: ModelAllocationRequest, effective: EffectivePolicy) -> tuple[str, ...]:
     """Overlapping selectors coalesce at the stable capacity-account identity."""
     if effective.capacity_account_refs:
         return tuple(f"shared:{ref}" for ref in sorted(set(effective.capacity_account_refs)))
@@ -75,7 +84,7 @@ def capacity_scope(request: Any, effective: Any) -> tuple[str, ...]:
     return (f"{request.scope_kind}:{request.scope_id}{generation}",)
 
 
-def _parent(quota: ModelQuotaIdentity, scope: str, request: Any) -> ModelCapacityReservation | None:
+def _parent(quota: ModelQuotaIdentity, scope: str, request: ModelAllocationRequest) -> ModelCapacityReservation | None:
     """Find the exact parent commitment for a capacity scope and window."""
     return ModelCapacityReservation.objects.filter(
         quota=quota,
@@ -85,7 +94,12 @@ def _parent(quota: ModelQuotaIdentity, scope: str, request: Any) -> ModelCapacit
     ).first()
 
 
-def _observed_headroom(pool: Any, observation: Any, catalog_digest: str, now: datetime) -> int | None:
+def _observed_headroom(
+    pool: QuotaPool,
+    observation: ModelQuotaObservation | None,
+    catalog_digest: str,
+    now: datetime,
+) -> int | None:
     """Return fresh usable headroom or deny an absent/stale observation."""
     if observation is None or observation.catalog_digest != catalog_digest:
         return None
@@ -98,7 +112,7 @@ def _additional_commitment(
     *,
     quota: ModelQuotaIdentity,
     scopes: tuple[str, ...],
-    request: Any,
+    request: ModelAllocationRequest,
     amount: int,
     factor: int,
 ) -> int | None:
@@ -123,10 +137,10 @@ def _additional_commitment(
 class _FitContext:
     """Locked inputs shared by every physical-pool feasibility check."""
 
-    request: Any
-    catalog: Any
+    request: ModelAllocationRequest
+    catalog: ModelAccessCatalog
     locked: dict[str, ModelQuotaIdentity]
-    observations: dict[str, Any]
+    observations: dict[str, ModelQuotaObservation]
     scopes: tuple[str, ...]
     factor: int
     now: datetime
@@ -165,11 +179,11 @@ def _pool_fits(pool_id: str, amount: int, context: _FitContext) -> bool:
 def vector_fits(
     vector: dict[str, int],
     *,
-    request: Any,
-    effective: Any,
-    catalog: Any,
+    request: ModelAllocationRequest,
+    effective: EffectivePolicy,
+    catalog: ModelAccessCatalog,
     locked: dict[str, ModelQuotaIdentity],
-    observations: dict[str, Any],
+    observations: dict[str, ModelQuotaObservation],
 ) -> bool:
     """Recheck freshness after waiting for locks, then every parent and real pool."""
     now = timezone.now()
@@ -193,7 +207,12 @@ def vector_fits(
     return all(_pool_fits(pool_id, amount, context) for pool_id, amount in vector.items())
 
 
-def add_shard_demand(vector: dict[str, int], shard: Any, catalog: Any, demand: Any) -> dict[str, int]:
+def add_shard_demand(
+    vector: dict[str, int],
+    shard: ModelShard,
+    catalog: ModelAccessCatalog,
+    demand: EventModelDemand,
+) -> dict[str, int]:
     """Distinct alias demands sum once on each physical metric."""
     updated = defaultdict(int, vector)
     pools = {pool.quota_pool_id: pool for pool in catalog.quota_pools}
@@ -203,14 +222,14 @@ def add_shard_demand(vector: dict[str, int], shard: Any, catalog: Any, demand: A
 
 
 def persist_draws(
-    allocation: Any,
+    allocation: ModelAllocation,
     vector: dict[str, int],
     *,
-    request: Any,
-    effective: Any,
-    catalog: Any,
+    request: ModelAllocationRequest,
+    effective: EffectivePolicy,
+    catalog: ModelAccessCatalog,
     locked: dict[str, ModelQuotaIdentity],
-    observations: dict[str, Any],
+    observations: dict[str, ModelQuotaObservation],
 ) -> None:
     """Write the whole effect vector in the allocation caller's transaction."""
     scopes = capacity_scope(request, effective)

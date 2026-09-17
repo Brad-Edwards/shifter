@@ -1,6 +1,6 @@
 """Resolve CMS-owned model launch facts before the atomic Engine outbox write."""
 
-from typing import Any, Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from django.conf import settings
@@ -8,8 +8,14 @@ from django.db import transaction
 
 from cms.models import RangeInstance
 from cms.scenarios.model_needs import project_scenario_model_needs
-from shared.model_access import ContractError, EventModelDemand, OwnedReference
-from shared.model_access.reservation import ModelLaunchScope, WarmPreparationAuthority
+from shared.model_access import ContractError, EventModelDemand, ModelAccessCatalog, OwnedReference
+from shared.model_access.core_models import ScenarioNeed
+from shared.model_access.reservation import (
+    ModelLaunchScope,
+    ModelWarmScope,
+    SystemPreparationAuthority,
+    WarmPreparationAuthority,
+)
 
 _SCENARIO_UNAVAILABLE = "allocation.scenario_unavailable"
 
@@ -29,7 +35,7 @@ def needs_model_preparation(request_id: UUID | str) -> bool:
     return bool(projection.needs)
 
 
-def _snapshot_needs(instance: RangeInstance) -> tuple[Any, ...]:
+def _snapshot_needs(instance: RangeInstance) -> tuple[ScenarioNeed, ...]:
     """One package-bound identity controls both lifecycle routing and preparation."""
     from engine.services import get_model_launch_preparation
 
@@ -45,7 +51,7 @@ def _snapshot_needs(instance: RangeInstance) -> tuple[Any, ...]:
     return tuple(projection.needs.values())
 
 
-def _warm_scope(instance: RangeInstance, deployment_id: UUID) -> Any | None:
+def _warm_scope(instance: RangeInstance, deployment_id: UUID) -> ModelWarmScope | None:
     """Resolve warm authority only for generations without a user lease."""
     if instance.expires_at is not None:
         return None
@@ -58,7 +64,7 @@ def _warm_scope(instance: RangeInstance, deployment_id: UUID) -> Any | None:
 def _standalone_scope(
     instance: RangeInstance,
     range_id: UUID,
-    needs: tuple[Any, ...],
+    needs: tuple[ScenarioNeed, ...],
     deployment_id: UUID,
 ) -> ModelLaunchScope:
     """A non-event commitment uses the authored envelope and real lease window."""
@@ -78,6 +84,7 @@ def _standalone_scope(
             generation_id=warm.generation_id,
         )
     else:
+        assert instance.expires_at is not None
         kind = "standalone"
         scope_id = draw_key = instance.request.request_id
         window_start = instance.created_at
@@ -107,9 +114,11 @@ def _standalone_scope(
     )
 
 
-def _resolve_model_catalog(request_id: UUID, owner: OwnedReference, needs: tuple[Any, ...]) -> Any | None:
+def _resolve_model_catalog(
+    request_id: UUID, owner: OwnedReference, needs: tuple[ScenarioNeed, ...]
+) -> ModelAccessCatalog | None:
     """Return enabled policy or persist the permitted optional absence."""
-    catalog = getattr(settings, "MODEL_ACCESS_CATALOG", None)
+    catalog = cast(ModelAccessCatalog | None, getattr(settings, "MODEL_ACCESS_CATALOG", None))
     if getattr(settings, "MODEL_ACCESS_ENABLED", False) and catalog is not None and catalog.enabled:
         return catalog
     if any(need.required for need in needs):
@@ -120,7 +129,11 @@ def _resolve_model_catalog(request_id: UUID, owner: OwnedReference, needs: tuple
     return None
 
 
-def _authorize_preparation(instance: RangeInstance, owner: OwnedReference, system: Any) -> None:
+def _authorize_preparation(
+    instance: RangeInstance,
+    owner: OwnedReference,
+    system: SystemPreparationAuthority | WarmPreparationAuthority | None,
+) -> None:
     """Authenticate active claimants or narrowly authorized inactive system owners."""
     from management.services import resolve_model_access_users, resolve_model_preparation_user
     from workspaces.services import WorkspaceOperation, authorize_launch_workspace_locked

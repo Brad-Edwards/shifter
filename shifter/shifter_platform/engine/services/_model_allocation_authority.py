@@ -7,11 +7,11 @@ Publication takes the fence exclusively; concurrent allocations share it.
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime
 from uuid import UUID
 
 from django.db import connection
-from django.db.models import QuerySet
+from django.db.models import Model, QuerySet
 from django.utils import timezone
 
 from engine.models import (
@@ -19,9 +19,19 @@ from engine.models import (
     MembershipProjection,
     SharingAuthorityFence,
     SharingBindingRecord,
+    SharingBindingRevision,
 )
-from shared.model_access import BindingMatch, ContractError, OwnedReference, SharingBinding, compile_effective_policy
+from shared.model_access import (
+    BindingMatch,
+    ContractError,
+    ModelAccessCatalog,
+    OwnedReference,
+    SharingBinding,
+    compile_effective_policy,
+)
 from shared.model_access.core_models import AssignmentAffinity, MembershipMode
+from shared.model_access.effective_policy import EffectivePolicy
+from shared.model_access.reservation import ModelAllocationRequest
 
 from ._sharing_persistence import SharingError, _require_publisher_authority, _require_spending_eligibility
 from ._sharing_resolution import _pinned_pool, _pinned_profile
@@ -79,7 +89,7 @@ def list_model_launch_refreshes(deployment_id: UUID) -> tuple[SharingBinding, ..
     return tuple(result)
 
 
-def _shared_rows(queryset: QuerySet[Any]) -> list[Any]:
+def _shared_rows[TRow: Model](queryset: QuerySet[TRow]) -> list[TRow]:
     """Hold read locks until commit; independent admissions do not exclude each other."""
     if connection.vendor == "postgresql":
         sql, params = queryset.values_list("pk", flat=True).query.sql_with_params()
@@ -110,7 +120,9 @@ def lock_policy_publication(deployment_id: UUID, *, writing: bool = False) -> Sh
     return row
 
 
-def _projections(deployment_id: UUID) -> list[tuple[Any, Any, MembershipProjection]]:
+def _projections(
+    deployment_id: UUID,
+) -> list[tuple[SharingBindingRecord, SharingBindingRevision, MembershipProjection]]:
     """Read live binding revisions with the publication-compatible lock order."""
     records = list(
         SharingBindingRecord.objects.filter(
@@ -137,7 +149,10 @@ def _projections(deployment_id: UUID) -> list[tuple[Any, Any, MembershipProjecti
 
 
 def _add_projection_fences(
-    expected: dict[tuple[str, str], int], request: Any, revision: Any, projection: MembershipProjection
+    expected: dict[tuple[str, str], int],
+    request: ModelAllocationRequest,
+    revision: SharingBindingRevision,
+    projection: MembershipProjection,
 ) -> None:
     """Add one projection's applicable owner fences without revision conflicts."""
     expected[("engine", f"membership:{projection.pk}")] = projection.membership_revision
@@ -161,7 +176,10 @@ def _add_projection_fences(
         expected[key] = authority_revision
 
 
-def _expected_fences(request: Any, rows: list[tuple[Any, Any, MembershipProjection]]) -> dict[tuple[str, str], int]:
+def _expected_fences(
+    request: ModelAllocationRequest,
+    rows: list[tuple[SharingBindingRecord, SharingBindingRevision, MembershipProjection]],
+) -> dict[tuple[str, str], int]:
     """Collect the exact owner revisions required by this decision."""
     expected = {
         (item.authority_ref.owner, item.authority_ref.reference): item.authority_revision
@@ -173,7 +191,8 @@ def _expected_fences(request: Any, rows: list[tuple[Any, Any, MembershipProjecti
 
 
 def _lock_expected_fences(
-    request: Any, rows: list[tuple[Any, Any, MembershipProjection]]
+    request: ModelAllocationRequest,
+    rows: list[tuple[SharingBindingRecord, SharingBindingRevision, MembershipProjection]],
 ) -> list[SharingAuthorityFence]:
     """Share-lock the complete revision vector in canonical identity order."""
     fences = []
@@ -193,11 +212,11 @@ def _lock_expected_fences(
 
 
 def _matching_bindings(
-    request: Any,
-    catalog: Any,
-    rows: list[tuple[Any, Any, MembershipProjection]],
-    now: Any,
-) -> tuple[list[BindingMatch], list[dict[str, Any]]]:
+    request: ModelAllocationRequest,
+    catalog: ModelAccessCatalog,
+    rows: list[tuple[SharingBindingRecord, SharingBindingRevision, MembershipProjection]],
+    now: datetime,
+) -> tuple[list[BindingMatch], list[dict[str, object]]]:
     """Build compiler inputs only from complete, currently authorized evidence."""
     matches, revisions = [], []
     subject = request.subject_ref.model_dump(mode="json")
@@ -251,7 +270,11 @@ def _matching_bindings(
     return matches, revisions
 
 
-def _fresh_until(request: Any, rows: list[tuple[Any, Any, MembershipProjection]], now: Any) -> Any:
+def _fresh_until(
+    request: ModelAllocationRequest,
+    rows: list[tuple[SharingBindingRecord, SharingBindingRevision, MembershipProjection]],
+    now: datetime,
+) -> datetime:
     """Find the earliest boundary that can invalidate the compiled policy."""
     boundaries = [request.window_end]
     for _, revision, projection in rows:
@@ -265,7 +288,9 @@ def _fresh_until(request: Any, rows: list[tuple[Any, Any, MembershipProjection]]
     return min(boundaries)
 
 
-def locked_policy(request: Any, catalog: Any) -> tuple[Any, list[SharingAuthorityFence], dict[str, Any]]:
+def locked_policy(
+    request: ModelAllocationRequest, catalog: ModelAccessCatalog
+) -> tuple[EffectivePolicy, list[SharingAuthorityFence], dict[str, object]]:
     """Prove membership or nonmembership, then call the one pure compiler."""
     publication = lock_policy_publication(request.deployment_id)
     rows = _projections(request.deployment_id)
@@ -291,10 +316,12 @@ def locked_policy(request: Any, catalog: Any) -> tuple[Any, list[SharingAuthorit
     )
 
 
-def lock_assignment_groups(request: Any, catalog: Any, policy: Any) -> dict[str, AllocationGroup]:
+def lock_assignment_groups(
+    request: ModelAllocationRequest, catalog: ModelAccessCatalog, policy: EffectivePolicy
+) -> dict[str, AllocationGroup]:
     """Serialize first shared assignment by its canonical affinity namespace."""
     routing = {item.logical_alias: item for item in policy.alias_routings}
-    keys = {}
+    keys: dict[str, tuple[str, int, str, str]] = {}
     for alias in catalog.aliases:
         if alias.profile_id != request.need.profile_id:
             continue
@@ -310,14 +337,14 @@ def lock_assignment_groups(request: Any, catalog: Any, policy: Any) -> dict[str,
             else ""
         )
         keys[alias.logical_alias] = (selected.sharing_pool_id, selected.routing_revision, affinity.value, owner)
-    groups = {}
-    for alias, (pool_id, revision, affinity, owner) in sorted(keys.items(), key=lambda item: item[1]):
+    groups: dict[str, AllocationGroup] = {}
+    for alias_key, (pool_id, revision, affinity_value, owner) in sorted(keys.items(), key=lambda item: item[1]):
         row, _ = AllocationGroup.objects.get_or_create(
             deployment_id=request.deployment_id,
             sharing_pool_id=pool_id,
             routing_revision=revision,
-            affinity=affinity,
+            affinity=affinity_value,
             owner_ref=owner,
         )
-        groups[alias] = AllocationGroup.objects.select_for_update().get(pk=row.pk)
+        groups[alias_key] = AllocationGroup.objects.select_for_update().get(pk=row.pk)
     return groups

@@ -462,8 +462,7 @@ def configure_temporary_ctf_account(user: User, event_id: UUID) -> None:
             "active_ctf_event_id",
         ]
     )
-    # The post-save profile signal may have populated the reverse one-to-one
-    # cache before this security mutation. Keep the in-memory user consistent
+    # Keep an already-populated reverse one-to-one cache consistent
     # with the just-committed marker for callers in the same transaction.
     user.profile = profile
 

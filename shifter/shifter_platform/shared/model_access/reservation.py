@@ -77,6 +77,18 @@ class ModelAllocationRequest(ClosedModel):
     authority_revisions: Annotated[tuple[AuthorityRevision, ...], Field(min_length=1, max_length=128)]
     preparation_authority: OwnedReference | None = None
 
+    def _effective_authority(self) -> OwnedReference:
+        """Validate and return the owner authority used for preparation."""
+        authority = self.preparation_authority or self.owner_ref
+        if self.preparation_authority is None:
+            return authority
+        allowed = {"event": ("ctf", "spare:"), "warm": ("engine", "warm-generation:")}
+        owner, prefix = allowed.get(self.scope_kind, (None, ""))
+        if authority.owner != owner or not authority.reference.startswith(prefix):
+            raise ValueError("invalid system preparation authority")
+        UUID(authority.reference.removeprefix(prefix))
+        return authority
+
     @model_validator(mode="after")
     def validate_request(self) -> Self:
         """Require one exact workload, bounded window and complete unique fences."""
@@ -87,13 +99,7 @@ class ModelAllocationRequest(ClosedModel):
         if self.need.workload_role != self.demand.workload_role:
             raise ValueError("workload mismatch")
         refs = [(item.authority_ref.owner, item.authority_ref.reference) for item in self.authority_revisions]
-        authority = self.preparation_authority or self.owner_ref
-        if self.preparation_authority is not None:
-            allowed = {"event": ("ctf", "spare:"), "warm": ("engine", "warm-generation:")}
-            owner, prefix = allowed.get(self.scope_kind, (None, ""))
-            if authority.owner != owner or not authority.reference.startswith(prefix):
-                raise ValueError("invalid system preparation authority")
-            UUID(authority.reference.removeprefix(prefix))
+        authority = self._effective_authority()
         if len(refs) != len(set(refs)) or (authority.owner, authority.reference) not in refs:
             raise ValueError("owner authority missing or duplicated")
         return self
@@ -138,6 +144,18 @@ class ModelLaunchScope(ClosedModel):
         Annotated[SystemPreparationAuthority | WarmPreparationAuthority, Field(discriminator="kind")] | None
     ) = None
 
+    def _validate_system_preparation(self) -> None:
+        """Bind a system owner to the matching scope and captured fences."""
+        if self.system_preparation is None:
+            return
+        authority = self.system_preparation.authority_ref
+        refs = {item.authority_ref for item in self.authority_revisions}
+        expected_kind = "event" if self.system_preparation.kind == "ctf_spare" else "warm"
+        if self.kind != expected_kind or authority not in refs:
+            raise ValueError("system preparation scope authority missing")
+        if self.kind == "event" and OwnedReference(owner="ctf", reference=f"event:{self.scope_id}") not in refs:
+            raise ValueError("system preparation requires event authority")
+
     @model_validator(mode="after")
     def validate_scope(self) -> Self:
         """Reject ambiguous roles and windows at the downward service boundary."""
@@ -146,14 +164,7 @@ class ModelLaunchScope(ClosedModel):
         roles = [item.workload_role for item in self.demands]
         if len(roles) != len(set(roles)):
             raise ValueError("duplicate demand role")
-        if self.system_preparation is not None:
-            authority = self.system_preparation.authority_ref
-            refs = {item.authority_ref for item in self.authority_revisions}
-            expected_kind = "event" if self.system_preparation.kind == "ctf_spare" else "warm"
-            if self.kind != expected_kind or authority not in refs:
-                raise ValueError("system preparation scope authority missing")
-            if self.kind == "event" and OwnedReference(owner="ctf", reference=f"event:{self.scope_id}") not in refs:
-                raise ValueError("system preparation requires event authority")
+        self._validate_system_preparation()
         return self
 
 
@@ -167,6 +178,22 @@ class ModelLaunchPreparation(ClosedModel):
     authority_revisions: Annotated[tuple[AuthorityRevision, ...], Field(max_length=128)] = ()
     unavailable_reason: Literal["allocation.policy_unavailable"] | None = None
 
+    def _validate_unavailable(self) -> None:
+        """Ensure an unavailable optional launch carries no residual authority."""
+        if any(need.required for need in self.needs):
+            raise ValueError("required preparation cannot be absent")
+        if self.scope is not None or self.authority_revisions:
+            raise ValueError("unavailable preparation cannot retain authority")
+
+    def _validate_available(self, roles: list[str]) -> None:
+        """Ensure available preparation has complete matching scope and ownership."""
+        if self.scope is None or not self.authority_revisions:
+            raise ValueError("available preparation requires scope and authority")
+        if set(roles) != {item.workload_role for item in self.scope.demands}:
+            raise ValueError("launch workload mismatch")
+        if self.scope.system_preparation is not None and self.scope.system_preparation.owner_ref != self.owner_ref:
+            raise ValueError("system preparation owner mismatch")
+
     @model_validator(mode="after")
     def validate_roles(self) -> Self:
         """Every authored workload has exactly one explicit demand."""
@@ -176,15 +203,7 @@ class ModelLaunchPreparation(ClosedModel):
         if len({need.scenario_digest for need in self.needs}) != 1:
             raise ValueError("launch package mismatch")
         if self.unavailable_reason:
-            if any(need.required for need in self.needs):
-                raise ValueError("required preparation cannot be absent")
-            if self.scope is not None or self.authority_revisions:
-                raise ValueError("unavailable preparation cannot retain authority")
-            return self
-        if self.scope is None or not self.authority_revisions:
-            raise ValueError("available preparation requires scope and authority")
-        if set(roles) != {item.workload_role for item in self.scope.demands}:
-            raise ValueError("launch workload mismatch")
-        if self.scope.system_preparation is not None and self.scope.system_preparation.owner_ref != self.owner_ref:
-            raise ValueError("system preparation owner mismatch")
+            self._validate_unavailable()
+        else:
+            self._validate_available(roles)
         return self
