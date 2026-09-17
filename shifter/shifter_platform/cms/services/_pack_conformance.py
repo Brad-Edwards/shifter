@@ -58,6 +58,7 @@ def validate_registered_pack_conformance(*, user: User, scenario_id: str, expect
             AuditEvent(
                 entity_type=AuditEntityType.SCENARIO,
                 entity_id=0,
+                entity_ref=scenario_id,
                 action=AuditAction.UPDATE,
                 actor_type=AuditActorType.USER,
                 actor_id=user.id,

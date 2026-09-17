@@ -75,6 +75,8 @@ def _rebuild_replacement(participant: CTFParticipant, model_subject: OwnedRefere
     ngfw_enabled = event.range_config.get("ngfw_enabled", False) if event.range_config else False
 
     try:
+        from ctf.services.range.model_allocation import project_event_model_scope
+
         result = cms_create_range(
             user=user,
             scenario=event.scenario_id,
@@ -82,6 +84,7 @@ def _rebuild_replacement(participant: CTFParticipant, model_subject: OwnedRefere
             ngfw_enabled=ngfw_enabled,
             remote_access_teardown_at=event.get_cleanup_time(),
             model_admission_subject=model_subject,
+            model_launch_scope=project_event_model_scope(event, participant.pk, model_subject),
         )
     except Exception as e:
         raise _range_error(
