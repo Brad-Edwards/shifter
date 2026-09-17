@@ -144,6 +144,25 @@ Cross-project sharding has IAM and quota administration cost; separate keys
 do not buy additional quota. Reuse the existing deployment's infrastructure
 until measured load requires a reviewed change.
 
+### Request accounting and reconciliation (M04)
+
+Engine reserves a conservative upper charge against every applicable spend,
+rate and concurrency account before a request can dispatch, and settles the
+proven usage once against the request's immutable price snapshot. A timeout,
+disconnect, missing usage or crash after possible provider work leaves the
+request `unknown` and retains the conservative hold; the request never replays.
+The request-accounting reconciliation pass rides the existing Engine reconciler
+(no separate daemon): at each obligation's deadline it moves an unknown hold
+from reserved to conservatively spent at the same value and closes expired
+revocation fences. It never refunds a hold on a timer, invokes a provider, or
+replays a request. Later authoritative provider evidence adjusts a charge once
+as an append-only correction. Revoking a grant fences in-flight dispatch leases:
+their transport status stays `revoking` until the lease expires or is
+acknowledged, then becomes `revoked`; settlement of the original liability
+remains charged to its original account set and is never transferred.
+Operators recover a stuck backlog by confirming the reconciler is scheduled and
+inspecting reconciliation-obligation counts, never by clearing holds manually.
+
 ## Sharing-pool operation
 
 Before publishing a binding, preview its selected ranges, snapshot/dynamic
