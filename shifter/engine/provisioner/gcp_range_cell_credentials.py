@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from config import GCERangeCellConfig
 from gcp_guest_secrets import (
     delete_participant_ssh_secret,
     delete_rdp_password_secret,
@@ -52,6 +53,22 @@ class GCEVertexCredentialOps:
 
     ensure: Callable[[int, str, str, str], str]
     delete: Callable[[int, str], None]
+
+
+def mint_range_vertex_key(
+    range_id: int, project_id: str, config: GCERangeCellConfig, vertex_ops: GCEVertexCredentialOps
+) -> str | None:
+    """Mint the per-range Vertex agent SA key when the tenant configures a Vertex SA.
+
+    Stores the key in Secret Manager and grants the attached range-cell host SA
+    (config.service_account_email) secretAccessor via ``vertex_ops.ensure`` so the
+    polaris host can inject it into a14-kali. Returns the secret ref, or None when
+    no Vertex SA is configured (ranges without the agent are unaffected). Shared by
+    the RAES-native and legacy scenario provision paths.
+    """
+    if not config.vertex_service_account_email:
+        return None
+    return vertex_ops.ensure(range_id, config.vertex_service_account_email, project_id, config.service_account_email)
 
 
 def _default_vertex_ops() -> GCEVertexCredentialOps:

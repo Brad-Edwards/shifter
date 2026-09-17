@@ -52,6 +52,7 @@ from provisioner_db_operation_input import (
 )
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
+from raes_gcp_image_keys import _keyed_image_profile
 from raes_gcp_inventory import inventory_raes_range_cell
 from raes_gcp_network_allocation import (
     GceNetworkAllocation,
@@ -138,26 +139,6 @@ def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> 
     zone returns the config unchanged, preserving single-region behaviour.
     """
     return resolve_range_cell_placement(request_id, config)
-
-
-def _keyed_image_profile(config: GCERangeCellConfig, source_name: str | None) -> GCERangeImageProfile | None:
-    """Return the tenant's keyed GCE image profile whose logical key is ``source_name``.
-
-    A node whose authored ``source.name`` is a configured logical image key in
-    ``GCP_RANGE_IMAGE_KEY_PROFILES_JSON`` (for example ``polaris-vm`` /
-    ``polaris-dc``) realizes that exact profile -- crucially carrying its
-    ``bootstrap_capability`` (e.g. ``polaris-docker-host``,
-    ``prepromoted-domain-controller``), which the base-registry projection never
-    sets. Logical keys are unique across profile classes, so the first match is
-    unambiguous. Returns ``None`` when the source is not a keyed logical image.
-    """
-    if not source_name:
-        return None
-    for entries in config.image_key_profiles.values():
-        profile = entries.get(source_name)
-        if profile is not None:
-            return profile
-    return None
 
 
 def _registry_resolver(

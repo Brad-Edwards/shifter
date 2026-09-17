@@ -137,6 +137,43 @@ def _windows_identity(output: str) -> dict[str, str]:
     }
 
 
+def _probe_identity(execution: Any, family: str, output: dict[str, Any]) -> dict[str, str]:
+    """Run the OS probe on a ready guest and return its bounded identity.
+
+    Fails closed, logging why (the generic error is otherwise undebuggable across
+    a rebuild+relaunch cycle). Split out of ``_observe`` to keep each function's
+    complexity within budget.
+    """
+    probe = _WINDOWS_PROBE if family == "windows" else _linux_probe(output)
+    result = execution.executor.run_command(
+        execution.target,
+        probe,
+        timeout_seconds=30,
+        document_name=execution.document_name,
+    )
+    if not result.success or result.exit_code != 0 or not isinstance(result.stdout, str):
+        logger.warning(
+            "OS observation: %s probe on %s failed success=%s exit=%s stdout=%r stderr=%r",
+            family,
+            execution.target,
+            getattr(result, "success", None),
+            getattr(result, "exit_code", None),
+            (result.stdout[:400] if isinstance(result.stdout, str) else result.stdout),
+            (result.stderr[:400] if isinstance(getattr(result, "stderr", None), str) else None),
+        )
+        raise _fail()
+    if len(result.stdout.encode("utf-8")) > _MAX_OBSERVATION_BYTES:
+        logger.warning("OS observation: %s probe on %s exceeded size cap", family, execution.target)
+        raise _fail()
+    try:
+        return _windows_identity(result.stdout) if family == "windows" else _linux_identity(result.stdout)
+    except Exception:
+        logger.warning(
+            "OS observation: %s identity parse on %s rejected stdout=%r", family, execution.target, result.stdout[:400]
+        )
+        raise
+
+
 def _observe(output: dict[str, Any], family: str, execution_builder: Callable[..., Any]) -> dict[str, str]:
     """Handle observe."""
     if family not in {"linux", "windows"}:
@@ -146,39 +183,7 @@ def _observe(output: dict[str, Any], family: str, execution_builder: Callable[..
         if execution.wait_for_ready(timeout_seconds=600) is False:
             logger.warning("OS observation: %s guest %s never became SSH-ready", family, execution.target)
             raise _fail()
-        probe = _WINDOWS_PROBE if family == "windows" else _linux_probe(output)
-        result = execution.executor.run_command(
-            execution.target,
-            probe,
-            timeout_seconds=30,
-            document_name=execution.document_name,
-        )
-        if not result.success or result.exit_code != 0 or not isinstance(result.stdout, str):
-            # Fail closed, but say why: the generic error is otherwise
-            # undebuggable across a rebuild+relaunch cycle.
-            logger.warning(
-                "OS observation: %s probe on %s failed success=%s exit=%s stdout=%r stderr=%r",
-                family,
-                execution.target,
-                getattr(result, "success", None),
-                getattr(result, "exit_code", None),
-                (result.stdout[:400] if isinstance(result.stdout, str) else result.stdout),
-                (result.stderr[:400] if isinstance(getattr(result, "stderr", None), str) else None),
-            )
-            raise _fail()
-        if len(result.stdout.encode("utf-8")) > _MAX_OBSERVATION_BYTES:
-            logger.warning("OS observation: %s probe on %s exceeded size cap", family, execution.target)
-            raise _fail()
-        try:
-            return _windows_identity(result.stdout) if family == "windows" else _linux_identity(result.stdout)
-        except Exception:
-            logger.warning(
-                "OS observation: %s identity parse on %s rejected stdout=%r",
-                family,
-                execution.target,
-                result.stdout[:400],
-            )
-            raise
+        return _probe_identity(execution, family, output)
     finally:
         execution.close()
 

@@ -18,6 +18,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import raes_gcp_apply
+import raes_gcp_polaris
 from config import GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
@@ -1185,10 +1186,10 @@ class TestPolarisPostProvision:
     def test_runs_bootstrap_on_polaris_host_with_peer_dc_ip(self, monkeypatch):
         boot = MagicMock()
         password = MagicMock()
-        monkeypatch.setattr(raes_gcp_apply, "_run_polaris_range_bootstrap", boot)
-        monkeypatch.setattr(raes_gcp_apply, "_set_attacker_container_password_after_bootstrap", password)
+        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", boot)
+        monkeypatch.setattr(raes_gcp_polaris, "_set_attacker_container_password_after_bootstrap", password)
 
-        raes_gcp_apply._run_polaris_post_provision(self._outputs(), range_id=7)
+        raes_gcp_polaris._run_polaris_post_provision(self._outputs(), range_id=7)
 
         boot.assert_called_once()
         assert boot.call_args.kwargs["instance_id"] == "kali-vm"
@@ -1200,19 +1201,19 @@ class TestPolarisPostProvision:
 
     def test_noop_for_a_range_with_no_polaris_host(self, monkeypatch):
         boot = MagicMock()
-        monkeypatch.setattr(raes_gcp_apply, "_run_polaris_range_bootstrap", boot)
+        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", boot)
 
-        raes_gcp_apply._run_polaris_post_provision(
+        raes_gcp_polaris._run_polaris_post_provision(
             [{"instance_id": "u", "gcp_bootstrap_capability": "standard"}], range_id=1
         )
 
         boot.assert_not_called()
 
     def test_polaris_host_without_a_dc_peer_fails_closed(self, monkeypatch):
-        monkeypatch.setattr(raes_gcp_apply, "_run_polaris_range_bootstrap", MagicMock())
+        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", MagicMock())
 
         with pytest.raises(RaesGcePlanError):
-            raes_gcp_apply._run_polaris_post_provision(
+            raes_gcp_polaris._run_polaris_post_provision(
                 [
                     {
                         "instance_id": "kali-vm",
