@@ -7,12 +7,11 @@ from collections.abc import Callable, Iterable
 from typing import Protocol, cast
 
 from cloud.exceptions import CloudNetworkInventoryError
-from cloud.gcp.base import get_project_id, get_region, import_google_module
+from cloud.gcp.base import get_project_id, import_google_module
 from config import is_gce_range_cell_backend, load_gdc_network_access_config
 
 logger = logging.getLogger(__name__)
 _SUBNET_CIDR_ANNOTATION = "shifter.dev/subnet-cidr"
-_MANAGED_BY_LABEL = "shifter-provisioner"
 InventoryItem = dict[str, object]
 
 
@@ -35,8 +34,8 @@ def _project_from_network_id(network_id: str) -> str:
 class _SubnetworksClient(Protocol):
     """Subset of the Compute subnetworks client used by inventory."""
 
-    def list(self, *, project: str, region: str) -> Iterable[object]:
-        """Return Compute subnetworks for a project and region."""
+    def aggregated_list(self, *, project: str) -> Iterable[tuple[str, object]]:
+        """Return Compute subnetworks grouped by regional scope for a project."""
 
 
 class GCPNetworkInventory:
@@ -58,16 +57,15 @@ class GCPNetworkInventory:
         return self._list_gdc_network_cidrs(network_id, gdc_access.kubeconfig)
 
     def _list_gce_range_subnet_cidrs(self, network_id: str) -> list[str]:
-        """List managed Compute Engine subnet CIDRs for GCE range cells."""
+        """List every colliding Compute Engine subnet CIDR across all regions."""
         # Range subnetworks live in the range VPC's project (from the network
         # self-link), not necessarily the control-plane project.
         project_id = _project_from_network_id(network_id) or get_project_id()
-        region = get_region()
-        if not project_id or not region:
-            raise CloudNetworkInventoryError("GCE network inventory requires GCP project and region")
+        if not project_id:
+            raise CloudNetworkInventoryError("GCE network inventory requires a GCP project")
         try:
             client = self._build_gce_subnetworks_client()
-            response = client.list(project=project_id, region=region)
+            response = client.aggregated_list(project=project_id)
         except ImportError as e:
             raise CloudNetworkInventoryError("GCE network inventory requires google-cloud-compute") from e
         except Exception as e:
@@ -75,14 +73,16 @@ class GCPNetworkInventory:
             raise CloudNetworkInventoryError(f"Failed to read GCE subnetwork inventory: {e}") from e
 
         cidrs: list[str] = []
-        for item in response:
-            if not self._is_managed_gce_subnetwork(item):
+        for _scope, scoped in response:
+            subnetworks = self._get_field(scoped, "subnetworks") or ()
+            if not isinstance(subnetworks, Iterable) or isinstance(subnetworks, (str, bytes, dict)):
                 continue
-            if not self._matches_requested_network(item, network_id):
-                continue
-            cidr = self._get_field(item, "ip_cidr_range", "ipCidrRange")
-            if cidr:
-                cidrs.append(str(cidr))
+            for item in subnetworks:
+                if not self._matches_requested_network(item, network_id):
+                    continue
+                cidr = self._get_field(item, "ip_cidr_range", "ipCidrRange")
+                if cidr:
+                    cidrs.append(str(cidr))
         return cidrs
 
     def _build_gce_subnetworks_client(self) -> _SubnetworksClient:
@@ -146,14 +146,6 @@ class GCPNetworkInventory:
             if value not in (None, ""):
                 return value
         return ""
-
-    @classmethod
-    def _is_managed_gce_subnetwork(cls, item: object) -> bool:
-        """Return whether a Compute subnetwork belongs to the range plane."""
-        labels = cls._get_field(item, "labels") or {}
-        if not isinstance(labels, dict):
-            return False
-        return labels.get("managed-by") == _MANAGED_BY_LABEL
 
     @classmethod
     def _matches_requested_network(cls, item: object, network_id: str) -> bool:

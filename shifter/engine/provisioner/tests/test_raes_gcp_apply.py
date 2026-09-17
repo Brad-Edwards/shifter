@@ -356,9 +356,40 @@ class TestApply:
             7,
             _plan(),
             _resolver,
-            _apply_options(_config("shared-vpc"), clients, secret_ops),
+            _apply_options(
+                _config("shared-vpc"),
+                clients,
+                secret_ops,
+                allocated_network_cidrs=(("net.lan", "10.90.1.0/24"),),
+            ),
         )
         assert not clients.networks.insert.called
+
+    def test_pre_mutation_plan_failure_invokes_reservation_cleanup_only(self):
+        clients = _clients()
+        secret_ops, secret_mocks = _secret_ops()
+        release = MagicMock()
+
+        with pytest.raises(RaesGcePlanError, match="does not match"):
+            apply_raes_range_cell(
+                "req-1",
+                7,
+                _plan(),
+                _resolver,
+                _apply_options(
+                    _config("shared-vpc"),
+                    clients,
+                    secret_ops,
+                    allocated_network_cidrs=(("net.wrong", "10.90.1.0/24"),),
+                    on_pre_mutation_failure=release,
+                ),
+            )
+
+        release.assert_called_once_with()
+        clients.networks.insert.assert_not_called()
+        clients.subnetworks.insert.assert_not_called()
+        secret_mocks.ensure_ssh.assert_not_called()
+        secret_mocks.delete_ssh.assert_not_called()
 
     def test_reconcile_existing_instance_skips_insert(self):
         clients = _clients(exists=True)
@@ -370,9 +401,11 @@ class TestApply:
         clients = _clients(instance_insert_error=RuntimeError("boom"))
         secret_ops, secret_mocks = _secret_ops()
         plan_2 = _plan()
-        apply_options = _apply_options(_config(), clients, secret_ops)
+        release = MagicMock()
+        apply_options = _apply_options(_config(), clients, secret_ops, on_pre_mutation_failure=release)
         with pytest.raises(RuntimeError, match="boom"):
             apply_raes_range_cell("req-1", 7, plan_2, _resolver, apply_options)
+        release.assert_not_called()
         # Cleanup ran: the reconstructive destroy sweeps EVERY instance's SSH secret
         # unconditionally. The plan has count=2, so a regression that swept only one
         # instance (early return/break, swallowed exception, off-by-one) would leave
@@ -1004,7 +1037,11 @@ class TestDestroy:
             7,
             _plan(),
             RaesGceDestroyOptions(
-                config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
+                config=_config("shared-vpc"),
+                clients=clients,
+                secret_ops=secret_ops,
+                vertex_ops=_vertex_ops()[0],
+                allocated_network_cidrs=(("net.lan", "10.90.1.0/24"),),
             ),
         )
         assert not clients.networks.delete.called

@@ -2507,7 +2507,7 @@
       },
       {
         "id": "ADR-043-R6",
-        "description": "Subnet/CIDR reservation is synchronous pre-mutation coordination, not an eventual provisioner result. Its Engine-owned boundary MUST accept only current, operation-appropriate range or raes-range generations and preserve the existing PostgreSQL serialization, uniqueness, cloud-drift observation, ownership, release, and failure-compensation semantics. Realized CIDRs MUST live in allocation/subnet state and operation contracts; the provisioner MUST NOT continue mutating authored range_config as runtime scratch state.",
+        "description": "Subnet/CIDR reservation is synchronous pre-mutation coordination, not an eventual provisioner result. Its Engine-owned boundary MUST accept only current, operation-appropriate range or raes-range generations and preserve the existing PostgreSQL serialization, uniqueness, cloud-drift observation, ownership, release, and failure-compensation semantics. A current raes-range activation generation MAY read the request-owned realization projection needed to reconcile an existing warm cell, but MUST NOT reserve or release capacity; release remains limited to failed-provision compensation and verified-absent destroy. Realized CIDRs MUST live in allocation/subnet state and operation contracts; the provisioner MUST NOT continue mutating authored range_config as runtime scratch state.",
         "checks": []
       },
       {
@@ -2524,6 +2524,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/478",
       "docs/architecture/provisioner-persistence-boundary-preflight-478.md",
       "docs/architecture/provisioner-subnet-coordination-preflight-1838.md",
+      "docs/architecture/raes-gce-shared-vpc-subnet-allocation-preflight-2219.md",
       "docs/architecture/gcp-provisioner-launch-boundary-preflight-1518.md",
       "docs/architecture/range-event-delivery-preflight-476.md",
       "shifter/shifter_platform/engine/launch_intents.py",

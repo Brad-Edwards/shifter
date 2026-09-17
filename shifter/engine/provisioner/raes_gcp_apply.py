@@ -26,8 +26,8 @@ from __future__ import annotations
 
 import base64
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
@@ -87,9 +87,12 @@ class RaesGceApplyOptions:
     # the apply seam stays within the parameter budget; a `none` range gets no
     # public-web/allow-CIDR firewall lane and no range-owned Cloud NAT.
     egress_mode: str = "status-quo"
-    # Tenant-allocated subnet selected by the GCE adapter for open portable
-    # network intent in shared-VPC mode.
-    allocated_network_cidr: str | None = None
+    # Ordered tenant allocations for every realized network in shared-VPC mode.
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
+    # Reservation cleanup hook used only when validation fails before the first
+    # provider/secret mutation. Once mutation starts, reconstructive destroy and
+    # verified-absent inventory own release instead.
+    on_pre_mutation_failure: Callable[[], None] | None = None
     account_secret_ops: RaesAccountCredentialOps | None = None
     credential_installer: Callable[..., dict[str, str]] = install_instance_account_credentials
     directory_secret_ops: RaesDirectorySecretOps | None = None
@@ -116,7 +119,7 @@ class _RaesGceApplyRuntime:
     composition_verifier: Callable[..., frozenset[str]]
     operating_system_observer: Callable[..., list[dict[str, str]]]
     substrate_observer: Callable[..., list[dict[str, str]]]
-    allocated_network_cidr: str | None
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None
 
 
 def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
@@ -134,7 +137,7 @@ def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
         composition_verifier=options.composition_verifier,
         operating_system_observer=options.operating_system_observer,
         substrate_observer=options.substrate_observer,
-        allocated_network_cidr=options.allocated_network_cidr,
+        allocated_network_cidrs=options.allocated_network_cidrs,
     )
 
 
@@ -398,7 +401,7 @@ def _cleanup_failed_apply(
             vertex_ops=runtime.vertex_ops,
             account_secret_ops=runtime.account_secret_ops,
             directory_secret_ops=runtime.directory_secret_ops,
-            allocated_network_cidr=runtime.allocated_network_cidr,
+            allocated_network_cidrs=runtime.allocated_network_cidrs,
         ),
     )
 
@@ -425,32 +428,35 @@ def apply_raes_range_cell(
     The effective egress posture (PLAT-238) rides on ``options.egress_mode``.
     """
     resolved_options = options or RaesGceApplyOptions()
-    egress_mode = resolved_options.egress_mode
-    runtime = _apply_runtime(resolved_options)
-    realized_access = join_participant_access(access_bindings or (), raes_plan)
-    _assert_composition_targets_resolve(raes_plan)
-    _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
-    assert_composition_is_verifiable(raes_plan)
-    expected_composition = {
-        *[item.address for item in raes_plan.content],
-        *[account.address for account in raes_plan.accounts],
-        *[feature.address for feature in raes_plan.features],
-    }
-    # Build and size-check the complete sanitized evidence shape before cloud mutation.
-    snapshot_resources(raes_plan, expected_composition)
-    plan = build_raes_range_cell_plan(
-        request_uuid,
-        range_id,
-        raes_plan,
-        resolve_image,
-        RaesGcePlanOptions(
-            config=runtime.config,
-            access_bindings=realized_access,
-            egress_policy=GceEgressPolicy(mode=egress_mode),
-            allocated_network_cidr=runtime.allocated_network_cidr,
-        ),
-    )
+    resolved_config = resolved_options.config or load_gce_range_cell_config()
+    runtime: _RaesGceApplyRuntime | None = None
+    mutation_started = False
     try:
+        realized_access = join_participant_access(access_bindings or (), raes_plan)
+        _assert_composition_targets_resolve(raes_plan)
+        _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
+        assert_composition_is_verifiable(raes_plan)
+        expected_composition = {
+            *[item.address for item in raes_plan.content],
+            *[account.address for account in raes_plan.accounts],
+            *[feature.address for feature in raes_plan.features],
+        }
+        # Build and size-check the complete sanitized evidence shape before cloud mutation.
+        snapshot_resources(raes_plan, expected_composition)
+        plan = build_raes_range_cell_plan(
+            request_uuid,
+            range_id,
+            raes_plan,
+            resolve_image,
+            RaesGcePlanOptions(
+                config=resolved_config,
+                access_bindings=realized_access,
+                egress_policy=GceEgressPolicy(mode=resolved_options.egress_mode),
+                allocated_network_cidrs=resolved_options.allocated_network_cidrs,
+            ),
+        )
+        runtime = _apply_runtime(replace(resolved_options, config=resolved_config))
+        mutation_started = True
         instance_outputs = _provision_raes_resources(
             plan,
             runtime,
@@ -470,8 +476,13 @@ def apply_raes_range_cell(
         compute_substrates = runtime.substrate_observer(plan, runtime.clients)
         snapshot_resources(raes_plan, verified)
     except Exception:
-        logger.exception("RAES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
-        _cleanup_failed_apply(request_uuid, range_id, raes_plan, runtime)
+        if mutation_started and runtime is not None:
+            logger.exception("RAES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
+            _cleanup_failed_apply(request_uuid, range_id, raes_plan, runtime)
+        else:
+            logger.exception("RAES GCE range-cell apply failed before provider mutation request_id=%s", request_uuid)
+            if resolved_options.on_pre_mutation_failure is not None:
+                resolved_options.on_pre_mutation_failure()
         raise
     return {
         "subnets": subnet_outputs(plan),

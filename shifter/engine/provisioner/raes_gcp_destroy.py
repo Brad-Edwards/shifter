@@ -14,6 +14,7 @@ both this module and ``raes_gcp_apply`` import from independently.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
@@ -31,7 +32,7 @@ from raes_active_directory import (
     default_directory_secret_ops,
     delete_raes_directory_secrets,
 )
-from raes_gcp_plan import build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
 
@@ -48,7 +49,7 @@ class RaesGceDestroyOptions:
     vertex_ops: GCEVertexCredentialOps | None = None
     account_secret_ops: RaesAccountCredentialOps | None = None
     directory_secret_ops: RaesDirectorySecretOps | None = None
-    allocated_network_cidr: str | None = None
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
     reconstruct_without_allocation: bool = False
 
 
@@ -97,9 +98,11 @@ def destroy_raes_range_cell(
         range_id,
         raes_plan,
         _default_destroy_profile,
-        runtime.config,
-        allocated_network_cidr=resolved_options.allocated_network_cidr,
-        reconstruct_for_teardown=resolved_options.reconstruct_without_allocation,
+        RaesGcePlanOptions(
+            config=runtime.config,
+            allocated_network_cidrs=resolved_options.allocated_network_cidrs,
+            reconstruct_for_teardown=resolved_options.reconstruct_without_allocation,
+        ),
     )
     # Delete the per-range Vertex agent key first; it is independent of the
     # Compute resources and idempotent, so it converges even on repeated destroy

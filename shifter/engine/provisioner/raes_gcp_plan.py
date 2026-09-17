@@ -100,7 +100,7 @@ class RaesGcePlanOptions:
     config: GCERangeCellConfig | None = None
     access_bindings: Sequence[RealizedAccessBinding] = ()
     egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY
-    allocated_network_cidr: str | None = None
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
     reconstruct_for_teardown: bool = False
 
 
@@ -127,11 +127,12 @@ def build_raes_range_cell_plan(
     """
     resolved_options = _plan_options(options, legacy)
     resolved_config = resolved_options.config or load_gce_range_cell_config()
+    authored_networks = {network.address: network for network in raes_plan.networks}
     try:
         raes_plan = adapt_raes_plan_for_gce(
             raes_plan,
             resolved_config,
-            allocated_network_cidr=resolved_options.allocated_network_cidr,
+            allocated_network_cidrs=resolved_options.allocated_network_cidrs,
             reconstruct_for_teardown=resolved_options.reconstruct_for_teardown,
         )
     except RaesGceAdapterError as exc:
@@ -143,7 +144,13 @@ def build_raes_range_cell_plan(
 
     subnet_plans = [
         _subnet_plan(
-            network, nodes_by_network.get(network.address, ()), range_id, resolved_config, network_name, network_link
+            network,
+            authored_networks.get(network.address),
+            nodes_by_network.get(network.address, ()),
+            range_id,
+            resolved_config,
+            network_name,
+            network_link,
         )
         for network in raes_plan.networks
     ]
@@ -201,14 +208,17 @@ def _plan_options(
 ) -> RaesGcePlanOptions:
     """Handle plan options."""
     resolved = options if isinstance(options, RaesGcePlanOptions) else RaesGcePlanOptions(config=options)
-    allowed = {"config", "access_bindings", "egress_policy", "allocated_network_cidr", "reconstruct_for_teardown"}
+    allowed = {"config", "access_bindings", "egress_policy", "allocated_network_cidrs", "reconstruct_for_teardown"}
     if set(legacy) - allowed:
         raise TypeError("unknown GCE plan option")
     return RaesGcePlanOptions(
         config=cast(GCERangeCellConfig | None, legacy.get("config", resolved.config)),
         access_bindings=cast(Sequence[RealizedAccessBinding], legacy.get("access_bindings", resolved.access_bindings)),
         egress_policy=cast(GceEgressPolicy, legacy.get("egress_policy", resolved.egress_policy)),
-        allocated_network_cidr=cast(str | None, legacy.get("allocated_network_cidr", resolved.allocated_network_cidr)),
+        allocated_network_cidrs=cast(
+            Sequence[tuple[str, str]] | None,
+            legacy.get("allocated_network_cidrs", resolved.allocated_network_cidrs),
+        ),
         reconstruct_for_teardown=cast(bool, legacy.get("reconstruct_for_teardown", resolved.reconstruct_for_teardown)),
     )
 
@@ -345,6 +355,7 @@ def _instance_key(node: RaesPlanNode, index: int) -> str:
 
 def _subnet_plan(
     network: RaesPlanNetwork,
+    authored_network: RaesPlanNetwork | None,
     nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode],
     range_id: int,
     config: GCERangeCellConfig,
@@ -361,6 +372,7 @@ def _subnet_plan(
         raise RaesGcePlanError(
             f"subnet {network.cidr} has {len(usable)} usable addresses but {len(keys)} instances were requested"
         )
+    assignments = _ip_assignments(network, authored_network, nodes, keys, usable)
     return {
         "name": network.name,
         "uuid": network.address,
@@ -374,9 +386,73 @@ def _subnet_plan(
         # RAES segments via node ACLs (realized separately); the base firewall
         # allows intra-subnet traffic only.
         "connected_source_ranges": [network.cidr],
-        "ip_assignments": dict(zip(keys, usable, strict=False)),
+        "ip_assignments": assignments,
         "instances": [],
     }
+
+
+def _ip_assignments(
+    network: RaesPlanNetwork,
+    authored_network: RaesPlanNetwork | None,
+    nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode],
+    keys: list[str],
+    usable: list[str],
+) -> dict[str, str]:
+    """Rebase authored static IPs, then fill remaining instances deterministically."""
+    explicit: dict[str, str] = {}
+    used: set[str] = set()
+    for node in nodes:
+        rebased = _rebased_static_ip(node, network, authored_network, usable)
+        if rebased is None:
+            continue
+        if rebased in used:
+            raise RaesGcePlanError("static GCE address is duplicated within its allocated network")
+        explicit[_instance_key(node, 0)] = rebased
+        used.add(rebased)
+
+    available = iter(address for address in usable if address not in used)
+    assignments: dict[str, str] = {}
+    for key in keys:
+        if key in explicit:
+            assignments[key] = explicit[key]
+            continue
+        try:
+            assignments[key] = next(available)
+        except StopIteration as exc:
+            raise RaesGcePlanError("GCE range subnet has too few assignable addresses") from exc
+    return assignments
+
+
+def _rebased_static_ip(
+    node: RaesPlanNode,
+    network: RaesPlanNetwork,
+    authored_network: RaesPlanNetwork | None,
+    usable: list[str],
+) -> str | None:
+    """Return one node's authored host offset in the realized subnet."""
+    requested = dict(node.network_ip_assignments).get(network.address)
+    if requested is None:
+        return None
+    if node.count != 1 or authored_network is None or not authored_network.cidr:
+        raise RaesGcePlanError("static GCE address has no unambiguous authored network")
+    try:
+        authored = ipaddress.ip_network(authored_network.cidr, strict=True)
+        realized = ipaddress.ip_network(network.cidr, strict=True)
+        address = ipaddress.ip_address(requested)
+    except ValueError as exc:
+        raise RaesGcePlanError("static GCE address must use canonical IPv4 network intent") from exc
+    if not (
+        isinstance(authored, ipaddress.IPv4Network)
+        and isinstance(realized, ipaddress.IPv4Network)
+        and isinstance(address, ipaddress.IPv4Address)
+    ):
+        raise RaesGcePlanError("static GCE address must use IPv4")
+    if address not in authored:
+        raise RaesGcePlanError("static GCE address is outside its authored network")
+    rebased = str(ipaddress.IPv4Address(int(realized.network_address) + int(address) - int(authored.network_address)))
+    if rebased not in usable:
+        raise RaesGcePlanError("static GCE address is reserved or outside its allocated network")
+    return rebased
 
 
 def _access_by_node(

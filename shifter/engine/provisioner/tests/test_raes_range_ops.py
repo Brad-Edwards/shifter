@@ -117,30 +117,11 @@ def patched(monkeypatch):
         config=MagicMock(name="gce_config"),
         load_config=MagicMock(),
         append=MagicMock(),
+        inventory=MagicMock(return_value={"outcome": "VERIFIED_ABSENT", "residual_categories": [], "scope": {}}),
         read_input=MagicMock(side_effect=lambda *a, **k: _run()),
         get_range_data=MagicMock(return_value={"subnet_index": 1, "placement_zone": ""}),
-        reserve_subnet=MagicMock(
-            return_value={
-                "subnets": [
-                    {
-                        "uuid": "backend.gce.network.default",
-                        "name": "backend-default",
-                        "cidr": "10.90.0.0/28",
-                    }
-                ]
-            }
-        ),
-        read_subnet=MagicMock(
-            return_value={
-                "subnets": [
-                    {
-                        "uuid": "backend.gce.network.default",
-                        "name": "backend-default",
-                        "cidr": "10.90.0.0/28",
-                    }
-                ]
-            }
-        ),
+        reserve_subnet=MagicMock(return_value=("10.90.0.0/28",)),
+        read_subnet=MagicMock(return_value=("10.90.0.0/28",)),
         release_subnet=MagicMock(),
     )
     calls.load_config.return_value = calls.config
@@ -151,9 +132,15 @@ def patched(monkeypatch):
     monkeypatch.setattr(range_placement, "get_range_data_by_request_id", calls.get_range_data)
     monkeypatch.setattr(raes_range_ops, "apply_raes_range_cell", calls.apply)
     monkeypatch.setattr(raes_range_ops, "destroy_raes_range_cell", calls.destroy)
+    monkeypatch.setattr(raes_range_ops, "inventory_raes_range_cell", calls.inventory)
     monkeypatch.setattr(raes_range_ops, "append_operation_step_result", calls.append)
-    monkeypatch.setattr(raes_gcp_network_allocation, "_reserve_range_subnet_cidrs", calls.reserve_subnet)
-    monkeypatch.setattr(raes_gcp_network_allocation, "_realized_range_spec_for_destroy", calls.read_subnet)
+    monkeypatch.setattr(raes_gcp_network_allocation, "reserve_range_subnets", calls.reserve_subnet)
+    monkeypatch.setattr(raes_gcp_network_allocation, "read_range_subnets", calls.read_subnet)
+    monkeypatch.setattr(
+        raes_gcp_network_allocation,
+        "load_range_network_config",
+        lambda: SimpleNamespace(network_id="platform-network", network_cidr="10.90.0.0/16"),
+    )
     monkeypatch.setattr(raes_range_ops, "_release_subnet_allocations_best_effort", calls.release_subnet)
     return calls
 
@@ -206,13 +193,39 @@ class TestProvision:
         raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
 
         patched.reserve_subnet.assert_called_once_with(
-            "req-1",
-            raes_gcp_network_allocation._OPEN_NETWORK_SPEC,
             operation_id=_OPERATION_ID,
+            request_id="req-1",
+            network_id="platform-network",
+            network_cidr="10.90.0.0/16",
+            subnets=(raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS,),
+            prefix_length=28,
         )
-        assert patched.apply.call_args.kwargs["options"].allocated_network_cidr == "10.90.0.0/28"
+        assert patched.apply.call_args.kwargs["options"].allocated_network_cidrs == (
+            (raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS, "10.90.0.0/28"),
+        )
+
+    def test_fixed_network_uses_shared_vpc_allocator_before_apply(self, patched):
+        patched.config.network_mode = "shared-vpc"
+        patched.reserve_subnet.return_value = ("10.90.1.0/24",)
+
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        assert patched.reserve_subnet.call_args.kwargs["subnets"] == ("net.lan",)
+        assert patched.reserve_subnet.call_args.kwargs["prefix_length"] == 24
+        assert patched.apply.call_args.kwargs["options"].allocated_network_cidrs == (("net.lan", "10.90.1.0/24"),)
 
     def test_failed_open_network_apply_retains_shared_vpc_allocation_for_cleanup(self, patched):
+        patched.config.network_mode = "shared-vpc"
+        patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
+        patched.apply.side_effect = RuntimeError("apply failed")
+        patched.inventory.return_value = {"outcome": "INCOMPLETE", "residual_categories": [], "scope": {}}
+
+        with pytest.raises(RuntimeError, match="apply failed"):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        patched.release_subnet.assert_not_called()
+
+    def test_failed_apply_releases_allocation_after_verified_cleanup(self, patched):
         patched.config.network_mode = "shared-vpc"
         patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
         patched.apply.side_effect = RuntimeError("apply failed")
@@ -220,7 +233,8 @@ class TestProvision:
         with pytest.raises(RuntimeError, match="apply failed"):
             raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
 
-        patched.release_subnet.assert_not_called()
+        patched.inventory.assert_called_once()
+        patched.release_subnet.assert_called_once_with("req-1", operation_id=_OPERATION_ID)
 
     def test_the_terminal_result_carries_the_realized_access_projection(self, patched):
         """One generation, one atomic apply: READY carries its own realized state."""
@@ -531,26 +545,51 @@ class TestDestroy:
 
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
 
-        patched.read_subnet.assert_called_once_with(
-            "req-1",
-            raes_gcp_network_allocation._OPEN_NETWORK_SPEC,
-            operation_id=_OPERATION_ID,
+        patched.read_subnet.assert_called_once_with(operation_id=_OPERATION_ID, request_id="req-1")
+        assert patched.destroy.call_args.args[3].allocated_network_cidrs == (
+            (raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS, "10.90.0.0/28"),
         )
-        assert patched.destroy.call_args.args[3].allocated_network_cidr == "10.90.0.0/28"
+        assert patched.inventory.call_args.kwargs["allocated_network_cidrs"] == (
+            (raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS, "10.90.0.0/28"),
+        )
         patched.release_subnet.assert_called_once_with("req-1", operation_id=_OPERATION_ID)
+
+    def test_inventory_precedes_verified_allocation_release(self, patched):
+        patched.config.network_mode = "shared-vpc"
+        patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
+        order = []
+        patched.inventory.side_effect = lambda *args, **kwargs: (
+            order.append("inventory") or {"outcome": "VERIFIED_ABSENT", "residual_categories": [], "scope": {}}
+        )
+        patched.release_subnet.side_effect = lambda *args, **kwargs: order.append("release")
+
+        raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        assert order == ["inventory", "release"]
 
     def test_open_network_without_a_reservation_still_converges_destroy(self, patched):
         patched.config.network_mode = "shared-vpc"
         patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
-        patched.read_subnet.return_value = raes_gcp_network_allocation._OPEN_NETWORK_SPEC
+        patched.read_subnet.return_value = ()
 
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
 
         options = patched.destroy.call_args.args[3]
-        assert options.allocated_network_cidr is None
+        assert options.allocated_network_cidrs is None
         assert options.reconstruct_without_allocation is True
         patched.release_subnet.assert_not_called()
         assert _steps(patched)[-1] == ResultStep.RAES_TERMINAL_DESTROYED
+
+    @pytest.mark.parametrize("outcome", ["RESIDUALS_FOUND", "INCOMPLETE"])
+    def test_reservation_is_retained_until_inventory_verifies_absence(self, patched, outcome):
+        patched.config.network_mode = "shared-vpc"
+        patched.read_input.side_effect = lambda *a, **k: _run(plan=_open_network_plan())
+        patched.inventory.return_value = {"outcome": outcome, "residual_categories": [], "scope": {}}
+
+        raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        patched.release_subnet.assert_not_called()
+        assert _payload_for(patched, ResultStep.RAES_TERMINAL_DESTROYED)["cleanup_inventory"]["outcome"] == outcome
 
     def test_forwards_the_parsed_plan(self, patched):
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
@@ -702,6 +741,7 @@ class TestMultiRegionZonePoolPlacement:
     def test_provision_binds_the_stored_placement_zone(self, patched):
         patched.load_config.return_value = self._pooled_config()
         patched.get_range_data.return_value = {"subnet_index": 2, "placement_zone": "us-east4-a"}
+        patched.reserve_subnet.return_value = ("10.90.1.0/24",)
 
         raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
 
@@ -711,6 +751,7 @@ class TestMultiRegionZonePoolPlacement:
     def test_destroy_binds_the_same_stored_zone(self, patched):
         patched.load_config.return_value = self._pooled_config()
         patched.get_range_data.return_value = {"subnet_index": 2, "placement_zone": "us-east4-a"}
+        patched.read_subnet.return_value = ("10.90.1.0/24",)
 
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
 
@@ -720,6 +761,7 @@ class TestMultiRegionZonePoolPlacement:
     def test_no_stored_placement_leaves_the_configured_scalar_zone(self, patched):
         patched.load_config.return_value = self._pooled_config()
         patched.get_range_data.return_value = {"subnet_index": 2, "placement_zone": ""}
+        patched.reserve_subnet.return_value = ("10.90.1.0/24",)
 
         raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
 
