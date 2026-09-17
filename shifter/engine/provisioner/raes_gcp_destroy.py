@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops
 from gcp_range_cell_ops import _delete_resource
 from gcp_range_cell_types import InstancePlan, RangeCellPlan
 from raes_account_credentials import (
@@ -44,6 +45,7 @@ class RaesGceDestroyOptions:
     config: GCERangeCellConfig | None = None
     clients: GCEClients | None = None
     secret_ops: RaesGceSecretOps | None = None
+    vertex_ops: GCEVertexCredentialOps | None = None
     account_secret_ops: RaesAccountCredentialOps | None = None
     directory_secret_ops: RaesDirectorySecretOps | None = None
     allocated_network_cidr: str | None = None
@@ -57,6 +59,7 @@ class _RaesGceDestroyRuntime:
     config: GCERangeCellConfig
     clients: GCEClients
     secret_ops: RaesGceSecretOps
+    vertex_ops: GCEVertexCredentialOps
     account_secret_ops: RaesAccountCredentialOps
     directory_secret_ops: RaesDirectorySecretOps
 
@@ -74,6 +77,7 @@ def _destroy_runtime(
         config=options.config or load_gce_range_cell_config(),
         clients=options.clients or _build_clients(),
         secret_ops=options.secret_ops or _default_secret_ops(),
+        vertex_ops=options.vertex_ops or _default_vertex_ops(),
         account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
     )
@@ -97,6 +101,11 @@ def destroy_raes_range_cell(
         allocated_network_cidr=resolved_options.allocated_network_cidr,
         reconstruct_for_teardown=resolved_options.reconstruct_without_allocation,
     )
+    # Delete the per-range Vertex agent key first; it is independent of the
+    # Compute resources and idempotent, so it converges even on repeated destroy
+    # and for ranges that never minted one. Mirrors the legacy teardown
+    # (gcp_range_cell_destroy.destroy_range_cell).
+    runtime.vertex_ops.delete(plan["range_id"], plan["project_id"])
     _destroy_instances(plan, raes_plan, runtime)
     delete_raes_directory_secrets(plan["range_id"], raes_plan, runtime.directory_secret_ops)
     _destroy_network_resources(plan, runtime.clients)

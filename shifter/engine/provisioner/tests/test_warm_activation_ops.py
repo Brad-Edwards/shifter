@@ -144,7 +144,8 @@ class TestRealizeClaimantAccessOnCell:
     def test_happy_path_returns_projected_members(self, monkeypatch):
         members = [{"target_address": "n1", "channel": "ssh"}]
         monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
-        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi, cfg: lambda node: None)
+        monkeypatch.setattr(raes_gcp_activate_realize, "load_gce_range_cell_config", lambda: SimpleNamespace())
         monkeypatch.setattr(
             raes_gcp_activate_realize,
             "realize_access_on_existing_cell",
@@ -165,7 +166,8 @@ class TestRealizeClaimantAccessOnCell:
 
     def test_realization_error_fails_closed(self, monkeypatch):
         monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
-        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi, cfg: lambda node: None)
+        monkeypatch.setattr(raes_gcp_activate_realize, "load_gce_range_cell_config", lambda: SimpleNamespace())
 
         def _boom(*a, **k):
             raise RuntimeError("apply failed")
@@ -178,7 +180,8 @@ class TestRealizeClaimantAccessOnCell:
     @pytest.mark.parametrize("addresses", ["n1", {"n1": True}, [1], None])
     def test_malformed_verification_addresses_fail_before_snapshot(self, monkeypatch, addresses):
         monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
-        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi, cfg: lambda node: None)
+        monkeypatch.setattr(raes_gcp_activate_realize, "load_gce_range_cell_config", lambda: SimpleNamespace())
         monkeypatch.setattr(
             raes_gcp_activate_realize,
             "realize_access_on_existing_cell",

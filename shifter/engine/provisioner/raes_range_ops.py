@@ -52,6 +52,7 @@ from provisioner_db_operation_input import (
 )
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
+from raes_gcp_image_keys import _keyed_image_profile
 from raes_gcp_inventory import inventory_raes_range_cell
 from raes_gcp_network_allocation import (
     GceNetworkAllocation,
@@ -140,7 +141,9 @@ def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> 
     return resolve_range_cell_placement(request_id, config)
 
 
-def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
+def _registry_resolver(
+    operation_input: RaesOperationInput, config: GCERangeCellConfig
+) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
     """Return an image resolver bound to the projected candidates + GCE policy."""
 
     def resolve(node: RaesPlanNode) -> GCERangeImageProfile:
@@ -153,6 +156,13 @@ def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPla
         binding = operation_input.artifact_binding_for(node.address)
         if binding is not None:
             return resolve_gce_image_from_binding(node, binding)
+        # An authored source that names a tenant keyed image profile (capability-
+        # bearing, e.g. polaris-vm/polaris-dc) realizes that profile verbatim so
+        # its bootstrap_capability reaches the provisioner. This is the RAES-path
+        # counterpart of the legacy range-cell ami_key selection.
+        keyed = _keyed_image_profile(config, node.image.name if node.image else None)
+        if keyed is not None:
+            return keyed
         # The lookup key rule is shared with the Engine that scoped the
         # projection; deriving it separately here is what would make an image
         # silently go missing.
@@ -278,7 +288,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             request_id,
             range_id,
             raes_plan,
-            _registry_resolver(operation_input),
+            _registry_resolver(operation_input, config),
             options=RaesGceApplyOptions(
                 config=config,
                 egress_mode=operation_input.egress_mode,

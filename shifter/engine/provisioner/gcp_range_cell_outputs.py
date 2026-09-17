@@ -109,6 +109,12 @@ def instance_output(
         output["gcp_vertex_secret_ref"] = vertex_secret_ref
     if instance["profile"].source_machine_image:
         output.update(_machine_image_output(instance))
+    elif instance["profile"].participant_container_name:
+        # A source_image Docker host (polaris) names its participant container so
+        # RAES OS-integrity observation probes the container (the authored
+        # participant OS, e.g. kali) rather than the host substrate. The
+        # machine-image path above already carries this field in its bundle.
+        output["gcp_participant_container_name"] = instance["profile"].participant_container_name
     # The image's declared Guacamole SFTP root travels as realized per-instance
     # metadata (#375) so Mission Control consumes it instead of an OS map. Emitted
     # only when the profile declares one; a blank profile emits no key so the

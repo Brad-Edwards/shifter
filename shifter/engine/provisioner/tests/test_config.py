@@ -753,6 +753,76 @@ class TestRangeNetworkEnv:
         assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm").disk_size_gb == 210
         assert config.get_profile(role="dc", os_type="windows", ami_key="polaris-dc").disk_type == "pd-ssd"
 
+    def test_polaris_docker_host_profile_accepts_participant_container_name(self, mocker):
+        """A polaris docker-host names its participant container for OS observation."""
+        mapping = {
+            "kali": {
+                "polaris-vm": {
+                    "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                    "machine_type": "e2-standard-8",
+                    "disk_size_gb": 210,
+                    "disk_type": "pd-balanced",
+                    "bootstrap_capability": "polaris-docker-host",
+                    "participant_container_name": "a14-kali",
+                }
+            }
+        }
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_KALI_IMAGE": "projects/test/global/images/family/shifter-kali",
+                "GCP_RANGE_DC_IMAGE": "projects/test/global/images/family/shifter-dc",
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(mapping),
+            },
+            clear=True,
+        )
+
+        config = load_gce_range_cell_config()
+
+        profile = config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm")
+        assert profile.participant_container_name == "a14-kali"
+
+    def test_polaris_docker_host_profile_rejects_other_machine_host_fields(self, mocker):
+        """The container name is allowed; other machine-host fields are not."""
+        mapping = {
+            "kali": {
+                "polaris-vm": {
+                    "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                    "machine_type": "e2-standard-8",
+                    "disk_size_gb": 210,
+                    "disk_type": "pd-balanced",
+                    "bootstrap_capability": "polaris-docker-host",
+                    "participant_container_name": "a14-kali",
+                    "participant_readiness_contract": "gce-participant-readiness-v1",
+                }
+            }
+        }
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_KALI_IMAGE": "projects/test/global/images/family/shifter-kali",
+                "GCP_RANGE_DC_IMAGE": "projects/test/global/images/family/shifter-dc",
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(mapping),
+            },
+            clear=True,
+        )
+        with pytest.raises(RuntimeError, match="require"):
+            load_gce_range_cell_config()
+
     def test_load_gce_range_cell_config_parses_exact_machine_image_profile(self, mocker):
         mapping = {
             "kali": {
