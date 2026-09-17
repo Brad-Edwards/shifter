@@ -44,7 +44,8 @@ The current enforcement stack has six parts:
    for the SonarCloud new-code coverage gate.
 
 4. `.pre-commit-config.yaml`
-   Fast local enforcement. The ADR guard runs before commit so architectural drift is caught locally.
+   Fast local hygiene and secrets checks. Full architecture checks run in CI;
+   changed-file cloud identifier checks remain local.
 
 5. `.github/workflows/_quality.yml`
    CI enforcement. ADR conformance runs as its own architecture gate.
@@ -81,27 +82,27 @@ Review controls:
   full ADR guard, import-linter contracts, diff whitespace validation, and Vale
   against Markdown changed from `origin/dev`; `tools/install-vale.sh` supplies
   the pinned local Vale binary when it is not already installed.
-- `.ground-control.yaml` `workflow.precommit_command` is set to `pre-commit run`
-  (staged-files scope) rather than the reader's `pre-commit run --all-files`
-  default. Every hook in `.pre-commit-config.yaml` is already `files:`-scoped, so
-  the staged run fires only the hooks whose module a `/implement` change actually
-  touches (a `shifter/shifter_platform/**`-only change skips the
-  packer/provisioner/bootstrap/installation/terraform/mcp test+lint hooks
-  entirely, which dominate a full-repo `--all-files` run). This is not a gate
-  weakening: CI's quality-path-ownership contract
-  (`.github/quality-path-filters.yaml`, enforced by the `quality-path-ownership`
-  adr_guard check) is the authoritative full-matrix gate and guarantees a
-  blocking lint **and** security **and** test job for every production path, so
-  the local publish pre-commit is scoped to the changed files to avoid
-  re-running suites CI already owns. Developers may still run
-  `pre-commit run --all-files` by hand.
+- Local commits run file hygiene, secret scanning, changed-file cloud identifier
+  checks, commit-message policy, Ruff, ShellCheck, actionlint, and Terraform
+  formatting. Full tests and coverage, type checks, Django checks, import and ADR
+  checks, package-wide JavaScript/CSS lint, Checkov, Bandit, Terraform validation
+  and TFLint, and Kubernetes/chart validation run in CI. These checks are removed
+  from the commit hook, not moved to push hooks. This supersedes older references
+  to local hooks for those checks; their policies and CI gates remain in force.
+  `workflow.precommit_command` remains `pre-commit run` for staged-file hygiene.
+  Run targeted tests directly during development. `pre-commit run --all-files`
+  checks the hygiene baseline only.
+- CI's quality-path-ownership contract (`.github/quality-path-filters.yaml`)
+  remains the authoritative lint, security, and test matrix. Checkov's invocation
+  guard requires the blocking CI scan with the canonical config and external
+  module loading. A local Checkov hook is optional; if reintroduced, it must
+  match the CI policy. Missing CI coverage or soft-fail still fails the guard.
 - The `shifter_platform` pytest worker cap (`--maxprocesses` in
   `shifter/shifter_platform/pyproject.toml` `addopts`) is 8. Because `-n auto`
   already limits workers to the host core count, this cap only takes effect on
   hosts with more cores than the cap: CI runners (`ubuntu-latest`, ≤4 cores) are
   unaffected and keep running at core-count workers, while multi-core dev/CI
-  machines get the added parallelism (which shortens the `pytest (shifter_platform)`
-  pre-commit hook, the slowest step of an `/implement` publish). The cap also
+  machines get the added parallelism for explicitly invoked local test runs. The cap also
   bounds peak memory (each worker loads the Django app), so it is raised only
   with headroom in mind given the suite's documented OOM history at high worker
   counts.

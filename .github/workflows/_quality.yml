@@ -347,9 +347,8 @@ jobs:
           python3 scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py \
             platform/terraform/gcp/modules/portal/iam/*.tf
 
-      # ADR-004-R11 / issue #147: Checkov pre-commit hook args must match
-      # the security-iac job (config, directory, download_external_modules,
-      # soft_fail=false).
+      # ADR-004-R11: require blocking CI Checkov with canonical inputs.
+      # A local hook is optional; if present, it must match this policy.
       - name: Run check-checkov-invocation-parity
         run: python3 scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py
 
