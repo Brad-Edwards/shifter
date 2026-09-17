@@ -239,6 +239,17 @@ def _validate_operating_system(observation: object, expected: dict[str, Any]) ->
         (node.os_version, observation["version"]),
     )
     if any(wanted is not None and actual != wanted for wanted, actual in authored):
+        logger.warning(
+            "OS validation: %s authored (family=%r distribution=%r version=%r) != observed "
+            "(family=%r distribution=%r version=%r)",
+            key,
+            node.os_family,
+            node.os_distribution,
+            node.os_version,
+            observation["family"],
+            observation["distribution"],
+            observation["version"],
+        )
         raise _fail()
     _version(observation["version"])
     return key
