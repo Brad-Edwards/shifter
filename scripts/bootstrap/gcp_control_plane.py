@@ -648,6 +648,7 @@ class GcpRenderArtifacts:
     model_access_catalog_json: str = ""
     model_access_env: str = ""
     mission_control_lease_env: str = ""
+    model_broker_runtime: dict | None = None
 
 
 def render_gcp_helm_values(
@@ -696,6 +697,7 @@ def render_gcp_helm_values(
             outputs.get("model_broker", {}).get("value"),
             catalog_json=artifacts.model_access_catalog_json,
             model_access_env=artifacts.model_access_env,
+            runtime_settings=artifacts.model_broker_runtime,
         ),
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
@@ -1466,6 +1468,7 @@ def stage_gcp_control_plane_values(
             model_access_catalog_json=catalog_json,
             model_access_env=render_model_access_env(root_config),
             mission_control_lease_env=render_mission_control_lease_env(root_config),
+            model_broker_runtime=root_config.settings.get("model_broker_runtime"),
         ),
     )
     values_path = staging_root / "shifter.values.generated.json"

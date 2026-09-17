@@ -1,5 +1,6 @@
 {{- if .Values.modelBroker.enabled }}
 {{- $b := .Values.modelBroker }}
+{{- $active := eq (get (default dict $b.control_env) "MODEL_ACCESS_ENABLED") "true" }}
 {{- if or (ne .Values.provider.name "gcp") (not .Values.network.enabled) }}
 {{- fail "model broker requires GCP and enforced NetworkPolicy" }}
 {{- end }}
@@ -10,15 +11,27 @@
 {{- $_ := required (printf "modelBroker.%s is required" $key) (index $b $key) }}
 {{- end }}
 {{- if not $b.admitted_subnets }}{{ fail "modelBroker.admitted_subnets is required" }}{{ end }}
-{{- if gt (add (len $b.catalog_json) (len $b.identities_json)) 98304 }}
+{{- if gt (add (len $b.catalog_json) (len $b.identities_json) (len $b.providers_json)) 98304 }}
 {{- fail "model broker ConfigMap transport exceeds its 96 KiB payload budget" }}
 {{- end }}
 {{- if eq $b.tls_secret_name $b.control_tls_secret_name }}
 {{- fail "model broker and control require distinct TLS Secrets" }}
 {{- end }}
 {{- $catalog := mustFromJson $b.catalog_json }}
-{{- if or (ne (get $catalog "contract_version") "model-access-policy/v1") (ne (get $catalog "digest") $b.catalog_digest) }}
+{{- if or (not (has (get $catalog "contract_version") (list "model-access-policy/v1" "model-access-policy/v2" "model-access-policy/v3"))) (ne (get $catalog "digest") $b.catalog_digest) }}
 {{- fail "model broker catalog version/digest binding is invalid" }}
+{{- end }}
+{{- if and $active (not (get $catalog "enabled")) }}
+{{- fail "enabled model access requires an enabled catalog" }}
+{{- end }}
+{{- if $active }}
+{{- range $key := list "providers_json" "provisioner_subject" "fingerprint_secret_name" "fingerprint_key_version" }}
+{{- $_ := required (printf "active model broker requires %s" $key) (index $b $key) }}
+{{- end }}
+{{- if eq $b.provisioner_subject $b.gsa }}{{ fail "broker and provisioner identities must differ" }}{{ end }}
+{{- end }}
+{{- if and $active (ne (get $catalog "contract_version") "model-access-policy/v3") }}
+{{- fail "active model broker requires v3 accounting catalog" }}
 {{- end }}
 apiVersion: v1
 kind: ServiceAccount
@@ -41,6 +54,7 @@ metadata:
 data:
   catalog.json: {{ $b.catalog_json | quote }}
   identities.json: {{ $b.identities_json | quote }}
+  providers.json: {{ default "{}" $b.providers_json | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -50,7 +64,7 @@ metadata:
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
 spec:
-  replicas: 2
+  replicas: {{ ternary 2 0 $active }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -85,6 +99,20 @@ spec:
             - name: https
               containerPort: 8443
           env:
+            - name: MODEL_BROKER_PROVIDER
+              value: gcp
+            - name: MODEL_BROKER_PROVIDERS_PATH
+              value: /etc/shifter/model-access/providers.json
+            {{- if $active }}
+            - name: MODEL_BROKER_FINGERPRINT_KEY_PATH
+              value: /etc/shifter/model-fingerprint/key
+            - name: MODEL_BROKER_FINGERPRINT_KEY_VERSION
+              value: {{ $b.fingerprint_key_version | quote }}
+            {{- if $b.fingerprint_previous_secret_name }}
+            - name: MODEL_BROKER_FINGERPRINT_PREVIOUS_KEYS_PATH
+              value: /etc/shifter/model-fingerprint-previous/keys.json
+            {{- end }}
+            {{- end }}
             - name: MODEL_BROKER_IDENTITIES_PATH
               value: /etc/shifter/model-access/identities.json
             - name: MODEL_BROKER_CATALOG_PATH
@@ -127,6 +155,12 @@ spec:
             - {name: catalog, mountPath: /etc/shifter/model-access, readOnly: true}
             - {name: tls, mountPath: /etc/shifter/model-broker/tls, readOnly: true}
             - {name: trust, mountPath: /etc/shifter/model-broker/trust, readOnly: true}
+            {{- if $active }}
+            - {name: fingerprint, mountPath: /etc/shifter/model-fingerprint, readOnly: true}
+            {{- if $b.fingerprint_previous_secret_name }}
+            - {name: fingerprint-previous, mountPath: /etc/shifter/model-fingerprint-previous, readOnly: true}
+            {{- end }}
+            {{- end }}
             - {name: tmp, mountPath: /tmp}
       volumes:
         - name: catalog
@@ -135,6 +169,14 @@ spec:
           secret: {secretName: {{ $b.tls_secret_name | quote }}, defaultMode: 0444}
         - name: trust
           configMap: {name: {{ $b.trust_configmap_name | quote }}}
+        {{- if $active }}
+        - name: fingerprint
+          secret: {secretName: {{ $b.fingerprint_secret_name | quote }}, defaultMode: 0440}
+        {{- if $b.fingerprint_previous_secret_name }}
+        - name: fingerprint-previous
+          secret: {secretName: {{ $b.fingerprint_previous_secret_name | quote }}, defaultMode: 0440}
+        {{- end }}
+        {{- end }}
         - name: tmp
           emptyDir: {medium: Memory, sizeLimit: 64Mi}
 ---

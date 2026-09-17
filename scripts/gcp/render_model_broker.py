@@ -26,6 +26,7 @@ BROKER_RESOURCE_NAMES = frozenset(
         "model-broker-catalog",
         "model-broker-boundary",
         "model-access-control-ingress",
+        "model-enrollment-control-egress",
     }
 )
 _SHARED_POLICIES = frozenset({"allow-platform-provider-apis-egress", "allow-platform-private-service-egress"})
@@ -133,7 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     output = outputs.get("model_broker", {}).get("value")
     validate_model_broker_readback(output, config)
     broker = project_model_broker(
-        output, catalog_json=render_model_access_catalog(config), model_access_env=render_model_access_env(config)
+        output,
+        catalog_json=render_model_access_catalog(config),
+        model_access_env=render_model_access_env(config),
+        runtime_settings=config.settings.get("model_broker_runtime"),
     )
     # The incumbent renderer owns private-service CIDR extraction.
     sys.path.insert(0, str(_ROOT / "scripts/bootstrap"))

@@ -641,3 +641,11 @@ findings resurface on their own. An entry whose `expires_on` is missing or
 unparseable never suppresses anything, so a malformed date cannot buy
 open-ended cover. `expires_on` is inclusive: the exception is live through that
 date and dead the day after.
+
+Broker activation now requires an enabled v3 accounting catalog, an exact provider
+inventory, separate broker/provisioner workload identities and a versioned HMAC
+Secret reference. Installer projection and real Helm-render tests enforce these
+bindings. GCP deployment cleanup also removes the narrowly scoped provisioner-to-
+control enrollment egress policy. Standby infrastructure renders zero broker and
+control replicas until model access is enabled; no executable deployment or cloud
+qualification is implied by rendering. See [model access operations](../ops/model-access.md).

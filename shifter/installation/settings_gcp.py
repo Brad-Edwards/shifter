@@ -30,6 +30,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .gcp_model_broker import GcpModelBrokerSettings
+from .model_broker_runtime import ModelBrokerRuntimeSettings
 
 # GCP project id grammar: 6-30 characters, starting with a lowercase letter, then lowercase
 # letters, digits, and hyphens, and not ending in a hyphen. This is Google's documented
@@ -110,6 +111,7 @@ class GcpBackendSettings(BaseModel):
     )
 
     model_broker: GcpModelBrokerSettings = Field(default_factory=GcpModelBrokerSettings)
+    model_broker_runtime: ModelBrokerRuntimeSettings | None = None
 
     @model_validator(mode="after")
     def validate_model_projects(self) -> GcpBackendSettings:

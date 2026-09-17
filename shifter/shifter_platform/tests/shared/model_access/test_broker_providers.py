@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from model_broker.provider_config import ProviderTarget
+from shared.model_access.provider_runtime import ProviderTarget
 from model_broker.provider_usage import StreamUsage, bedrock_events, usage_from_message, vertex_events
 from model_broker.providers import MessagesProvider
 from shared.model_access import ContractError

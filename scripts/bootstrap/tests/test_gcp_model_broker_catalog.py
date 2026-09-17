@@ -23,7 +23,7 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
     from shared.model_access.runtime import load_mounted_catalog
 
     root = Path(__file__).resolve().parents[3]
-    catalog = json.loads((root / "docs/architecture/model-access/example-policy.v1.json").read_text())
+    catalog = json.loads((root / "docs/architecture/model-access/example-policy.v3.json").read_text())
     catalog.pop("digest")
     catalog["enabled"] = True
     catalog = seal_catalog(catalog).model_dump(mode="json")
@@ -37,6 +37,27 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
         "trust_configmap_name": "model-ca-v1",
         "model_projects": {"models-example": "model-invoke"},
     }
+    runtime = {
+        "provider_inventory": {
+            "contract_version": "model-broker-providers/v1",
+            "targets": [
+                {
+                    "shard_id": "vertex-primary",
+                    "provider": "vertex-v1",
+                    "region": "europe-west4",
+                    "count_region": "eu",
+                    "model": "publishers/anthropic/models/claude-sonnet",
+                    "credential_reference": "impersonate:gsa/model-invoke",
+                    "principal": "model-invoke@models-example.iam.gserviceaccount.com",
+                    "project": "models-example",
+                    "context_window_tokens": 200000,
+                }
+            ],
+        },
+        "fingerprint_secret_name": "broker-fingerprint-v1",
+        "fingerprint_key_version": "v1",
+        "fingerprint_previous_secret_name": "broker-fingerprint-retained",
+    }
     root_path = tmp_path / "shifter.yaml"
     root_path.write_text(
         yaml.safe_dump(
@@ -49,6 +70,7 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
                     "dynamic_secret_project_id": "secrets-example",
                     "region": "us-central1",
                     "model_broker": broker,
+                    "model_broker_runtime": runtime,
                     "model_access": {"enabled": enabled, "catalog": catalog},
                 },
             }
@@ -62,6 +84,7 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
             "global_access": False,
             "region": "us-central1",
             "gsa": "model-broker@platform-example.iam.gserviceaccount.com",
+            "provisioner_subject": "provisioner@platform-example.iam.gserviceaccount.com",
             "model_identities": {"models-example": "model-invoke@models-example.iam.gserviceaccount.com"},
         }
     }
@@ -155,6 +178,20 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
     control = next(
         doc for doc in docs if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "model-access-control"
     )
+    assert control["spec"]["replicas"] == (2 if enabled else 0)
+    broker_deployment = next(
+        doc for doc in docs if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "model-broker"
+    )
+    assert broker_deployment["spec"]["replicas"] == (2 if enabled else 0)
+    if enabled:
+        broker_pod = broker_deployment["spec"]["template"]["spec"]
+        secret_names = {volume["secret"]["secretName"] for volume in broker_pod["volumes"] if "secret" in volume}
+        assert {"broker-fingerprint-v1", "broker-fingerprint-retained"} <= secret_names
+        broker_env = {item["name"]: item.get("value") for item in broker_pod["containers"][0]["env"]}
+        assert broker_env["MODEL_BROKER_PROVIDER"] == "gcp"
+        assert broker_env["MODEL_BROKER_FINGERPRINT_KEY_VERSION"] == "v1"
+        artifact = next(doc for doc in docs if doc["kind"] == "ConfigMap" and "providers.json" in doc.get("data", {}))
+        assert json.loads(artifact["data"]["providers.json"]) == runtime["provider_inventory"]
     pod = control["spec"]["template"]["spec"]
     container = pod["containers"][0]
     env = {item["name"]: item.get("value") for item in container["env"]}

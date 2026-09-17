@@ -1723,6 +1723,42 @@
           "description": "Broker-only configuration or mounted-file path; never a credential value.",
           "destination": "runtime-env",
           "kind": "runtime-env",
+          "name": "MODEL_BROKER_FINGERPRINT_KEY_PATH",
+          "owner": "canonical model broker Helm projection",
+          "process_roles": [
+            "model-broker"
+          ],
+          "sensitivity": "public",
+          "source": "validated deployment transport and mounted catalog identity"
+        },
+        {
+          "description": "Broker-only configuration or mounted-file path; never a credential value.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_FINGERPRINT_KEY_VERSION",
+          "owner": "canonical model broker Helm projection",
+          "process_roles": [
+            "model-broker"
+          ],
+          "sensitivity": "public",
+          "source": "validated deployment transport and mounted catalog identity"
+        },
+        {
+          "description": "Broker-only configuration or mounted-file path; never a credential value.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_FINGERPRINT_PREVIOUS_KEYS_PATH",
+          "owner": "canonical model broker Helm projection",
+          "process_roles": [
+            "model-broker"
+          ],
+          "sensitivity": "public",
+          "source": "validated deployment transport and mounted catalog identity"
+        },
+        {
+          "description": "Broker-only configuration or mounted-file path; never a credential value.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
           "name": "MODEL_BROKER_HOSTNAME",
           "owner": "canonical model broker Helm projection",
           "process_roles": [
@@ -1736,6 +1772,30 @@
           "destination": "runtime-env",
           "kind": "runtime-env",
           "name": "MODEL_BROKER_IDENTITIES_PATH",
+          "owner": "canonical model broker Helm projection",
+          "process_roles": [
+            "model-broker"
+          ],
+          "sensitivity": "public",
+          "source": "validated deployment transport and mounted catalog identity"
+        },
+        {
+          "description": "Broker-only configuration or mounted-file path; never a credential value.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_PROVIDER",
+          "owner": "canonical model broker Helm projection",
+          "process_roles": [
+            "model-broker"
+          ],
+          "sensitivity": "public",
+          "source": "validated deployment transport and mounted catalog identity"
+        },
+        {
+          "description": "Broker-only configuration or mounted-file path; never a credential value.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_PROVIDERS_PATH",
           "owner": "canonical model broker Helm projection",
           "process_roles": [
             "model-broker"
@@ -3501,6 +3561,132 @@
             },
             "title": "GcpModelBrokerSettings",
             "type": "object"
+          },
+          "ModelBrokerRuntimeSettings": {
+            "additionalProperties": false,
+            "description": "Mounted provider bindings and versioned Kubernetes Secret references only.",
+            "properties": {
+              "fingerprint_key_version": {
+                "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+                "title": "Fingerprint Key Version",
+                "type": "string"
+              },
+              "fingerprint_previous_secret_name": {
+                "default": "",
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
+                "title": "Fingerprint Previous Secret Name",
+                "type": "string"
+              },
+              "fingerprint_secret_name": {
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
+                "title": "Fingerprint Secret Name",
+                "type": "string"
+              },
+              "provider_inventory": {
+                "$ref": "#/$defs/ProviderInventory"
+              }
+            },
+            "required": [
+              "provider_inventory",
+              "fingerprint_secret_name",
+              "fingerprint_key_version"
+            ],
+            "title": "ModelBrokerRuntimeSettings",
+            "type": "object"
+          },
+          "ProviderInventory": {
+            "additionalProperties": false,
+            "description": "Closed mounted non-secret configuration independent of guest packages.",
+            "properties": {
+              "contract_version": {
+                "const": "model-broker-providers/v1",
+                "title": "Contract Version",
+                "type": "string"
+              },
+              "targets": {
+                "items": {
+                  "$ref": "#/$defs/ProviderTarget"
+                },
+                "maxItems": 128,
+                "minItems": 1,
+                "title": "Targets",
+                "type": "array"
+              }
+            },
+            "required": [
+              "contract_version",
+              "targets"
+            ],
+            "title": "ProviderInventory",
+            "type": "object"
+          },
+          "ProviderTarget": {
+            "additionalProperties": false,
+            "description": "Explicit approved transport, principal and conservative model context bound.",
+            "properties": {
+              "context_window_tokens": {
+                "maximum": 2000000,
+                "minimum": 1,
+                "title": "Context Window Tokens",
+                "type": "integer"
+              },
+              "count_region": {
+                "default": "",
+                "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$|^$",
+                "title": "Count Region",
+                "type": "string"
+              },
+              "credential_reference": {
+                "maxLength": 256,
+                "title": "Credential Reference",
+                "type": "string"
+              },
+              "model": {
+                "pattern": "^[a-zA-Z0-9@.:/-]{1,256}$",
+                "title": "Model",
+                "type": "string"
+              },
+              "principal": {
+                "maxLength": 256,
+                "title": "Principal",
+                "type": "string"
+              },
+              "project": {
+                "default": "",
+                "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$|^$",
+                "title": "Project",
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "vertex-v1",
+                  "bedrock-v1"
+                ],
+                "title": "Provider",
+                "type": "string"
+              },
+              "region": {
+                "pattern": "^[a-z][a-z0-9-]{1,62}[a-z0-9]$",
+                "title": "Region",
+                "type": "string"
+              },
+              "shard_id": {
+                "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+                "title": "Shard Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "shard_id",
+              "provider",
+              "region",
+              "model",
+              "credential_reference",
+              "principal",
+              "context_window_tokens"
+            ],
+            "title": "ProviderTarget",
+            "type": "object"
           }
         },
         "additionalProperties": false,
@@ -3516,6 +3702,17 @@
           },
           "model_broker": {
             "$ref": "#/$defs/GcpModelBrokerSettings"
+          },
+          "model_broker_runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelBrokerRuntimeSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "project_id": {
             "description": "GCP project id: 6-30 characters, a lowercase letter followed by lowercase letters, digits, and hyphens, not ending in a hyphen.",

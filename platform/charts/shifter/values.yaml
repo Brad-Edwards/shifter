@@ -354,3 +354,8 @@ modelBroker:
   catalog_json: ""
   catalog_digest: ""
   identities_json: ""
+  providers_json: ""
+  provisioner_subject: ""
+  fingerprint_secret_name: ""
+  fingerprint_key_version: ""
+  fingerprint_previous_secret_name: ""

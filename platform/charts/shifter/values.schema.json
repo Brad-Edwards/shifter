@@ -36,6 +36,11 @@
         "enabled"
       ],
       "properties": {
+        "providers_json": {"type": "string"},
+        "provisioner_subject": {"type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$|^$"},
+        "fingerprint_secret_name": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^$"},
+        "fingerprint_key_version": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$|^$"},
+        "fingerprint_previous_secret_name": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^$"},
         "enabled": {
           "type": "boolean"
         },

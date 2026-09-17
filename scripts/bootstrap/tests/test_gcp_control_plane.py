@@ -1377,7 +1377,11 @@ class TestGdcControlPlaneHelmChart:
         assert "runAsGroup: 1000" in output
         assert "runAsUser: 1001" in output
         assert "runAsGroup: 1001" in output
-        assert "kind: Namespace" not in output
+        import yaml
+
+        namespaces = [doc for doc in yaml.safe_load_all(output) if doc and doc["kind"] == "Namespace"]
+        assert [doc["metadata"]["name"] for doc in namespaces] == ["shifter-plugins"]
+        assert namespaces[0]["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
         assert "kind: BackendConfig" in output
         assert "kind: NetworkPolicy" in output
         assert "name: default-deny-platform" in output

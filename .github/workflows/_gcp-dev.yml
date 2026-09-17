@@ -1025,6 +1025,8 @@ jobs:
             kubectl delete configmap model-broker-catalog -n shifter-platform --ignore-not-found
             kubectl delete networkpolicy model-broker-boundary model-access-control-ingress \
               -n shifter-platform --ignore-not-found
+            kubectl delete networkpolicy model-enrollment-control-egress \
+              -n shifter-jobs --ignore-not-found
           fi
           kubectl apply -f "${manifest}"
       - name: Run database migrations with the migration identity

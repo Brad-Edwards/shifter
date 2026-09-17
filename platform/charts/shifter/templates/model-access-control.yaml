@@ -1,5 +1,6 @@
 {{- if .Values.modelBroker.enabled }}
 {{- $controlEnv := .Values.modelBroker.control_env }}
+{{- $active := eq (get (default dict $controlEnv) "MODEL_ACCESS_ENABLED") "true" }}
 {{- if empty $controlEnv }}
 {{- fail "enabled model broker requires control_env" }}
 {{- end }}
@@ -18,7 +19,7 @@ metadata:
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
 spec:
-  replicas: 2
+  replicas: {{ ternary 2 0 $active }}
   selector:
     matchLabels: {app.kubernetes.io/component: model-access-control}
   template:
@@ -45,6 +46,10 @@ spec:
           envFrom:
             - configMapRef: {name: platform-runtime}
           env:
+            - name: MODEL_CONTROL_PROVIDER
+              value: gcp
+            - name: MODEL_CONTROL_PROVISIONER_SUBJECT
+              value: {{ .Values.modelBroker.provisioner_subject | quote }}
             {{- range $name, $value := $controlEnv }}
             - name: {{ $name }}
               value: {{ $value | quote }}

@@ -48,4 +48,27 @@ spec:
         - podSelector:
             matchLabels: {app.kubernetes.io/component: model-broker}
       ports: [{protocol: TCP, port: 8444}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.namespaces.jobs | quote }}}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: pulumi-provisioner}
+      ports: [{protocol: TCP, port: 8444}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-enrollment-control-egress
+  namespace: {{ .Values.namespaces.jobs }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: pulumi-provisioner}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.namespaces.platform | quote }}}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: model-access-control}
+      ports: [{protocol: TCP, port: 8444}]
 {{- end }}
