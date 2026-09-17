@@ -99,7 +99,9 @@ class AuditEntityType(models.TextChoices):
     SHARING_BINDING = "sharing_binding", "Sharing Binding"
     # Model-access request accounting (PLAT-202, #2121, M04).
     MODEL_REQUEST = "model_request", "Model Request"
+    MODEL_CREDENTIAL = "model_credential", "Model Credential"
     PREPARATION_ADAPTER = "preparation_adapter", "Preparation Adapter"
+    RUNTIME_PLUGIN = "runtime_plugin", "Runtime Plugin"
     PREPARATION_GRANT = "preparation_grant", "Preparation Grant"
     ARTIFACT_PREPARATION = "artifact_preparation", "Artifact Preparation"
 

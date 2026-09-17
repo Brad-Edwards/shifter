@@ -13,10 +13,10 @@
 #     address into the image.
 #   - Not for the promoted DC: a promoted DC owns its own DNS (points at itself
 #     and forwards to AmazonProvidedDNS), so this script is wired into
-#     windows.pkr.hcl only, never dc.pkr.hcl / polaris-dc.pkr.hcl.
+#     windows.pkr.hcl only, never dc.pkr.hcl.
 #
 # AWS-only: referenced solely by the top-level AWS windows.pkr.hcl. It must never
-# be added to the shared scripts/windows tree, which the GCP and polaris-dc
+# be added to the shared scripts/windows tree, which the GCP and pre-promoted DC
 # builds consume.
 $ErrorActionPreference = "Stop"
 

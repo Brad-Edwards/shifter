@@ -118,7 +118,9 @@ def prepare_model_launch(
         if not created and row.intent_digest != digest:
             if (
                 not replace_revoked
-                or ModelAllocation.objects.filter(request_id=request_id, grant__state="pending").exists()
+                or ModelAllocation.objects.filter(
+                    request_id=request_id, grant__state__in=["pending", "active"]
+                ).exists()
             ):
                 raise ContractError(_INTENT_CONFLICT)
             row.intent_digest = digest

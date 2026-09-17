@@ -9,7 +9,7 @@ not advertise an installed capability or qualified provider.
 ## Context
 
 Participant root must be an assumed adversary under ADR-056. The existing
-Polaris model setup selects provider scripts and can place Vertex service
+The retired embedded model setup selected provider scripts and could place Vertex service
 account keys in the guest. Multiple keys on one service account authenticate
 the same principal. That cannot enforce independent range authorization,
 spend ceilings, or immediate application revocation. Direct short-lived
@@ -46,7 +46,11 @@ some configured IDs coincide. The model broker does not replace #1586's
 dedicated dynamic-secret project design.
 
 The broker has a dedicated private TLS listener reachable through an exact
-range egress capability. It has no public portal routes or generic forward
+range egress capability. Broker and control listeners bind the explicit private
+pod IPv4 address injected by the Kubernetes Downward API, rejecting missing,
+wildcard, public, loopback and link-local addresses. TLS, workload authentication
+and default-deny NetworkPolicies still enforce the service boundary.
+It has no public portal routes or generic forward
 proxy. Its control API uses authenticated workload identity and narrow
 Engine service operations. Provider destinations, methods, model IDs,
 protocol versions, and approved billing features come from validated
@@ -95,3 +99,23 @@ Their integration tests verify the exact exception and incompatible-posture
 rejections. M08 owns production enrollment and operation projection; M05 owns
 the listener call to the transport-peer binding contract. Installing the
 package alone establishes neither enrollment nor peer authentication.
+
+The [AWS packaging contract](../architecture/model-access/aws-packaging.md)
+applies the same broker boundary to EKS: exact-subject IRSA, separate regional
+invocation roles, direct range peering, private DNS and TLS passthrough with
+preserved client IPs, and exact private STS/Bedrock endpoint egress. The shared
+guest role loses direct Bedrock authority. Terraform/Helm and offline tests do
+not establish live provider parity; AWS and GCP require separate qualification.
+
+GCP deployment retirement also removes the legacy guest invocation service
+account, its broad model role, provisioner key-admin/act-as grants, static shared
+provider-key references and direct-model runtime configuration. Teardown retains
+deletion of range-owned legacy Secret Manager copies without reading their
+payloads or retaining provider IAM. Externally managed shared keys require
+owner revocation during migration; deleting a stored copy does not revoke a key.
+
+The runtime enrollment path carries the deployment-verified private broker VIP
+through the provisioner environment allowlist into the RAES firewall capability.
+A missing destination fails before guest mutation. Teardown and residual
+inventory retain the optional firewall identity independently of current
+enablement; disabling broker configuration cannot hide an existing rule.

@@ -27,12 +27,3 @@ packs:
     package_digest: sha256:b2285de5a8fb047f5aa50a14621f9f5492aa79647bc1bd1f5d992d2e59a8f482
     provenance:
       repo: Brad-Edwards/shifter
-  - scenario_id: polaris
-    source_kind: repo
-    contract_kind: raes
-    contract_profile: shifter
-    package_ref: cms/scenarios/inbox_packs/polaris
-    package_version: "0.1.0"
-    package_digest: sha256:31c6d4b678a8cb4f417360dca9cb334fd9a85a966a5dad85d44e5e2b24f7f386
-    provenance:
-      repo: Brad-Edwards/shifter

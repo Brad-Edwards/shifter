@@ -190,7 +190,7 @@ class TestGcpProvisionerEnvOverrides:
             "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@shifter-gcp-dev.iam.gserviceaccount.com",
             "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
             "GCP_RANGE_KALI_IMAGE": "projects/kali/global/images/kali",
-            "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": '{"kali":{"polaris-vm":{"disk_size_gb":210}}}',
+            "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": '{"kali":{"example-vm":{"disk_size_gb":210}}}',
             "GCP_RANGE_HOST_IDENTITY_POOL_SIZE": "200",
             "GCP_RANGE_WINDOWS_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
             "GCP_RANGE_DC_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",

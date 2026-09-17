@@ -65,7 +65,15 @@ def resolve_gce_image(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) 
 
     resolved = resolve_from_candidates(candidates, version=image.version)
     if resolved is not None:
-        return _profile(node, resolved.image_ref, resolved.machine_type, resolved.disk_size_gb, resolved.disk_type)
+        return _profile(
+            node,
+            resolved.image_ref,
+            resolved.machine_type,
+            resolved.disk_size_gb,
+            resolved.disk_type,
+            resolved.management_ssh_port,
+            resolved.management_ssh_username,
+        )
 
     if _is_concrete_gce_ref(image.name):
         return _profile(node, image.name)
@@ -91,6 +99,8 @@ def resolve_gce_image_from_binding(node: RaesPlanNode, binding: ArtifactBinding)
         binding.machine_type or None,
         binding.disk_size_gb,
         binding.disk_type or None,
+        binding.management_ssh_port,
+        binding.management_ssh_username,
     )
     return replace(profile, source_image_id=binding.image_id)
 
@@ -107,7 +117,15 @@ def _resolve_base_os(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) -
     """
     resolved = resolve_from_candidates(candidates, version=None)
     if resolved is not None:
-        return _profile(node, resolved.image_ref, resolved.machine_type, resolved.disk_size_gb, resolved.disk_type)
+        return _profile(
+            node,
+            resolved.image_ref,
+            resolved.machine_type,
+            resolved.disk_size_gb,
+            resolved.disk_type,
+            resolved.management_ssh_port,
+            resolved.management_ssh_username,
+        )
     os_family = node.os_family or "linux"
     raise RaesGceImageError(
         f"source-less node {node.address!r} needs a base-OS image mapping for os_family {os_family!r}"
@@ -120,6 +138,8 @@ def _profile(
     machine_type: str | None = None,
     disk_size_gb: int | None = None,
     disk_type: str | None = None,
+    management_ssh_port: int = 22,
+    management_ssh_username: str = "",
 ) -> GCERangeImageProfile:
     """Build a GCERangeImageProfile, filling gaps from authored resources then defaults."""
     return GCERangeImageProfile(
@@ -127,6 +147,8 @@ def _profile(
         machine_type=machine_type or _machine_type_from_resources(node) or _DEFAULT_MACHINE_TYPE,
         disk_size_gb=disk_size_gb or _DEFAULT_DISK_SIZE_GB,
         disk_type=disk_type or _DEFAULT_DISK_TYPE,
+        host_ssh_port=management_ssh_port,
+        host_ssh_username=management_ssh_username,
     )
 
 

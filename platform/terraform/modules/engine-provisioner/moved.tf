@@ -101,11 +101,6 @@ moved {
 }
 
 moved {
-  from = aws_iam_role_policy.polaris_agent_role_management
-  to   = module.provisioner_iam.aws_iam_role_policy.polaris_agent_role_management
-}
-
-moved {
   from = aws_iam_role_policy.vpn_gateway_role_management
   to   = module.provisioner_iam.aws_iam_role_policy.vpn_gateway_role_management
 }

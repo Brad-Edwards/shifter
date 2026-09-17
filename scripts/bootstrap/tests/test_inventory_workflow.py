@@ -48,6 +48,7 @@ def inventory(tmp_path, record_data):
     )
 
 
+@pytest.mark.integration
 def test_committed_inventory_validates_and_drives_scaffold(inventory, tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(tmp_path)
     inventory.action = "validate"
@@ -70,6 +71,7 @@ def test_committed_inventory_validates_and_drives_scaffold(inventory, tmp_path, 
 
 
 @pytest.mark.parametrize("mutation", ["revision", "origin", "dirty", "symlink", "untracked"])
+@pytest.mark.integration
 def test_provenance_rejects_unreviewed_or_nonregular_record(inventory, mutation):
     path = inventory.inventory_root / inventory.record
     if mutation == "revision":
@@ -89,6 +91,7 @@ def test_provenance_rejects_unreviewed_or_nonregular_record(inventory, mutation)
         verified_inventory(inventory)
 
 
+@pytest.mark.integration
 def test_product_staging_uses_only_pinned_code_and_lockfiles(tmp_path):
     product = tmp_path / "product"
     product.mkdir()

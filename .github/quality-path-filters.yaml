@@ -50,6 +50,7 @@ quality_units:
   - id: shifter_platform
     paths:
       - shifter/shifter_platform/**
+      - shifter/shifter_adapter_sdk/**
       - .importlinter
     packages:
       - engine
@@ -175,7 +176,6 @@ quality_units:
       - scripts/check_tf_kms_secrets_grant/**
       - scripts/check_tf_rds_security/**
       - scripts/check_tf_iam_ssm_range_scope/**
-      - scripts/check_tf_iam_bedrock_agent_scope/**
       - scripts/check_portal_target_sg_sources/**
       - scripts/check_tf_roots/**
       - shifter/engine/provisioner/terraform/**
@@ -256,24 +256,6 @@ quality_units:
       security: []
       test: [adr-guard-tests]
 
-  - id: ctfd_workshop
-    paths:
-      - scripts/ctfd-workshop/**
-    sonar: false
-    responsibilities:
-      lint: []
-      security: []
-      test: [ctfd-workshop-tests]
-
-  - id: polaris_tests
-    paths:
-      - scenario-dev/polaris/tests/**
-    sonar: false
-    responsibilities:
-      lint: []
-      security: []
-      test: [polaris-tests]
-
   - id: stack_smoke
     paths:
       - scripts/stack-smoke/**
@@ -290,7 +272,6 @@ quality_units:
   # than a hidden config exclusion.
   - id: container_images
     paths:
-      - shifter/gdc-vm-images/**
       - shifter/engine/guacamole/**
       - shifter/engine/guacd/**
       - shifter/.dockerignore
@@ -431,10 +412,8 @@ exclusions:
 
   - type: config
     reason: >-
-      Scenario authoring content and packages (Polaris and RAES-validation
-      scenario material, briefing/design notes, container and content-package
-      inputs). Authoring content, not product source; Polaris smoke tests are
-      owned separately by the polaris_tests unit.
+      Synthetic RAES validation scenarios and associated authoring material.
+      Private packs and their tests belong to their owning repositories.
     paths:
       - scenario-dev/**
 

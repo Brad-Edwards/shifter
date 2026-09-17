@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from config import GCERangeCellConfig
 from gcp_range_cell_clients import GCEClients
-from gcp_range_cell_credentials import GCEVertexCredentialOps
 from raes_account_credentials import RaesAccountCredentialOps, install_instance_account_credentials
 from raes_active_directory import RaesDirectorySecretOps, realize_raes_active_directory
 from raes_composition_verification import verify_bootstrap_composition
@@ -24,7 +23,6 @@ class RaesGceApplyOptions:
     config: GCERangeCellConfig | None = None
     clients: GCEClients | None = None
     secret_ops: RaesGceSecretOps | None = None
-    vertex_ops: GCEVertexCredentialOps | None = None
     egress_mode: str = "status-quo"
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
     on_pre_mutation_failure: Callable[[], None] | None = None
@@ -37,6 +35,10 @@ class RaesGceApplyOptions:
     operating_system_observer: Callable[..., list[dict[str, str]]] = observe_operating_systems
     substrate_observer: Callable[..., list[dict[str, str]]] = observe_gce_substrates
 
+    runtime_plugin: Callable[..., None] | None = None
+    model_enrollment: Callable[..., None] | None = None
+    model_broker: dict[str, object] | None = None
+
 
 @dataclass(frozen=True)
 class RaesGceApplyRuntime:
@@ -45,7 +47,6 @@ class RaesGceApplyRuntime:
     config: GCERangeCellConfig
     clients: GCEClients
     secret_ops: RaesGceSecretOps
-    vertex_ops: GCEVertexCredentialOps
     account_secret_ops: RaesAccountCredentialOps
     credential_installer: Callable[..., dict[str, str]]
     directory_secret_ops: RaesDirectorySecretOps
@@ -55,3 +56,5 @@ class RaesGceApplyRuntime:
     operating_system_observer: Callable[..., list[dict[str, str]]]
     substrate_observer: Callable[..., list[dict[str, str]]]
     allocated_network_cidrs: Sequence[tuple[str, str]] | None
+    runtime_plugin: Callable[..., None] | None
+    model_enrollment: Callable[..., None] | None

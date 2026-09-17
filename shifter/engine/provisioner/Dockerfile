@@ -112,6 +112,7 @@ RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requireme
 # installation.registry (PLAT-2005), which needs pydantic; pydantic is a declared
 # provisioner runtime dependency (requirements.lock), installed above.
 COPY installation /opt/shifter-libs/installation
+COPY shifter_adapter_sdk /opt/shifter-libs/shifter_adapter_sdk
 
 # Dependency-light platform contract modules used by the provisioner runtime.
 # Copy the whole `shared` package so imports like `shared.range_instantiation_policy`,
@@ -126,7 +127,6 @@ COPY shifter_platform/shared /opt/shifter-libs/shared
 # (terraform_base._stage_workspace) so a process compromise cannot tamper
 # with application code at runtime (issue #1103, follow-up to #950).
 COPY engine/provisioner/ .
-COPY packer/files/polaris_splice_credential.py /app/assets/polaris-splice-credential.py
 
 # Bake the Terraform provider packages needed by the runtime range/NGFW
 # modules. Provisioner tasks run in private subnets without public Terraform

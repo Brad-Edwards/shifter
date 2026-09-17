@@ -31,6 +31,8 @@ _VIEW_FIELDS = {
     "machine_type",
     "disk_size_gb",
     "disk_type",
+    "management_ssh_port",
+    "management_ssh_username",
     "enabled",
     "notes",
     "artifact_id",
@@ -88,6 +90,25 @@ def _bearer(client: APIClient, raw: str) -> APIClient:
 
 
 class TestRegister:
+    def test_management_port_survives_registration_and_list(self, api_client, staff_user):
+        api_client.force_authenticate(user=staff_user)
+        body = {
+            "provider": "gce",
+            "source_name": "container-host",
+            "image_ref": "projects/x/global/images/host",
+            "management_ssh_port": 2222,
+            "management_ssh_username": "image-admin",
+        }
+        response = api_client.post(LIST_CREATE_URL, body, format="json")
+        assert response.status_code == 200
+        assert response.json()["management_ssh_port"] == 2222
+        assert response.json()["management_ssh_username"] == "image-admin"
+        assert api_client.get(LIST_CREATE_URL).json()[0]["management_ssh_port"] == 2222
+        for invalid in (0, 65536, -1):
+            response = api_client.post(LIST_CREATE_URL, {**body, "management_ssh_port": invalid}, format="json")
+            assert response.status_code == 400
+        assert RaesImageMapping.objects.get(source_name="container-host").management_ssh_port == 2222
+
     def test_register_creates_mapping(self, api_client, threat_research_user):
         api_client.force_authenticate(user=threat_research_user)
         response = api_client.post(
@@ -323,3 +344,21 @@ class TestAuthentication:
 
         assert response.status_code in {401, 403}
         assert RaesImageMapping.objects.get(source_name="kali").enabled is True
+
+
+def test_registry_validation_response_uses_public_message(api_client, staff_user, monkeypatch):
+    from engine.services import RaesImageMappingError
+
+    class DiagnosticError(RaesImageMappingError):
+        def __str__(self):
+            return "internal-storage-diagnostic"
+
+    def reject(**kwargs):
+        raise DiagnosticError("Unsupported image provider")
+
+    monkeypatch.setattr("cms.api.raes_image_registry.list_raes_image_mappings", reject)
+    api_client.force_authenticate(user=staff_user)
+    response = api_client.get(LIST_CREATE_URL)
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Unsupported image provider"
+    assert "internal-storage-diagnostic" not in response.content.decode()

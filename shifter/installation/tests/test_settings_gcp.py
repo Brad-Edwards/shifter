@@ -45,13 +45,13 @@ class TestGcpBackendSettings:
             _settings(
                 provisioner_static_secret_refs={
                     "GDC_ACCESS_SECRET_ID": "projects/acme-shifter/secrets/shifter-prod-gdc-access",
-                    "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID": "projects/vertex-project/secrets/shared-key",
+                    "GDC_VM_IMAGE_GCS_SECRET_ID": "projects/image-project/secrets/image-key",
                 }
             )
         )
         assert set(settings.provisioner_static_resource_refs) == {
             "GDC_ACCESS_SECRET_ID",
-            "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+            "GDC_VM_IMAGE_GCS_SECRET_ID",
         }
 
         unknown_secret = _settings(

@@ -40,6 +40,15 @@ def _candidate(version: str, image_ref: str, **extra) -> dict:
 
 
 class TestRegistryResolution:
+    @pytest.mark.parametrize("image", [None, RaesPlanImage(name="container-host")])
+    def test_registry_management_port_is_preserved(self, image):
+        candidate = _candidate("", "projects/x/global/images/container-host")
+        candidate["management_ssh_port"] = 2222
+        candidate["management_ssh_username"] = "image-admin"
+        profile = resolve_gce_image(_node(image=image), [candidate])
+        assert profile.host_ssh_port == 2222
+        assert profile.host_ssh_username == "image-admin"
+
     def test_exact_version_uses_registry_image_and_sizing(self):
         node = _node(image=RaesPlanImage(name="kali", version="2024.1"))
         candidates = [

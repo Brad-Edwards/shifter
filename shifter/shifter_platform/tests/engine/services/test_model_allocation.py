@@ -103,9 +103,12 @@ def test_allocation_pins_complete_map_and_pending_grant(django_user_model):
     assert result.draws.get().amount == request.demand.per_participant_input_tokens
 
 
-def test_retry_reuses_record_after_catalog_change(django_user_model):
+@pytest.mark.parametrize("grant_state", ["pending", "active"])
+def test_retry_reuses_record_after_catalog_change(django_user_model, grant_state):
     catalog, request, observations = allocation_inputs(django_user_model)
     original = allocate((catalog, request, observations))
+    original.grant.state = grant_state
+    original.grant.save(update_fields=["state"])
     changed = catalog.model_dump(mode="json")
     changed["shards"][0]["weight"] = 2
     replay = allocate((seal_catalog(changed), request, ()))

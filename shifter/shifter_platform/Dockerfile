@@ -126,6 +126,7 @@ COPY --from=builder /usr/local/bin/gunicorn /usr/local/bin/daphne /usr/local/bin
 # pip install, which Sonar flags as an unlocked/unhashed resolution
 # (docker:S8544). Flat-layout package: the directory IS the importable package.
 COPY installation /opt/shifter-libs/installation
+COPY shifter_adapter_sdk /opt/shifter-libs/shifter_adapter_sdk
 
 # Copy application code (context is now shifter/, so path is shifter_platform)
 COPY --chown=appuser:appgroup shifter_platform .

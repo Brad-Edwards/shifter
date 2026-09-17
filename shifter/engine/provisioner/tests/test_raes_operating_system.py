@@ -45,38 +45,6 @@ def test_observes_every_instance_and_returns_only_bounded_guest_identity():
     assert all(execution.close.called for execution in executions)
 
 
-def test_polaris_docker_host_observes_the_participant_container_not_the_host():
-    """The authored kali OS lives in the container, not the debian/ubuntu host."""
-    plan = RaesPlan(
-        raes_version="3.5.0",
-        nodes=(RaesPlanNode("provision.node.kali", "a14-kali", "linux", 1, ()),),
-        networks=(),
-    )
-    execution = _execution("ID=kali\nVERSION_CODENAME=kali-rolling\n")
-    result = observe_operating_systems(
-        plan,
-        [
-            {
-                "uuid": "provision.node.kali#0",
-                "gcp_bootstrap_capability": "polaris-docker-host",
-                "gcp_participant_container_name": "a14-kali",
-            }
-        ],
-        execution_builder=Mock(return_value=execution),
-    )
-    # The probe ran inside the named container, not against the host substrate.
-    probe = execution.executor.run_command.call_args.args[1]
-    assert probe == "docker exec a14-kali head -c 4097 /etc/os-release"
-    assert result == [
-        {
-            "instance_key": "provision.node.kali#0",
-            "family": "linux",
-            "distribution": "x-shifter:kali",
-            "version": "rolling",
-        }
-    ]
-
-
 @pytest.mark.parametrize("stdout", ["", "ID=ubuntu\n", "ID=ubuntu\nID=debian\nVERSION_ID=12\n", "x" * 4097])
 def test_missing_ambiguous_or_unbounded_guest_identity_fails_closed(stdout):
     execution = _execution(stdout)

@@ -21,6 +21,7 @@ from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import (
     RaesInputBindings,
+    RaesRangeIdentity,
     build_raes_operation_input,
     candidate_key,
     plan_image_lookup_keys,
@@ -101,6 +102,8 @@ def _raes_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, 
                 "machine_type": row.machine_type,
                 "disk_size_gb": row.disk_size_gb,
                 "disk_type": row.disk_type,
+                **({"management_ssh_port": row.management_ssh_port} if row.management_ssh_port != 22 else {}),
+                **({"management_ssh_username": row.management_ssh_username} if row.management_ssh_username else {}),
             }
         )
     return projected
@@ -169,6 +172,8 @@ def _raes_artifact_bindings(target: Range) -> list[ArtifactBinding]:
             machine_type=row.machine_type,
             disk_size_gb=row.disk_size_gb,
             disk_type=row.disk_type,
+            management_ssh_port=row.management_ssh_port,
+            management_ssh_username=row.management_ssh_username,
         )
         for row in RaesArtifactSatisfactionBinding.objects.filter(range=target).order_by("pk")
     ]
@@ -187,18 +192,24 @@ def _raes_input_payload(target: Range, request: Request, *, suppress_access: boo
     access; warm activation later carries the access bindings and realizes the
     claimant's fresh access.
     """
+    from engine.services._model_guest_bindings import project_model_guest_bindings
+    from engine.services._runtime_plugin_bindings import retained_runtime_plugin_pin
+
     plan = target.range_config or {}
+    pin = retained_runtime_plugin_pin(target)
     return build_raes_operation_input(
         plan=plan,
         bindings=RaesInputBindings(
             delivery=_raes_delivery_bindings(target),
             access=() if suppress_access else _raes_access_bindings(target),
             artifact=_raes_artifact_bindings(target),
+            runtime_plugin=pin,
+            model_enrollments=project_model_guest_bindings(target, pin) if not suppress_access else (),
         ),
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,
-        legacy_range_id=target.id,
+        identity=RaesRangeIdentity(target.id, str(target.resource_generation) if target.resource_generation else None),
         egress_mode=target.egress_mode,
     )
 

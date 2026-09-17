@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from shared.raes.content_delivery import DeliveryBinding
     from shared.raes.participant_access import ParticipantAccessBinding
     from shared.range_instantiation_policy import BackendAdmission
+    from shared.runtime_plugin_binding import RuntimePluginScope
 
 __all__ = ["CmsRaesDispatchPort"]
 
@@ -84,6 +85,7 @@ class CmsRaesDispatchPort:
     # ``workspace_id``; the Engine pins it on the range at create. Defaults to the
     # compatibility ``status-quo`` for constructors that predate the field.
     egress_mode: str = RangeEgressMode.STATUS_QUO.value
+    runtime_plugin_scope: RuntimePluginScope | None = None
 
     def realize(
         self,
@@ -108,6 +110,7 @@ class CmsRaesDispatchPort:
                     delivery=delivery_bindings,
                     participant_access=tuple(participant_access),
                     artifact=artifact_bindings,
+                    runtime_plugin_scope=self.runtime_plugin_scope,
                     defer_dispatch=prepare_models,
                 ),
                 workspace_id=self.workspace_id,

@@ -26,6 +26,7 @@ BROKER_RESOURCE_NAMES = frozenset(
         "model-broker-catalog",
         "model-broker-boundary",
         "model-access-control-ingress",
+        "model-enrollment-control-egress",
     }
 )
 _SHARED_POLICIES = frozenset({"allow-platform-provider-apis-egress", "allow-platform-private-service-egress"})
@@ -77,6 +78,14 @@ def combine_resources(base: str, broker: str) -> str:
             engine = [container for container in containers if container["name"] == "worker-engine"]
             if len(engine) != 1 or not engine[0].get("envFrom"):
                 raise ValueError("control deployment requires the Engine runtime references")
+            catalogs = [
+                doc
+                for doc in additions
+                if doc.get("kind") == "ConfigMap" and doc.get("metadata", {}).get("name") == "model-broker-catalog"
+            ]
+            if len(catalogs) != 1:
+                raise ValueError("control deployment requires exactly one broker catalog")
+            runtime[0].setdefault("data", {}).update(json.loads(catalogs[0]["data"]["enrollment.json"]))
             checksum = hashlib.sha256(json.dumps(runtime[0].get("data", {}), sort_keys=True).encode()).hexdigest()
             for control in controls:
                 control["spec"]["template"]["metadata"].setdefault("annotations", {})["checksum/runtime-config"] = (
@@ -133,7 +142,10 @@ def main(argv: list[str] | None = None) -> int:
     output = outputs.get("model_broker", {}).get("value")
     validate_model_broker_readback(output, config)
     broker = project_model_broker(
-        output, catalog_json=render_model_access_catalog(config), model_access_env=render_model_access_env(config)
+        output,
+        catalog_json=render_model_access_catalog(config),
+        model_access_env=render_model_access_env(config),
+        runtime_settings=config.settings.get("model_broker_runtime"),
     )
     # The incumbent renderer owns private-service CIDR extraction.
     sys.path.insert(0, str(_ROOT / "scripts/bootstrap"))

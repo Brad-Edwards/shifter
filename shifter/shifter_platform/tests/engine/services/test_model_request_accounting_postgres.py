@@ -172,3 +172,48 @@ def test_concurrent_duplicate_settlement_charges_once():
     assert account.spent == 1500  # settled exactly once despite concurrent settlement
     assert account.reserved == 0
     assert ModelRequestReservation.objects.get(request_uuid=outcome.request_uuid).settlement_state == "settled"
+
+
+def test_authority_mutation_and_admission_serialize_without_lock_inversion(monkeypatch):
+    from django.db import transaction
+
+    from engine.models import ModelAllocationAuthority, ModelPendingGrant, SharingAuthorityFence
+    from engine.services import _model_request_accounting as accounting
+    from engine.services._model_allocation_lifecycle import revoke_model_authorities
+
+    allocation = make_reservable_allocation()
+    fence = SharingAuthorityFence.objects.create(
+        deployment_id=allocation.deployment_id,
+        authority_owner="management",
+        authority_reference="user:1",
+        authority_revision=1,
+        state="allowed",
+    )
+    ModelAllocationAuthority.objects.create(allocation=allocation, fence=fence, revision=1)
+    grant_locked, fence_locked = threading.Event(), threading.Event()
+    original = accounting._recheck_authority
+
+    def paused_recheck(locked_allocation):
+        grant_locked.set()
+        assert fence_locked.wait(3)
+        original(locked_allocation)
+
+    monkeypatch.setattr(accounting, "_recheck_authority", paused_recheck)
+
+    def reserve():
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("SET LOCAL lock_timeout = '3s'")
+            return _reserve_call(allocation)()
+
+    def revoke():
+        assert grant_locked.wait(3)
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("SET LOCAL lock_timeout = '3s'")
+            SharingAuthorityFence.objects.filter(pk=fence.pk).update(authority_revision=2, state="revoked")
+            fence_locked.set()
+            return revoke_model_authorities([fence.pk])
+
+    assert _run_concurrently([reserve, revoke]) == ["ok", 1]
+    assert ModelPendingGrant.objects.get(allocation=allocation).state == "revoked"
