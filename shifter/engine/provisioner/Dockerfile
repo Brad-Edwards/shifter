@@ -1,5 +1,5 @@
 # base image: python:3.12-slim-trixie
-FROM python@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
+FROM python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 
 # Image metadata. `maintainer` is the label SonarCloud docker:S7028 requires;
 # the org.opencontainers.image.* labels are the modern OCI equivalents.
@@ -11,8 +11,8 @@ LABEL maintainer="Shifter maintainers" \
       org.opencontainers.image.authors="Shifter maintainers"
 
 # Install Terraform and Pulumi CLI (pinned versions)
-ARG TERRAFORM_VERSION=1.14.3
-ARG PULUMI_VERSION=3.142.0
+ARG TERRAFORM_VERSION=1.16.3
+ARG PULUMI_VERSION=3.263.0
 
 # kubectl is always installed. The KubeVirt `virt` plugin (virtctl, installed as
 # `kubectl-virt`) drives GDC VM Runtime guest start/stop for range pause/resume
@@ -24,7 +24,7 @@ ARG PULUMI_VERSION=3.142.0
 # against the pinned VIRTCTL_SHA256 digest (of virtctl-${KUBEVIRT_VERSION}-linux-amd64)
 # rather than a non-existent upstream CHECKSUMS asset. KUBEVIRT_VERSION tracks the
 # deployed GDC VM Runtime version; bump VIRTCTL_SHA256 in lockstep.
-ARG KUBECTL_VERSION=v1.31.4
+ARG KUBECTL_VERSION=v1.37.0
 ARG KUBEVIRT_VERSION=v1.4.0
 ARG INSTALL_KUBEVIRT=false
 ARG VIRTCTL_SHA256=ebc167273e40a295721c61d04c4458fa8f037c5a00b347dbb4f5456a02ce4e7a
@@ -37,7 +37,15 @@ ARG VIRTCTL_SHA256=ebc167273e40a295721c61d04c4458fa8f037c5a00b347dbb4f5456a02ce4
 # --no-install-recommends keeps the image lean (docker:S6500); ca-certificates is
 # listed explicitly because it is only a curl "recommends", and the HTTPS
 # downloads below need the trust store.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client unzip && \
+RUN apt-get update && \
+    # Apply available Debian security updates to the base-OS packages before
+    # installing tooling. This clears the fixable HIGH/CRITICAL base-image CVEs
+    # that the Trivy exact-release gate scans (openssl, util-linux family,
+    # perl-base, libpcre2, libsqlite3, gzip, …) even when the pinned base digest
+    # predates the latest Debian point release. Hygiene (apt-get clean + rm of
+    # /var/lib/apt/lists) still runs at the end of this RUN.
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends ca-certificates curl openssh-client unzip && \
     # Install Terraform, integrity-verified against HashiCorp's published
     # SHA256SUMS before extraction (ADR-037-R3). The archive is saved under the
     # exact name the checksum manifest references so `sha256sum -c` matches.
