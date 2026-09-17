@@ -56,6 +56,8 @@ from gcp_range_cell_types import (
 )
 from raes_access import RealizedAccessBinding
 from raes_gcp_adapter import RaesGceAdapterError, adapt_raes_plan_for_gce
+from raes_gcp_addressing import instance_key as _instance_key
+from raes_gcp_addressing import ip_assignments as _ip_assignments
 from raes_gcp_firewall import (
     acl_cidr_lookup,
     build_acl_firewalls,
@@ -63,6 +65,7 @@ from raes_gcp_firewall import (
     node_tag,
     service_base_priority,
 )
+from raes_gcp_plan_errors import RaesGcePlanError
 from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 
 #: Default guest login user the provisioner injects (management reachability). The
@@ -89,10 +92,6 @@ _DOCKER_HOST_SSH_USERNAME = "ubuntu"
 _WINDOWS_DC_ADMIN_USERNAME = "Administrator"
 
 
-class RaesGcePlanError(RuntimeError):
-    """Raised when an RAES plan cannot be realized as a GCE range-cell plan."""
-
-
 @dataclass(frozen=True)
 class RaesGcePlanOptions:
     """Optional realization inputs grouped at the GCE adapter boundary."""
@@ -100,7 +99,7 @@ class RaesGcePlanOptions:
     config: GCERangeCellConfig | None = None
     access_bindings: Sequence[RealizedAccessBinding] = ()
     egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY
-    allocated_network_cidr: str | None = None
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
     reconstruct_for_teardown: bool = False
 
 
@@ -127,11 +126,12 @@ def build_raes_range_cell_plan(
     """
     resolved_options = _plan_options(options, legacy)
     resolved_config = resolved_options.config or load_gce_range_cell_config()
+    authored_networks = {network.address: network for network in raes_plan.networks}
     try:
         raes_plan = adapt_raes_plan_for_gce(
             raes_plan,
             resolved_config,
-            allocated_network_cidr=resolved_options.allocated_network_cidr,
+            allocated_network_cidrs=resolved_options.allocated_network_cidrs,
             reconstruct_for_teardown=resolved_options.reconstruct_for_teardown,
         )
     except RaesGceAdapterError as exc:
@@ -143,7 +143,13 @@ def build_raes_range_cell_plan(
 
     subnet_plans = [
         _subnet_plan(
-            network, nodes_by_network.get(network.address, ()), range_id, resolved_config, network_name, network_link
+            network,
+            authored_networks.get(network.address),
+            nodes_by_network.get(network.address, ()),
+            range_id,
+            resolved_config,
+            network_name,
+            network_link,
         )
         for network in raes_plan.networks
     ]
@@ -201,14 +207,17 @@ def _plan_options(
 ) -> RaesGcePlanOptions:
     """Handle plan options."""
     resolved = options if isinstance(options, RaesGcePlanOptions) else RaesGcePlanOptions(config=options)
-    allowed = {"config", "access_bindings", "egress_policy", "allocated_network_cidr", "reconstruct_for_teardown"}
+    allowed = {"config", "access_bindings", "egress_policy", "allocated_network_cidrs", "reconstruct_for_teardown"}
     if set(legacy) - allowed:
         raise TypeError("unknown GCE plan option")
     return RaesGcePlanOptions(
         config=cast(GCERangeCellConfig | None, legacy.get("config", resolved.config)),
         access_bindings=cast(Sequence[RealizedAccessBinding], legacy.get("access_bindings", resolved.access_bindings)),
         egress_policy=cast(GceEgressPolicy, legacy.get("egress_policy", resolved.egress_policy)),
-        allocated_network_cidr=cast(str | None, legacy.get("allocated_network_cidr", resolved.allocated_network_cidr)),
+        allocated_network_cidrs=cast(
+            Sequence[tuple[str, str]] | None,
+            legacy.get("allocated_network_cidrs", resolved.allocated_network_cidrs),
+        ),
         reconstruct_for_teardown=cast(bool, legacy.get("reconstruct_for_teardown", resolved.reconstruct_for_teardown)),
     )
 
@@ -338,13 +347,9 @@ def _instance_keys(nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode]) -> list
     return [_instance_key(node, index) for node in nodes for index in range(node.count)]
 
 
-def _instance_key(node: RaesPlanNode, index: int) -> str:
-    """Return the stable IP-assignment key for one instance of a node."""
-    return f"{node.address}#{index}"
-
-
 def _subnet_plan(
     network: RaesPlanNetwork,
+    authored_network: RaesPlanNetwork | None,
     nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode],
     range_id: int,
     config: GCERangeCellConfig,
@@ -361,6 +366,7 @@ def _subnet_plan(
         raise RaesGcePlanError(
             f"subnet {network.cidr} has {len(usable)} usable addresses but {len(keys)} instances were requested"
         )
+    assignments = _ip_assignments(network, authored_network, nodes, keys, usable)
     return {
         "name": network.name,
         "uuid": network.address,
@@ -374,7 +380,7 @@ def _subnet_plan(
         # RAES segments via node ACLs (realized separately); the base firewall
         # allows intra-subnet traffic only.
         "connected_source_ranges": [network.cidr],
-        "ip_assignments": dict(zip(keys, usable, strict=False)),
+        "ip_assignments": assignments,
         "instances": [],
     }
 
