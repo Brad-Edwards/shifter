@@ -247,7 +247,6 @@ def _metadata_items(
     host_private_key_b64: str,
     host_public_key: str,
     composition_script: str = "",
-    mgmt_ssh_port: int = 22,
 ) -> list[dict[str, str]]:
     """Render guest metadata: provisioned user key, host key install, host pubkey.
 
@@ -313,7 +312,6 @@ def instance_resource(
                 host_private_key_b64=host_private_key_b64,
                 host_public_key=host_public_key,
                 composition_script=composition_script,
-                mgmt_ssh_port=int(instance["ssh_port"]),
             )
         },
         "network_interfaces": [

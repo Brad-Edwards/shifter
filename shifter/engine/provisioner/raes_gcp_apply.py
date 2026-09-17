@@ -34,7 +34,6 @@ from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops, mint_range_vertex_key
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
-from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict

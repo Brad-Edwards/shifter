@@ -31,7 +31,6 @@ from raes_active_directory import (
     default_directory_secret_ops,
     delete_raes_directory_secrets,
 )
-from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops
 from raes_gcp_plan import build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
