@@ -211,6 +211,9 @@ Current mechanisms:
   AWS/GCP reusable deploy jobs. Reusable deploy jobs receive a
   `github_environment` input distinct from Terraform environment names so
   prod applies can be protected by the `aws-prod` GitHub Environment.
+  GCP manual dispatches use the same allowlisted name for the Terraform root
+  and protected GitHub Environment (`gcp-dev` or `nazgul`), preserving the
+  environment-bound workload-identity subject.
   The deploy router passes `skip_tests: false` literally into
   `_quality.yml`; commit-message flags such as `[skip tests]` are not
   accepted on protected branches. Inside `_quality.yml`, `skip_tests` may

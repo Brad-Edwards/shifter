@@ -26,6 +26,7 @@ triggers a deploy (#730).
 | Manual dispatch, `environment: aws-dev` | Quality, then AWS dev deploy |
 | Manual dispatch, `environment: aws-proof` | Quality, then AWS proof deploy |
 | Manual dispatch, `environment: gcp-dev` | Quality, then GCP dev deploy |
+| Manual dispatch, `environment: nazgul` | Quality, then Nazgul deploy |
 
 Run a deploy from the Actions UI (**Deploy → Run workflow**, pick the branch to
 deploy and the `environment`) or the CLI:
@@ -268,7 +269,7 @@ Pull request                   → Quality only
 Push to dev / main             → Quality only
 dispatch environment=aws-dev   → AWS dev deploy
 dispatch environment=aws-proof → AWS proof deploy
-dispatch environment=gcp-dev   → GCP dev deploy
+dispatch environment=gcp-dev|nazgul → selected GCP deploy
 ```
 
 ## Provider Routing
@@ -318,7 +319,7 @@ Terraform plans are also posted as PR comments.
 - Check branch protection rules
 - Verify path filters match your changes
 - Look for `paths-filter` in deploy.yml
-- A deploy is a manual dispatch: `gh workflow run deploy.yml --ref <branch> -f environment=<aws-dev|aws-proof|gcp-dev>`. Pushes and PRs run validation only; no branch push deploys.
+- A deploy is a manual dispatch: `gh workflow run deploy.yml --ref <branch> -f environment=<aws-dev|aws-proof|gcp-dev|nazgul>`. Pushes and PRs run validation only; no branch push deploys.
 
 ### Terraform Plan Fails
 - Check for formatting issues: `terraform fmt -recursive`
