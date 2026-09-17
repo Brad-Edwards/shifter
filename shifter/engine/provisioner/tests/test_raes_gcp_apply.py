@@ -17,7 +17,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import raes_gcp_apply
 import raes_gcp_polaris
 from config import GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
