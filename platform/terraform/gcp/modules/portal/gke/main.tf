@@ -295,6 +295,11 @@ resource "google_container_node_pool" "access" {
   cluster    = google_container_cluster.platform.name
   node_count = var.access_node_count
 
+  autoscaling {
+    min_node_count = var.access_node_count
+    max_node_count = var.access_node_max_count
+  }
+
   management {
     auto_repair  = true
     auto_upgrade = true

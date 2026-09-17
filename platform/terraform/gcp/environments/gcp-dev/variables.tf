@@ -144,6 +144,23 @@ variable "access_node_count" {
   default     = 1
 }
 
+variable "access_node_max_count" {
+  description = "Autoscaling ceiling for the exclusive access node pool; the selected capacity profile owns this bound."
+  type        = number
+  default     = 2
+}
+
+variable "shared_service_capacity_profile" {
+  description = "Immutable shared-service event-capacity profile identity projected from shifter.yaml."
+  type        = string
+  default     = "gcp-shared-v1-p10"
+
+  validation {
+    condition     = can(regex("^gcp-shared-v[1-9][0-9]*-p(10|30|50|100)$", var.shared_service_capacity_profile))
+    error_message = "shared_service_capacity_profile must be a versioned authored GCP p10/p30/p50/p100 profile."
+  }
+}
+
 variable "cloud_sql_database_version" {
   description = "Cloud SQL PostgreSQL version for the control-plane database."
   type        = string
@@ -168,7 +185,7 @@ variable "cloud_sql_availability_type" {
 }
 
 variable "cloud_sql_disk_size_gb" {
-  description = "Cloud SQL disk size in GiB."
+  description = "Minimum Cloud SQL disk size in GiB; provider storage does not shrink."
   type        = number
   default     = 20
 }

@@ -112,6 +112,22 @@ def _add_render_parsers(subcommands: argparse._SubParsersAction) -> None:
     )
     _add_config_path_argument(render_model_env)
     _add_output_argument(render_model_env, "model-access env lines")
+    render_capacity = subcommands.add_parser(
+        "render-capacity",
+        help="Render the selected GCP shared-service capacity profile.",
+        description=(
+            "Render the immutable selected capacity profile as JSON for the deployment drift "
+            "checker or the public-path event gate."
+        ),
+    )
+    _add_config_path_argument(render_capacity)
+    render_capacity.add_argument(
+        "--projection",
+        choices=("desired-state", "gate"),
+        default="desired-state",
+        help="Consumer projection to render (default: desired-state).",
+    )
+    _add_output_argument(render_capacity, "capacity JSON")
 
 
 def _add_inventory_parser(subcommands: argparse._SubParsersAction) -> None:
