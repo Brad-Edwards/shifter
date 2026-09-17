@@ -101,11 +101,13 @@ spec:
       message: Only the plugin controller may create plugin jobs.
     - expression: >-
         variables.pod.serviceAccountName == 'plugin-worker' &&
+        has(variables.pod.runtimeClassName) && variables.pod.runtimeClassName == 'gvisor' &&
+        has(variables.pod.nodeSelector) && variables.pod.nodeSelector['shifter.dev/workload'] == 'runtime-plugin' &&
         has(variables.pod.automountServiceAccountToken) && !variables.pod.automountServiceAccountToken &&
         variables.pod.containers.size() == 1 &&
         (!has(variables.pod.initContainers) || variables.pod.initContainers.size() == 0) &&
         (!has(variables.pod.ephemeralContainers) || variables.pod.ephemeralContainers.size() == 0)
-      message: Plugin jobs require the isolated worker identity and a single container.
+      message: Plugin jobs require a sandbox runtime, dedicated nodes, isolated identity and a single container.
     - expression: >-
         variables.container.name == 'runtime-plugin' &&
         variables.container.image.matches('^.+@sha256:[a-f0-9]{64}$') &&

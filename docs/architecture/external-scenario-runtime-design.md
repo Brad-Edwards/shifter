@@ -13,6 +13,12 @@ own plugins without staff status or per-plugin operator approval. Synthetic loca
 tests cover installation authority, probe fencing, output ownership, admission
 policy and independent wheel execution; live cloud isolation is not yet qualified.
 
+Worker jobs also require the `gvisor` RuntimeClass and dedicated plugin nodes.
+Admission rejects default runtimes and platform-node placement. The GCP deployment
+declares a bounded GKE Sandbox pool with warm capacity; EKS sandbox-node provisioning
+remains outstanding. An installation without the required runtime fails closed.
+It cannot run tenant code in the default container runtime as a fallback.
+
 Tenant admins can now assign installed versions to registered packs and select
 compiled guest targets through the tenant UI. The API verifies pack bytes before
 offering guest choices or saving an assignment. A changed pack digest requires

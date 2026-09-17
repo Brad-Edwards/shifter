@@ -108,3 +108,19 @@ def test_namespace_blocks_all_network_and_worker_has_no_cloud_binding():
     assert not worker["metadata"].get("annotations")
     bindings = [item for item in docs if item["kind"] == "RoleBinding"]
     assert all(subject["name"] != "plugin-worker" for binding in bindings for subject in binding["subjects"])
+
+
+@pytest.mark.parametrize("runtime", [None, "", "runc", "other"])
+def test_default_or_unapproved_runtime_is_denied(policy, job, runtime):
+    pod = job["spec"]["template"]["spec"]
+    if runtime is None:
+        pod.pop("runtimeClassName")
+    else:
+        pod["runtimeClassName"] = runtime
+    assert not accepted(policy, job)
+
+
+def test_platform_nodes_cannot_receive_plugin_jobs(policy, job):
+    pod = job["spec"]["template"]["spec"]
+    pod["nodeSelector"] = {"shifter.dev/workload": "provisioner"}
+    assert not accepted(policy, job)

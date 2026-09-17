@@ -58,3 +58,22 @@ compatibility passed.
 See the repository's external scenario runtime design for supported integration
 and remaining extraction work. This source tree is buildable; it is not evidence
 that a package release has been published.
+
+## Releasing the SDK
+
+The SDK has its own version in `pyproject.toml`, independent of platform release
+tags. The `Publish adapter SDK` workflow accepts that exact version from `main`,
+runs the SDK checks, builds the wheel and source distribution, and verifies the
+built wheel in a fresh environment. Its publishing job downloads the exact build
+artifact by ID; it does not check out or rebuild source.
+
+Before the first release, configure the PyPI project `shifter-adapter-sdk` with
+the GitHub trusted publisher for `Brad-Edwards/shifter`, workflow
+`adapter-sdk-release.yml`, environment `adapter-sdk-pypi`. Configure that GitHub
+environment's release reviewers and restrict it to `main`. The workflow uses
+short-lived OIDC authorization and has no package-index token fallback.
+
+After merging an approved SDK version, dispatch the workflow from `main` with
+the exact committed version. A successful publication makes
+`pip install 'shifter-adapter-sdk[runtime]==<version>'` available to pack authors.
+Preparing this workflow does not create the publisher or publish a package.

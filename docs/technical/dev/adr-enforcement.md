@@ -1057,3 +1057,27 @@ before applying the new platform IAM. GCP teardown retains legacy credential
 revocation, but new ranges receive no provider key. Qualification must establish
 broker-mediated model access on both clouds before declaring the private adapter
 migration complete.
+
+### Independent SDK publication (ADR-041, ADR-042)
+
+`adapter-sdk-release.yml` publishes Shifter's own adapter contract package,
+independently versioned from the platform. It accepts only the protected `main`
+ref and a version matching the source, tests and builds without an OIDC release
+identity, then publishes the exact build artifact from the `adapter-sdk-pypi`
+environment. The publishing job has no checkout/build step and no token fallback.
+The release boundary is covered by `test_adapter_sdk_release.py`; normal SDK
+lint, security, tests and wheel builds remain in the Quality matrix. This is a
+software release surface and does not publish or curate external packs.
+
+### Tenant executable isolation (ADR-041)
+
+Runtime plugin jobs require `runtimeClassName: gvisor` and nodes labeled
+`shifter.dev/workload=runtime-plugin`. Both the host task profile and the static
+and Helm admission policies enforce this boundary. CEL tests exercise rejection
+of absent/default runtimes and platform-node placement using real rendered jobs.
+The GCP node pool enables Sandbox on `COS_CONTAINERD`, with an exclusive taint
+and bounded autoscaling. This follows the [GKE Sandbox deployment contract](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods).
+Other backends must supply the same sandbox boundary before tenant executable
+installation can qualify; absence is a failed prerequisite, never an ordinary
+container fallback. Live tests must establish actual sandbox execution and deny-all
+network enforcement independently of anything the plugin reports.
