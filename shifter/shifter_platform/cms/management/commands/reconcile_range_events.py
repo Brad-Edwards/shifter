@@ -370,6 +370,8 @@ class Command(BaseCommand):
 
         lease_counts = cms_services.expire_due_ranges(batch_size=batch_size)
 
+        self._reconcile_model_access(batch_size)
+
         total_reconciled = ri_counts["reconciled"]
         total_converged = ri_counts["converged"]
         total_skipped = ri_counts["skipped"]
@@ -388,3 +390,23 @@ class Command(BaseCommand):
             lease_counts["failed"],
             ri_counts,
         )
+
+    def _reconcile_model_access(self, batch_size: int) -> None:
+        """Run the bounded M04 request-accounting pass on the existing scheduled reconciler.
+
+        Settling unknown holds and closing expired revocation fences ships on this
+        incumbent worker rather than a new daemon (ADR-060/061, #2121). The pass is
+        failure-isolated so a model-access error never stops range reconciliation.
+        """
+        from engine.services import (
+            close_expired_revocations,
+            reconcile_expired_dispatches,
+            reconcile_model_requests,
+        )
+
+        try:
+            reconcile_expired_dispatches(limit=batch_size)
+            reconcile_model_requests(limit=batch_size)
+            close_expired_revocations(limit=batch_size)
+        except Exception:
+            logger.exception("reconcile_range_events: model-access request reconciliation failed")

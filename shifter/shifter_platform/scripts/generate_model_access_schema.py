@@ -26,7 +26,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    for version in ("v1", "v2"):
+    for version in ("v1", "v2", "v3"):
         output = OUTPUT.with_name(f"model-access-policy.{version}.schema.json")
         rendered = rendered_schema(version)
         if args.check:

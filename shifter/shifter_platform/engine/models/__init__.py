@@ -43,6 +43,13 @@ from ._model_allocation import (
     ModelQuotaIdentity,
     ModelQuotaReading,
 )
+from ._model_budget import (
+    ModelBudgetAccount,
+    ModelBudgetPosting,
+    ModelDispatchLease,
+    ModelReconciliationObligation,
+    ModelRequestReservation,
+)
 from ._operation_io import (
     OperationInput,
     OperationResultDisposition,
@@ -95,13 +102,18 @@ __all__ = [
     "ModelAliasAssignment",
     "ModelAllocation",
     "ModelAllocationAuthority",
+    "ModelBudgetAccount",
+    "ModelBudgetPosting",
     "ModelCapacityDraw",
     "ModelCapacityReservation",
+    "ModelDispatchLease",
     "ModelLaunchPreparationRecord",
     "ModelOptionalAbsence",
     "ModelPendingGrant",
     "ModelQuotaIdentity",
     "ModelQuotaReading",
+    "ModelReconciliationObligation",
+    "ModelRequestReservation",
     "OperationInput",
     "OperationResultDisposition",
     "OperationResultInbox",

@@ -64,6 +64,14 @@ class AuditAction(models.TextChoices):
     SHARING_PUBLISH = "sharing_publish", "Sharing Publish"
     SHARING_DRAIN = "sharing_drain", "Sharing Drain"
     SHARING_MEMBERSHIP = "sharing_membership", "Sharing Membership"
+    # Model-access request accounting (PLAT-202, #2121, M04): budget reservation,
+    # settlement, retained-unknown charge, revocation fence and reconciliation
+    # adjustment. Prompts, responses, fingerprints and credentials never appear.
+    MODEL_REQUEST_RESERVE = "request_reserve", "Model Request Reserve"
+    MODEL_REQUEST_SETTLE = "request_settle", "Model Request Settle"
+    MODEL_REQUEST_UNKNOWN = "request_unknown", "Model Request Unknown"
+    MODEL_REQUEST_REVOKE = "request_revoke", "Model Request Revoke"
+    MODEL_REQUEST_ADJUST = "request_adjust", "Model Request Adjust"
 
 
 class AuditEntityType(models.TextChoices):
@@ -89,6 +97,8 @@ class AuditEntityType(models.TextChoices):
     COMMUNICATION = "communication", "Communication"
     # Model-access sharing binding (PLAT-202, #2139).
     SHARING_BINDING = "sharing_binding", "Sharing Binding"
+    # Model-access request accounting (PLAT-202, #2121, M04).
+    MODEL_REQUEST = "model_request", "Model Request"
     PREPARATION_ADAPTER = "preparation_adapter", "Preparation Adapter"
     PREPARATION_GRANT = "preparation_grant", "Preparation Grant"
     ARTIFACT_PREPARATION = "artifact_preparation", "Artifact Preparation"

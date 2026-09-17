@@ -3861,6 +3861,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/060-model-access-allocation-accounting.md",
       "docs/architecture/model-access/allocation-preflight-2120.md",
+      "docs/architecture/model-access/request-accounting-preflight-2121.md",
       "docs/architecture/model-access/allocations.md",
       "shifter/shifter_platform/engine/services/_model_allocation.py",
       "shifter/shifter_platform/tests/engine/services/test_model_allocation_postgres.py",
@@ -3903,6 +3904,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/061-model-access-operations-qualification.md",
+      "docs/architecture/model-access/request-accounting-preflight-2121.md",
       "docs/ops/model-access-gcp-probes.md",
       "docs/ops/model-access.md",
       "docs/architecture/model-access/security.md",
