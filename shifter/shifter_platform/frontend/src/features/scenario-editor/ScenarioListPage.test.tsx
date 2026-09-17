@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { axe } from "vitest-axe";
 
 import { ApiError } from "@/api/errors";
@@ -66,6 +67,54 @@ describe("ScenarioListPage", () => {
     mockApi.mockRejectedValue(new ApiError(500, { code: "error", message: "boom" }));
     renderRoute(<ScenarioListPage />);
     expect(await screen.findByText("Could not load scenarios")).toBeInTheDocument();
+  });
+
+  it("filters by name or id and reports an empty filtered result", async () => {
+    const user = userEvent.setup();
+    mockApi.mockResolvedValue([
+      entry({ id: "alpha-id", name: "First Exercise" }),
+      entry({ id: "beta-id", name: "Second Exercise" }),
+    ]);
+    renderRoute(<ScenarioListPage />);
+    await screen.findByRole("link", { name: "First Exercise" });
+    const search = screen.getByRole("textbox", { name: "Search scenarios" });
+    await user.type(search, " FIRST ");
+    expect(screen.getByRole("link", { name: "First Exercise" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Second Exercise" })).not.toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, "beta-id");
+    expect(screen.getByRole("link", { name: "Second Exercise" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "First Exercise" })).not.toBeInTheDocument();
+    await user.type(search, "-absent");
+    expect(screen.getByText("No scenarios match these filters")).toBeInTheDocument();
+    await user.clear(search);
+    expect(screen.getAllByRole("link")).toHaveLength(2);
+  });
+
+  it("selects source and availability filters and restores all rows", async () => {
+    const user = userEvent.setup();
+    mockApi.mockResolvedValue([
+      entry({ id: "enabled", name: "Enabled exercise" }),
+      entry({ id: "disabled", name: "Disabled exercise", enabled: false }),
+    ]);
+    renderRoute(<ScenarioListPage />);
+    await screen.findByRole("link", { name: "Enabled exercise" });
+    await user.click(screen.getByRole("combobox", { name: "Filter by source" }));
+    await user.click(screen.getByRole("option", { name: "Raes" }));
+    expect(screen.getAllByRole("link")).toHaveLength(2);
+    await user.click(screen.getByRole("combobox", { name: "Filter by availability" }));
+    await user.click(screen.getByRole("option", { name: "Enabled" }));
+    expect(screen.getByRole("link", { name: "Enabled exercise" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Disabled exercise" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Filter by availability" }));
+    await user.click(screen.getByRole("option", { name: "Disabled" }));
+    expect(screen.getByRole("link", { name: "Disabled exercise" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Enabled exercise" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Filter by availability" }));
+    await user.click(screen.getByRole("option", { name: "All availability" }));
+    await user.click(screen.getByRole("combobox", { name: "Filter by source" }));
+    await user.click(screen.getByRole("option", { name: "All sources" }));
+    expect(screen.getAllByRole("link")).toHaveLength(2);
   });
 
   it("has no axe violations when loaded", async () => {

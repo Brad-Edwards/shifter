@@ -12,19 +12,6 @@ variable "model_broker" {
   default = {}
 }
 
-data "aws_ssm_parameters_by_path" "broker_range" {
-  count           = var.model_broker.enabled ? 1 : 0
-  path            = "/shifter/${var.environment}/range/"
-  recursive       = true
-  with_decryption = false
-}
-locals {
-  broker_range = var.model_broker.enabled ? {
-    for name, value in zipmap(data.aws_ssm_parameters_by_path.broker_range[0].names, nonsensitive(data.aws_ssm_parameters_by_path.broker_range[0].values)) :
-    trimprefix(name, "/shifter/${var.environment}/range/") => value
-  } : {}
-}
-
 module "model_broker" {
   count                    = var.model_broker.enabled ? 1 : 0
   source                   = "../eks-model-broker"
@@ -38,9 +25,8 @@ module "model_broker" {
   vpc_id                   = aws_vpc.this.id
   vpc_cidr                 = var.vpc_cidr
   private_subnets          = { for zone, subnet in aws_subnet.private : zone => { id = subnet.id, cidr = subnet.cidr_block } }
-  range_vpc_id             = local.broker_range["vpc_id"]
-  range_vpc_cidr           = local.broker_range["vpc_cidr"]
-  range_route_table_id     = local.broker_range["private_route_table_id"]
+  range_vpc_id             = local.range_network["vpc_id"]
+  range_vpc_cidr           = local.range_network["vpc_cidr"]
   tags                     = var.tags
 }
 

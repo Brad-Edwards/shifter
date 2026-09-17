@@ -109,3 +109,9 @@ provider-key references and direct-model runtime configuration. Teardown retains
 deletion of range-owned legacy Secret Manager copies without reading their
 payloads or retaining provider IAM. Externally managed shared keys require
 owner revocation during migration; deleting a stored copy does not revoke a key.
+
+The runtime enrollment path carries the deployment-verified private broker VIP
+through the provisioner environment allowlist into the RAES firewall capability.
+A missing destination fails before guest mutation. Teardown and residual
+inventory retain the optional firewall identity independently of current
+enablement; disabling broker configuration cannot hide an existing rule.

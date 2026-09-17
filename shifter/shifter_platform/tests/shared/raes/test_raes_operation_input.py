@@ -102,6 +102,14 @@ def _candidates() -> dict[str, list[dict[str, object]]]:
     }
 
 
+@pytest.mark.parametrize("port", [0, -1, 65536, True, "22", None])
+def test_candidate_rejects_invalid_management_port(port):
+    raw = _built()
+    raw["image_candidates"]["gce:kali"][0]["management_ssh_port"] = port
+    with pytest.raises(RaesOperationInputError, match="management_ssh_port"):
+        parse_raes_operation_input(raw)
+
+
 def _built(**overrides: object) -> dict:
     kwargs: dict[str, object] = {
         "plan": _plan(),
@@ -332,3 +340,34 @@ class TestEgressMode:
         payload["egress_mode"] = "wide-open"
         with pytest.raises(RaesOperationInputError):
             parse_raes_operation_input(payload)
+
+
+def test_ec2_resource_ownership_epoch_survives_operation_input_roundtrip():
+    generation = "00000000-0000-0000-0000-000000000007"
+    payload = build_raes_operation_input(
+        plan=_plan(),
+        bindings=RaesInputBindings(delivery=()),
+        image_candidates={},
+        range_backend="ec2",
+        instantiation_purpose="live_fire",
+        legacy_range_id=7,
+        resource_generation=generation,
+    )
+    assert parse_raes_operation_input(payload).resource_generation == generation
+    del payload["resource_generation"]
+    with pytest.raises(RaesOperationInputError):
+        parse_raes_operation_input(payload)
+
+
+@pytest.mark.parametrize("generation", [None, "", "not-a-uuid", 7, "00000000000000000000000000000007"])
+def test_ec2_cannot_launch_or_cleanup_with_a_missing_or_noncanonical_ownership_epoch(generation):
+    with pytest.raises(RaesOperationInputError):
+        build_raes_operation_input(
+            plan=_plan(),
+            bindings=RaesInputBindings(delivery=()),
+            image_candidates={},
+            range_backend="ec2",
+            instantiation_purpose="live_fire",
+            legacy_range_id=7,
+            resource_generation=generation,
+        )

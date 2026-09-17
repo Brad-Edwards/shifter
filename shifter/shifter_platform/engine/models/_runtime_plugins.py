@@ -35,6 +35,7 @@ class RuntimePluginInstallation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        indexes = [models.Index(fields=["organization_uuid", "-created_at", "-id"], name="runtime_plugin_admin_page")]
         constraints = [
             models.UniqueConstraint(
                 fields=["organization_uuid", "plugin_id", "version"],

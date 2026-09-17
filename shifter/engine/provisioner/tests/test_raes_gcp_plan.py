@@ -77,6 +77,16 @@ def _resolver(profile: GCERangeImageProfile | None = None):
 
 
 class TestNetworkMode:
+    def test_management_ssh_port_reaches_instance_and_management_firewall(self):
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/container-host", host_ssh_port=2222, host_ssh_username="image-admin"
+        )
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), _config())
+        assert plan["instances"][0]["ssh_port"] == 2222
+        assert plan["instances"][0]["host_ssh_username"] == "image-admin"
+        management = [rule for rule in plan["firewalls"] if rule["priority"] == 900]
+        assert any("2222" in entry.get("ports", []) for rule in management for entry in rule.get("allowed", []))
+
     def test_vpc_per_range_manages_its_own_network(self):
         plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config())
         assert plan["manage_network"] is True

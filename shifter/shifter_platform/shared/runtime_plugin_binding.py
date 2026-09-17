@@ -89,14 +89,19 @@ def runtime_plugin_requests(
     plan: dict,
     operation_id: UUID,
     range_id: int,
+    *,
+    backend: str = "gce",
 ) -> tuple[RuntimeInput, ...]:
     """Plan guest actions before provisioning, with no realized addresses or secrets.
 
-    The first runtime host supports RAES GCE guest configuration. Plans are pure:
+    Runtime hosts support RAES GCE and EC2 guest configuration. Plans are pure:
     the isolated worker cannot observe guests or call a provider. The host later
     resolves actions against its own realized node-to-transport map.
     """
     pin = RuntimePluginPin.model_validate(pin)
+    providers: dict[str, Literal["aws", "gcp"]] = {"gce": "gcp", "ec2": "aws"}
+    if backend not in providers:
+        raise ValueError("Runtime plugins are not supported by this range backend")
     pin.bindings.validate_plan(plan)
     targets = {
         name: GuestTarget(node_address=address, os_family=plan["resources"][address]["payload"]["os_family"])
@@ -110,7 +115,7 @@ def runtime_plugin_requests(
             pack_digest=pin.pack_digest,
             manifest=pin.manifest,
             phase=phase,
-            provider="gcp",
+            provider=providers[backend],
             range_id=range_id,
             targets=targets,
             parameters=pin.bindings.parameters,

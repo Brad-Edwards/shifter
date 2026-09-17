@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "./client";
 import type { components } from "./schema";
@@ -6,15 +6,20 @@ import type { components } from "./schema";
 export type Adapter = components["schemas"]["RuntimePluginView"];
 export type AdapterInstall = components["schemas"]["RuntimePluginInstall"];
 export type AdapterAction = components["schemas"]["RuntimePluginAction"]["action"];
+type AdapterPage = components["schemas"]["RuntimePluginPage"];
 type Credentials = AdapterInstall["registry_credentials"];
 const key = (organization: string) => ["installed-plugins", organization] as const;
 const base = (organization: string) => `/cms/organizations/${organization}/plugins/`;
 
 export function useAdapters(organization: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: key(organization), enabled: Boolean(organization),
-    queryFn: ({ signal }) => apiFetch<Adapter[]>(base(organization), { signal }),
-    refetchInterval: (query) => query.state.data?.some((row) => row.state === "checking") ? 3000 : false,
+    initialPageParam: null as string | null,
+    queryFn: ({ signal, pageParam }) => apiFetch<AdapterPage>(
+      base(organization) + (pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""), { signal }),
+    getNextPageParam: (page) => page.next_cursor,
+    refetchInterval: (query) => query.state.data?.pages.some((page) =>
+      page.results.some((row) => row.state === "checking")) ? 3000 : false,
   });
 }
 

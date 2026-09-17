@@ -71,13 +71,15 @@ def project_broker_runtime(value, *, catalog_json, provider, model_identities=No
     return result
 
 
-def project_enrollment_env(runtime_settings, *, hostname):
+def project_enrollment_env(runtime_settings, *, hostname, guest_vip="", guest_cidrs=()):
     """Public TLS trust and fixed private service coordinates; no capabilities."""
     ca = ModelBrokerRuntimeSettings.model_validate(runtime_settings).guest_trust_ca_pem
     if not ca:
         return {}
     return {
         "MODEL_BROKER_GUEST_URL": f"https://{hostname}",
+        **({"MODEL_BROKER_GUEST_VIP": guest_vip} if guest_vip else {}),
+        **({"MODEL_BROKER_GUEST_CIDRS": ",".join(guest_cidrs)} if guest_cidrs else {}),
         "MODEL_ENROLLMENT_CONTROL_URL": "https://model-access-control.shifter-platform.svc:8444",
         "MODEL_ENROLLMENT_CA_PEM_B64": base64.b64encode(ca.encode("ascii")).decode("ascii"),
     }

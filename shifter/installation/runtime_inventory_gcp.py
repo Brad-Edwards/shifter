@@ -13,6 +13,7 @@ from __future__ import annotations
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "MODEL_BROKER_GUEST_URL",
+        "MODEL_BROKER_GUEST_VIP",
         "MODEL_ENROLLMENT_CONTROL_URL",
         "MODEL_ENROLLMENT_CA_PEM_B64",
         "ACCESS_NETWORK_CIDRS",
@@ -170,6 +171,7 @@ GCP_SECRET_RUNTIME_ENV_KEYS: frozenset[str] = frozenset()
 GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "MODEL_BROKER_GUEST_URL",
+        "MODEL_BROKER_GUEST_VIP",
         "MODEL_ENROLLMENT_CONTROL_URL",
         "MODEL_ENROLLMENT_CA_PEM_B64",
         "ACCESS_NETWORK_CIDRS",

@@ -1913,9 +1913,17 @@
     },
     "/api/v1/cms/organizations/{organization_uuid}/plugins/": {
       "get": {
-        "operationId": "cms_organizations_plugins_list",
+        "operationId": "cms_organizations_plugins_retrieve",
         "description": "Organization administrators install their own plugins without staff status.",
         "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
           {
             "in": "path",
             "name": "organization_uuid",
@@ -1942,10 +1950,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RuntimePluginView"
-                  }
+                  "$ref": "#/components/schemas/RuntimePluginPage"
                 }
               }
             },
@@ -19568,6 +19573,17 @@
             "default": "",
             "maxLength": 100
           },
+          "management_ssh_username": {
+            "type": "string",
+            "default": "",
+            "maxLength": 32
+          },
+          "management_ssh_port": {
+            "type": "integer",
+            "maximum": 65535,
+            "minimum": 1,
+            "default": 22
+          },
           "enabled": {
             "type": "boolean",
             "default": true
@@ -19650,6 +19666,14 @@
             "type": "string",
             "readOnly": true
           },
+          "management_ssh_username": {
+            "type": "string",
+            "readOnly": true
+          },
+          "management_ssh_port": {
+            "type": "integer",
+            "readOnly": true
+          },
           "enabled": {
             "type": "boolean",
             "readOnly": true
@@ -19705,6 +19729,8 @@
           "image_ref",
           "integrity_ref",
           "machine_type",
+          "management_ssh_port",
+          "management_ssh_username",
           "media_type",
           "notes",
           "provenance_ref",
@@ -20887,6 +20913,26 @@
           "bindings",
           "installation_id",
           "pack_digest"
+        ]
+      },
+      "RuntimePluginPage": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimePluginView"
+            }
+          },
+          "next_cursor": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "next_cursor",
+          "results"
         ]
       },
       "RuntimePluginTarget": {

@@ -1,0 +1,142 @@
+"""Route immutable native AWS operations to bounded provider and guest clients."""
+
+from __future__ import annotations
+
+import logging
+import os
+from contextlib import ExitStack, contextmanager
+from uuid import UUID
+
+from botocore.config import Config
+from shared.model_access.aws_session import bounded_aws_session
+from shared.raes.operation_input import image_lookup_key
+from shared.range_instantiation_policy import (
+    InstantiationPurpose,
+    assert_range_backend_egress_supported,
+    evaluate_range_backend_admission,
+)
+
+from ec2_guest_secrets import Ec2GuestSecrets
+from ec2_range_cleanup import Ec2CleanupScope, destroy_ec2_resources, inventory_ec2_resources
+from ec2_range_network import Ec2NetworkConfig, allocation_networks
+from raes_ec2_apply import RaesEc2ApplyOptions, apply_raes_ec2_range, delete_ec2_guest_credentials
+from raes_ec2_image import resolve_ec2_image
+from raes_plan import parse_plan
+from range_subnet_allocation import _release_subnet_allocations_best_effort, _reserve_range_subnet_cidrs
+
+logger = logging.getLogger(__name__)
+
+
+def _scope(run) -> Ec2CleanupScope:
+    if os.environ.get("CLOUD_PROVIDER") != "aws" or run.input.range_backend != "ec2":
+        raise ValueError("Native EC2 lifecycle requires the bound AWS provider")
+    purpose = InstantiationPurpose(run.input.instantiation_purpose)
+    if purpose is not InstantiationPurpose.LIVE_FIRE or not evaluate_range_backend_admission("ec2", purpose).admitted:
+        raise ValueError("Native EC2 lifecycle requires live-fire admission")
+    return Ec2CleanupScope(
+        os.environ["ENVIRONMENT"],
+        os.environ["AWS_REGION"],
+        os.environ["RANGE_VPC_ID"],
+        UUID(run.request_id),
+        UUID(run.input.resource_generation),
+        run.input.legacy_range_id,
+    )
+
+
+@contextmanager
+def _clients(scope):
+    session = bounded_aws_session(scope.region)
+    config = Config(connect_timeout=5, read_timeout=30, retries={"total_max_attempts": 3}, proxies={})
+    with ExitStack() as stack:
+        ec2 = session.client("ec2", region_name=scope.region, config=config)
+        stack.callback(ec2.close)
+        store = session.client("secretsmanager", region_name=scope.region, config=config)
+        stack.callback(store.close)
+        yield ec2, Ec2GuestSecrets(store, environment=scope.environment, kms_key=os.environ["SECRETS_KMS_KEY_ARN"])
+
+
+def _cidrs(name: str) -> tuple[str, ...]:
+    value = os.environ.get(name, "")
+    return tuple(item.strip() for item in value.split(",")) if value else ()
+
+
+def _network(scope, enrollment) -> Ec2NetworkConfig:
+    return Ec2NetworkConfig(
+        environment=scope.environment,
+        region=scope.region,
+        zone=os.environ["RANGE_AVAILABILITY_ZONE"],
+        vpc_id=scope.vpc_id,
+        vpc_cidr=os.environ["RANGE_VPC_CIDR"],
+        base_route_table_id=os.environ["RANGE_ROUTE_TABLE_ID"],
+        management_cidrs=_cidrs("PORTAL_NETWORK_CIDRS"),
+        access_cidrs=_cidrs("ACCESS_NETWORK_CIDRS"),
+        broker_cidrs=_cidrs("MODEL_BROKER_GUEST_CIDRS") if enrollment is not None else (),
+    )
+
+
+def provision_ec2_run(run, plugin_plans=None, enrollment=None):
+    scope = _scope(run)
+    assert_range_backend_egress_supported("ec2", run.input.egress_mode)
+    config = _network(scope, enrollment)
+    if enrollment is not None and not config.broker_cidrs:
+        raise ValueError("EC2 enrollment requires exact applied broker addresses")
+    plan = parse_plan(run.input.plan)
+    networks = allocation_networks(plan)
+    # The existing tenant allocator reserves portable /28 intent. Never replace
+    # authored addressing with a conveniently available subnet.
+    if any(network.cidr or network.gateway for network in networks):
+        raise ValueError("EC2 authored addressing requires an exact subnet reservation capability")
+    spec = {"subnets": [{"uuid": network.address, "name": network.name} for network in networks]}
+
+    def resolve(node):
+        name = image_lookup_key(source_name=node.image.name if node.image else None, os_family=node.os_family)
+        return resolve_ec2_image(
+            node,
+            run.input.image_candidates_for("aws", name) if name else [],
+            binding=run.input.artifact_binding_for(node.address),
+        )
+
+    with _clients(scope) as (ec2, secrets):
+        realized = _reserve_range_subnet_cidrs(run.request_id, spec, operation_id=run.operation_id)
+        try:
+            allocated = {row["uuid"]: row["cidr"] for row in realized["subnets"]}
+            return apply_raes_ec2_range(
+                run.request_id,
+                scope.range_id,
+                plan,
+                resolve,
+                RaesEc2ApplyOptions(
+                    config=config,
+                    generation=scope.generation,
+                    ec2=ec2,
+                    secrets=secrets,
+                    allocated_cidrs=allocated,
+                    egress_mode=run.input.egress_mode,
+                    runtime_plugin=plugin_plans.execute if plugin_plans else None,
+                    model_enrollment=enrollment.execute if enrollment else None,
+                ),
+                delivery_bindings=run.input.binding_transport(),
+                access_bindings=run.input.access_binding_transport(),
+            )
+        except Exception:
+            # Apply compensation is not absence evidence. A failed retry may
+            # still have live guests, so keep its reservation until readback.
+            try:
+                if inventory_ec2_resources(scope, ec2)["outcome"] == "VERIFIED_ABSENT":
+                    delete_ec2_guest_credentials(scope.range_id, plan, secrets)
+                    _release_subnet_allocations_best_effort(run.request_id, operation_id=run.operation_id)
+            except Exception:
+                logger.warning("EC2 failed-launch reservation retained after incomplete cleanup")
+            raise
+
+
+def destroy_ec2_run(run):
+    """Cleanup does not load enabled plugins, current images, or broker settings."""
+    scope = _scope(run)
+    plan = parse_plan(run.input.plan, cleanup_only=True)
+    with _clients(scope) as (ec2, secrets):
+        result = destroy_ec2_resources(scope, ec2)
+        if result["outcome"] == "VERIFIED_ABSENT":
+            delete_ec2_guest_credentials(scope.range_id, plan, secrets)
+            _release_subnet_allocations_best_effort(run.request_id, operation_id=run.operation_id)
+        return result

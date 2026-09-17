@@ -1638,7 +1638,8 @@
       "docs/architecture/gcp-normal-scenario-range-cell-migration-preflight-1350.md",
       "shifter/engine/provisioner/range_terraform_runner.py",
       "shifter/engine/provisioner/gdc_range_networks.py",
-      "shifter/engine/provisioner/gdc_vmruntime_assets.py"
+      "shifter/engine/provisioner/gdc_vmruntime_assets.py",
+      "docs/architecture/native-ec2-runtime.md"
     ]
   },
   {
@@ -1841,7 +1842,8 @@
       "scripts/adr_guard/tests/test_adr_guard.py",
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/raes/domain_topology.py",
-      "shifter/shifter_platform/shared/raes/runtime_target.py"
+      "shifter/shifter_platform/shared/raes/runtime_target.py",
+      "docs/architecture/native-ec2-runtime.md"
     ]
   },
   {
@@ -2569,7 +2571,8 @@
       "shifter/shifter_platform/engine/services",
       "shifter/shifter_platform/shared",
       "shifter/engine/provisioner/provisioner_db.py",
-      "shifter/engine/provisioner/state_helpers.py"
+      "shifter/engine/provisioner/state_helpers.py",
+      "docs/architecture/native-ec2-runtime.md"
     ]
   },
   {
@@ -3867,7 +3870,8 @@
       "docs/architecture/model-access/index.md",
       "docs/architecture/model-access/architecture.md",
       "docs/architecture/model-access/security.md",
-      "docs/architecture/model-access/delivery.md"
+      "docs/architecture/model-access/delivery.md",
+      "docs/architecture/native-ec2-runtime.md"
     ]
   },
   {

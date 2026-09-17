@@ -30,7 +30,7 @@ Plugin authors must build images that run under these constraints. Host callers
 use `parse_result` with their original input to reject replay and undeclared
 targets. Neither a plan nor a compatibility response proves guest readiness.
 
-The initial RAES GCE host asks for `validate`, `configure` and `verify` plans before
+The RAES GCE and EC2 hosts ask for `validate`, `configure` and `verify` plans before
 creating resources. These requests contain declared node identities and OS
 families, not realized IP addresses, keys, provider credentials or secret URLs.
 Validation cannot contain guest actions; verification must contain at least one.

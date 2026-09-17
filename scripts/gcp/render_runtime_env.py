@@ -534,6 +534,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     # Populated from validated broker projection after this common renderer;
     # empty values revoke stale coordinates when the broker is disabled.
     values["MODEL_BROKER_GUEST_URL"] = ""
+    values["MODEL_BROKER_GUEST_VIP"] = ""
     values["MODEL_ENROLLMENT_CONTROL_URL"] = ""
     values["MODEL_ENROLLMENT_CA_PEM_B64"] = ""
     values.update(_model_access_runtime_values())

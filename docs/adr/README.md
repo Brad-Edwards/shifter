@@ -195,6 +195,8 @@ Current mechanisms:
   protected branch, and on a
   weekly schedule. Least-privilege permissions (`contents: read`,
   `security-events: write`, `actions: read`); no `pull_request_target`.
+  `.github/codeql/codeql-config.yml` includes synthetic scenario fixtures;
+  private training targets are maintained and scanned in their owning repositories.
 - `.github/workflows/pr-title-lint.yml`: pull-request title validation
   against the conventional-commit shape Release Please consumes. It runs
   on PRs targeting `dev` and `main`, the two branches whose protection
@@ -659,3 +661,14 @@ non-secret enrollment coordinate/trust values only when they exactly match the
 runtime ConfigMap. The broker renderer supplies those values for both Helm and
 Actions. Real TLS helper tests cover trust failure, redirect refusal, state-file
 permissions and serialized refresh. AWS SSM does not qualify as secret delivery.
+
+The external-runtime test-quality repair makes toolchain-dependent checks
+selectable with the `integration` marker while retaining them in default CI runs.
+The bootstrap/GCP script jobs explicitly provision their rendering tools. Chart
+security checks assert the default-deny policy bodies for every provider profile,
+including the isolated plugin namespace. See [testing guidance](../dev/testing.md).
+
+The chart enrollment schema admits the generic cloud endpoint projection: a
+GCP guest VIP or AWS guest endpoint CIDRs alongside the shared TLS enrollment
+settings. Its closed property list continues to reject undeclared settings.
+Real Helm schema tests cover both cloud contracts.

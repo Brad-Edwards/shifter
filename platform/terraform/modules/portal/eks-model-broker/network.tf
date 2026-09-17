@@ -16,21 +16,6 @@ resource "terraform_data" "boundary" {
   }
 }
 
-resource "aws_vpc_peering_connection" "range" {
-  vpc_id      = var.vpc_id
-  peer_vpc_id = var.range_vpc_id
-  auto_accept = true
-  tags        = merge(var.tags, { Name = "${var.cluster_name}-model-access" })
-  depends_on  = [terraform_data.boundary]
-}
-
-resource "aws_route" "range_to_broker" {
-  for_each                  = var.private_subnets
-  route_table_id            = var.range_route_table_id
-  destination_cidr_block    = each.value.cidr
-  vpc_peering_connection_id = aws_vpc_peering_connection.range.id
-}
-
 resource "aws_security_group" "endpoint" {
   name        = "${var.cluster_name}-model-provider"
   description = "TLS to private STS and Bedrock endpoints from EKS pods"
@@ -109,6 +94,24 @@ resource "aws_lb" "broker" {
   enable_cross_zone_load_balancing = true
   tags                             = var.tags
 }
+# Read the actual private listener addresses after NLB creation. Guests receive
+# only these /32 destinations, never the provider endpoint or whole pod subnet.
+data "aws_network_interface" "listener" {
+  for_each = var.private_subnets
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+  filter {
+    name   = "subnet-id"
+    values = [each.value.id]
+  }
+  filter {
+    name   = "description"
+    values = ["ELB ${aws_lb.broker.arn_suffix}"]
+  }
+}
+
 resource "aws_lb_target_group" "broker" {
   name_prefix          = "model-"
   vpc_id               = var.vpc_id

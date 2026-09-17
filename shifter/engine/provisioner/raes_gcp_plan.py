@@ -62,13 +62,12 @@ from raes_gcp_firewall import (
     node_tag,
     service_base_priority,
 )
+from raes_guest_plan import RaesGuestPlanError as RaesGcePlanError
 from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 
 #: Default guest login user the provisioner injects (management reachability). The
 #: participant-facing user is a later participant-runtime concern (not provisioning).
 _DEFAULT_SSH_USERNAME = "raes"
-_DEFAULT_SSH_PORT = 22
-
 #: A prepromoted-domain-controller guest is a pre-baked Windows DC. Its accounts
 #: are domain accounts (a promoted DC has no local SAM), so the GCE guest agent
 #: cannot create the "raes" local user the standard RAES node setup connects as,
@@ -77,10 +76,6 @@ _DEFAULT_SSH_PORT = 22
 #: guest setup connects as the built-in domain "Administrator". Mirrors the legacy
 #: get_ssh_username(role="dc") host access on the RAES-native path.
 _WINDOWS_DC_ADMIN_USERNAME = "Administrator"
-
-
-class RaesGcePlanError(RuntimeError):
-    """Raised when an RAES plan cannot be realized as a GCE range-cell plan."""
 
 
 @dataclass(frozen=True)
@@ -395,7 +390,7 @@ def _instance_plans_for_node(
         raise RaesGcePlanError("RAES GCE does not support preconfigured-machine-host participant readiness")
     # A promoted domain controller has no local SAM. Its existing domain
     # administrator receives the key through administrators_authorized_keys.
-    host_ssh_username = (
+    host_ssh_username = profile.host_ssh_username or (
         _WINDOWS_DC_ADMIN_USERNAME
         if profile.bootstrap_capability == GCE_BOOTSTRAP_PREPROMOTED_DC
         else _DEFAULT_SSH_USERNAME
@@ -427,7 +422,7 @@ def _instance_plans_for_node(
                 "source": {},
                 "ssh_username": _DEFAULT_SSH_USERNAME,
                 "host_ssh_username": host_ssh_username,
-                "ssh_port": _DEFAULT_SSH_PORT,
+                "ssh_port": profile.host_ssh_port,
                 # The closed realized access binding the portal authorizes
                 # against (#1349), sourced only from the authored RAES
                 # interactive_access declarations joined to this plan (#1710).

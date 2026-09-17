@@ -259,5 +259,6 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
         access_network_cidrs=_parse_csv_env(os.environ.get("ACCESS_NETWORK_CIDRS", "")),
         egress_allow_cidrs=_parse_csv_env(os.environ.get("GCP_RANGE_EGRESS_ALLOW_CIDRS", "")),
         private_google_access=_get_bool_env("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", False),
+        model_broker_vip=os.environ.get("MODEL_BROKER_GUEST_VIP", ""),
         host_mgmt_ssh_port=_get_int_env("GCP_RANGE_HOST_MGMT_SSH_PORT", 2222),
     )

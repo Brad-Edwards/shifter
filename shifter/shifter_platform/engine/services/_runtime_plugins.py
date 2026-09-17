@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from shifter_adapter_sdk.runtime import PluginManifest
 
@@ -32,6 +33,12 @@ class RuntimePluginView:
     state: str
     failure_code: str
     has_registry_credentials: bool
+
+
+@dataclass(frozen=True)
+class RuntimePluginPage:
+    results: tuple[RuntimePluginView, ...]
+    next_cursor: str | None
 
 
 def _authorize(user: User, organization_uuid: UUID) -> UUID:
@@ -97,16 +104,25 @@ def install_runtime_plugin(
         return _view(row)
 
 
-def list_runtime_plugins(user: User, organization_uuid: UUID) -> list[RuntimePluginView]:
+def list_runtime_plugins(user: User, organization_uuid: UUID, *, cursor: str | None = None) -> RuntimePluginPage:
     from engine.models import RuntimePluginInstallation
 
     organization_uuid = _authorize(user, organization_uuid)
-    return [
-        _view(row)
-        for row in RuntimePluginInstallation.objects.filter(
-            organization_uuid=organization_uuid,
-        ).order_by("plugin_id", "version")
-    ]
+    query = RuntimePluginInstallation.objects.filter(organization_uuid=organization_uuid)
+    if cursor is not None:
+        try:
+            after = UUID(cursor)
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError("Invalid plugin page cursor") from None
+        created_at = query.filter(pk=after).values_list("created_at", flat=True).first()
+        if created_at is None:
+            raise ValidationError("Invalid plugin page cursor")
+        query = query.filter(Q(created_at__lt=created_at) | Q(created_at=created_at, id__lt=after))
+    rows = list(query.order_by("-created_at", "-id")[:51])
+    return RuntimePluginPage(
+        results=tuple(_view(row) for row in rows[:50]),
+        next_cursor=str(rows[49].pk) if len(rows) > 50 else None,
+    )
 
 
 def change_runtime_plugin(

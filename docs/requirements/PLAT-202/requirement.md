@@ -17,7 +17,7 @@ The platform shall provision per-range access to external LLM and agentic-tool A
 
 ## Rationale
 
-Scenarios increasingly assume agentic tooling inside participant ranges (for example Claude Code inside Kali). At Ottawa BSides this was handled by an SSM fan-out script (scripts/polaris-aws-range/apply_kali_bedrock_shard.py) that sharded credentials across AWS accounts and Bedrock inference profiles based on user_id % 8. That pattern is brittle: every capacity shift, model availability change, or account reshuffle requires a new bespoke script. Moving the capability into the platform lets scenario authors express "this range needs agentic-model access" and have the platform handle allocation.
+Scenario authors need a provider-neutral way to request model access. The platform owns allocation, policy, accounting and revocation through the model broker; executable adapters consume scoped guest enrollment without receiving provider credentials.
 
 ## Traceability
 

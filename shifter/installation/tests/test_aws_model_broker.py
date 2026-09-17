@@ -57,6 +57,7 @@ def deployment():
         "target_group_arn": "arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/models/0123456789abcdef",
         "vpc_id": "vpc-" + "1" * 17,
         "endpoint_cidrs": ["10.42.0.10/32", "10.42.0.11/32"],
+        "guest_endpoint_cidrs": ["10.42.0.25/32"],
         "health_check_cidrs": ["10.42.0.0/20"],
     }
     return output, {
@@ -158,3 +159,18 @@ def test_disabled_projection_rejects_retained_authority():
     assert project_aws_model_broker(None, **args) == {"enabled": False}
     with pytest.raises(ValueError):
         project_aws_model_broker({"enabled": False, "role_arn": "arn:aws:iam::123456789012:role/old"}, **args)
+
+
+def test_guest_listener_addresses_are_distinct_from_provider_endpoint_destinations(deployment):
+    output, args = deployment
+    output["guest_endpoint_cidrs"] = ["10.42.0.25/32"]
+    result = project_aws_model_broker(output, **args)
+    assert result["guest_endpoint_cidrs"] == ["10.42.0.25/32"]
+
+
+@pytest.mark.parametrize("addresses", [[], ["0.0.0.0/0"], ["10.42.0.0/24"], ["203.0.113.7/32"]])
+def test_guest_listener_readback_requires_exact_private_addresses(deployment, addresses):
+    output, args = deployment
+    output["guest_endpoint_cidrs"] = addresses
+    with pytest.raises(ValueError):
+        project_aws_model_broker(output, **args)

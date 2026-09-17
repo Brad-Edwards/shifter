@@ -95,6 +95,7 @@ def project_aws_model_broker(output, *, config, catalog_json, model_access_env, 
         "target_group_arn",
         "vpc_id",
         "endpoint_cidrs",
+        "guest_endpoint_cidrs",
         "health_check_cidrs",
     }
     if set(output) - settings_keys - runtime_keys:
@@ -127,7 +128,9 @@ def project_aws_model_broker(output, *, config, catalog_json, model_access_env, 
             target["region"] != region for target in inventory
         ):
             raise ValueError("provider targets differ from the applied regional invocation inventory")
-        result["enrollment_env"] = project_enrollment_env(runtime, hostname=settings.hostname)
+        result["enrollment_env"] = project_enrollment_env(
+            runtime, hostname=settings.hostname, guest_cidrs=output["guest_endpoint_cidrs"]
+        )
     validate_broker_configmap_payload(
         result["catalog_json"],
         result["identities_json"] + result.get("providers_json", "") + json.dumps(result.get("enrollment_env", {})),
@@ -163,13 +166,13 @@ def _validate_network(output, region, account_id):
         output.get("target_group_arn", ""),
     ) or not re.fullmatch(r"vpc-[a-f0-9]+", output.get("vpc_id", "")):
         raise ValueError("invalid private broker target group")
-    for key in ("endpoint_cidrs", "health_check_cidrs"):
+    for key in ("endpoint_cidrs", "health_check_cidrs", "guest_endpoint_cidrs"):
         values = output.get(key)
         if not isinstance(values, list) or not 1 <= len(values) <= 32:
             raise ValueError("broker requires bounded applied endpoint reachability")
         for value in values:
             network = ipaddress.IPv4Network(value, strict=True)
             if not any(network.subnet_of(private) for private in RFC1918_IPV4_NETWORKS) or (
-                key == "endpoint_cidrs" and network.prefixlen != 32
+                key != "health_check_cidrs" and network.prefixlen != 32
             ):
                 raise ValueError("broker endpoint reachability must be private and exact")

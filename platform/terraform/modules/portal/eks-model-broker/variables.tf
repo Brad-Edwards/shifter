@@ -66,10 +66,6 @@ variable "range_vpc_cidr" {
   description = "Range CIDR from its published topology contract."
   type        = string
 }
-variable "range_route_table_id" {
-  description = "Shared range route table from its published topology contract."
-  type        = string
-}
 variable "tags" {
   description = "Deployment resource labels."
   type        = map(string)

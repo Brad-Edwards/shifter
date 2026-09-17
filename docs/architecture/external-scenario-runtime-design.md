@@ -15,8 +15,8 @@ policy and independent wheel execution; live cloud isolation is not yet qualifie
 
 Worker jobs also require the `gvisor` RuntimeClass and dedicated plugin nodes.
 Admission rejects default runtimes and platform-node placement. The GCP deployment
-declares a bounded GKE Sandbox pool with warm capacity; EKS sandbox-node provisioning
-remains outstanding. An installation without the required runtime fails closed.
+declares a bounded GKE Sandbox pool with warm capacity; AWS declares a dedicated
+EKS sandbox node pool with the same workload restrictions. An installation without the required runtime fails closed.
 It cannot run tenant code in the default container runtime as a fallback.
 
 Tenant admins can now assign installed versions to registered packs and select
@@ -34,7 +34,7 @@ not disclose another organization's content. Updates require the displayed diges
 and preserve existing immutable range inputs. Content upload never installs or
 executes an adapter.
 
-The first host execution path supports RAES GCE ranges. Engine queues isolated
+The host execution paths support RAES GCE and native EC2 ranges. Engine queues isolated
 validate/configure/verify planning invocations in the launch transaction. Workers
 receive only the declared node identities, OS families and non-secret parameters;
 they cannot query guests or providers. The provisioner waits for every validated
@@ -55,6 +55,12 @@ The embedded private content tree, dedicated image recipes, workshop tooling and
 corresponding build/test jobs have been removed from core after hash-verified
 preservation in the owning repository. Shared image checks remain in core.
 
+Current documentation and requirement rationales use generic platform contracts.
+Historical plans that mixed core instructions with private scenario operations
+are retired as implementation guidance. Private release entries and traceability
+targets are removed from the current public documents; Git history is unchanged.
+Synthetic scenario fixtures are included in normal platform code scanning.
+
 Embedded scenario bootstrap and repair commands, provider-role creation and its
 assume-role grant, guest provider-key issuance, and private executable assets have
 also been removed. Container escape probes now require an explicit container;
@@ -62,18 +68,18 @@ there is no private default. Legacy GCP key revocation remains teardown-only.
 AWS ranges using the retired role issuer must be drained with the previous release
 before the IAM cutover.
 
-Private adapter migration, additional host capabilities needed by external
-adapters, documentation cleanup, and SDK publication remain outstanding. An installation's `ready` status means its
+The SDK and external worker have been built and exercised independently with
+synthetic local conformance tests. SDK and adapter publication and live cloud
+qualification remain outstanding. An installation's `ready` status means its
 compatibility probe succeeded; it does not mean a pack is runnable or a range is
 ready. This branch is not a completed cutover.
 
-Both AWS and GCP are required acceptance targets. The existing AWS range lifecycle
-does not have a released RAES realization path; the current GCE integration does
-not establish AWS support. The private owner repository now contains an
-independently built bootstrap planning library with tests for both provider
-variants. That preserves behavior for migration without certifying runtime
-installation or model access. ADR-059's broker boundary remains authoritative:
-legacy guest provider credentials are not the new plugin model-access contract.
+Both AWS and GCP are required acceptance targets. The native EC2 host now uses the
+same guest composition and plugin sequence, with explicit provider admission,
+retained resource ownership, private management transport and reconstructive
+cleanup. Its implementation and supported network intent are described in
+[native EC2 runtime](native-ec2-runtime.md). Broker enrollment supplies temporary
+model capabilities; legacy guest provider credentials are not part of this path.
 
 ## Outcome
 
@@ -227,9 +233,10 @@ bounded Messages requests, provider token counting and complete usage evidence.
 Local tests cover malformed requests, workload identity, stolen-token subnet
 rejection, rotation races, transport fencing, disconnects and incomplete usage.
 
-Deployment projection, trusted guest-bootstrap delivery and provider inventory
-publication must be connected before this is enabled. AWS additionally requires
-sandbox-node provisioning and the RAES resource-realization path. The private
-adapter still needs its production worker and broker credential helper. Existing
-planning-library tests are migration evidence, not runtime acceptance. Both cloud
-qualification targets remain pending the user's choice of deployment and time.
+Deployment projection, trusted guest-bootstrap delivery, provider inventory,
+AWS sandbox-node provisioning and native EC2 realization are connected in this
+branch. Local checks cover both provider paths and independent SDK/worker builds.
+Publication and live acceptance still need to establish the deployed isolation,
+tenant installation, participant access, model traffic and cleanup behavior.
+Both cloud qualification targets remain pending the user's choice of deployment
+and time.

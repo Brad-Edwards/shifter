@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _delete_resource
 from gcp_range_cell_types import InstancePlan, RangeCellPlan
 from raes_account_credentials import (
@@ -165,7 +166,8 @@ def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None
             router=router_nat["router_name"],
         )
 
-    for firewall in reversed(plan["firewalls"]):
+    firewall_names = {rule["name"] for rule in plan["firewalls"]} | {broker_firewall_name(plan["range_id"])}
+    for firewall_name in sorted(firewall_names, reverse=True):
         _delete_resource(
             plan,
             clients,
@@ -173,7 +175,7 @@ def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None
             clients.firewalls.delete,
             "global",
             project=plan["project_id"],
-            firewall=firewall["name"],
+            firewall=firewall_name,
         )
 
     for subnet in reversed(plan["subnets"]):

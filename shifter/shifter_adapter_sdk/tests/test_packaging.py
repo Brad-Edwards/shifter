@@ -8,6 +8,8 @@ import textwrap
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
+
 
 def _run(argv, cwd):
     environment = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "VIRTUAL_ENV"}}
@@ -59,6 +61,7 @@ def _synthetic_wheel(root):
     return wheel
 
 
+@pytest.mark.integration
 def test_installed_sdk_and_external_adapter_need_no_application(tmp_path):
     uv = shutil.which("uv")
     assert uv, "Packaging conformance requires the repository's uv toolchain"

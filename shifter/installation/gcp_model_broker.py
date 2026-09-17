@@ -236,7 +236,9 @@ def project_model_broker(
                 runtime_settings, catalog_json=catalog_json, provider="gcp", model_identities=output["model_identities"]
             )
         )
-        result["enrollment_env"] = project_enrollment_env(runtime_settings, hostname=result["hostname"])
+        result["enrollment_env"] = project_enrollment_env(
+            runtime_settings, hostname=result["hostname"], guest_vip=settings.vip
+        )
     validate_broker_configmap_payload(
         result["catalog_json"],
         result["identities_json"] + result.get("providers_json", "") + json.dumps(result.get("enrollment_env", {})),

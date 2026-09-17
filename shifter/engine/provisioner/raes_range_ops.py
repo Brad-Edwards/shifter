@@ -269,31 +269,38 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
 
         plugin_plans = load_guest_plugin_plans(run)
         enrollment = load_model_enrollment(run)
-        backend = _require_gce_live_fire_binding(operation_input)
-        config = load_gce_range_cell_config(backend=backend)
-        config = _config_for_range_placement(request_id, config)
         raes_plan = parse_plan(operation_input.plan)
-        network_allocation = _allocated_open_network_for_provision(
-            request_id,
-            generation,
-            raes_plan,
-            config,
-        )
-        apply_result = apply_raes_range_cell(
-            request_id,
-            range_id,
-            raes_plan,
-            _registry_resolver(operation_input),
-            options=RaesGceApplyOptions(
-                config=config,
-                egress_mode=operation_input.egress_mode,
-                allocated_network_cidr=network_allocation.require_available(),
-                runtime_plugin=plugin_plans.execute if plugin_plans is not None else None,
-                model_enrollment=enrollment.execute if enrollment is not None else None,
-            ),
-            delivery_bindings=operation_input.binding_transport(),
-            access_bindings=operation_input.access_binding_transport(),
-        )
+        if operation_input.range_backend == "ec2":
+            from raes_ec2_runtime import provision_ec2_run
+
+            apply_result = provision_ec2_run(run, plugin_plans, enrollment)
+        else:
+            backend = _require_gce_live_fire_binding(operation_input)
+            config = load_gce_range_cell_config(backend=backend)
+            config = _config_for_range_placement(request_id, config)
+            raes_plan = parse_plan(operation_input.plan)
+            network_allocation = _allocated_open_network_for_provision(
+                request_id,
+                generation,
+                raes_plan,
+                config,
+            )
+            apply_result = apply_raes_range_cell(
+                request_id,
+                range_id,
+                raes_plan,
+                _registry_resolver(operation_input),
+                options=RaesGceApplyOptions(
+                    config=config,
+                    egress_mode=operation_input.egress_mode,
+                    allocated_network_cidr=network_allocation.require_available(),
+                    runtime_plugin=plugin_plans.execute if plugin_plans is not None else None,
+                    model_enrollment=enrollment.execute if enrollment is not None else None,
+                    model_broker=enrollment.gce_egress_capability() if enrollment is not None else None,
+                ),
+                delivery_bindings=operation_input.binding_transport(),
+                access_bindings=operation_input.access_binding_transport(),
+            )
         verified_addresses = apply_result.get("composition_verified_addresses")
         if not isinstance(verified_addresses, list) or not all(
             isinstance(address, str) for address in verified_addresses
@@ -350,7 +357,11 @@ def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]
             "participant_access_channels": channels,
             "participant_access_usernames": dict(instance.get("participant_access_usernames") or {}),
         }
-        host_public_key = str(instance.get("gcp_host_public_key", ""))
+        host_public_key = str(
+            instance.get("participant_ssh_host_public_key")
+            or instance.get("host_public_key")
+            or instance.get("gcp_host_public_key", "")
+        )
         if host_public_key:
             member["host_public_key"] = host_public_key
         sftp_root_directory = str(instance.get("sftp_root_directory", ""))
@@ -455,6 +466,17 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
     logger.info("Starting RAES range destroy for request_id=%s", request_id)
     _report(ref, operation, ResultStep.RAES_DESTROY_RUNNING, {"raes_status": "running"})
     try:
+        if operation_input.range_backend == "ec2":
+            from raes_ec2_runtime import destroy_ec2_run
+
+            cleanup_inventory = destroy_ec2_run(run)
+            _report(
+                ref,
+                operation,
+                ResultStep.RAES_TERMINAL_DESTROYED,
+                {"raes_status": "succeeded", "cleanup_inventory": cleanup_inventory},
+            )
+            return
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
         config = _config_for_range_placement(request_id, config)

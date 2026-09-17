@@ -148,7 +148,6 @@ release-please transition (#1776).
 * **ctf:** trim _crud.py docstrings under the 500-line new-code limit ([6db33c4](https://github.com/Brad-Edwards/shifter/commit/6db33c4c45db3b0537fbc66b6ab2aa84fb3bd943))
 * enforce participant readiness evidence ([84d7f9f](https://github.com/Brad-Edwards/shifter/commit/84d7f9f6b175f5e45a3a849d8a802af317bb5b1c))
 * enforce participant readiness evidence ([4209e94](https://github.com/Brad-Edwards/shifter/commit/4209e946051efb724caf321268e0c73feedc57da))
-* finish nazgul GCP standup — Helm metadata netpol, evidence read, polaris verify-stack ([d28af86](https://github.com/Brad-Edwards/shifter/commit/d28af86019f84cc36f56927d1d34f641dbe9b26b))
 * **frontend:** redirect legacy settings route ([711245d](https://github.com/Brad-Edwards/shifter/commit/711245df8cf823cc20e5754573a9d51caefd4604))
 * gate GCS usage-log delivery for Domain Restricted Sharing orgs ([435c9ef](https://github.com/Brad-Edwards/shifter/commit/435c9ef380d240c717aef63e397d0dada737c23a))
 * **gcp:** add platform-network Private Google Access DNS for googleapis ([3114d68](https://github.com/Brad-Edwards/shifter/commit/3114d680280faf49707f0d3ed87554927a058fe2))
@@ -190,7 +189,6 @@ release-please transition (#1776).
 * **gcp:** separate CI identities ([d1a1146](https://github.com/Brad-Edwards/shifter/commit/d1a11466d755b34df4f6a26c0e0d587ec26308d5))
 * **gcp:** support immutable GitHub deployment identities ([abfd5e9](https://github.com/Brad-Edwards/shifter/commit/abfd5e9b45480d9bd6c2d9f32768751001c0c985))
 * **gcp:** type hints + keep range model within line budget (Sonar [#2037](https://github.com/Brad-Edwards/shifter/issues/2037)) ([1dc3f89](https://github.com/Brad-Edwards/shifter/commit/1dc3f89b389bb99f908491251e5c0a3ba988c47f))
-* grant packer SA bucket-metadata reader on gdc-vm-images (GDC export + polaris stack fetch) ([77f0e9b](https://github.com/Brad-Edwards/shifter/commit/77f0e9ba2688f21bba24f044d703bc3256483afe))
 * ignore create-only default-pool node_config drift on GKE cluster ([f39a905](https://github.com/Brad-Edwards/shifter/commit/f39a9056f2f0dad917a3fb2a2e8307522db9e46a))
 * make network firewall teardown ordering-safe (rule-group dereference + inspection route toggle) ([f722188](https://github.com/Brad-Edwards/shifter/commit/f7221883b0c43b837d5eda5608b5b73ec3b6d284))
 * **model-access:** regenerate /api/v1 contract for CTFEvent.model_demand ([1c20b63](https://github.com/Brad-Edwards/shifter/commit/1c20b6360e257070eec044f1365aaf8426a0e18f))
@@ -204,9 +202,6 @@ release-please transition (#1776).
 * **packer:** kali GCE guest boots + sshd binds — static networkd config ([bee2443](https://github.com/Brad-Edwards/shifter/commit/bee2443a4fb504cd1ca615e63ac08b0152b35ffe))
 * **packer:** kali guest boots on GCE — remove NetworkManager dual-stack ([0496561](https://github.com/Brad-Edwards/shifter/commit/049656157922c8411ecb6f4b1812726b838382c7))
 * parametrize dict generics for SonarCloud new-code gate ([#1287](https://github.com/Brad-Edwards/shifter/issues/1287)) ([11fd1de](https://github.com/Brad-Edwards/shifter/commit/11fd1de573b700087b9732d3f40aca5bd6e4da09))
-* polaris splice helper hands off to a14-kali's real entrypoint path ([e028a88](https://github.com/Brad-Edwards/shifter/commit/e028a880fc10a3d7a96ab5a0dbfd480a597fc47b))
-* **polaris:** preserve splice credential on recreation ([3c497cc](https://github.com/Brad-Edwards/shifter/commit/3c497cc83b568595593e4cc7ba0f0e4c94752868))
-* **polaris:** preserve splice credential on recreation ([9b0f5a9](https://github.com/Brad-Edwards/shifter/commit/9b0f5a9c4dbb094a0a820a1498520420417040e5))
 * postgres FOR UPDATE join + SonarCloud new-code findings ([19c0f15](https://github.com/Brad-Edwards/shifter/commit/19c0f153aee41d80c62eb004bfa48f1963040e7f))
 * **provisioner:** drop invalid provider= kwarg to build_guest_execution_context ([483e7c0](https://github.com/Brad-Edwards/shifter/commit/483e7c0dd8278aa2912d7da786dde912bfda3b06))
 * **provisioner:** keep compensation diagnostics bounded and file under size gate ([42284ca](https://github.com/Brad-Edwards/shifter/commit/42284ca216f16cd8eb055737e52bf2f00894fd40))
@@ -232,7 +227,6 @@ release-please transition (#1776).
 * **security:** validate same-origin redirect targets in extracted JS and stop exception-detail exposure in auth session view (CodeQL) ([540e793](https://github.com/Brad-Edwards/shifter/commit/540e7932466b5d3c1fb20557e7052214417d4ab9))
 * **smoke-linux:** re-bind pack digest after concepts.md em-dash fix ([ffed60e](https://github.com/Brad-Edwards/shifter/commit/ffed60ef50ad4d944116f79af0f68c81f09212ad))
 * **smoke:** make post-deploy smoke work with RAES-native ranges ([dd717eb](https://github.com/Brad-Edwards/shifter/commit/dd717eb9fa54a9b54b36af2065caa6be37008bad))
-* supply bake-time DC01_IP so polaris dns service starts during polaris-vm bake ([853ea93](https://github.com/Brad-Edwards/shifter/commit/853ea93caf4fbd810c832ff0c50d29bff163eb31))
 * **test:** satisfy gce range preconditions via the process boundary, not a first-party patch ([03d3330](https://github.com/Brad-Edwards/shifter/commit/03d333064cac233ff17df37056e494b41a2f9c42))
 * **warm-pool:** clear remaining Sonar new-code findings (cast replace(), re-export __all__, test globals) ([14da16d](https://github.com/Brad-Edwards/shifter/commit/14da16db016788be3fbe5ee8f78dc5209d50c2fa))
 * **warm-pool:** resolve Sonar quality-gate findings and claim-consistency constraint ([7cf9b9c](https://github.com/Brad-Edwards/shifter/commit/7cf9b9ce749e983c40327c49cc35db0115e51766))
@@ -256,7 +250,6 @@ release-please transition (#1776).
 - Added platform-wide scoped API token authentication (PLAT-102). Programmatic clients can now authenticate with `Authorization: Bearer shf_…` tokens that carry explicit `<resource>:<operation>` scopes; browser/SPA clients continue to use session cookies. Tokens are generated and revoked from the Django admin, the raw token is shown exactly once, and only a non-reversible verifier is stored. The risk-register API (`/api/v1`) now accepts these scoped tokens (`risk:read` / `risk:write`) end-to-end. The legacy risk-register `X-API-Key` is deprecated (retirement tracked in #1124). (#677)
 - Hardened filesystem and subprocess call sites flagged by SonarCloud's taint analysis (`pythonsecurity:S8707` / `S8705`). Operator- and CLI-supplied paths in the installation config loaders, the layer-import checker, and the Terraform workspace stager are now normalised (and, where a workspace root exists, containment-checked) before any filesystem access, and the bootstrap deploy script validates argv tokens (rejecting NUL bytes) before invoking subprocess. (#779)
 - **Restored portal east-west segmentation so the CTFd instance can no longer reach Django or the Guacamole token API directly.** The inspection-firewall ingress fix had widened the Django (`8000`) and Guacamole client (`8080`) security groups to the whole public-subnet CIDR, where the standalone CTFd instance and the NAT also live, letting CTFd open TCP connections straight to those services and bypass the ALB, WAF, and `/admin` deny. CTFd now lives in a dedicated public-workload subnet tier, and the inspected ALB→target CIDR rules are scoped to an ALB-only `alb_ingress_subnet_cidrs` output (AWS Network Firewall breaks security-group referencing across the routed middlebox, so the CIDR rule is required when inspection is enabled). A new `check-portal-target-sg-sources` guard (pre-commit + CI) prevents the target-service SGs from being re-widened back to the public tier. (#933)
-- Removed live AWS infrastructure identifiers (account IDs, VPC/subnet IDs, account- and UUID-suffixed S3 bucket names, a Secrets Manager ARN, and a console sign-in URL) from tracked operational tooling — github-runner and Packer dev var files, the polaris-aws-range scripts, the tssummit and se-admins Terraform, the Polaris bake workflow, deprecated docs, and historical CHANGELOG entries — and deleted committed prod EC2 inventory dumps. A new `adr_guard` check (ADR-004-R14, `no-live-cloud-identifiers`) scans tracked files in pre-commit and CI and blocks reintroduction; values that must stay exact (vendor connector templates, Terraform backend/state buckets read by `terraform init`, synthetic test fixtures) are cleared via scoped `docs/adr/exceptions.yaml` entries. (#936)
 - Hardened portal auth and audit trust: dev-login admission is now bound to the direct peer address (loopback/admin CIDRs) instead of the spoofable Host header, audit source IPs are resolved from the trusted rightmost X-Forwarded-For hop rather than the client-controlled leftmost value, and every self-service `user_type` change now writes a fail-closed, reviewable audit row for the resulting CTF group membership. (#937)
 - Enabled AUTH and in-transit encryption on the AWS ElastiCache Redis channel-layer backbone. The portal replication group now generates an AUTH token stored in Secrets Manager under the portal CMK and requires TLS; the portal hydrates it at startup and verifies the server certificate against the system trust store (AWS public CA) via the new `REDIS_CA_MODE` trust-mode seam, preserving GCP Memorystore's private-CA fail-closed behaviour. The dev-only single-node path documents its retained plaintext posture as a threat-model acceptance. (#938)
 - **Guacamole session token URLs are no longer retained at rest after delivery.** The asynchronous bootstrap flow now returns the signed Guacamole URL exactly once and clears the token material from the database row in the same transaction, never persists a URL for a request that finished after its TTL expired, and runs a dedicated scheduled service that prunes expired bootstrap rows in bounded batches. A database read can no longer disclose a live RDP/SSH session URL. (#939)
@@ -276,9 +269,7 @@ release-please transition (#1776).
 - Agent upload finalization now installs the exact bytes CMS validated. Completion copies the validated staging object to a fresh, immutable install key via a provider conditional copy (S3 `CopySourceIfMatch` + `IfNoneMatch`, GCS source/destination generation preconditions) and persists only that key, closing a TOCTOU window where a still-valid presigned PUT URL could overwrite an upload after validation but before install. (#1181)
 - Bounded the CPU cost of organizer-authored CTF regex flags, closing a regular-expression denial-of-service path (CWE-1333 / CWE-400) where a crafted pattern/input pair could pin a request worker. Regex flags are now rejected at creation time when over-long or uncompilable, participant submissions are length-capped before matching, and matching runs under a per-call timeout that fails closed (treated as an incorrect submission) rather than blocking the worker. Limits are tunable via `CTF_REGEX_FLAG_MAX_PATTERN_LENGTH`, `CTF_REGEX_FLAG_MAX_SUBMISSION_LENGTH`, and `CTF_REGEX_FLAG_MATCH_TIMEOUT_SECONDS`. (#1183)
 - Replaced CTF participant magic-link access with isolated, temporary username/password accounts, dedicated login and password-change flows, deny-authoritative platform boundaries, credential reset delivery, and post-event anonymization. (#1206)
-- **GCP range cells now enforce fail-closed network and guest-identity boundaries.** Oversized or overlapping subnet bindings and universal firewall allows are rejected before cloud mutation, cross-range rules remain scoped to deterministic cell tags, and only Polaris hosts that need host-side cloud access receive the least-privilege range-host service account. (#1345)
 - Gated the GDC VM Runtime range backend for live-fire scenarios: normal Mission Control and CTF range provisioning now fails closed unless the approved GCE VM range-cell backend is selected, with a CMS service-boundary gate and a provisioner defense-in-depth denial. GDC VM Runtime is development/validation only (ADR-030). (#1348)
-- AWS Polaris range agents (`a14-kali`) no longer authenticate to Bedrock through the shared host operations role via IMDS. Each range now gets its own short-lived, revocable STS-assumed Bedrock role, delivered to the container through a host-refreshed credential file; the host firewall permanently drops container traffic to the instance metadata service, closing the path a participant could previously use to reach broader SSM/S3 permissions. (#1377)
 - Hardened CTF service logging against log injection (CWE-117 / CodeQL `py/log-injection`): participant email, challenge name, and event name are now routed through the canonical `safe_log_value` sanitizer instead of the weaker CR/LF-only `safe_log`, so attacker-influenced values can no longer forge or smuggle content into log lines. (#1498)
 - Separated CTF Organizer authority from self-service identity data (REV1 S1). A self-mutable `custom:user_type` / profile claim can no longer grant or retain the `CTF Organizer` group (or any staff/superuser/provisioning authority); the self-service sync now reaches only the `CTF Participant` group. Organizer authority is granted exclusively from administrator-controlled sources: verified provider group claims mapped through the new `CTF_ORGANIZER_PROVIDER_GROUPS` allowlist (fail-closed when unset), or explicit local assignment via the Django admin. The provider group is authoritative for provider-derived authority, so a verified login revokes a provider-derived `CTF Organizer` membership once the administrator removes the user from the allowlisted group (provenance is tracked so explicit local assignments are never auto-revoked). A data migration revokes every existing self-service-derived `CTF Organizer` membership with a per-user audit trail; re-grant affected organizers through the provider group claim or the Django admin. (#1516)
 - Scoped the GCP application workload identities (portal, workers, CTF scheduler, provisioner) off broad project-level IAM: Secret Manager access is now bound per named runtime secret and Cloud Storage access per named bucket, driven by a single canonical workload/resource matrix in the `portal/iam` module (ADR-008-R7). A repo-native Terraform guard (`scripts/check_tf_gcp_iam_resource_scope`, wired into pre-commit and CI) fails closed on any project-level Secret Manager payload/admin or Cloud Storage object-admin grant to a workload identity, and effective-permission tests assert each identity's required resource set. Two dynamic-secret grants that cannot yet be resource-scoped (portal guest-credential reads and the provisioner's per-range secret lifecycle) remain project-level as documented, expiring allowlist residuals; the dedicated range-secret project/broker boundary that removes them is tracked in #1586. (#1517)
@@ -295,7 +286,6 @@ release-please transition (#1776).
 - Bound the admitted GCP range backend and instantiation purpose immutably to Engine-owned range state at provision time, and routed range destroy/reconcile from that persisted binding instead of the deploy-wide `GCP_RANGE_BACKEND` env selector (issue #1666, the deferred larger half of #1348). Previously, flipping the deploy selector `gdc -> gce` (to enable live-fire) would make teardown route existing GDC ranges through the GCE path and strand their namespaces, VMs, disks, secrets, L2 Networks, and subnet allocations. Now the CMS live-fire gate's admission result is persisted as a write-once `range_backend`/`instantiation_purpose` on the Engine `Range` (new nullable columns, migration `0029`), the provisioner reads it through its existing request-scoped database projection, and destroy, compensation, retry, and reconciliation route from the range's own backend so a selector flip can no longer strand a range. Legacy (pre-#1666) ranges with no persisted binding resolve their backend only from durable ownership evidence (the `asset_type` discriminant on their instance state) or an explicit operator backfill (`manage.py backfill_range_backend_binding`); an evidence-free row fails closed with a `prerequisite` diagnostic and retains its cleanup state rather than guessing from the mutable selector. No secret material enters the new state, argv, Job env, events, or logs, and the Job env/admission contract is unchanged. (#1666)
 - Tightened the GCP GitHub Actions credentialed-CI trust boundary (issue #1690, GCP half of ADR-004-R23; AWS half tracked in #1697). The `cicd-github-oidc` Workload Identity provider now admits only this repository, an exact protected `assertion.ref` (`refs/heads/dev` / `refs/heads/main`), and an allow-listed `assertion.sub`, and binds the CI build service account to exact `principal://.../subject/<sub>` members instead of a repository-wide `principalSet` - so a feature-branch or tag dispatch can no longer federate into GCP by reusing an `environment:` subject. The `CKV_GCP_125` repository-scope waiver is removed, a new `check-tf-gcp-wif-trust` guard (pre-commit + CI) pins the exact-subject condition / bindings and blocks drift between the condition and `local.federated_subjects`, and the five GCP workflows set `persist-credentials: false` on checkout (they already pin `github.sha` and least-privilege permissions). Live WIF/IAM activation and GitHub Environment deployment-branch policies are a documented fail-closed operator cutover with readback (`docs/dev/deploy-secrets.md`); decomposing the shared build SA into per-purpose identities is tracked in #1699. (#1690)
 - Sanitized user-controlled values at every log sink in the CSP violation collector and the CTF participant notification service, closing two CodeQL `py/log-injection` alerts (CWE-117). The CSP collector now runs its bounded report fields through `safe_log_value` for both the formatted message and the structured `extra` fields, and the notification service sanitizes the event id in every invitation/credential/reminder/announcement log entry. (#1752)
-- Cleared the outstanding CodeQL security backlog carried on `dev`. Provisioner and platform logs now fingerprint or omit sensitive identifiers and secret references and sanitize user-controlled values before logging, Terraform apply output is summarized instead of dumped, the CTF register-exchange endpoint returns a fixed message instead of raw exception text, and the Identity Platform logout redirect is restricted to same-origin relative paths. Intentionally vulnerable Polaris scenario target containers are excluded from platform code scanning so their expected findings no longer mask real platform issues.
 - Sanitize the operator-supplied `strategy` and spare-pool `count` values through `safe_log_value` before logging them in the CTF range-recovery and spare-provisioning services, resolving three CodeQL log-injection findings (alerts 1087–1089) raised on the #1018 recovery feature.
 - Bumped vulnerable npm dependencies to patched versions (part of #1498): `hono` 4.12.23 → 4.12.29 in the ops/planner/ngfw MCP servers, and `js-yaml` 3.14.2 → 3.15.0 in the platform frontend toolchain.
 - Bumped vulnerable Python dependencies to clear known advisories (part of #1498): `cryptography` 46/47 → 49.0.0 (platform + provisioner), `bleach` 6.3.0 → 6.4.0, `ujson` 5.12.1 → 5.13.0, and `msgpack` 1.1.2 → 1.2.1.
@@ -395,8 +385,6 @@ release-please transition (#1776).
 - Published the backend-bundle contract as a committed, versioned JSON artifact (`shifter/installation/published_contract/`) generated from the Pydantic contract and registry. The published schema encodes the contract's security-relevant validators, and `installation.validate_published_bundle` is a parity-complete portable validator for downstream bundle authors. Adds a `shifter-config contract` CLI and CI gates for drift, unversioned breaking changes (a recursive full-surface compatibility differ against immutable per-version snapshots), registry conformance, and append-only snapshot immutability (#1323). (#1323)
 - Published the `/api/v1/` surface as a committed OpenAPI contract (`shifter/shifter_platform/openapi/v1.json`) generated deterministically from the DRF surface, with CI drift and breaking-change gates and a documented versioning policy. Downstream consumers, including the single-page application types, are generated from the committed artifact. (#1329)
 - Added an explicit GCE range-cell backend for GCP ranges, including deterministic private IP planning, per-range network/firewall/VM cleanup, Secret Manager credential references, and provider metadata compatible with existing range lifecycle state. (#1341)
-- Polaris CTF scenario can now run on the GCP Compute Engine range-cell backend (`GCP_RANGE_BACKEND=gce`): the range-cell plan translates the scenario image key to a validated GCE profile (ignoring AWS `instance_type`), the per-range Polaris bootstrap runs over the routed guest-SSH transport with the Kali agent configured for Vertex AI (replacing AWS Bedrock), and the range firewall opens the Docker-host management SSH port. New `GCP_RANGE_*` runtime knobs (Vertex project/region/models, Private Google Access, host management SSH port, Polaris tests bucket/key) flow through the generated runtime env, inventory, and engine task env allowlist. (#1342)
-- Added a live-fire escape validation suite that proves the outer boundary of a GCP VM range cell fails closed before the range is trusted for live fire (ADR-030-R5). The `run_range_escape_validation` management command runs bounded, read-only probes from participant context inside one or more running ranges and attempts the escape paths a participant would try (cross-range private IP and DNS, platform pod/service/node networks, GKE/GDC API, portal-private endpoints, metadata credentials, internet egress against the ADR-017 policy, and peer-sourced management ingress). It emits a closed, versioned JSON report whose per-check boundary codes name the exact boundary that leaked, supports one-range and two-or-more-range runs through the same contract, and exits non-zero for a CI or operator gate. The core suite is scenario neutral, with a probe-launch adapter seam (native VM SSH and a Polaris container-exec reference adapter) and scenario-supplied checks kept additive. A static plan-leak checker in the provisioner catches an intentionally misconfigured cross-range allow rule with no cloud call. (#1347)
 - Enabled participant and operator portal access (browser SSH terminal and Guacamole SSH/RDP) to scenario endpoints inside GCP VM range cells, at parity with the existing AWS range access, by authorizing the portal and guacd workloads to reach range guests over the private range network. (#1349)
 - Added the platform-wide SPA shell (#1369): a single role-aware React shell with global navigation, a home/dashboard surface, and auth-adjacent states, built on the locked Apple-dark design system. Navigation renders from one shared, role-aware contract (the seam later Phase 2 modules register into), and the Risk Register is rehomed under the unified client router. It ships behind the reversible `PLATFORM_SPA_ENABLED` rollout flag with the legacy Django pages preserved for rollback; the shell meets WCAG 2.1 AA (skip link, landmarks, route-change focus, keyboard navigation). (#1369)
 - Ported the Mission Control workspace onto the platform SPA (#1370, SPA Cutover Phase 2), behind the new `MISSION_CONTROL_SPA_ENABLED` rollout flag (in addition to `PLATFORM_SPA_ENABLED`); the legacy Django templates stay the default and remain available for rollback. The React module (`frontend/src/features/mission-control/`) covers the range dashboard, range history, launch, and detail; live range status (a Channels range-status socket used as an advisory refresh trigger over authoritative `/api/v1/` reads, with bounded polling as the fallback per ADR-025-R4); an embedded xterm.js SSH terminal over the existing terminal Channels route; server-brokered Guacamole RDP/SSH sessions opened in a new tab (never embedded, no signed URL persisted); and NGFW, credentials, and agent-upload surfaces. All data access is on the canonical `/api/v1/mission-control/` DRF surface, which was given typed response serializers and `@extend_schema` so `gen:api` now generates real TypeScript types; a new `GET /api/v1/mission-control/ranges/` range-history endpoint was added, and the DRF current-range read now applies the CTF-participant Kali-only instance filter that the legacy template path already applied. Loading, empty, validation, permission, error, and destructive-confirm states are handled throughout, targeting WCAG 2.1 AA. Where Mission Control still lacks `/api/v1/` read coverage (agent deletion, listing existing credentials, and deployment-profile / SCM-credential pickers), the SPA notes the gap in place rather than calling legacy endpoints or adding ad hoc ones; that consolidation is tracked separately (#1328 / #1329). (#1370)
@@ -404,15 +392,12 @@ release-please transition (#1776).
 - Add a typed `/api/v1/ctf/` DRF surface (participant + organizer) powering the CTF workspace SPA. (#1372)
 - Added the SPA Administer workspace (Phase 2 of the SPA cutover) for staff operators, behind the default-off `ADMINISTER_SPA_ENABLED` rollout flag (served only when `PLATFORM_SPA_ENABLED` is also on). It provides native user administration on the canonical `/api/v1/administer/` DRF surface as explicit named operations rather than a broad model CRUD: a bounded, paginated, filterable user list and detail (roles, account origin, and provenance shown read-only, with no identity-binding fields exposed), plus activate/deactivate, soft-delete, and a grant-only local CTF-Organizer operation. Every operation requires a staff session (platform API tokens are rejected) and the matching Django model permission, and writes a strict, request-attributed audit row inside its atomic service boundary. Platform Settings ships as a read-only, deployment-managed informational surface and Cost as a truthful "unavailable" state pending a separately owned canonical cost source. Django admin at `/admin/` is unchanged and remains available in every rollout state; flipping the flag off restores prior behavior. (#1373)
 - Add `scripts/sync-deploy-secrets.sh` to push each environment's local deploy overlays (`local.auto.tfvars` for portal/range/core, plus the `shifter.yaml` for `SHIFTER_CONFIG_*`) into their matching `TF_VARS_*` / `SHIFTER_CONFIG_*` GitHub Actions secrets. Operators now sync from the same files they use for local `terraform` instead of hand-editing whole-file secrets in the GitHub UI; the script supports `--dry-run`, fails loud on a missing overlay, and never prints secret contents. Documented in `docs/dev/deploy-secrets.md`. (#1379)
-- Pre-promoted domain-controller images can now be baked for any domain from one parameterized Packer template (`dc-prebaked.pkr.hcl`) driven by per-purpose profile var-files in `shifter/packer/gcp/dc-profiles/`. To add a DC for a new domain, copy a profile, supply its AD-content script, and run the Packer GCE build with `dc_profile=<name>`; it publishes image family `shifter-<purpose>-dc`. The former `polaris-dc` template becomes the default `polaris` profile (BOREAS.LOCAL). The parameterized runtime-promotion path is retained but unused (pre-bake keeps time-to-serve low). (#1391)
 - Added the ACES-native provisioning core (ADR-031/ADR-032, behind the `SHIFTER_ACES_NATIVE_PROVISIONING` feature flag, default off): a Shifter ACES RuntimeTarget backend (`shared.aces.runtime_target`) that validates a compiled ACES `ProvisioningPlan` against the backend capability envelope (failing closed on any out-of-envelope term) and dispatches the serialized plan itself through an injected port, superseding the earlier `scenario_ref` passthrough. Per ADR-032, Shifter rides the ACES contract end to end: it introduces no parallel SDL or re-modeled spec; the engine persists the serialized ACES plan in `range_config` and the provisioner reads it via accessors that mirror the reference ACES backend (image from the authored `source`, sizing from `resources`, `os_family` for OS dialect only), resolving concrete artifacts at realization from the authored identity. The backend is verified by the ACES-owned conformance suite (fixture + a live target probe that rejects a vacuous pass), and a platform-side drift test keeps the provisioner reader aligned with the reference backend. The producer uses the released `aces-scenario-packs` 1.2.0 / `aces-sdl` 0.20.0 pair, while the provisioner retains a bounded rolling-read window for persisted 0.19.1 plans; an import-linter contract confines ACES SDL tooling to `shared.aces`. With the flag off there is no behaviour change; the existing cyberscript range path stays authoritative. (#1444)
-- Add `scripts/ctfd-workshop/standup-gcp-ctfd.sh`, a small re-runnable gcloud helper that stands up the standalone CTFd workshop on GCE (static IP + 80/443 firewall + debian-12 VM running CTFd via docker compose behind host nginx), mirroring the AWS `ctfd-workshop` pattern for the GCP Polaris event surface. (#1459)
 - Added ACES-native GCE range-cell realization (ADR-031/ADR-032, behind the `SHIFTER_ACES_NATIVE_PROVISIONING` feature flag, default off). The provisioner realizes a serialized ACES ProvisioningPlan into a real Compute Engine range cell via a new `aces-range provision|destroy --request-id` command: it maps the authored topology into the neutral GCE range-cell plan (image resolved from the authored `source` against the tenant registry, sizing from `resources`, `os_family` as OS dialect only, authored network CIDRs to subnets, deterministic IP assignment, `count` fan-out) and provisions it by reusing the provenance-neutral GCE apply primitives with an ACES-owned instance path that mints one provisioner-managed SSH key per node for reachability and carries no cyberscript scenario, role, RDP, or Vertex coupling. Authored node ACLs are realized as fail-closed GCE firewall rules placed below the management plane so an authored deny never severs the provisioner's own reachability. Authored ACES composition is realized genuinely as guest bootstrap (ADR-032-R6): content placements (inline files written for real; directories created; non-inline content supplied by the baked image), account placements (real guest users with groups/shell/home/mail/spn, locked when disabled), and service feature bindings (a real install+enable step whose package is provided by the baked image or guest repo) are emitted as an idempotent Linux-bash / Windows-PowerShell script appended to the instance startup script. All plan-controlled values are shell-quoted, file bytes go through base64, and identifiers are validated fail-closed, so authored content cannot inject shell; a placement targeting an absent node aborts. A node that declares no `source` still boots: the backend resolves a base OS image from the tenant registry keyed on `os_family` (ADR-032-R5), a policy distinct from the prohibited inference of an image from `os_family` for an authored source. Image version pins are honored exactly -- a pinned version never silently falls back to the any-version registry mapping, matching aces-sdl (opaque version, no substitution) and the reference backend (hard-fail on an unavailable image). The backend capability manifest now declares the backing capability (`supports_acls`, `supports_accounts`, `supported_content_types`, `supported_account_features`) and the platform capability envelope accepts and fail-closed-validates content/feature/account placements. With the flag off there is no behaviour change; the cyberscript range path stays authoritative. (#1477)
 - Wired the ACES-native provisioning path's operational evidence into the existing ACES sidecar/Mission-Control read seams (ADR-031, behind `SHIFTER_ACES_NATIVE_PROVISIONING`, default off). The provisioner now emits `operation_status` observations (running/succeeded/failed) and a `runtime_snapshot` of the provisioned topology from the `aces-range` provision/teardown path, via new `range.aces.operation` / `range.aces.snapshot` outbox events; the engine consumer persists them as `operation_status` and `runtime_snapshot` AcesOperationRecords through the validated, redacted persisters (a new `persist_runtime_snapshot_record` fills the one missing write helper). The snapshot carries only bounded `{address, resource_type, status}` entries built from the authored plan, never the raw GCE outputs (which hold secrets/CIDRs), and failures map to a bounded, sanitized status reason. Records are readable through the existing redacted Mission Control ACES endpoints, keyed by `request_id`; range lifecycle status stays driven by the neutral range status events, so the ACES records are additive evidence. With the flag off there is no behaviour change. (#1478)
 - Made ACES packages launchable through a native provisioning path, gated by `SHIFTER_ACES_NATIVE_PROVISIONING` (default off, ADR-031-R5). A new package loader (`shared.aces.package_loader`) turns a registered pack-root `package_ref` into a dispatched launch: under `ACES_PACKAGE_ROOT`, CMS re-verifies the registered canonical content digest, the loader selects the pack's single direct SDL entry, compiles it with `aces-sdl`, plans it against the Shifter provisioning-only backend, and applies the compiled plan through an injected dispatch port. A new launch service (`cms.services.create_aces_native_range`, routed by `create_range_dispatch`) launches a registered ACES package in parallel to the cyberscript `create_range`: it reuses the same ownership, active-range, launchability, and audit checks and persists the same CMS `Request` + `RangeInstance` bookkeeping (with no cyberscript `RangeSpec`), so Mission Control visibility, active-range admission, and range-status propagation all work uniformly. ACES catalog entries become launchable only with the flag on; with the flag off, no ACES entry is launchable and `create_range_dispatch` is byte-identical to `create_range`. Fixed two ACES-conformance gaps that previously blocked launching any real ACES package: the Shifter backend manifest now declares `switch` node support (the aces-sdl planner rejects every network resource otherwise, even though Shifter realizes networks), and the provisional provisioning snapshot now echoes the authored realization concerns (`os_family`, `node_type`, content `spec.type`) so the aces-sdl runtime non-approximation gate confirms the backend committed to realize exactly what the author declared. (#1479)
 - Added an explicit `TEST_DB_BACKEND` test-database selector (separating `TESTING=1` posture from the database backend) and a required PostgreSQL CI lane that runs the broad platform suite against real PostgreSQL, so production persistence semantics (transactions, constraints, row/table locking) are exercised instead of only SQLite. (#1524)
 - Added GCP-native self-hosted GitHub Actions runners so a GCP dev tenant runs its own CI/deploy instead of borrowing the AWS runner fleet (dev-tenant containment). `deploy.py runners --cloud gcp` provisions a GCE runner into the target GCP project via a dedicated Terraform root (`platform/terraform/gcp/global/github-runner/`, separate state prefix so a platform destroy never removes it): a private-only Shielded VM in a custom VPC with Cloud NAT egress and SSH reachable only over IAP. Registration mints a single-use token per runner and delivers it to the host over the `gcloud compute ssh` stdin stream into a root-only temp file, kept out of the operator's argv/logs, Terraform state, instance metadata, and Secret Manager. (The runner's `config.sh` requires `--token` for non-interactive registration and offers no stdin/file/env channel, so the single-use token is present only momentarily in the isolated runner VM's process args during registration, then removed.) The runner registers with `--no-default-labels` + the `gcp-dev` label, and the command fails closed unless the runner reports online with that label. GCP-dev deploy and destroy workflows now target the `gcp-dev` runner; a new `check-tf-gcp-runner-network` guard (ADR-008-R8) and the extended ADR-003-R5 exposure checker keep the isolation and pull-request gating intact. (#1546)
-- Added a first-class AWS Packer template for the Polaris domain controller (`shifter/packer/polaris-dc.pkr.hcl`, wired into `packer.yml` as the `polaris-dc` AMI type). It is the amazon-ebs twin of the GCP `dc-prebaked` template: it bakes a pre-promoted `boreas.local` DC (OUs/users/SPNs/DCSync ACL/shares via `a2_setup.ps1`) with OpenSSH Server preinstalled (required by the range provisioner's DC setup). This replaces the previous ad-hoc DC bake, which produced AMIs missing OpenSSH. (#1547)
 - Authored ACES `Node.services` ports are now realized as fail-closed, range-scoped ingress firewalls on the GCE range backend (ADR-032-R8): each declared TCP/UDP service opens a deterministic per-node-tag rule admitting only the same range's network CIDRs, kept below authored ACLs and the management plane in precedence, with malformed/unknown-protocol services rejected at the provisioner trust boundary. Behind `SHIFTER_ACES_NATIVE_PROVISIONING` (default off). (#1562)
 - ACES-native provisioning now genuinely delivers authored source-backed `file` and `directory` content into range guests: the payload is materialized from the digest-verified pack, promoted content-addressed to object storage, delivered over the authenticated guest channel, and verified in-guest by digest before the range becomes ready. `file` and `directory` are re-declared as backend content capabilities. Gated by `SHIFTER_ACES_NATIVE_PROVISIONING` (default off). (#1564)
 - Added a tenant-facing management surface for the ACES image registry (the ADR-032-R2 realization seam that maps an authored ACES image `source` to a concrete provider image). Operators can now register, list, and disable `AcesImageMapping` rows through three surfaces that share the single validated `engine.services` write path: an ACES Images page in the SPA Author area, canonical `/api/v1/cms/aces-image-mappings/` DRF endpoints, and an `aces_image_registry` management command. Disabling preserves the row for audit rather than deleting it. The whole surface is gated by `SHIFTER_ACES_NATIVE_PROVISIONING` (default off) and the SPA page additionally requires `PLATFORM_SPA_ENABLED`; authoring access uses the existing CMS authoring gate. The launch and validation docs now cover registering the validation package's image mapping. (#1566)
@@ -424,8 +409,6 @@ release-please transition (#1776).
 - CTF participants can change their own login username from the new Account page, validated and audited like the organizer rename. (#1593)
 - CTF participants can download a range-scoped OpenVPN profile from the Range page and use a standard OpenVPN client to reach only their assigned Kali target. (#1695)
 - Mission Control ranges now expose their remaining server-enforced lifetime in the SPA, support bounded owner-requested extensions up to a fixed maximum, and offer a scoped OpenVPN profile download when the provisioned range supports it. CTF and Mission Control automatic teardown now share the same persisted range-lease reconciler. (#1696)
-- Added an `aws-tenant-standup` skill, available to both Claude Code (`.claude/skills/`) and Codex (`.agents/skills/`), that captures the end-to-end AWS Shifter tenant teardown and rebuild: teardown or AMI-preserving teardown, bootstrap and secrets, image bakes, deploy via the real `deploy.yml` dispatch, health verification, base-range smoke, and a POLARIS range walkthrough. It takes profile, region, and teardown mode as promptable, optional parameters, points at the authoritative deploy docs, and encodes the fresh-environment pitfalls found during the proof rebuild. (#1700)
-- Added a GCP Packer build for the `polaris-dc` (BOREAS.LOCAL) domain-controller image, salvaged from the GDC effort when Polaris moved to the GCE range-cell backend, so a GDC AD image can still be baked if needed in future.
 - Added an operator-triggered `techvault-scenario-bake` workflow that bakes the TechVault golden AMI (the APTL `techvault-operational` stack plus the VS Code seat) and records it in the `/shifter/ami/techvault` SSM parameter, automating the manual bake runbook.
 - Add the TechVault purple-team scenario: a scenario template plus the range bootstrap that writes the AWS Bedrock credential shard for Claude Code on the host seat and RDPs in as the `ubuntu` seat user (gated on the `techvault` AMI key).
 - Add TechVault purple-team scenario documentation and the golden-AMI bake runbook.
@@ -456,7 +439,6 @@ release-please transition (#1776).
 - The portal, background workers, and the range provisioner now derive the active cloud backend from one validated selection resolved at each process's composition root (validated against the `installation` backend registry, the single source of truth) instead of re-reading `CLOUD_PROVIDER` with an implicit `aws` default at roughly twenty scattered call sites. A deployed process now fails closed on a missing or unsupported backend rather than silently behaving as AWS; each cloud factory validates that the selected backend declares the capability it needs before constructing an adapter; and provider-routing sites dispatch explicitly per backend rather than treating any non-GCP value as AWS. `CLOUD_PROVIDER` is now renderer-owned, derived from `shifter.yaml`'s selected backend at deploy time: GCP emits it from the runtime-env renderer, and AWS renders it via `shifter-config render-runtime` into a Terraform variable that the portal and provisioner modules receive rather than hardcoding. The `aws` default remains available only under development, test, and build contexts. Implements PLAT-2005, and is the first runtime consumer of the PLAT-2001 / PLAT-2003 root-config contract. See `docs/architecture/root-configured-backend-bundles.md`. (#726)
 - Migrated AWS into a real (non-provisional) backend bundle. The `aws` entry in `shifter/installation/registry.py` now validates its `settings` against a closed model (`region` required, unknown keys rejected), checks the `django_secret_key` and `db_password` references against a machine-readable grammar, and admits the `proof` deployment profile alongside `prod` and `dev`. The shared cross-backend `range_egress` policy stays owned by `installation.range_egress`, so the loader validates it separately from a backend's closed settings model and preserves its verbatim CIDR diagnostics. The published backend-bundle contract artifact was regenerated to match (#728). (#728)
 - Environment deploys are now manual: run the Deploy workflow with a `workflow_dispatch` `environment` input (`aws-dev`, `aws-proof`, or `gcp-dev`) instead of them auto-triggering on a push to the env branch. The branch you run the workflow from is the code that deploys; no branch name selects the target. Push and pull_request run validation only. (#730)
-- Stop tracking Polaris AWS operator run outputs (`provisioning_state.json`, status/health reports) and extend ADR-004-R8 guard coverage so they cannot be re-committed. (#772)
 - CI Quality workflow jobs now run only for path categories touched by the PR (or the full matrix when workflow files or the path-filter config change). (#774)
 - Plan-rules and changelog contributor docs now count as guardrail documentation for CI Quality routing, so edits to `.gc/plan-rules.md` or `changelog.d/README.md` run the full Quality (including SonarCloud) gate instead of being treated as ordinary docs-only skips. (#783)
 - SonarCloud now downloads coverage artifacts only from test jobs that actually ran, so path-scoped PRs no longer fail waiting for skipped-job artifacts. (#786)
@@ -487,19 +469,16 @@ release-please transition (#1776).
 - CTF flag-submission concurrency tests (duplicate-solve, attempt-limit lockout, submission cooldown) now run against a real PostgreSQL backend in CI, proving `submit_flag()`'s row-lock guard serializes concurrent requests. (#1182)
 - Documented the ACES migration triage for CyberScript and scenario backlog items, making CyberScript extension requests route to current-stack maintenance, ACES migration, superseded, or close buckets instead of extending the legacy DSL indefinitely. (#1231)
 - Removed an unreachable dead `APIKey` branch from the `risk_register` access policy, left over after the legacy `rr_live_` API key was retired in #1124. Internal cleanup with no user-facing or behavioral change; the archival `APIKey` model and table are unaffected. (#1244)
-- Scenario verification now uses a provider- and scenario-neutral shared framework with lazy installed-metadata discovery, explicit version-pinned plugin selection, bounded runner and prerequisite contracts, and redacted versioned reports. Core ships and tests no Polaris adapters or answer material; the existing range smoke remains in-tree while scenario-specific verification is supplied separately by operators. (#1293)
 - The portal container image build and CI now build the SPA frontend: a Node/Vite stage in `shifter/shifter_platform/Dockerfile` compiles the bundle into the static tree before `collectstatic`, and a new `SPA (shifter_platform frontend)` job in the Quality workflow lints, typechecks, unit-tests (Vitest), and builds the frontend on changes under `shifter/shifter_platform/`. (#1302)
 - Added the `aces-parity-inventory-path-integrity` ADR guard check (ADR-024-R4): `adr_guard --all --level ci` now fails when a `legacy_source` or `validation_evidence` clause in `docs/architecture/aces-migration-parity-inventory.yaml` is a repository path or glob that no longer resolves, while classifying shell-command and prose clauses so they are never false-flagged. The check is a global repository invariant (it runs even when the inventory is not in the changed-file set) and is wired into the `ci` level, a dedicated always-run `adr-guard-parity-inventory` pre-commit hook, and the always-present `deploy.yml` pre-commit job so a referenced-file deletion cannot silently leave the ACES cutover parity ledger pointing at nonexistent paths. (#1313)
 - Define and structurally enforce the provider-neutral range-substrate contract for provision, destroy, pause, and resume across AWS Terraform and GCP GDC adapters, with Azure explicitly deferred pending conformance. (#1322)
 - Consolidated the Mission Control and CTF app-local JSON HTTP APIs onto the versioned `/api/v1/` DRF surface and retired the legacy duplicate mounts. The Mission Control UI (dashboard, agents, terminal, NGFW, credentials) and the CTF UI now call the canonical `/api/v1/mission-control/` and `/api/v1/ctf/` routes exclusively, and the internal callers that produced Guacamole and redirect URLs were repointed to them. The legacy `/mission-control/api/*` mount was removed entirely, and `/ctf/api/*` was reduced to the single scoreboard endpoint (intentionally retained because its v1 twin uses different public-access semantics). Two previously legacy-only CTF operations, event spare-range provisioning and participant range recovery, were added to `/api/v1/ctf/` so the versioned surface is complete. As part of the removal the per-mount error-format compatibility shim was dropped, so Mission Control endpoints now always return the canonical `{"error": {"code", "message", "details"}}` envelope instead of the legacy flat `{"error": "..."}` form. (#1328)
-- Hardened the GCE guest-image pipeline for the range-cell backend. Added a candidate-boot validation gate (`packer-gcp-validate.yml`) that boots the exact built image in a disposable, isolated VM (no external IP, IAP, Shielded VM, and no guest service account) and gathers evidence from the trusted runner over an IAP tunnel: for Linux/polaris-vm it SSH-executes a check script (guest agent, Docker, baked compose config/images, every declared compose service running) and gates on the exit code; for a pre-promoted DC it probes AD over LDAP (rootDSE proves AD DS serves the expected forest, no first-boot promotion). Passing again after a reset proves a clean boot; on success it labels the image `validated=passed`. Promotion (`packer-gcp-promote.yml`) is now evidence-driven: it copies the exact validated candidate into the prod family (derived from the image's own family, so `polaris-vm` and purpose-scoped `<purpose>-dc` families work), verifies the new prod image, then deprecates the previous head; it no longer re-resolves "newest in the dev family" at promotion time. `load_gce_range_cell_config` now validates the image-reference shape, disk type, and a per-role policy minimum boot-disk size before any Compute Engine call. See `docs/architecture/gcp-guest-images.md`. (#1343)
 - **GCP VM range cells now enforce a closed scenario-to-platform contract.** Canonically validated scenario content crosses as a digest-bound artifact, while the platform owns admission, network bindings, lifecycle, membership, declared participant access, and cleanup. Destroy can replay without scenario-owned CIDRs, and host-management credentials stay outside participant access results. (#1344)
 - GCP ranges now provision on the GCE range-cell backend by default (`GCP_RANGE_BACKEND` defaults to `gce`). The GDC VM Runtime path is retained and can be re-selected per environment with `GCP_RANGE_BACKEND=gdc`. Added the range-scoped `GCP_RANGE_CELL_PROJECT_ID` so range cells target the real range project independently of the control-plane project. (#1387)
 - Gate the platform deploy on worker/scheduler container health. The post-deploy checks only covered the portal web tier (image digest + ALB `/health/`), so crash-looping workers (outbox drainer, reconciler, ctf-scheduler, etc.) shipped as a green deploy. A new `verify-asg-workers` step SSM-checks each in-service instance's worker containers and fails the deploy when any never reaches `healthy`, retrying to tolerate the health-start-period and a single transient restart. (#1398)
 - Made the post-deploy range smoke agent-independent. It now provisions minimal ranges built entirely from base range AMIs: `smoke_linux` (Kali attacker + Ubuntu victim, SSH probe) and `smoke_windows` (Kali attacker + plain Windows victim, RDP probe), with no XDR agent, and no longer requires the `SMOKE_LINUX_AGENT_ID` / `SMOKE_WINDOWS_AGENT_ID` secrets. The smoke validates the platform (provision, connect, teardown); XDR/agent install is scenario content exercised by real scenarios, not the smoke. (#1422)
 - The self-hosted runner Terraform (`platform/terraform/global/github-runner`) gains an explicit ADR-004-R20 opt-in, `allow_default_vpc`, for account-default-VPC placement. The guard still fails closed by default; when opted in (aws-dev/aws-proof set it) the stack auto-resolves the default VPC and one of its subnets, so no live VPC/subnet IDs are committed (ADR-004-R14). This reconciles the #1222 non-default-VPC mandate with the reality that deploys have always run runners in the default VPC. The pinning checker, its tests, ADR-004-R20, and the runner runbook/README are updated to match, and issue #1437 tracks reassessing the durable placement design. (#1425)
 - Bootstrap can now provision **and register** self-hosted GitHub Actions runners end-to-end. A new `deploy.py runners` subcommand (and the `full` flow) applies the runner Terraform root (optionally provisioning a dedicated, ADR-004-R20-compliant runner VPC via the new `create_runner_network` variable), then registers each runner over SSM using a single-use GitHub token minted per runner and verifies it online via the GitHub API. Registration tokens never touch Terraform state, user data, SSM Parameter Store, Secrets Manager, or operator logs. Manual `config.sh` registration is no longer required. (#1433)
-- Standardized the TechVault and Polaris scenario AMI bakes on Packer. The hand-rolled `run-instances` / SSM-RunCommand-shell / `create-image` workflows (`techvault-scenario-bake.yml`, `polaris-scenario-bake.yml`) are deleted; both scenarios now bake via new Packer sources (`shifter/packer/techvault.pkr.hcl`, `polaris-vm.pkr.hcl`) dispatched through the shared `packer.yml` (`ami_type=techvault` / `polaris-vm`). Packer owns builder launch, provisioning, image creation, and teardown over the no-inbound AWS Session Manager communicator with an encrypted root volume; the workflow keeps the encrypted-AMI check and fresh-boot golden-verify as gates before publishing `/shifter/ami/<key>`. Bake behavior (running-stack image semantics, the aptl/polaris build steps, and the per-range runtime bootstrap contract) is unchanged. The deploy role gains a narrow `ssm:StartSession` grant for Packer's Session Manager tunnel (applied via an IAM `terraform apply`). This also resolves #1491: the shared `packer.yml` bake job carries a `dev`/`proof` `environment` selector with per-environment role resolution, so the polaris bake is no longer hardcoded to the dev account. (#1469)
 - Removed all committed environment-specific values from the public repository. Deleted the finished `tssummit` event Terraform (`global/tssummit/`, `global/tssummit-ranges/`), which hard-coded operator and participant home IPs, and scrubbed the operator IP from docs. Templated the pinned base and marketplace AMI IDs (`ec2_ami_id`, `ctfd_ami_id`, `vm_series_ami_id`) out of the committed `terraform.tfvars` baselines, which are region and version specific and go stale, so real values come from gitignored `local.auto.tfvars` and `TF_VARS_<ENV>_*` secrets. The `no-live-cloud-identifiers` guardrail (ADR-004-R14) now also flags globally routable public IPv4 addresses in Terraform and HCL (allowlisting well-known Google, Cloudflare, and GCP infrastructure ranges and RFC5737 documentation ranges; comments excluded) so operator or participant IPs cannot be re-committed. (#1487)
 - Every first-party Django app is now classified as a domain, presentation, support/contracts, or support/composition layer, and `config` and `risk_register` participate in cross-layer import and model-boundary enforcement (`check_layer_imports`, `adr_guard`, `.importlinter`, `check_model_fks`). A new fail-closed `installed-apps-classified` guard rejects an unclassified first-party addition to `INSTALLED_APPS`, a stale classification entry, or an unresolvable dynamic `INSTALLED_APPS` entry (ADR-001-R3). The platform audit vocabulary, event contracts, writer port, trusted request attribution, emission policy, and health now live in a neutral `shared.audit` boundary; `risk_register.AuditLog` is a compatibility persistence adapter bound once at the `config` startup seam, and feature layers no longer import risk-register models to emit audit events. `AUDIT_TRUSTED_PROXY_HOPS` is now declared in the env manifest. (#1523)
 - Pull-request quality now validates every Terraform execution root: `platform/terraform/validation-inventory.yaml` classifies each tracked Terraform directory (with a validation owner, toolchain profile, and lockfile-verified provider set), and the `Quality` workflow runs a credential-free, backendless `terraform init` + `terraform validate` per affected root so composition errors are caught before merge instead of at deploy time. (#1528)
@@ -513,7 +492,6 @@ release-please transition (#1776).
 - Resolved the outstanding SonarCloud new-code findings surfaced on the dev-to-main promotion. Hoisted nested builder calls out of `pytest.raises` and `assertRaises` bodies so exactly one invocation can raise inside each block (S5778) across the provisioner, bootstrap, and platform test suites; split `config/settings.py` and the shifter-ops image-tool registrar back under the file and function size caps; bounded the localhost port probe in the ops database tunnel against an out-of-range port value; collapsed a multi-return provisioner helper into a single boolean return; and corrected one assertion operand order. No runtime behavior changes (issue #1702). (#1702)
 - Cleared the accumulated SonarCloud new-code quality gate on the shifter-ops MCP server (`mcp/ops`): switched the `child_process`/`net` builtins to `node:`-prefixed imports, removed an unnecessary regex escape, used `Set#size` instead of a spread-array `length`, marked the `spawnAws` PATH lookup as a reviewed-safe disposition consistent with the existing `gh`/`git` runners, and split every over-length tool registrar (and the oversized `risk.js`) into per-tool factory functions and `tools/risk/*` submodules. No change to the MCP tool surface or behavior. (#1756)
 - Reduced the cyclomatic complexity of `_content_ref_from_resource` in the ACES content-delivery prep module by extracting the `spec` field-coercion into a `_spec_str` helper, satisfying the SonarCloud complexity gate. No behavior change. (#1758)
-- Corrected AMI and smoketest documentation drift. `ami-management.md` now points at the real runtime resolver `shifter/engine/provisioner/provisioner_ami.py:get_ami_id()`, uses the correct `shifter/packer/scripts/ubuntu/` build-scripts path, and enumerates the full set of baked AMI types (adding `brokenbk`, `polaris-dc`, `techvault`, and `polaris-vm`). The AWS AMI seeding runbook no longer references a non-existent `ctf-*` AMI type, and the native CTF smoketest uses the authoritative proof domain `dev.shifter.keplerops.com`.
 - Corrected the IAM and GitHub Runner sections of the manual-deployment guide. The IAM stack is applied by `scripts/bootstrap/deploy.py bootstrap`, not a manual `terraform apply`, and the runner fleet is the `github-runner-network` module plus persistent EC2 instances provisioned by `scripts/bootstrap/deploy.py runners`. The guide no longer documents the retired `terraform-aws-github-runner` Lambda and webhook module and now links the authoritative AWS runner provisioning runbook.
 - Corrected the secrets management doc (`docs/technical/dev/secrets.md`) to reflect the post-#1250 deploy mechanism: real per-environment Terraform values live in the `TF_VARS_*` GitHub secrets and render into a gitignored `local.auto.tfvars` at deploy time, not the committed `terraform.tfvars` baselines. Added the deploy-payload secrets to the GitHub Secrets table and cross-linked the authoritative `deploy-secrets.md` checklist.
 - Update the TechVault bake runbook to point at the live `techvault-scenario-bake.yml` workflow as the automated bake path (it previously described the pipeline as a follow-up).
@@ -589,8 +567,6 @@ release-please transition (#1776).
 - Fixed the root cause behind the self-hosted runner CI wedge (#1220's `timeout-minutes` was only a backstop): the GitHub Actions deploy runner could be deployed into the account default VPC, where a range's `private_dns_enabled` interface VPC endpoints hijacked the runner's AWS API resolution and stalled CI for ~107 minutes. The runner Terraform (`platform/terraform/global/github-runner`) now fails closed at plan/apply time if `vpc_id` is the account default VPC (or if `subnet_id` does not belong to that VPC), enforced by a `lifecycle.precondition` and pinned by a new `check_tf_runner_network` guardrail (ADR-004-R20). Valid placements are a dedicated runner VPC or the portal VPC private tier. (#1222)
 - Grant the portal EC2 instance role `kms:GenerateDataKey`/`kms:Decrypt`/`kms:DescribeKey` on the user-storage S3 bucket CMK (scoped via `kms:ViaService = s3`). The bucket is SSE-KMS encrypted and its policy enforces the CMK, but the instance role was only granted the Secrets-Manager and SQS keys, so every challenge file-attachment upload and download failed with `AccessDenied` on `kms:GenerateDataKey`. Adds an `s3_kms_key_arn` variable and grant to `modules/portal/ec2`, wired from each environment's `aws_kms_key.portal_s3`. (#1258)
 - Fixed the in-repo MCP servers' advertised JSON Schema dialect so Vertex-backed tool registration accepts their tool schemas without changing runtime validation. (#1306)
-- Closed fail-open and credential-hygiene gaps in the GCE guest-image bake. The polaris-vm `host-setup.sh` now fails the build when the compose stack is absent, its `POLARIS_STACK_SHA256` checksum mismatches, the compose config is invalid, a build/pull fails, or a required image is missing, instead of warning and producing a non-promotable image. The pre-promoted `dc-prebaked` DC no longer carries a committed default DSRM password (it is generated per build and injected as a sensitive var), and a pre-capture cleanup provisioner strips build transcripts and the staged AD-content seed so no secret-bearing artifact ships in the un-sysprepped image; the live domain Administrator credential continues to rotate per range at runtime. (#1343)
-- GCP Polaris ranges now provision end-to-end on the GCE range-cell backend. Fixed the provisioner→range-host management-SSH firewall port, Private Google Access egress so range guests reach Vertex AI / Cloud Storage / Secret Manager, the range-guest OAuth scope, root execution of guest setup scripts, and a range-id plumbing bug that pointed the agent credential lookup at the wrong secret. (#1387)
 - Publish the range-events SNS topic ARN to the `${ssm_prefix}/range-events-topic-id` SSM parameter so portal instances wire `RANGE_EVENTS_TOPIC_ID` into the outbox drainer and reconciler. The parameter was never created, so `worker-outbox-drainer` crash-looped with `RANGE_EVENTS_TOPIC_ID is not configured` and range-event delivery via the outbox was down. (#1394)
 - Fix `reconcile_range_events` crash-looping on PostgreSQL with `NotSupportedError: FOR UPDATE cannot be applied to the nullable side of an outer join`. The stale-instance query `select_related("request")`-joins a nullable FK and then locks rows; scope the lock to the base table with `select_for_update(of=("self",))` so range-event reconciliation stays running. (#1395)
 - Add an `apply_immediately` input to the portal Redis module (wired into both the HA replication group and the single-node cluster) and set it per environment (dev/proof true, prod false), mirroring `db_apply_immediately`. Without it, ElastiCache defaulted to deferring node-type/engine changes to the maintenance window, so Redis sizing changes silently did not take effect at deploy time. (#1396)
@@ -604,20 +580,13 @@ release-please transition (#1776).
 - The CI permissions boundary (`shifter-<env>-ci-role-boundary`) no longer blocks the scoped `iam:PassRole` that runtime roles need. Its `DenyIamEscalation` statement denied `iam:*` unconditionally, which nullified the `iam:PassRole` the portal EC2 role uses to hand the provisioner's ECS execution role to `ecs:RunTask`, so no range could launch on AWS (`AccessDeniedException ... explicit deny in a permissions boundary`). The deny now carries an `iam:PassedToService` condition permitting only `iam:PassRole` to the platform's known services (`ec2`, `ecs-tasks`, `lambda`, `monitoring.rds`, `vpc-flow-logs`, `firehose`, `logs`, `bedrock`, `scheduler`, the same list the deploy role's own `IAMPassRole` grant uses); every other IAM action, including PassRole to any other service, stays denied. (#1452)
 - Range provisioning no longer fails on a fresh database with `permission denied for table engine_range_event_outbox`. The transactional outbox table (added for #476) was never granted to the `provisioner_lambda` role, so the provisioner's status-event INSERTs were denied and every provision/teardown rolled back. A new engine migration grants `provisioner_lambda` INSERT on `engine_range_event_outbox` plus USAGE on its sequence (INSERT only; the portal-side reconciler and drainer read and update the outbox under the portal runtime role). (#1453)
 - Range provisioning on a fresh database now writes the event outbox successfully. Two gaps beyond the initial outbox INSERT grant blocked the provisioner: the enqueue uses `INSERT ... ON CONFLICT DO NOTHING`, which also requires SELECT on `engine_range_event_outbox`, and `RangeEventOutbox.last_error` is NOT NULL with only a Django app-level default (no DB default), so the provisioner's raw-SQL enqueue hit a NOT-NULL violation. Engine migration `0026` grants `provisioner_lambda` SELECT on the outbox and adds a server-side `''` default on `last_error`. (#1454)
-- The TechVault scenario bake (`techvault-scenario-bake.yml`) now encrypts the bake host root volume at launch (`Encrypted:true`, matching the Polaris precedent) instead of relying only on the account's EBS-encryption-by-default posture, and adds a fail-closed pre-publish gate that verifies the produced AMI's EBS snapshots are encrypted before recording it in `/shifter/ami/techvault`. Previously an unencrypted golden AMI could be published, which the range provisioner's `ec2:Encrypted=true` IAM condition then correctly denied at launch, so TechVault ranges could not start. (#1455)
 - The portal can now send SES email (CTF magic-link invites, alarm notifications) from the locked-down private tier. `django_ses` uses the SES API, but the private tier has no internet egress to the public SES endpoint, so every outbound email silently hung until timeout. A VPC interface endpoint for the SES API (`com.amazonaws.<region>.email`) is added to the portal endpoint set, keeping SES traffic on the VPC-local path like the other 18 service endpoints; no SMTP switch or credentials are required. (#1460)
 - CTF magic-link registration now lands participants on their range page (`ctf:participant_range`) instead of the Mission Control dashboard, where a CTF participant would see no active range (MC ranges are separate from CTF ranges). The portal ASG also no longer fails `terraform apply` on large scale-ups: `wait_for_capacity_timeout` is set to `0` so the apply does not block on the ASG reaching capacity (new instances sit in Pending:Wait through their launch lifecycle hook, and warm-pool churn compounds it, exceeding Terraform's default 10-minute wait); readiness is gated by the instance refresh and the deploy's verify steps instead. (#1462)
-- CTF participant range page now shows the environment for single-seat purple-team labs (for example, TechVault). `get_range_target_instances` previously excluded every `attacker`-tagged instance, which returns nothing for a scenario whose only node is the attacker-tagged seat host the participant works from; the page then rendered "available" with no reachable host. It now falls back to returning the seat hosts when a ready range has no non-attacker targets, preserving multi-node behavior (POLARIS still hides its attacker and shows its targets). RDP access for the range page now logs in as the guest's recorded seat user (`ssh_username`) rather than the `os_type` default, so a TechVault host (os_type `kali`, seat user `ubuntu` where VS Code Desktop + Claude Code run) is reached as `ubuntu`. A domain controller keeps its domain-admin login. (#1465)
 - The engine deploy `validate` job now runs on the self-hosted runner class instead of `ubuntu-latest`. A GitHub-hosted runner-acquisition stall could previously cancel the job with zero steps started, which skipped the whole AWS Platform deploy stage through the fail-closed dependency chain. `validate` is fail-closed on `pull_request` (ADR-003-R5), keeps `contents: read` permissions only, and has a `timeout-minutes` backstop. (#1474)
 - Dropped the unused `chat.<domain>` subject-alternative name from the portal ALB's ACM certificate. No listener rule, DNS record, or app configuration ever served `chat.<domain>`, but the extra SAN forced a second ACM DNS-validation record that silently blocked certificate issuance until the record was added by hand (hit at the proof DNS gate). The certificate now validates against the portal domain alone. (#1475)
-- The Polaris scenario bake workflow (`polaris-scenario-bake.yml`) can now bake `polaris-vm` in any supported AWS environment. It gained an `environment` input (dev/proof) and resolves the deploy role the same way as `packer.yml` and `techvault-scenario-bake.yml`, instead of hardcoding the dev account role. The golden-range Terraform `name_prefix` now defaults to `shifter-polaris` so the instance role it creates falls within the CI role's `iam:PassRole` scope (`shifter-*`); the previous bare `polaris` prefix was outside that scope and RunInstances failed with a PassRole `AccessDeniedException`. The workflow also no longer uses `actions/setup-python` (unavailable on the self-hosted runners' tool cache); it builds a venv from the runner's system `python3` instead, matching the other self-hosted workflows. (#1491)
-- Granted the GitHub Actions CI role read-only access to AWS-owned public SSM parameters under `arn:aws:ssm:<region>::parameter/aws/service/*`. The scenario bakes (techvault and polaris golden ranges) resolve current base AMIs through these public parameters, and the management policy previously scoped SSM read to `parameter/shifter/*` only, so the bakes failed with an `AccessDeniedException` on the Canonical Ubuntu and Amazon Linux AMI-ID lookups. (#1493)
 - Fixed the TechVault scenario bake failing at `aptl lab start` "Preparing Suricata runtime volumes" with a `BackendSeedError`. The bake installs Docker as root but runs the stack (and aptl's first docker operation, the Suricata named-volume seed) as the `ubuntu` user, which was not in the `docker` group, so the seed hit a `docker.sock` permission-denied. The bake toolchain now adds `ubuntu` to the `docker` group. (#1495)
 - Fixed the TechVault bake's container-count gate, which required 31 running `aptl-*` containers. The `techvault-operational` stack on aptl-labs 4.1.2 settles at 30 long-running containers plus a one-shot `aptl-cortex-index-init` that exits 0, so the bake-wait and golden-verify never reached 31 and timed out. Both checks now require 30. (#1497)
-- Granted the GitHub Actions CI role read-only access to the scenario bake S3 buckets (`shifter-*-bake-*`). The polaris scenario bake verifies its operator-uploaded build tarball in the bake bucket, and the CI role's `data` policy previously scoped S3 to infra/state/user-storage/portal buckets only, so the check failed with an `AccessDenied`. (#1500)
 - Fixed the TechVault bake timing out at `create-image`. The bake used `aws ec2 wait image-available` (10-minute default), but the large TechVault AMI (100 GB root plus the full baked stack) takes 30-60 minutes to snapshot, so the wait failed with `Max attempts exceeded` and skipped recording the AMI in SSM even though it was finalizing normally. The bake now polls for availability with a 60-minute deadline and fails fast on a terminal image state. (#1502)
-- Completed the Polaris AWS scenario bake for self-hosted Amazon Linux 2023 runners and the private-content split. The bake now consumes an operator-uploaded S3 build tarball (the `scenario-dev/polaris/build/` flags/solutions live in the private `penumbra-scenarios` repo, not this public repo) and fails loud if it is missing; it no longer runs `actions/setup-python`/`reportlab`/`poppler` (unavailable on the runners) and uses a system-`python3` venv only for the range health check. Also fixed the golden-range Terraform `coalesce(var.aws_profile, "")`, which errored with `Call to function "coalesce" failed` when `aws_profile` is null (the CI default). (#1505)
-- Codify the GCE range-cell backend's fresh-deploy requirements on GCP so a clean deploy provisions ranges without manual setup: Terraform now creates the range host and Vertex service accounts, grants their roles, and grants the provisioner workload SA Compute admin plus service-account-user and key-admin on the range SAs; the prebaked Windows DC domain Administrator password is provisioned as a Secret Manager secret rendered as `DC_DOMAIN_PASSWORD_SECRET_ID` (previously unwired, leaving the DC's set_admin_password step with an empty password); and in-range SSH guests (GDC and GCE range VMs) get a longer first-boot SSH-ready budget so the heavy Polaris host image is reachable before the provisioner times out. (#1509)
 - Account bootstrap now enables EBS encryption-by-default in the deploy region. The range provisioner requires encrypted root volumes (`ec2:Encrypted=true`), and the base and scenario AMIs are unencrypted, so without account-default encryption every range launch was denied and no range could provision in a freshly bootstrapped account. The step is idempotent (enables only when currently disabled). (#1533)
 - Granted the portal EC2 role `sns:Publish` on the range-events SNS topic (plus KMS on the topic's CMK). The range-event outbox drainer and reconciler run under this role and publish range status events; without the grant every publish failed with `AuthorizationError`, so ranges provisioned but stayed stuck `provisioning` in the portal forever with no connection surfaced. Wired the topic ARN into the portal EC2 module across all environments. (#1535)
 - Render the TOTP MFA enrollment QR as a scannable image on the Identity Platform login page instead of showing the raw `otpauth://` URL as text. The QR is generated entirely client-side (the TOTP secret never leaves the browser) via a vendored MIT QR library, with a text fallback if the library fails to load. (#1549)
@@ -635,10 +604,8 @@ release-please transition (#1776).
 - Defaulted the `gdc-bootstrap` control-plane Terraform identity to `operator-adc`, which runs Terraform directly under the operator's Application Default Credentials and mints no service account and no key. This is secure-by-default: the operator already holds the project roles Terraform needs, so the previous `bootstrap-sa` default added a standing `roles/owner` service account (and a JSON key) with no capability gain, and could not run at all on orgs that enforce `custom.preventPrivilegedBasicRolesForServAccounts` or `iam.managed.disableServiceAccountKeyCreation`. `bootstrap-sa` remains available as an explicit opt-out (`--terraform-identity bootstrap-sa` or `SHIFTER_GCP_TERRAFORM_IDENTITY=bootstrap-sa`) for operators who cannot run Terraform under their own ADC. The gcp-dev CI deploy is unaffected: it authenticates via workload-identity federation and never passes this flag. The `operator-adc` path also now sets `USER_PROJECT_OVERRIDE` and `GOOGLE_BILLING_PROJECT` so Identity Platform resources apply under a user credential instead of failing with a missing-quota-project error. (#1738)
 - Fixed CTF participant range access, which was broken for every isolated participant account (introduced with account isolation in `#1206`). Three defects blocked a participant from reaching their provisioned range box. First, the `CTFAccountBoundaryMiddleware` confined temporary accounts to `/ctf/*` and `/api/v1/ctf/*`, returning a 403 for the Mission Control Guacamole endpoints the range page depends on. Second, the Guacamole JSON-auth username used the account's blank email, so Guacamole rejected the token exchange with `400 "The username must not be blank."`. Third, the SPA range page pointed at a stub endpoint that could never open a box. The boundary now admits exactly the `/api/v1/mission-control/guacamole/` prefix for live participants (still gated on live participation and the forced-password-change step, still authorized per user by the underlying resolvers, and with NGFW, range lifecycle, credentials, and uploads still blocked). The Guacamole identity falls back to the account's unique `range-<hex>` username when the email is blank, and both the classic range page and the SPA workspace open each target box over RDP through the shared Guacamole bootstrap flow. The published `/api/v1/ctf/range/access/` operation is deprecated (retained for API compatibility) in favour of the per-box flow. (#1740)
 - Fixed GCP range provisioning being blocked at the Kubernetes admission boundary. The `restrict-provisioner-jobs` ValidatingAdmissionPolicy validates every literal env var on a provisioner Job against the `platform-runtime` ConfigMap, but the runtime-env renderers omitted four literals the provisioner-launcher emits: `DB_NAME`, `DB_USER` (the policy lists both in `requiredLiteralEnv`; they were hydrated into the pod env from the DB secret bundle but never written to the ConfigMap), `AWS_REGION` (Django aliases it to `CLOUD_REGION`, so it is always non-empty and emitted even on GCP), and `CLOUD_PROJECT_ID` (a launcher settings fallback). Because those keys were absent from the ConfigMap the policy denied every range Job, so no GCP range could provision. `scripts/gcp/render_runtime_env.py` now emits `DB_NAME`/`DB_USER` from the `control_plane_database` output and `CLOUD_PROJECT_ID` from the real project, and the bootstrap runtime contract emits `AWS_REGION` from the region, so the ConfigMap, the launcher's forwarded env, and the admission-policy allowlist agree. (#1742)
-- Fixed the GCP `shifter-kali` range image never accepting SSH, which made every scenario that uses a Kali attacker (basic, techvault, polaris) fail provisioning because the range provisioner could not reach the guest. The image build strips `/etc/ssh/ssh_host_*` (so instances never ship shared host keys) and enables `ssh.service`, but Kali, unlike the Ubuntu image, does not regenerate the host keys on first boot, so `sshd` could not start and never bound port 22 (the guest booted to a login prompt but only exposed the systemd AF_UNIX local ssh socket). The Kali GCE conversion now installs a first-boot systemd oneshot that runs `ssh-keygen -A` before `sshd` whenever host keys are missing, so a freshly provisioned Kali guest generates per-instance host keys and `sshd` comes up on port 22. Requires a `shifter-kali` image re-bake to take effect. (#1745)
 - Fixed the AWS portal Terraform apply, which failed with `LimitExceeded: Maximum policy size of 10240 bytes exceeded` on the engine-provisioner ECS task role and blocked every `Shifter Platform` deploy. Recent Gateway Load Balancer and OpenVPN-gateway work pushed the role's aggregate inline-policy size past AWS's 10,240-byte per-role ceiling. The two largest inline policies (EC2 provisioning and GWLB provisioning) now attach as customer-managed policies, which do not count toward the inline aggregate; the granted permissions are unchanged. Applies to all AWS environments. (#1749)
 - **AWS range provisioning now grants the narrowly scoped IAM and load balancer permissions required to create per-range OpenVPN gateways.** Policy guardrails also reject broader permission variants, and post-deploy smoke tests stop immediately when a range reaches a terminal failure state. (#1755)
-- GCE range cells now resolve each legacy scenario `ami_key` through an exact, deployment-approved image profile, allowing generic Kali, Polaris, and TechVault scenarios to coexist without runtime ConfigMap swaps. (#1761)
 - Update the CTF register-exchange redirect tests to expect the participant range page (`/ctf/range/`), matching the behavior change in #1462.
 - **Direct pushes to `dev` and `main` now force the full quality test matrix so every package's coverage report is regenerated.** The `dev`/`main` SonarCloud analyses measure `new_coverage` over the accumulated dev-vs-main new-code period (spanning every package), but a push previously only re-ran the test jobs for packages the last-merged change touched. Packages whose `coverage.xml` was absent read as 0% covered, sinking the branch `new_coverage` gate and failing the `dev`->`main` promotion PR even though those packages are well tested. Pull-request analyses remain path-gated because their new code is only the PR's own diff.
 - The platform Deploy "Run database migrations (ASG mode)" step now polls for an in-service Auto Scaling group instance for up to 10 minutes instead of failing a one-shot check. A first deploy to a fresh Auto Scaling group has no pre-existing in-service instance, so the previous immediate check raced the newly launched instances (which still needed to pull the image by digest, bootstrap, and reach InService) and aborted with "No healthy in-service instance found."
@@ -651,8 +618,6 @@ release-please transition (#1776).
 - Fixed GCP range provisioning failing with `CONSUMER_INVALID` / `PERMISSION_DENIED on resource project shifter-gcp-dev`. `GCP_PROJECT_ID` and `GOOGLE_CLOUD_PROJECT` were hardcoded to a deploy-overlay placeholder in the static runtime env, so Google client libraries billed an invalid quota/consumer project. They are now rendered from the real deploy project.
 - Fix Cognito/OIDC login being rejected at claims verification. AWS Cognito's UserInfo endpoint returns `email_verified` as the string `"true"` (the ID token returns a JSON boolean), but the portal required a strict boolean `True`, so every Cognito login was refused (no session created; the browser bounced to the public landing page). `email_verified` is now accepted as boolean `True` or the string `"true"` (case-insensitive) while still failing closed on `false`, `"false"`, or a missing value.
 - Added the `proof` environment key to the prebaked Domain Controller AMI manifest (`shifter/packer/dc-amis.json`) so the proof account has a recorded DC AMI for the `/shifter/ami/dc` SSM parameter. The manifest previously listed only `dev` and `prod`, leaving proof standup without a prebaked DC AMI value.
-- Allow the range provisioner to create the per-range POLARIS agent IAM role under the CI permissions boundary. The polaris agent feature (#1377) creates a per-range agent role at provision time, but the provisioner's anti-escalation boundary (#253) denied all `iam:CreateRole`, so a polaris range could never reach `terraform apply`. The boundary now carves the `shifter-<env>-*-polaris-agent` role namespace out of the IAM deny. This is safe because the provisioner identity policy already permits `iam:CreateRole` there only with this same boundary attached (`iam:PermissionsBoundary` condition) and grants no boundary-strip action, so every created agent role stays capped by the boundary (the AWS permissions-boundary delegation pattern). A new `DenyPolarisAgentBoundaryTamper` statement re-denies boundary removal on that namespace as defense-in-depth.
-- Force the regional STS endpoint for the POLARIS a14-kali agent container. The bootstrap verify runs `aws sts get-caller-identity` inside a14-kali, but the container's aws-config set only `region`, so the CLI used the global `sts.amazonaws.com` endpoint, which a14-kali cannot resolve (only the regional `sts.<region>` endpoint is pinned in the container's extra_hosts). Add `sts_regional_endpoints = regional` to the container aws-config so STS calls use the pinned regional endpoint, and surface the get-caller-identity error in the verify output instead of discarding it with `2>/dev/null`.
 - Add a private VPC interface endpoint for the EC2 Auto Scaling API in the portal VPC. The ASG launch lifecycle hook requires each booting instance to call `autoscaling:CompleteLifecycleAction` from `user_data`; without the endpoint that call egressed via NAT and timed out intermittently, leaving instances stuck in `Pending:Wait` until the hook ABANDONed them and the platform Deploy instance-refresh never converged.
 - Pass `CLOUD_PROVIDER` to the portal deploy script's migrate and container runs. `config._cloud.resolve_cloud_provider` (PLAT-2005) made `CLOUD_PROVIDER` a required setting at import time and wired it into the ASG boot path (`user_data.sh`) and the engine provisioner task, but not the AWS deploy path. `deploy_portal.sh` built the migrate and run-container env without it, so any deploy of the new image aborted at the migrate step with `CLOUD_PROVIDER environment variable is required`. The deploy now publishes the backend identity to Parameter Store (`/shifter/<env>/portal/cloud-provider`) and reads it into the shared container env, matching the boot path. GCP is unaffected: it injects `CLOUD_PROVIDER` through the rendered `platform-runtime` ConfigMap.
 - Portal VPC now provisions a NAT gateway per availability zone when network-firewall inspection is enabled, so each AZ's firewall endpoint egresses through a same-AZ NAT. A single shared NAT black-holed internet egress (including the Cognito OIDC token exchange in the login callback) from every AZ except the NAT's own, causing intermittent HTTP 504 errors on login.
@@ -665,575 +630,6 @@ release-please transition (#1776).
 ## [3.102.0] - 2026-06-07
 
 ### Security
-
-- Scope the engine-provisioner ECS task role's ELBv2 (Gateway Load Balancer)
-  permissions. The `aws_iam_role_policy.gwlb` policy in
-  `platform/terraform/modules/engine-provisioner/iam.tf` no longer grants
-  mutable `elasticloadbalancing:*` actions on `Resource = "*"`; create,
-  delete, modify, register/deregister-targets, and tag-mutation actions are
-  restricted to Gateway Load Balancer resource ARNs
-  (`loadbalancer/gwy/*`, `listener/gwy/*/*/*`, `targetgroup/*`) and gated on
-  Shifter ownership request/resource tags. `Describe*` is enumerated and
-  retains `Resource = "*"` per AWS service authorization requirements. A new
-  `scripts/check_tf_iam_elb_scope` static checker (wired through pre-commit
-  and the Quality workflow) prevents regression. (#46)- **Scoped the engine provisioner EC2 lifecycle IAM permissions to Shifter-owned
-  instances.** Mutable instance actions now require the existing runtime ownership
-  tags instead of allowing the task role to manage every EC2 instance in the
-  account. (#55)- Add a portal-VPC east-west inspection boundary on AWS. An AWS Network
-  Firewall sits between the public ALB tier and the private services
-  tier, with route-backed steering through a dedicated firewall subnet
-  and a baseline stateful rule group that ALERTs on protocols that have
-  no legitimate east-west use (SSH/RDP/ICMP). FLOW + ALERT logs go to a
-  CMK-encrypted CloudWatch log group and feed the existing
-  `log-aggregation` pipeline; `enable_portal_inspection = true`
-  fails closed when `enable_log_aggregation = false`. Portal RDS and
-  Redis ingress tighten from a broad VPC-CIDR allowlist to SG-to-SG
-  references from the portal EC2 / Django security group. Gated by the
-  new `enable_portal_inspection` environment variable. (#122)- Portal and Guacamole RDS instances now explicitly pin the AWS RDS CA certificate and keep IAM database authentication enabled, with a repo-native Terraform guardrail preventing either setting from regressing. (#140)- **Portal Secrets Manager secrets are now encrypted with customer-managed KMS keys** (CKV_AWS_149). A per-environment `aws_kms_key.secrets_manager` (alias `alias/shifter-<env>-secrets-manager`) with annual rotation is created in the portal env root and plumbed into the `portal/rds`, `portal/cognito`, `guacamole`, and `engine-provisioner` modules, plus the env-root `app` (Django) secret. The CMK ARN is also exposed to the engine-provisioner ECS task as `SECRETS_KMS_KEY_ARN`, so the runtime range and NGFW Terraform modules (`shifter/engine/provisioner/terraform/modules/{range,ngfw}`) encrypt their per-instance SSH-key secrets with the same CMK. The key policy is bound to the `shifter-<env>-*` / `shifter/<env>/*` secret namespace via `kms:EncryptionContext:SecretARN`, so a principal with `kms:Decrypt` on this key cannot use it to decrypt unrelated Secrets Manager secrets in the account. Six `#checkov:skip=CKV_AWS_149` comments on portal-runtime secrets are removed. (#213)- **Portal ALB now has deletion protection enabled** (CKV_AWS_150). `aws_lb.this` reads from a new `enable_deletion_protection` module input (defaulting to `true`) and the corresponding `#checkov:skip=CKV_AWS_150` waiver is removed. Dev pins to `false` for intentional teardown; prod pins to `true`. Mirrors the existing `db_deletion_protection` convention so future destroys remain an explicit configuration change rather than a source patch. (#214)- **Portal user-uploads S3 bucket is now encrypted with a customer-managed KMS key** (CKV_AWS_145). A per-environment `aws_kms_key.portal_s3` (alias `alias/shifter-<env>-portal-s3`) is created in the portal env root and wired into the `portal/s3` module via a new `kms_key_arn` input. The bucket encryption switches from AES256 to `aws:kms` with `bucket_key_enabled = true` to keep KMS API call volume (and cost) bounded. The key policy is bound to the bucket via `kms:EncryptionContext:aws:s3:arn`, so a principal with `kms:Decrypt` on this key cannot use it to decrypt unrelated S3 objects in the account. Access-logging is handled separately by #310 (unified logging strategy); event notifications remain deferred because no real consumer exists. (#218)- **The AWS default security group is now locked down to deny-all on both VPCs** (CKV2_AWS_12). The `portal/vpc` and `range/vpc` modules each adopt the AWS-created default SG via `aws_default_security_group.this` with no `ingress` or `egress` rules, replacing the permissive AWS defaults (open intra-SG ingress, open egress). All real traffic continues to flow through named security groups; the default SG must never be attached to any workload. The two `#checkov:skip=CKV2_AWS_12` waivers are removed. (#221)- **`Instance.data` now encrypts NGFW secret values at rest, completing the
-  field-level encryption story started for `Credential.data` in PR #1168.**
-  `cms.services.create_ngfw` persists the *hydrated* `NGFWAppSpec` directly into
-  `instance.data`, which carries the deployment-profile `authcode`, the SCM
-  `scm_pin_value`, and the OTP-registration `otp_value`. Those three keys are
-  now encrypted by `EncryptedInstanceDataField` (Fernet — AES-128-CBC +
-  HMAC-SHA256, keyed by `FIELD_ENCRYPTION_KEY`); operational fields (`name`,
-  `role`, `os_type`, `dc_config`, `agent`, `instance_type`) stay plaintext so
-  admin views, log diagnostics, and JSON queries on operational metadata keep
-  working. A new data migration (`0029_encrypt_sensitive_instance_data`)
-  re-saves existing `Instance` rows so on-disk values move from plaintext to
-  `enc:v1:`-prefixed ciphertext; the encrypt path is idempotent so the migration
-  is safe to re-run. The underlying field machinery was generalised into an
-  `EncryptedJSONField` base; the credential-data field and the new
-  instance-data field bind their own `sensitive_keys` frozensets that mirror
-  the secret-flagged fields on `SCMCredentialSpec`, `DeploymentProfileSpec`,
-  and `NGFWAppSpec`. A contract test pins those key sets to the spec classes
-  so any new credential type or NGFW field with a secret-shaped value forces
-  explicit registration. (#693)- **Mission Control range lifecycle endpoints now write to the platform `AuditLog`
-  with full HTTP request context.** `mission_control.views.launch_range`,
-  `cancel_range`, `destroy_range`, `pause_range`, and `resume_range` each call
-  `risk_register.services.audit_log_from_request` on success, capturing the
-  acting user, source IP (including `X-Forwarded-For` from the ALB), user agent,
-  and HTTP `X-Request-ID`. Entries record `AuditLog.EntityType.RANGE` with the
-  matching action (`PROVISION` / `CANCEL` / `DEPROVISION` / `PAUSE` / `RESUME`)
-  and stash the legacy `range_id` and/or the request UUID in `new_state` so
-  either identifier is queryable. `cms.services.cancel_range` and
-  `cancel_range_by_request_id` also gain a service-layer `AuditLog.Action.CANCEL`
-  entry, filling the one range-lifecycle action that previously had no audit
-  coverage. Failed requests (CMS errors, missing identifiers) are not audited,
-  so the trail reflects state changes the platform actually performed. (#694)- **Server-side magic-byte inspection now runs before every S3 upload is
-  finalized.** Three upload paths previously trusted only the client-side
-  extension / magic-byte checks: CTF challenge attachments
-  (`ctf.services.attachment.add_challenge_file`), agent installer uploads
-  (`cms.services.complete_upload`), and experiment script uploads
-  (`cms.experiments.services.complete_script_upload`). Each path now reads a
-  bounded prefix of the uploaded content — inline from the file object for the
-  Django-mediated CTF flow, and via a new `ObjectStorage.read_object_header`
-  range-GET for the presigned-URL agent and script flows — and rejects the
-  upload before tagging the object as completed or creating the database
-  record. CTF attachments pick one of three policies per extension (positive
-  magic-byte match, UTF-8 text with no binary signature, or OPAQUE for raw-byte
-  containers like `.bin` / `.raw` / `.dd`). Agent installers reuse the existing
-  `cms.assets.validation.ALLOWED_FORMATS` registry. Scripts must be UTF-8
-  without a binary signature. The header byte budget is provider-neutral and
-  configurable via `UPLOAD_INSPECTION_MAX_HEADER_BYTES` (default 512). (#696)- **Experiment script execution now passes every variable through a Pydantic-validated context.** `cms.experiments.orchestrator` previously interpolated `instance_name` and `s3_key` directly into shell text and only single-quote-escaped resolved Claude prompts — relying on staff-only access as the primary control. The new `cyberscript.script_context.ScriptExecutionContext` validates each value at the type boundary (EC2 instance ID `i-[0-9a-f]{8,17}`, S3 key whitelist with no `..` / leading `/`, IPv4 dotted-quad, prompt body free of null/control bytes) and exposes deterministic `render_command()` helpers. The orchestrator's `_build_python_command` / `_build_claude_command` are removed; the path identifier for `/tmp/script_*.py` is now the instance ID rather than the display name, which also fixes Python scripts targeting instances whose names contain spaces (`Workstation 1`, `Domain Controller`). Script upload key generation is tightened end-to-end so newly uploaded scripts always satisfy the execution validator, and a data migration (`experiments.0002`) renames any legacy `ScriptAsset.s3_key` rows whose characters fall outside the new whitelist (with a server-side S3 copy) so existing scripts continue to execute after the upgrade. (#700)- **Polaris A9 splice-relay no longer accepts password authentication.** The May
-  2026 cohort lost the entire Bunker chain (1300 pts) because `root:splice2025`
-  existed only in `scenario-dev/polaris/build/a9/Dockerfile` and was not
-  discoverable from any in-range artifact. The range bootstrap now generates a
-  per-range Ed25519 keypair, stages the private half on a14-kali at
-  `/home/kali/.ssh/splice_relay` (mode `0600`) — the participant-discoverable
-  artifact — and installs the public half into A9's
-  `/root/.ssh/authorized_keys`. A9's `sshd_config` is `PasswordAuthentication no`,
-  `PermitRootLogin prohibit-password`. The `scenario_smoketest` harness gained a
-  challenge-31 adapter that proves the credential gate end-to-end (evidence
-  present + mode 0600, ssh opens, Modbus device-id round-trip). (#707)- Terraform Checkov IaC scanning is now a blocking gate under ADR-004-R11.
-  Pre-commit (`.pre-commit-config.yaml`) and CI (`security-iac` workflow)
-  share `platform/terraform/.checkov.yaml`; `--soft-fail` is off. 141 of
-  321 baseline first-party Terraform findings were fixed in-place
-  (encryption-at-rest CMKs across CloudWatch / SQS / SNS / Firehose / ECR /
-  Network Firewall / RDS / DynamoDB / EventBridge / Artifact Registry; EC2
-  detailed monitoring + IMDSv2 + EBS optimization; CloudWatch retention
-  ≥365 days; RDS force_ssl, query logging, enhanced monitoring, PI CMK;
-  GKE auto-repair/auto-upgrade/workload-metadata-config; SG descriptions).
-  The remaining principled exceptions live in `docs/adr/exceptions.yaml`
-  with owner, reason, expiry, and affected paths; `adr_guard.py` rejects
-  expired entries. Kubernetes Checkov stays soft-fail as a separately
-  tracked workstream. (#757)- **`settings.ENVIRONMENT` now defaults to `"production"` (fail-closed) when the
-  `ENVIRONMENT` env var is unset.** The previous `"development"` default meant
-  a deployment that omitted or misset the env var silently activated
-  `/dev-login/`. Source-IP/host gating in `config/dev_auth.py` already
-  prevented public-ingress reachability, but the permissive default still
-  turned configuration drift into a dev-auth surface. Deployed dev
-  environments must now opt in explicitly by setting `ENVIRONMENT=development`. (#761)- Replace shared static guest passwords (`kali:kali`, `ubuntu:ubuntu`, `CortexSavesTheDay!`, the shared `GDC_*_PASSWORD` env vars) with per-instance random passwords generated at provisioning time and pushed onto each guest by the engine provisioner via `SetLocalPasswordPlan` (SSM Run Command on AWS / SSH on GDC VM Runtime). Values are stored in AWS Secrets Manager / GCP Secret Manager; the portal resolves them through `shared.cloud` at RDP-access time and fails closed when no reference is recorded. Packer scripts no longer bake credentials into AMIs and user_data never carries the password value. (#762)- **Defense-in-depth ownership checks added to organizer-scoped CTF challenge services.** `create_challenge`, `update_challenge`, `delete_challenge`, and `list_challenges_for_event` now require an `actor_id` keyword argument and raise `CTFPermissionError` when the actor does not own the event. This is a backstop for the existing view-layer `_check_event_ownership` check, so a future internal caller that bypasses the views still cannot mutate another organizer's event content. Cross-organizer regression tests added for the JSON challenge APIs. (#765)- **`api_scoreboard` now refuses to return rankings unless the caller owns the event (organizer) or is a registered participant of it.** Previously any user with any CTF role could read any event's scoreboard — including participant identifiers, names, team names, scores, solve counts, and last-solve timestamps — just by knowing the event UUID. The 404-before-403 ordering for unknown events is preserved so probe traffic does not gain an enumeration signal. (#768)- **Hint unlocks now enforce the same availability policy as flag submission and reject route/body challenge mismatches.** `ctf.services.hint.use_hint` now applies a shared `assert_challenge_available_for_participant` helper (event match, ACTIVE event, competition window, challenge visibility, release state, prerequisites) so participants cannot retrieve hint text for hidden, locked, unreleased, or out-of-window challenges, or for challenges in other events. `api_use_hint` additionally verifies that the URL's `challenge_id` and the optional body `hint_id` refer to the same challenge, closing a path where a participant could unlock a different challenge's hint by supplying its UUID. (#769)- **Experiment creation now enforces `ScenarioMetadata.enabled` and `staff_only`
-  as authorization constraints, not presentation hints.** The GET form
-  (`cms.experiments.views.experiment_create`) lists scenarios via
-  `cms.scenarios.registry.list_all_scenarios(user=request.user)`, so disabled and
-  staff-only scenarios are hidden from non-staff Threat Research users. The POST
-  path (and the underlying `cms.experiments.services.create_experiment`) routes
-  through `cms.scenarios.registry.check_scenario_access`, which rejects disabled
-  or staff-only scenarios for non-staff users with `ExperimentValidationError`
-  — closing the path where a non-staff Threat Research user could enumerate raw
-  YAML IDs and POST one directly. Adds a view-layer regression test in
-  `tests/cms/experiments/test_views.py` that drives the full POST flow as a
-  Threat Research user against a hidden `scenario_id` and asserts it is
-  rejected without reaching experiment creation. (#771)- **Production Django settings now enforce HTTPS and HSTS at the application layer.** `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS` (default 1 year), and `SECURE_HSTS_INCLUDE_SUBDOMAINS` default to on when `DEBUG=False`; each is overridable via the matching environment variable. `SECURE_HSTS_PRELOAD` stays off by default — preload-list submission is near-irreversible, so it must be opted into via `SECURE_HSTS_PRELOAD=true` only once the domain is ready for chrome://net-internals submission. Combined with the existing `SECURE_PROXY_SSL_HEADER` config, the redirect is loop-safe behind a TLS-terminating load balancer. (#776)- **Established the policy-layer foundation on the `shifter-ops` MCP server.** Introduced `.shifter.yaml` at the repo root (`mcp_ops:` namespace) declaring capability classes, session profiles, environment policy, class defaults, and an audit log; added `mcp/ops/policy.js` with `parsePolicy`, `loadPolicy`, `profileFromEnv`, the `Policy` class, and a `registerTool` wrapper that gates tool registration by capability class and active session profile. ADR-014 reframed: R1 narrowed to general-purpose MCP servers, new R5 declares the operator-agent surface model and the structured-policy-gate requirement, new R6 prohibits bypass-procedure language in MCP tool descriptions. `mcp/ops/SECURITY.md` and the preflight architecture note rewritten to match. The actual defense gates (env confirm, dry-run, redaction, idempotency, audit, secret handles, two-phase plan→execute, rate caps, untrusted-input fencing, apex out-of-band approval, per-tool wiring, surface tests) land in follow-up issues #1198, #1199, #1200, #1201, #1202. (#777)- Constrained `shifter_platform` to `asyncssh>=2.23.0` and refreshed the lockfile to remove vulnerable `asyncssh` 2.22.0. (#868)- Bump the transitive `idna` dependency 3.13 → 3.18 in both
-  `shifter/shifter_platform` and `shifter/engine/provisioner` (pulled in via
-  the requests/httpx chain). Clears [GHSA-65pc-fj4g-8rjx][advisory]
-  (CVE-2026-45409, moderate): specially crafted inputs to `idna.encode()`
-  bypass length validation in `valid_contexto` and trigger excessive
-  resource consumption (denial of service), an incomplete-remediation
-  follow-up to CVE-2024-3651. First patched in idna 3.15.
-
-  [advisory]: https://github.com/advisories/GHSA-65pc-fj4g-8rjx (#869)- Bump `hono` 4.12.18 → 4.12.23 in the `mcp/ngfw`, `mcp/ops`, and
-  `mcp/planner` lockfiles (transitive via `@modelcontextprotocol/sdk`),
-  clearing advisories GHSA-2gcr-mfcq-wcc3, GHSA-3hrh-pfw6-9m5x,
-  GHSA-f577-qrjj-4474, and GHSA-xrhx-7g5j-rcj5 (all patched in 4.12.21). (#870)- **Patched transitive `qs` dependency copies in MCP packages and the GCP identity-platform function.** The affected lockfiles now resolve `qs` to the non-vulnerable 6.15.2 release, including the Express/body-parser tree used by the identity-platform blocking functions. (#871)- Harden the portal image dependency install to clear SonarCloud Security
-  Rating C (`docker:S8541`, `docker:S8544`). Third-party dependencies are now
-  installed wheel-only (`--only-binary :all:`) with versions pinned and hashes
-  enforced (`--require-hashes`): the frozen `uv` lock is exported with hashes,
-  and GCP extras resolve from a new pinned + hashed `requirements-gcp.lock`
-  (compiled from `requirements-gcp.txt`). The first-party `cyberscript` and
-  `installation` packages now ride on `PYTHONPATH` rather than a pip install,
-  since first-party source has no external resolution to lock or hash. Only
-  `py-ubjson` (sdist-only, no wheel) keeps a scoped, hash-verified source build. (#876)- Break the CodeQL `py/clear-text-logging-sensitive-data` dataflow at six log
-  sites that CodeQL flagged as emitting secrets/passwords in clear text
-  (`ngfw_terraform`, `gdc_vmruntime_assets`, the Guacamole RDP/SSH views, and the
-  risk-register audit log). Each flagged value now routes through a
-  `safe_log_fingerprint` helper — a per-process random nonce with no data
-  dependency on the input (and deliberately not a hash, so it does not trip
-  `py/weak-sensitive-data-hashing`) — which preserves cross-line correlation while
-  removing the value from the log. The platform `shared.log_sanitize` module gains
-  `safe_log_fingerprint`/`safe_log_id` to mirror the provisioner's `log_redact`,
-  giving both layers one logging-redaction vocabulary. (#878)- **Baselined Django and PyJWT advisories are remediated.** The platform now
-  requires Django 6.0.6 or newer and constrains transitive PyJWT resolution to
-  2.13.0 or newer, allowing the dependency-policy baseline entries for issue 895
-  to be cleared. (#895)- Render AWS range Terraform tfvars from per-environment GitHub secrets, document the matching local overlay model, and replace committed account-bound bucket plus deployment-specific PAN-OS AMI values with placeholders. (#916)- **Deploy workflows no longer route pull requests to self-hosted deploy runners.** AWS/GCP deploy jobs are push or manual-dispatch only, prod AWS deploys can be protected through the `aws-prod` GitHub Environment, and AWS ECR deploys now consume immutable digest-pinned images. (#935)- **GKE authorized-networks allowlist is now fail-closed at the Terraform layer,
-  and both gates enforce the same parsed-prefix contract.** `gke_master_authorized_cidrs`
-  in `platform/terraform/gcp/modules/platform-core/variables.tf` loses its
-  `default = []` and gains a `validation` block expressing a four-part contract
-  from the parsed prefix: the list is non-empty; every entry has an explicit
-  `/N` suffix (no bare IPs); every entry parses as a CIDR (no garbage, bad
-  octets, or bad prefixes); and the parsed prefix length is `> 0` (every
-  spelling of `/0`, IPv4 or IPv6, is rejected by prefix number, not by
-  string-suffix matching). So `terraform plan` / `terraform apply` /
-  `terraform test` fail with a clear error otherwise, including a direct apply
-  that bypasses the bootstrap preflight. `scripts/bootstrap/deploy.py`'s
-  `validate_gcp_control_plane_security_inputs` is tightened to enforce the
-  same four-part contract (`"/" in cidr`, `ipaddress.ip_network(..., strict=False)`,
-  `network.prefixlen > 0`), so the two gates stay in lockstep. Coverage in
-  `scripts/bootstrap/tests/test_deploy.py::TestGcpControlPlaneSecurityInputs`
-  expands to the unsafe inputs both gates reject (bare IPs, garbage with and
-  without slashes, bad octets/prefixes, IPv4 `/0`, IPv6 `/0`, mixed lists). The
-  cluster runs with `enable_private_endpoint = false`, so
-  `master_authorized_networks_config` is the only network-level restriction on
-  the public Kubernetes API server; an empty, malformed, or world-open list
-  would expose it to the entire internet. Recorded the design and the
-  private-endpoint boundary in
-  `docs/architecture/gke-control-plane-access-preflight.md` (listed as ADR-008
-  evidence). (#957)- **GCP platform and range VPCs now have explicit least-privilege firewall
-  policy with per-pool pod-CIDR isolation for the provisioner.** Range VPC
-  ingress is deny-by-default; the only ingress allow rule is
-  `range-allow-platform-provisioner`, sourced from a NEW dedicated
-  secondary pod range (`var.gke_provisioner_pods_cidr`, default
-  `10.46.0.0/20`) declared on the GKE subnet and attached to the
-  provisioner node pool via `network_config.pod_range`. A compromised
-  portal/worker/guacamole pod (running on the shared pod range) can no
-  longer satisfy the range firewall rule. The platform VPC now carries an
-  explicit deny rule against world-open SSH (22) and RDP (3389), and a
-  tag-scoped allow rule for the Google LB health-check ranges so GKE
-  backend probes continue to work. Optional break-glass direct admin SSH
-  onto platform and range VMs is gated on the new `operator_admin_cidrs`
-  module input (empty by default — dev relies on Workload Identity and
-  IAM paths) and rides at priority 800, strictly higher precedence than
-  the broad world-SSH/RDP deny at 900 so an explicit operator CIDR is not
-  shadowed. These admin-SSH rules are direct source-CIDR rules — not IAP
-  TCP forwarding rules — and the variable description reflects that. (#959)- **Cloud SQL deletion protection is now on by default for the platform
-  control-plane database.** `google_sql_database_instance.platform` now reads
-  its `deletion_protection` from the new `cloud_sql_deletion_protection`
-  module input, which defaults to `true`. Intentionally disposable
-  environments can opt out at the environment-root layer; dev gets the
-  secure default automatically. A misclick `terraform destroy` against the
-  shared platform database will now be rejected by the provider rather than
-  silently wiping control-plane state. (#960)- **Recorded the GCP GCS bucket encryption decision: Google-managed keys
-  remain the accepted posture.** ADR-008-R5 (`docs/adr/index.yaml`) is the
-  durable record; the
-  [gcp-gcs-cmek-preflight](../docs/architecture/gcp-gcs-cmek-preflight.md)
-  note carries the rationale, scope, owner, and the explicit review trigger
-  (an external compliance requirement). No CMEK / Cloud KMS resources are
-  created in this release — CMEK adoption is a separate piece of work
-  scoped to the day a compliance driver materializes, not a quiet follow-up. (#962)- **GCP Memorystore for the platform cache now runs on STANDARD_HA tier with
-  AUTH and server TLS, end-to-end.** `google_redis_instance.platform` is
-  `tier = STANDARD_HA`, `auth_enabled = true`,
-  `transit_encryption_mode = "SERVER_AUTHENTICATION"`. The
-  provider-generated AUTH token and the Memorystore server CA PEM both
-  land in a new `redis` Secret Manager bundle (mirroring the DB-password
-  shape) and are hydrated by `entrypoint.sh` as `REDIS_PASSWORD` and
-  `REDIS_CA_PEM` — neither value appears in the runtime ConfigMap,
-  generated env files, or process argv. Django Channels now builds a
-  `channels_redis` dict-form host with a `rediss://` address,
-  `ssl_cert_reqs = "required"`, and `ssl_ca_data` set to the Memorystore
-  CA so the server certificate is verified against the actual instance CA
-  rather than the system trust store. The helper fails closed if TLS is
-  enabled without a hydrated password, so silent fallback to a plaintext
-  connection is no longer reachable. Both the Helm chart NetworkPolicy and the
-  Kustomize-base NetworkPolicy now permit egress on the Memorystore TLS
-  port 6378 alongside the existing 6379 — the two cover the bootstrap
-  (Helm) and `_gcp-dev.yml` (`kubectl apply -k`) deploy paths respectively.
-  The platform-core module's `redis_tier` variable defaults to
-  `STANDARD_HA` as the production high-availability posture; AUTH and TLS
-  are enforced independently of tier, so a future disposable environment
-  can override to `BASIC` without weakening the security contract. (#963)- Remove tracked Terraform plan artifacts from source control. Eight
-  `tfplan` / `plan.out` files under `platform/terraform/environments/`
-  have been deleted; `.gitignore` now covers Terraform plan outputs
-  under both AWS and GCP environment trees. A new ADR-004-R8
-  `no-tracked-generated-artifacts` guardrail in
-  `scripts/adr_guard/adr_guard.py` fails closed when a plan-named file
-  is re-introduced under those roots, including via `git add -f`. (#1180)- Block re-introduction of bootstrap license / authcode material under
-  `temp/bootstrap/`. The existing `temp/` `.gitignore` entry covers
-  unforced adds; the new ADR-004-R8 `no-tracked-generated-artifacts`
-  guardrail in `scripts/adr_guard/adr_guard.py` fails closed when
-  `authcodes` / `*.authcodes` are re-introduced under
-  `temp/bootstrap/`, including via `git add -f`. The historical
-  `temp/bootstrap/license/authcodes` file is not present on `dev` or
-  `main`. (#1181)- **Aligned experiment and scenario editor authorization with the documented policy.** The view decorators advertise access for staff and the `Threat Research` group, but the service layer enforced staff-only — silently rejecting Threat Research users that the views had already admitted. The canonical predicate now lives in `shared.auth.can_edit_cms_authoring`, consumed by both `threat_research_required` and the experiment/scenario editor service layers, so the gate cannot drift. Per-scenario `enabled` / `staff_only` filtering via `cms.scenarios.registry.check_scenario_access` is unchanged. (#1183)- Stop injecting sensitive provisioner env vars as literal Kubernetes
-  Job env vars. The GCP Job adapter
-  (`shifter/shifter_platform/shared/cloud/gcp/task_runner.py`) now
-  splits the provisioner `env_overrides` into sensitive vs.
-  non-sensitive halves via a new
-  `shared.cloud.gcp.sensitive_env.split_env()` classifier. Sensitive
-  keys (`DB_PASSWORD`, `FIELD_ENCRYPTION_KEY`, `DC_DOMAIN_PASSWORD`,
-  plus any name matching the `_PASSWORD` / `_PASSPHRASE` /
-  `_PRIVATE_KEY` / `_API_TOKEN` / `_CREDENTIAL` / `_SECRET` suffix
-  rules) are routed through `valueFrom.secretKeyRef` pointing at an
-  ephemeral per-Job Secret. The Secret is created before the Job is
-  submitted, garbage-collected via `ownerReferences` once the Job is
-  deleted, and cleaned up on Job-creation failure. Pointer suffixes
-  (`_ID`, `_REF`, `_ARN`, etc.) take precedence so identifiers like
-  `GDC_ACCESS_SECRET_ID` remain literal env vars. (#1185)- Documented and pinned the AI experiment execution boundary for Claude Code runs. Experiment command dispatch now includes the `ai-experiment-execution-v1` policy payload for audit correlation, and regression tests guard the allowed `claude --dangerously-skip-permissions --output-format stream-json` invocation and transcript capture contract. (#1186)- **Experiment script dispatch no longer interpolates raw S3 keys or Claude prompts into remote shell syntax.** Script execution now uses fixed wrappers that decode validated payload data before invoking tools with structured argv. (#1187)- **CTF HTTP flag validators now pin outbound connections to a pre-validated IP.** Closes a DNS-rebinding window where a hostname could resolve to a public address during validation but to a loopback, private, link-local, or cloud-metadata address at request time. Every IPv4/IPv6 answer in the DNS reply must pass SSRF policy or the request is refused, and the TLS socket is opened to the validated address while SNI, certificate verification, and the `Host:` header retain the original hostname. (#1188)- Make provisioner field decryption fail closed. `decrypt_field()` in
-  `shifter/engine/provisioner/config.py` no longer silently returns the
-  input when `FIELD_ENCRYPTION_KEY` is missing or when the value fails to
-  decrypt. A new `FieldDecryptError` is raised on missing key, malformed
-  base64, and Fernet token failures (wrong key, malformed token); the
-  exception message never carries the input value. Empty input still
-  returns `""` as the absent-field sentinel. Adds tests covering each
-  failure mode. (#1189)- Require verified TLS for the `mcp/ops` Postgres pool. The pool config
-  in `mcp/ops/lib.js::buildPoolConfig` no longer disables TLS
-  verification — `rejectUnauthorized` stays `true` and `ssl.servername`
-  is set to the RDS endpoint discovered when the SSM tunnel started, so
-  SNI and hostname verification fire against the real RDS endpoint
-  instead of the localhost target of the port forward. The
-  `mcp-ops-tls-strict` adr_guard check (ADR-014-R7) backstops any other
-  file under `mcp/ops/` that would re-introduce `rejectUnauthorized:
-  false`. The trust model and refresh procedure are documented in
-  `mcp/ops/SECURITY.md` § "Database TLS". (#1190)- Make every Bandit SAST job blocking. `continue-on-error: true` is
-  removed from the `packer`, `bootstrap`, `gcp-scripts`,
-  `check-layer-imports`, and `installation` SAST jobs in
-  `.github/workflows/_quality.yml`. All seven Bandit jobs now block
-  merge on findings. A leading comment in the SAST section documents
-  the scope and owner, and the policy that adding a new Bandit job
-  must not reintroduce advisory mode without a fix-narrow-or-nosec
-  exception. Verified against all five previously-advisory paths
-  locally — current findings: zero. (#1193)- New `no-populated-secret-env-files` `adr_guard` check (ADR-004-R9)
-  prevents reintroducing populated values into tracked `*-secrets.env`
-  files under `platform/k8s/`. Allowed: comments, blank lines, empty
-  assignments (`KEY=`), and a **fixed** synthetic-placeholder allowlist
-  (`REPLACE_AT_DEPLOY`, `CHANGE_ME`, `PLACEHOLDER`, `EXAMPLE`, plus the
-  matching bracketed forms `<replace-at-deploy>`, `<change-me>`,
-  `<placeholder>`, `<example>`). The bracket allowlist is explicit
-  rather than a `<...>` pattern so a real credential cannot hide as
-  `<attacker-known-password>`. Parser splits on the first `=` so
-  non-identifier key shapes (`db.password=...`, `api-token=...`,
-  `export DB_PASSWORD=...`) still flow through the value check; inline
-  `# ...` is not honored as a comment; non-`=` lines are flagged as
-  malformed. Containment uses `git ls-files`, so gitignored local-dev
-  files are intentionally not scanned. Violation messages name the path
-  and variable name only, never the rejected value. Registered in
-  `fast` and `ci` levels; backstops gitleaks for low-entropy credentials
-  it ignores. The plaintext-removal content fix already shipped in
-  #1207. (#1195)- Wire the Phase 2 policy gates atop `registerTool` in
-  `mcp/ops/policy.js` (per parent issue #777). The wrapper now composes
-  five class-driven gates around every handler: env policy
-  (`confirm_env="prod"` required for prod calls), dry-run defaults
-  (`infra_mutation`/`ssm_arbitrary`/`db_arbitrary` return preview unless
-  `execute=true`), description redaction (`dev_bypass_tunnel` text
-  replaced before `list_tools`), idempotency keys (`named_db_write`
-  requires `idempotency_key`; same key returns cached result for 15
-  minutes), and secret handles (`secret_handle` tools return
-  `shf-secret:<uuid>` references; raw values resolvable only in-process
-  via `resolveSecretHandle`). A new `mcp/ops/audit.js` writes one
-  JSONL record per call to the path declared in `.shifter.yaml`'s
-  `audit.path` with `audit.redact` list applied. The 45 tools in
-  `mcp/ops/index.js` are still wired through `server.tool()` directly;
-  Phase 5 (#1201) is what routes them through `registerTool`. (#1198)- Add Phase 3 mid-cost policy defenses to `mcp/ops`'s `registerTool`
-  wrapper (per parent issue #777). The wrapper now composes three new
-  gates around every handler in the two-phase classes:
-
-  - **Two-phase `plan_<name>` → `execute_<name>`.** For
-    `infra_mutation`, `ssm_arbitrary`, and `db_arbitrary` tools, the
-    wrapper registers a paired `plan_<name>` (captures verbatim args,
-    returns `{plan_id, summary, ttl_seconds: 60}`, no handler run) and
-    `execute_<name>` (consumes the matching plan_id atomically, runs
-    the stored handler args through rate-cap + apex-approval +
-    idempotency). The plan store is in-process, volatile, bounded to 64
-    entries, single-use, with a 60-second TTL; expired entries are
-    reaped on every access.
-  - **Per-class sliding-window rate caps.** Reads
-    `class_defaults.<class>.rate_cap = {count, window_seconds}` (with
-    per-tool overrides via `tools.<name>.overrides.rate_cap`) and
-    refuses execute-side calls that would exceed the cap. The
-    `infra_mutation` default is `{count: 3, window_seconds: 60}`. Plan
-    calls do not consume capacity.
-  - **Startup profile from env.** `index.js` now resolves
-    `SHIFTER_OPS_PROFILE` via `profileFromEnv(process.env)` and passes
-    it to `loadPolicy({path, profile})` at server startup; missing or
-    malformed `.shifter.yaml` aborts startup before any tool is
-    registered. (#1199)- Add Phase 4 expensive policy defenses to `mcp/ops`'s `registerTool`
-  wrapper (per parent issue #777):
-
-  - **Untrusted-input fencing.** Producer descriptors declare an
-    `untrusted_source` label (from `.shifter.yaml`'s allowlisted
-    `untrusted_sources:` list) and the wrapper post-processes the
-    handler's text return into `[UNTRUSTED:<source>:BEGIN] ...
-    [UNTRUSTED:<source>:END]`. Producers: `get_log_events`,
-    `filter_log_events`, `tail_logs` (source `logs`), `get_s3_object`
-    (`s3`), and `ssm_get_command_output` (`ssm_stdout`). Consumer
-    descriptors declare an `untrusted_inputs: ["<field>"]` list; the
-    wrapper scans only those declared fields for a fence pattern and
-    refuses the call unless `acknowledge_untrusted_input: true` is set.
-    Consumers: `query.sql`, `execute.sql`, `ssm_send_command.command`,
-    `run_manage_command.command`.
-  - **Apex out-of-band operator approval.** A new `apex_operations:`
-    block in `.shifter.yaml` declares apex-gated rules by
-    `{tool|class, env, operation_kind, requires_write?}`. Defaults:
-    prod `terminate_ec2_instance`, prod `restart_ecs_service`, and prod
-    `db_arbitrary` writes. The wrapper generates a random 32-char hex
-    token, prints `[apex-approval] <tool> ... token=<...>` to stderr
-    (never to MCP responses, audit args, plan summaries, argv, env, or
-    `.shifter.yaml`), and parks the handler. A dedicated `approve`
-    MCP tool consumes the token and releases the parked handler;
-    unknown / already-consumed / expired tokens fail closed. A 60-second
-    timeout rejects the parked handler, so headless / CI runs fail
-    closed automatically. (#1200)- Migrate all 45 `mcp/ops` tool registrations from raw `server.tool(...)`
-  to policy-gated `registerTool(ctx, {...})` descriptors (per parent
-  issue #777, Phase 5). The descriptor is the authoritative source for
-  each tool's capability class; `.shifter.yaml` remains the single
-  source of truth for class defaults, profiles, environment policy,
-  audit config, per-tool overrides, the `apex_operations` list, and the
-  `untrusted_sources` allowlist.
-
-  Class assignments per the Phase 5 preflight:
-
-  - `observability` (17): `describe_log_streams`, `get_log_events`,
-    `filter_log_events`, `tail_logs`, `list_ec2_instances`,
-    `list_ecs_tasks`, `describe_ecs_service`, `describe_asg`,
-    `describe_target_health`, `list_s3_buckets`, `list_s3_objects`,
-    `get_s3_object`, `terraform_state`, `cost_summary`, `daily_spend`,
-    `risk_dashboard`, `risk_matrix`.
-  - `secret_handle` (2): `list_secrets`, `get_secret`.
-  - `ssm_arbitrary` (2): `ssm_send_command`, `ssm_get_command_output`.
-  - `ssm_named` (1): `run_manage_command`.
-  - `dev_bypass_tunnel` (2): `start_portal_test_tunnel`,
-    `stop_portal_test_tunnel`.
-  - `infra_mutation` (5): `start_ec2_instance`, `stop_ec2_instance`,
-    `terminate_ec2_instance`, `restart_ecs_service`, `reconcile_ranges`.
-  - `db_arbitrary` (4): `list_tables`, `describe_table`, `query`,
-    `execute` (with `is_write: true` so apex `requires_write` matchers
-    fire on `execute` but not on read-only queries).
-  - `named_db_read` (6): `list_risks`, `get_risk`, `risk_audit_log`,
-    `list_ranges`, `get_range`, `list_subnet_allocations`.
-  - `named_db_write` (6): `create_risk`, `update_risk`, `delete_risk`,
-    `restore_risk`, `add_risk_comment`, `delete_risk_comment`.
-
-  A new `approve` MCP tool (class `observability`) lets the operator's
-  agent release pending apex-approval tokens. The server loads
-  `.shifter.yaml` via `loadPolicy({path, profile: profileFromEnv(env)})`
-  at startup and fails closed on missing or malformed policy.
-  Operators who need destructive classes
-  (`infra_mutation`, `ssm_arbitrary`, `db_arbitrary`,
-  `dev_bypass_tunnel`) must set `SHIFTER_OPS_PROFILE=destructive` —
-  the default `standard` profile no longer registers those tools. (#1201)- Add Phase 6 negative-surface tests for `mcp/ops` at
-  `mcp/ops/tool-surface.test.js` (per parent issue #777). The suite is
-  the load-bearing ADR-014-R3 / R5 / R6 invariant for this server: it
-  exercises the live registration path — real `.shifter.yaml`, real
-  `loadPolicy`, real `registerTool` — against a fake server and asserts:
-
-  - Profile gating actually removes tools from the registered set
-    (`read_only` / `standard` / `destructive`); a disabled class
-    produces no `server.tool(...)` call at all (not "registered but
-    refused").
-  - Two-phase classes (`infra_mutation`, `ssm_arbitrary`,
-    `db_arbitrary`) register `plan_<name>` / `execute_<name>` pairs
-    only; the direct `<name>` is absent. `execute_<name>` without a
-    `plan_id` arg throws `PolicyError`.
-  - `class_defaults.secret_handle.return_mode = "handle"` is enforced
-    by the live policy (the ADR-014-R5 structural invariant);
-    `get_secret` is the only `secret_handle` registration on the
-    surface (`list_secrets` is correctly `observability`).
-  - Prod-touching tools refuse without `confirm_env="prod"` (gate
-    applies class-wide, not tool-specific).
-  - `dev_bypass_tunnel` descriptions are replaced with the
-    `policy.js` `REDACTED_DESCRIPTION` constant verbatim; the
-    defense-in-depth scan also checks for `/dev-login/`, `bypass`,
-    `Cognito`, and `MFA` substrings.
-  - Consumer tools (`plan_query`, `plan_execute`,
-    `plan_ssm_send_command`) refuse fenced input unless
-    `acknowledge_untrusted_input: true` is set; the registered schema
-    exposes the control field.
-  - Every `apex_operations[*].tool` rule in `.shifter.yaml` points at a
-    registered `execute_<name>`; `validateApexCoverage` is the
-    load-bearing gate, called from `registerAllOpsTools(ctx)`'s last
-    step.
-
-  `mcp/ops/index.js` gains a narrow seam for this: the
-  `registerTool(ctx, {...})` block + `validateApexCoverage(policy)`
-  move into an exported `registerAllOpsTools(ctx)` function, and
-  `new McpServer` / `loadPolicy` / `await server.connect(...)` move
-  behind an `async main()` guarded by
-  `if (import.meta.url === pathToFileURL(process.argv[1]).href)`.
-  Live behavior when run as `node mcp/ops/index.js` is unchanged. (#1202)- Bump vulnerable dependencies flagged by Dependabot. Python: `paramiko`
-  4.0.0 → 5.0.0 and `urllib3` 2.6.3 → 2.7.0 in `shifter/engine/provisioner`;
-  `django` 6.0.4 → 6.0.5, `paramiko` 4.0.0 → 5.0.0, `twisted` 25.5.0 →
-  26.4.0, and `ujson` 5.12.0 → 5.12.1 in `shifter/shifter_platform`. npm:
-  `hono`, `ip-address`, `fast-uri`, and `express-rate-limit` bumped in
-  `mcp/ops` and `mcp/planner` via `npm audit fix`. Clears advisories around
-  proxied redirect header leakage (urllib3), decompression-bomb safeguards
-  (urllib3), DNS DoS (twisted), JWT NumericDate validation (hono), CSS
-  declaration injection (hono), cache cross-user leakage (hono), HTML XSS
-  (ip-address), and percent-encoded host/path confusion (fast-uri). (#1222)- **Credential SCM PINs and NGFW authcodes are now encrypted inside persisted CMS credential JSON data.** Existing plaintext credential secrets are migrated to encrypted values, while application reads continue to receive decrypted values for provisioning.- **Experiment and scenario editor services now enforce staff-only access in the service layer.** This duplicates the existing view-level checks so accidental future entry points cannot bypass staff authorization.- **SSH management paths now enforce host-key verification.** Terminal, NGFW provisioning, NGFW deprovisioning, and NGFW MCP commands no longer disable SSH server authentication.- **Scenario editor delete confirmation no longer embeds scenario names in inline JavaScript.** The scenarios list now binds delete confirmation handlers in a separate script and reads names from a safely escaped `data-scenario-name` attribute, preventing stored XSS via crafted scenario names.- **Stopped the NGFW provisioner from dumping full Terraform output dicts to the
-  logs.** `ngfw_terraform.py` logged `json.dumps(output_data)` after both the AWS
-  and GDC VM-Series applies; those output dicts carry a Secret Manager /
-  Secrets Manager reference (`ssh_key_secret_id` / `ssh_key_secret_arn`), so the
-  dump wrote the reference in clear text (CodeQL `py/clear-text-logging-sensitive-data`)
-  and would have leaked any future sensitive output field. Both sites now log
-  only the non-sensitive correlation IDs (`request_id`, `instance_id`) and an
-  output-field count, via `log_redact.safe_log_value`.- **Stored XSS in CTF event form via scenario names is fixed.** `admin_event_create` and `admin_event_edit` no longer serialize scenario data with `json.dumps()` and pass it through `|safe` in the template. The views now pass a plain Python list and the template embeds it with Django's `json_script` filter, which escapes `<`, `>`, and `&` for safe inline script use. A scenario name containing `</script>` can no longer break out of the script block.- - Hardened `mcp/ngfw` by removing PAN-OS command execution tools from the MCP surface, so connected MCP clients can no longer run firewall admin commands or trigger Secrets Manager SSH key retrieval through this server.- Delete sensitive NGFW bootstrap S3 objects after the firewall reaches READY.- Hardened `mcp/planner` plan file access so `plan_id` must match the generated 8-character lowercase hex ID format, with path resolution containment checks that block traversal-based reads/deletes outside the planner directory.- Moved GCP dev VM guest password environment values out of the generated
-  `platform-runtime` ConfigMap into a generated Kubernetes Secret and wired
-  runtime Deployments to load those values via `secretRef`.- `SetupOrchestrator` now redacts known secret values from command stdout/stderr before writing setup logs.### Added
-
-- **Terminal UI surfaces per-instance IP and range number.** The Mission Control
-  terminal now shows each instance's internal IP next to its name in tabs,
-  split-mode dropdowns, and pane headers, and appends `- Range N` after the
-  scenario name in the header. This lets users correlate connected sessions with
-  XDR/XSIAM alerts (which key off IP) and the XDR tenant view (which keys off
-  range number). The IP is sourced through the existing `engine.services`
-  runtime-state contract, projected into `InstanceContext` by CMS, and rendered
-  via Django's `json_script` tag so the terminal payload no longer relies on
-  inline JavaScript interpolation. (#370)- Added a CI-time lint that statically scans provisioner setup plans and fails when a script or `stdin_input` contains an unrendered `{{word}}` template token that is not a declared render-context key. This catches the placeholder collision (e.g. a stray `{{end}}`/`{{range}}`) before it fails on a live range at provisioning time. (#616)- **Pre-event Polaris scenario-content smoketest harness.** The new
-  `scenario-dev/polaris/tests/scenario_smoketest/` package is an operator-run,
-  on-demand verifier that walks each CTFd challenge's canonical participant path
-  against a real staged range and checks the value it produces against the flag
-  configured in `ctfd-challenges.json`. The challenge universe is derived from
-  the board, so a challenge with no registered adapter is reported `uncovered`
-  (a failure) rather than silently skipped. It additionally performs the
-  read-only CTFd flag-row readback from `lessons-4.md` checklist item 4
-  (`GET /challenges/{id}/flags`, asserting non-empty) that catches the regression
-  where a `sync_polaris_ctfd.py` re-sync shipped 38/39 challenges unsubmittable.
-  Flag bodies are redacted to stable digests in all output. Run with
-  `python3 -m scenario_smoketest`; it is not wired to CI. (#617)- **Added an operator-triggered Polaris scenario AMI bake workflow.** The new
-  `polaris-scenario-bake.yml` (`workflow_dispatch` only, mirroring `packer.yml`)
-  builds the Polaris build tarball, stands up and health-checks a golden range,
-  creates the `polaris-vm` AMI, and updates the SSM parameter. A
-  repo→AMI content drift audit is documented in
-  `docs/architecture/polaris-repo-to-ami-drift-audit.md`. (#618)- Added shared authenticated WebSocket notification infrastructure with topic subscriptions, persisted missed-event replay, and experiment status notification registration. (#679)- ### Added
-  - Platform-level range egress IP allowlist (PLAT-220): `settings.range_egress` in `shifter.yaml` declares the policy once and is enforced uniformly on AWS (Network Firewall rule groups) and GCP (VPC firewall egress rules). The committed Terraform baseline carries an empty allowlist; operators write per-deployment CIDRs into a gitignored `local.auto.tfvars` so the repo no longer holds any deployment's allowlist. See `docs/architecture/range-egress-ip-allowlist.md` and ADR-017. (#775)- **Deploy control-plane gating is verified by one workflow-as-data model, with
-  a new ADR-003-R5 hard check.** `adr_guard.py` now carries a single model that
-  reads `deploy.yml` and the reusable deploy workflows as data and evaluates
-  their `if:` gates, branch/event routing, and change filters semantically. A new
-  `deploy-workflow-runner-exposure` adr_guard check enforces ADR-003-R5 at commit
-  time: every self-hosted deploy job must fail closed on `pull_request`, proven by
-  evaluating the job's `if:` for a pull_request event rather than substring
-  matching (so a guard broadened with `|| always()` is caught). The consolidated
-  test suite (`scripts/adr_guard/tests/test_deploy_workflow.py`) exercises the same
-  model for the remaining invariants: deploy jobs fail closed when an upstream is
-  `failure`/`cancelled` (#781), `workflow_dispatch` on `main` is the only
-  production-apply path and no `pull_request` routes a provider deploy (#892), the
-  `portal_image` (app image) and `shifter_platform` (Terraform) change filters
-  stay split (#913), mutating jobs bind a GitHub Environment, and the engine deploy
-  pins an immutable ECR digest. This replaces the earlier substring-based
-  `test_deploy_workflow_security.py`, folding deploy-workflow verification into one
-  home and one parser. (#921)- ### Added
-
-  - Added an ADR guard boundary-mock policy that blocks new first-party internal mock patch targets while allowing the existing legacy test baseline to shrink over time.
-  - Updated the SonarCloud CI job to use Node 24-backed action majors while preserving its coverage restore, scanner execution, and quality-gate reporting. (#927)- **AWS worker containers now self-heal and surface health to CloudWatch.** A host-level systemd-timer supervisor on the portal EC2 instance watches the `worker-cms`, `worker-engine`, `worker-mc`, and `ctf-scheduler` container health status, restarts any that go unhealthy (e.g. a wedged worker that is alive but not heartbeating), and emits a `Shifter/WorkerHealth` CloudWatch metric. A new `UnhealthyWorkers` alarm notifies the per-environment SNS alerts topic when a worker stays unhealthy. Previously `--restart unless-stopped` acted only on process exit, so a wedged worker stalled silently with no signal to CloudWatch. The supervisor is installed identically by both the fresh-boot (`user_data.sh`) and SSM-redeploy deploy paths. (#953)- **Added OSS Shifter UX research personas for the redesign foundation.** The new
-  `docs/design/ux-003-oss-shifter-research-personas.md` artifact documents the
-  core user archetypes, surface-by-surface jobs to be done, current-state pain
-  points, and the APTL-derived dark operational visual direction that future UX
-  issues can cite without introducing mockups or runtime UI changes. (#1092)- **OSS-release hygiene: community files, dependency automation, CI hardening, identifier strip, and a tfvars baseline + override refactor.** Added PANW org community templates verbatim (`SECURITY.md`, `SUPPORT.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`) and restructured `README.md` to follow the PANW open-source README example with a `Maintainers` section. Added `.github/dependabot.yml` enumerating every uv, npm, github-actions, and pre-commit package root (all targeting `dev`); a CodeQL workflow (`security-extended` suite, least-privilege permissions, no `pull_request_target`); and a PR-title-lint workflow validating conventional-commit titles. Stripped the SonarCloud project token from `README.md` badges and narrowed `.gitleaks.toml` allowlists previously needed only for that token. Replaced committed `keplerops.com` / `bedwards@paloaltonetworks.com` references with `example.com` placeholders outside the PANW-event-specific tooling under `scenario-dev/polaris/` and `platform/terraform/global/tssummit/`. Restructured `terraform.tfvars`: the four files in `dev/portal`, `prod/portal`, `gcp-dev`, and `ctfd-workshop` ship `example.com` baselines and deployment-specific values come from gitignored `local.auto.tfvars` (Terraform auto-loads `*.auto.tfvars`). CI deploy workflows (`_gcp-dev.yml`, `_shifter-platform.yml`) now source deployment values from GitHub secrets / repository variables instead of grepping committed tfvars; the full required surface is documented in `docs/dev/deploy-secrets.md`. Bootstrap email validator no longer hardcodes `@paloaltonetworks.com` — it derives the required domain from the Terraform `identity_allowed_email_domain` output (matching what the Identity Platform `beforeCreate` hook enforces). Generated kustomize files are kept as `REPLACE_AT_DEPLOY` placeholders where needed for static validation, with the deploy renderer overwriting at apply time. (#1196)- **Adopted [`towncrier`](https://towncrier.readthedocs.io/) for changelog management.** PRs no longer hand-edit `CHANGELOG.md`; they drop a tiny fragment under `changelog.d/<issue>.<type>.md` (with `<type>` one of `security` / `added` / `changed` / `deprecated` / `removed` / `fixed`), and the release process collates fragments into `CHANGELOG.md` via `uvx towncrier build`. Eliminates the merge-conflict pathology where every open PR had to be rebased — re-running the full `Deploy` workflow each time — every time another PR merged, just to move a `CHANGELOG.md` line. Includes `.gitattributes` `CHANGELOG.md merge=union` as belt-and-suspenders.### Changed
-
-- Portal web process now runs Gunicorn with Uvicorn workers
-  (`-k uvicorn_worker.UvicornWorker`) by default in the container
-  `entrypoint.sh`, instead of a single Daphne process. An unhandled
-  exception in a WebSocket consumer now crashes only one worker and
-  Gunicorn restarts it, instead of taking the whole portal down. Worker
-  count, bind address, and timeouts are env-owned:
-  `PORTAL_WEB_WORKERS` (default `4`), `PORTAL_WEB_BIND`
-  (default `0.0.0.0:8000`), `PORTAL_WEB_TIMEOUT` (default `90s`),
-  `PORTAL_WEB_GRACEFUL_TIMEOUT` (default `30s`). `daphne` remains in
-  `INSTALLED_APPS` for local Channels `runserver` integration. (#174)- **Polaris operator and CTFd sync scripts now share AWS/SSM and reconcile
-  helpers instead of duplicating them.** `scripts/polaris-aws-range/common.py`
-  owns the boto3 session, EC2 portal-instance discovery, SSM
-  ``send_command``/poll loop, Django-shell-via-SSM transport, JSON envelope
-  parsing, and a sensitive-output redaction helper; provisioning state,
-  batch state-machine, and range-health probe model are now their own
-  modules. `scripts/ctfd-workshop/ctfd_reconcile.py` owns the generic CTFd
-  row-reconciliation surface (page/challenge upsert, flag/hint reconcile,
-  manifest readers); `scripts/ctfd-workshop/polaris_manifest.py` owns
-  Polaris-specific challenge ordering, validation, and prerequisite
-  resolution. `seed_ctfd.py`, `sync_polaris_ctfd.py`,
-  `sync_polaris_ctfd_onboarding.py`, `orchestrate_provisioning.py`,
-  `check_range_health.py`, and `cleanup_non_keepers.py` are now thin CLI
-  entrypoints over these shared helpers. (#691)- **Platform test suites now enforce smaller behavior-focused modules.** Oversized CMS, CTF, engine, Mission Control, and shared schema tests were split by API boundary, and a structural pytest guard now catches future test modules over 800 lines or `Test*` classes over 300 lines. (#693)- Scenario editor service internals are split by responsibility while preserving the existing public service API and YAML behavior. (#699)- **Scenario editor views now delegate form and YAML validation to the service layer while preserving existing routes and templates.** (#700)- Polaris onboarding: CTFd orientation page now leads with a `Start Here` hero CTA above the mission narrative; the briefing deck closing was reordered so the literal first-click path (magic-link → ENTER RANGE → Kali → Start Here on `polaris.keplerops.com`) is the final projected handoff; added a printable seat handout under `scenario-dev/polaris/briefing-deck/seat-handout.html` for each seat. Removes the "where do I start" tax called out in `scenario-dev/polaris/lessons-4.md` from the May 2026 cohort. (#704)- **Scenario template cleanup for OSS distribution.** The `cms/scenarios/templates/` set now ships only `basic`, `basic_ngfw`, `ad_attack_lab`, `ad_attack_lab_ngfw`, and `polaris`. `basic.yaml` and `ad_attack_lab.yaml` are the PANW-free variants (`ngfw: false`, `xdr_agent: false` on all instances); `basic_ngfw.yaml` and the new `ad_attack_lab_ngfw.yaml` are the PANW variants with NGFW segmentation and Cortex XDR on the Windows instances. `cortex_byot.yaml`, `cortex_deployment_experience.yaml`, and `agentic_workshop.yaml` have been removed along with their dedicated supporting assets (`shifter/packer/ctf-*.pkr.hcl`, `shifter/packer/scripts/ctf/`, `shifter/packer/tests/test_ctf_boxes.py`, `scripts/ctfd-workshop/agentic_workshop.json`, `scripts/ctfd-workshop/seed_ctfd.py`, `scripts/ctfd-workshop/sync_range_flags.py`, `docs/scenarios/cortex-byot.md`, `docs/features/ctf.md`, `docs/features/ctf-organizer-guide.md`, `docs/features/ctf-uvic-customization.md`) and the corresponding `ctf-*` AMI choices in the Packer build/promote workflows. (#780)- Browser SSH terminals now have per-process and per-user session caps, idle and maximum-duration timeouts, and a low-frequency output poll, so terminal websocket load no longer destabilizes the portal during live events. The limits are tunable via the `TERMINAL_MAX_SESSIONS`, `TERMINAL_MAX_SESSIONS_PER_USER`, `TERMINAL_IDLE_TIMEOUT_SECONDS`, `TERMINAL_MAX_SESSION_SECONDS`, and `TERMINAL_READ_POLL_SECONDS` environment variables. (#847)- **Decoupled the portal Django Channels backend from autoscaling mode.** The
-  channel-layer backend is now an explicit, environment-owned posture
-  (`CHANNEL_LAYER_BACKEND` / the Terraform `enable_redis` knob) instead of a side
-  effect of `enable_autoscaling`: a single-instance portal can run on Redis, an
-  environment can disable Redis without changing ASG posture, a `redis` posture
-  fails closed when `REDIS_HOST` is missing rather than silently using the
-  in-memory layer, and the active backend is logged once at startup. Defaults
-  preserve current behavior (dev in-memory, prod Redis). See ADR-018. (#849)- - Provisioner internals now import their owning modules directly instead of routing through `main.py`, and the extracted provisioner modules are back in Sonar coverage. (#946)- Quality routing now runs validation by default for pull requests and `dev` pushes, with ordinary docs-only diffs as the only general skip path and guardrail documentation still treated as quality-relevant. (#954)- CI quality gates now run the previously orphaned support test suites, including cyberscript, Polaris AWS range helpers, scenario smoketests, migration proof coverage, and MCP planner checks. (#955)- ### Changed
-
-  - Enforced the protected-branch CI baseline by removing the `[skip tests]` bypass, adding an always-on pre-commit hygiene/secret-scan job to `PR Gate`, and running CodeQL for both `main` and `dev` PRs. (#974)- **Hard per-function complexity gate via Ruff `C901` (ADR-012).** Every lint-scoped Python package now enforces a McCabe per-function complexity limit of 15 (matching SonarCloud's default cognitive-complexity threshold). The gate runs through the existing Ruff pre-commit hooks and the per-package `*-lint` jobs in `.github/workflows/_quality.yml`. A new `python-complexity-gate` adr_guard check backstops the runtime gate with prefix-aware validation of `select`/`extend-select`/`ignore`/`extend-ignore`/`per-file-ignores`, cross-checks `PYTHON_COMPLEXITY_GATE_PYPROJECTS` against the `id: ruff` hooks in `.pre-commit-config.yaml`, reconciles in-source `# noqa: C901` exemptions against `docs/adr/complexity-backlog.md`, and rejects bare `# noqa` on function definitions. Eleven existing offenders (6 in `shifter_platform`, 5 in `shifter/engine/provisioner`) carry explicit per-function `# noqa: C901` exemptions and are listed in the backlog doc; the threshold ratchets down as that backlog shrinks. (#1135)- `mcp/ngfw/SECURITY.md` rewritten to describe the current `list_ngfws`-only
-  tool surface and to mark the previously-registered PAN-OS administration
-  tools (`run_command`, `show_system_info`, `show_routes`) as explicitly
-  historical. `mcp/ngfw/tool-surface.test.js` is now the bidirectional
-  guard: it parses `server.tool(...)` registrations out of `index.js` and
-  asserts the set equals exactly `{"list_ngfws"}`; it asserts the security
-  doc references the test by name and lists every live tool; and it
-  asserts removed tools cannot be described before the
-  `## Removed administration tools` section. A future surface change must
-  update both the test's expected set and the security doc in the same PR. (#1191)- ### Changed
-
-  - Added minimum Django i18n infrastructure and routed platform template literals through the English gettext catalog. (#1257)- **Internal code-quality cleanup of the GCP/GDC provisioner and portal notification
-  code.** Resolved the SonarCloud findings surfaced on the `dev` → `aws-dev`
-  promotion: replaced bare `Any` hints with specific types (kubernetes client
-  classes via `TYPE_CHECKING`, `botocore` `BaseClient`, Jinja `Template`, Django
-  user types), added missing docstrings, wrapped over-length lines, de-duplicated
-  string literals into constants, reduced over-parameterized helpers via small
-  frozen-dataclass parameter objects, and lowered the cognitive complexity of the
-  VPC-endpoint waiter. No runtime behavior change.- Consolidated Dependabot dependency updates across GitHub Actions, pre-commit hooks, and Python/npm packages.- Submission rate-limit errors for flag submissions now include a `retry_at` timestamp in the error details and message so clients can show participants exactly when they may submit again.### Removed
-
-- **Removed the superseded Polaris post-bake hotfix scripts.**
-  `apply_kali_bedrock_shard.py`, `apply_splice_watcher.py`, and
-  `run_postprovision.sh` patched already-deployed ranges by SSM fan-out before
-  their logic moved into `PolarisRangeBootstrapPlan`. They are deleted to end the
-  dual-ownership the bootstrap plan now covers. (#618)### Fixed
-
-- Grant `kms:Decrypt` on the portal Secrets Manager CMK to the provisioner ECS execution role and the portal EC2 instance role, fixing dev range provision/destroy/pause/resume tasks that aborted at startup with `AccessDeniedException: Access to KMS is not allowed` whenever the task definition referenced a secret encrypted with the post-2026-05-11 CMK. The portal `entrypoint.sh::fetch_runtime_secret` helper now propagates secret-fetch failures instead of silently returning empty strings, so a misconfigured runtime secret aborts container start rather than letting the container run with blank required env vars. A new `check-tf-kms-secrets-grant` pre-commit hook prevents the IAM regression from recurring. (#52)- - Applied the existing `PLATFORM_BOOTSTRAP_STAFF_EMAILS` /
-    `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` admin elevation contract to the
-    AWS/Cognito OIDC path and AWS platform deploy runtime. (#70)- **First-click RDP connections no longer redirect to the Guacamole login page.** The Mission Control broker now retries the Guacamole `/api/tokens` exchange with bounded exponential backoff for transient gateway/connection errors, closing a token-readiness race that surfaced as a failed first click followed by a successful second attempt. Tunable via `GUACAMOLE_TOKEN_RETRY_ATTEMPTS` and `GUACAMOLE_TOKEN_RETRY_BASE_DELAY_MS` (defaults: 3 attempts, 200ms base delay). (#395)- **Portal `/health` now reflects real dependency probes instead of always returning 200.** The endpoint runs the registered `django-health-check` database, cache, and storage checks and returns 500 when any probe fails. Load-balancer probes still admit past `ALLOWED_HOSTS` via a path-scoped Host-header normalization, and the public response stays coarse (a `working` / `unavailable` token per probe) so dependency failures do not leak DSNs, bucket names, or private hostnames. (#477)- **CTF scheduler startup now has a regression guard and the GCP scheduler pod can use the existing job-launcher RBAC when due event spin-up tasks submit provisioner Jobs.** (#484)- Hint-penalised CTF solves can now award `0` points instead of the historical `1`-point floor when the cumulative hint penalty reaches 100%, matching `CTF-203`'s "net score for a challenge solve shall never go below zero" clause. Also removed two stale `CTFSubmission.hint_used` references (admin participant-detail badge and a test factory dict key) that pointed at a field deleted in migration `0017`. (#519)- **Fixed the A0 Boreas annual report dropping its flag 6 payload.** The
-  `build_pdfs.py` generator now sources flag 6 from the CTFd board
-  (`ctfd-challenges.json`) and renders it on the Kursk Heavy Industries line of
-  `boreas-annual-2025.pdf`, so a clean-checkout rebake can no longer reintroduce
-  the "Follow the Money" Ottawa bug. A bake-time smoke (`verify_flags_baked.py`)
-  and the A0 smoketest now assert the canonical flag is present in the artifact. (#619)- The Polaris CTFd board sync now reconciles flag, hint, and tag rows on every challenge upsert instead of only for a hard-coded subset of categories, so re-syncs no longer leave mission challenges unsubmittable. The sync also validates the source manifest before mutating CTFd and verifies flag/hint rows after sync, failing loudly when a challenge has none. (#702)- Polaris CTFd sync now aliases canonical `FLAG{<16-hex>}` static flags to one case-insensitive regex row per source flag that accepts either the wrapped form or the bare `<16-hex>`. Participants who copy only the inner hex from a recovered artifact submit successfully; the wrapped form keeps working. Source `FLAG{<16-hex>}` content in `ctfd-challenges.json` / `ctfd-onboarding.json` and in all walkthroughs/page copy is unchanged. Manifest validation now rejects malformed wrappers and any non-16-hex body before any live CTFd write so a short or non-hex source can never derive a trivially short accepted answer. (#705)- Move Guacamole RDP/SSH token bootstrap off the portal request path with bounded background workers and pollable session status. (#848)- **Code-branch merges no longer start deployment jobs.** `deploy.yml` now leaves
-  deploy routing disabled for pull requests and pushes to `dev` or `main`; AWS/GCP
-  deployment still runs from `aws-dev`, `gcp-dev`, or deliberate manual dispatch. (#892)- Pushes to AWS environment branches that change only portal application code (`shifter/shifter_platform/**`, `cyberscript`, `installation`) now build the portal image, update the SSM image-tag parameter, and converge the running fleet again. Terraform plan/apply still runs only for Terraform-relevant changes, and docs-only pushes still deploy nothing. (#913)- **Deploy verification now fails loud instead of reporting a false-green deploy.** The Guacamole stabilization wait fails the run on timeout instead of warning and exiting 0 (a broken `guacd` image no longer passes silently), and the engine ECS deploy fails when the task-definition family cannot be described instead of skipping forever on a typo'd family name. A genuine first-ever deploy to a fresh AWS environment can still skip the engine task-family check via the new strict-default `aws_first_deploy` manual-dispatch input. A new `deploy-verification-fail-loud` ADR guard check (ADR-003-R3) keeps the invariant from regressing. (#914)- ### Fixed
-
-  - Derive AWS portal deployment mode from Terraform state, fail loud on topology drift, and document event-sized portal capacity as a deployment-secret overlay. (#915)- **AWS deploy workflows now queue Terraform applies and execute local saved plans.** Env-branch deploys no longer cancel an in-flight apply, core/range/platform Terraform operations wait on the backend lock, and apply jobs create and consume the exact local `tfplan` they apply instead of running a fresh unplanned apply. (#917)- Prevent AWS portal deploys from racing Django migrations across multi-instance boot by running a single deploy-owned migration before runtime containers start with boot migrations disabled. (#918)- **Portal readiness now checks Redis when Channels is Redis-backed, while ASG
-  instance replacement health uses EC2 status checks instead of ALB readiness.**
-  Shared DB/cache/Redis blips can still remove a target from ALB routing, but no
-  longer cause ASG instance churn. (#919)- Portal WebSocket connections (terminal SSH sessions, range-status and notification sockets) now work in the production container image. The Gunicorn/Uvicorn ASGI workers were missing a WebSocket protocol backend, so the built image rejected every WebSocket upgrade (falling through to a 301) while `/health` still returned 200 — a container-only regression the new built-image stack smoke catches. (#922)- **AWS single-instance portal deploy logic is now a tracked, tested script.** The reusable platform workflow sends `scripts/portal-deploy/deploy_portal.sh` through SSM instead of carrying the instance deploy body as an inline heredoc, with subprocess tests covering its argument validation and repeatable worker-health installation. (#925)- **Agent workflow instructions now pin Shifter GitHub operations to
-  `Brad-Edwards/shifter`.** Repo-local instructions and Ground Control plan
-  rules identify `.ground-control.yaml` as the canonical source for GitHub
-  issue, PR, CI, and traceability targets, and ADR guard now treats Ground
-  Control config files as documented guardrail surfaces. (#976)- AWS platform pull-request planning now ignores Python-only application changes while still running Quality, and platform Terraform plans wait briefly for state locks instead of failing immediately. (#1176)- **GCP job-launching workloads now explicitly mount Kubernetes service account tokens.** The portal and engine worker pods can authenticate to create provisioner Jobs in-cluster while non-launching workloads remain tokenless. (#1184)- **Shifter Engine deploys no longer drop the ECS task definition's `volumes` block.** The `Update ECS task definition` step in `_shifter-engine.yml` re-registered the definition by cherry-picking individual fields, which silently discarded `volumes` once Terraform added them (#1103) — every deploy failed with `Unknown volume 'provisioner-workspace'`. The step now re-registers the whole definition with only the read-only fields stripped, so `volumes`, `mountPoints`, `runtimePlatform`, and `ephemeralStorage` carry forward verbatim. (#1244)- **AWS platform deploys now render real per-deployment configuration instead of the committed `example.com` baseline.** `_shifter-platform.yml`'s `plan` and `apply` jobs render a gitignored `local.auto.tfvars` from the `TF_VARS_<ENV>_PORTAL` GitHub secret before Terraform runs — previously every AWS platform deploy planned and applied the intentionally-broken OSS example baseline because only the GCP workflow had the render step. The secret is selected strictly on the target environment (no fall-through to the other environment's payload) and the step fails loud when it is unset. An `adr_guard` check (`aws-platform-renders-deploy-tfvars`, ADR-011-R7) regression-protects the render step. (#1249)- **The post-apply RDS pending-modifications check no longer fails AWS platform deploys with spurious "RDS instance not found" errors.** The `db_instance_id` Terraform outputs for the portal and Guacamole RDS instances were emitting `aws_db_instance.id`, which became the `DbiResourceId` (`db-XXXX`) under the AWS provider v6 bump; the check resolves instances by `DBInstanceIdentifier`. Both outputs now emit `aws_db_instance.identifier`. (#1252)- Form inputs and interactive controls across the CTF, scenario editor, mission control, and risk register UIs now have associated visible labels, improving screen-reader and voice-control accessibility. (#1256)## [3.101.5] - 2026-05-10
 
 ### Security
 
@@ -1772,31 +1168,11 @@ release-please transition (#1776).
 
 ### Changed
 
-- **Polaris bedrock model** switched from `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
-  (deprecated, unsubscribable) to `us.anthropic.claude-sonnet-4-6` across the engine,
-  packer scripts, and local-dev `config-claude.sh`. Sonnet 4.5 was returning
-  `AccessDeniedException` on every invoke for the dev account.
-- **Removed claude smoke-test gate from `polaris_kali_bedrock_shard`**. The step
-  still writes `/etc/profile.d/claude-bedrock.sh`, the `/etc/hosts` VPCE override,
-  and resolves the bedrock-runtime private IP — but no longer runs
-  `claude -p "ok"` as a 60s provisioning gate. Aligns with how every other
-  scenario handles claude (no per-range smoke test).
 - **In-browser terminal copy/paste**. xterm.js shows selection highlighting but
   never wired the system clipboard. Added a custom key handler:
   Ctrl+Shift+C copies the current selection via `navigator.clipboard.writeText`,
   Ctrl+Shift+V pastes via the existing `sendInput`. Both fall through silently
   on permission denial.
-- **Polaris CTFd content trimmed to 5-mission event scope.** Index, mission-log,
-  surfaces, and getting-unstuck pages no longer reference Missions 6–9 (Exposure,
-  Counterintel, Delivery Denied, Safety Case) — those are CTFd-board-only and
-  have no compose backing. Also removed Palo + Ottawa BSides Discord references
-  (`discord.gg/N7S2ChA9`); event uses in-room support instead. The "Start Here"
-  bullet on the orientation page is now a real link to `/challenges`.
-- **Polaris briefing deck (`scenario-dev/polaris/briefing-deck/`)** trimmed
-  to 5 missions; Board Access slide updated to reflect the per-cohort
-  credential pattern (username = email, single shared password) instead of
-  the BSides `meetup+N` convention; range-access slide replaced with a
-  Mission-Control-flow instruction set instead of a stale 110-token grid.
 - **Dev guacamole DB instance class** bumped from `db.t3.small` to
   `db.m5.xlarge` (`platform/terraform/environments/dev/portal/terraform.tfvars`).
   The t3.small was undersized at BSides Ottawa — sessions took 4–5 retries
@@ -1808,38 +1184,6 @@ release-please transition (#1776).
 
 ### Added
 
-- **`polaris_kali_bedrock_shard` step in `PolarisRangeBootstrapPlan`**
-  (`shifter/engine/provisioner/plans/polaris_range_bootstrap.py`).
-  Per-range step that resolves the bedrock-runtime VPC endpoint's
-  private IP, writes `/etc/profile.d/claude-bedrock.sh` inside the
-  a14-kali container with `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`,
-  `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, drops a
-  `/etc/hosts` override pointing the bedrock-runtime FQDN at the VPCE
-  IP, and runs a `claude -p "reply ok"` smoke test. Without this step
-  the kali container had no AWS credentials and `claude` failed with
-  "Not logged in" because the container ships with no creds and on a
-  default docker bridge network can't reach IMDS at `169.254.169.254`
-  through the host. At BSides Ottawa this was a manual post-provision
-  step (`scripts/polaris-aws-range/apply_kali_bedrock_shard.py`)
-  operators ran by hand for every participant; integrating it into
-  the bootstrap plan makes provisioning self-sufficient.
-- **IMDS hop-limit bump in `_run_polaris_range_bootstrap`**
-  (`shifter/engine/provisioner/main.py`). Calls
-  `ec2.modify_instance_metadata_options(HttpPutResponseHopLimit=2)`
-  on the polaris-vm before running the bootstrap plan. Default IMDS
-  hop limit is 1, which blocks docker-bridge containers from reaching
-  the link-local IMDS endpoint and makes the kali container unable to
-  pick up the EC2 instance role's credentials. Hop limit 2 lets the
-  container hop through the host network namespace to IMDS. Idempotent.
-- **`Set-DnsServerForwarder 169.254.169.253` in
-  `scripts/polaris-aws-range/a2_setup.ps1`.** Future polaris-dc bakes
-  pick up the DNS forwarder at bake time so a fresh DC AMI launched
-  into a non-default VPC can resolve external names (specifically
-  `ssm.us-east-2.amazonaws.com`) without needing a post-launch fixup.
-  Without this the DC's local DNS server has no upstream and the SSM
-  agent never registers, so the engine provisioner times out waiting
-  for SSM and tears the range down.
-
 ### Fixed
 
 - **Engine DC SSM-wait timeout 600s → 1800s** (`_run_dc_setup` in
@@ -1849,15 +1193,6 @@ release-please transition (#1776).
   launch and stable SSM. The 600s ceiling caused the provisioner to
   give up early and tear ranges down. 1800s gives sysprep room; on
   a warm DC AMI the wait still returns in seconds.
-- **Bucket name mismatch in `polaris_range_bootstrap.py`'s
-  `polaris_fetch_tests` step.** `BUCKET="shifter-dev-user-storage-e3462f0c"`
-  is the dev bucket from a previous AWS account. This account uses
-  `shifter-dev-user-storage-<redacted-account-id>`, so range provisioning got
-  403 on `s3://shifter-dev-user-storage-e3462f0c/polaris/tests/...`
-  and the engine marked the range failed even though everything else
-  had succeeded. Updated to the correct bucket; matches the
-  `agent_s3_bucket` value already corrected in
-  `platform/terraform/environments/dev/range/terraform.tfvars`.
 - **`ec2:ModifyInstanceMetadataOptions` added to the engine
   provisioner ECS task role** (`platform/terraform/modules/engine-provisioner/iam.tf`).
   Required for the new IMDS hop-limit bump above. Granted alongside
@@ -2223,21 +1558,6 @@ release-please transition (#1776).
 
 ### Fixed
 
-- **Lint failures surfaced by ruff 0.15 upgrade in 3.95.0.** Pre-commit
-  only lints staged files, so these pre-existing violations didn't
-  surface until CI ran ruff over the whole tree on the first
-  `aws-dev` deploy attempt.
-  - `UP042` × 18 across `shifter/shifter_platform/ctf/enums.py`,
-    `shifter/shifter_platform/cms/experiments/schemas.py`, and
-    `shifter/cyberscript/enums.py`: rewrote `class Foo(str, Enum)` to
-    `class Foo(StrEnum)`. Runtime semantics preserved on Python 3.12+
-    (StrEnum members are still `str` subclasses; `MyEnum.FOO == "foo"`
-    still evaluates True).
-  - `E501` × 1 in `shifter/engine/provisioner/plans/polaris_range_bootstrap.py:219`:
-    broke the inline `python3 -c '…'` invocation onto its own
-    multi-line shell variable so the surrounding `docker exec` line
-    stays under 120 chars without changing runtime behaviour.
-
 ## [3.95.4] - 2026-05-03
 
 ### Added
@@ -2364,13 +1684,6 @@ release-please transition (#1776).
   `npm update --package-lock-only` ran on the four MCP servers
   (`mcp/{ops,planner,ngfw}/`), `shifter/shifter_platform/`, and
   `platform/terraform/gcp/modules/platform-core/functions/identity-platform/`.
-- **Terraform AWS provider major bump** `~> 5.0` → `~> 6.0` across all
-  17 root configurations and provisioner modules. The 16 `modules/*`
-  subdirectories had already moved to aws 6.x via looser constraints;
-  this aligns the consumers (`environments/{dev,prod}`,
-  `global/{iam,github-runner,se-admins,tssummit,tssummit-ranges,
-  ctfd-workshop,dev-box}`, `scripts/polaris-aws-range/`,
-  `temp/ngfw-bootstrap-test/`) so everything resolves to **aws 6.43.0**.
 - **Terraform `required_version` standardized to `>= 1.5.0`** across all
   17 root configs (was an inconsistent mix of `>= 1.0` and `>= 1.5.0`).
 - **CI Terraform action bumped 1.7.1 → 1.13.3** in `_core.yml`,
@@ -2404,11 +1717,6 @@ release-please transition (#1776).
   needs to reintroduce DynamoDB locking. `_update_global_backend_configs`
   now also matches the `REPLACE_AT_BOOTSTRAP` literal so freshly
   templated `.tfbackend` files get filled in at bootstrap time.
-- **`.terraform.lock.hcl` files now tracked in git** (was ignored by
-  the root `.gitignore` plus two nested `.gitignore` files in
-  `platform/terraform/global/dev-box/` and
-  `scripts/polaris-aws-range/`). All 30 lock files committed at
-  aws 6.43.0; the `temp/` tree remains intentionally excluded.
 - **All `.s3.tfbackend` files templated.** Bucket UUIDs replaced with
   `REPLACE_AT_BOOTSTRAP` so a fresh bootstrap produces matching
   configs without leaving stale UUIDs in the repo. Three new
@@ -2431,34 +1739,12 @@ release-please transition (#1776).
 
 ### Added
 
-- **`polaris` cyberscript scenario** (`shifter_platform/cms/scenarios/templates/polaris.yaml`).
-  Two-instance POLARIS range (polaris-vm host + Windows DC) that drives
-  the full 38-flag BOREAS.LOCAL CTF through the production
-  `cms.services.create_range` → `engine.services.create_range` → ECS
-  Fargate provisioner path, replacing the one-shot
-  `scripts/polaris-aws-range/` terraform. Pins `instance_type: m5.2xlarge`
-  on the polaris-vm kali instance so the 17-container docker compose
-  stack (Kali XFCE + xrdp + BIND + AD tools) gets the headroom it needs
-  instead of falling back to the provisioner's `KALI_INSTANCE_TYPE=t3.large`
-  global default.
 - **Per-instance `instance_type` scenario override.** Additive field on
   `cms.scenarios.schema.InstanceConfig` and `cyberscript.schemas.range.InstanceSpec`;
   the provisioner's `build_tf_vars` (`shifter/engine/provisioner/main.py`)
   now honours a per-instance `instance_type` when set, falling back to
   the existing role/os-based env-var defaults otherwise. Every existing
   scenario yaml is unaffected (field is optional, default `None`).
-- **`PolarisRangeBootstrapPlan`** (`shifter/engine/provisioner/plans/polaris_range_bootstrap.py`).
-  Runs after LinuxBootstrapPlan on the polaris-vm host via SSM:
-  rewrites `docker-compose.override.yml` with the range's actual DC IP
-  and the per-instance kali SSH public key, force-recreates the `dns`
-  and `a14-kali` containers so their entrypoints pick up the new env
-  vars, then fetches the latest `scenario-dev/polaris/tests/` tree from
-  `shifter-dev-user-storage-e3462f0c` so the organizer smoketest harness
-  is materialised at `/opt/polaris/scenario-dev/polaris/tests/` on every
-  freshly provisioned range without requiring an AMI rebake. Verify step
-  proves the dns container resolves `dc01.boreas.local` to the range's
-  real DC (not the bake-time range-0 IP) and that the a14-kali
-  `authorized_keys` is present.
 - **`shifter/.dockerignore`.** Excludes local dev cruft (`**/.env`,
   `__pycache__`, `.venv`, `.git`, IDE folders) from the portal image
   build context. Without this the local `shifter_platform/.env` —
@@ -2469,317 +1755,46 @@ release-please transition (#1776).
 
 ### Fixed
 
-- **POLARIS A0 smoketest flag 6 Kursk line extraction regression.**
-  Commit `0ca1a18c0` added `poppler-utils` to the `a14-kali` Dockerfile,
-  which made `pdftotext` available in the container. The A0 smoketest's
-  `command -v pdftotext >/dev/null` branch fires first, and pdftotext's
-  paragraph-based layout splits "Kursk Heavy Industries - actuator
-  assemblies" onto a separate output line from "$12,000,000", so
-  `grep -i kursk | head -1` only caught the company name and the check
-  failed even though the PDF content is correct. Smoketest now prefers
-  `pdf2txt.py` (pdfminer — what the walkthrough tells participants to
-  use, and what produces a single-line output), falls back to pdftotext
-  with ±3-line grep context so the split layout still correlates. Range
-  content unchanged — participants following the walkthrough were never
-  affected; only the organizer smoketest harness was.
-- **`kali.sh.tpl` and `linux_bootstrap.py CONFIGURE_SSH_SCRIPT` assume
-  a `kali` user exists on the host.** On the polaris-vm AMI (Ubuntu with
-  the a14-kali docker container publishing SSH, not a real Kali host)
-  there is no `kali` system user, so `chown -R kali:kali /home/kali/.ssh`
-  and `systemctl start xrdp` would abort the bootstrap. Both templates
-  now guard with `id $user` / `systemctl list-unit-files xrdp.service`
-  presence checks and continue cleanly when the host isn't a real Kali
-  box.
-
 ## [3.93.0] - 2026-04-13
 
 ### Fixed
 
-- **polaris user_data IMDS credential race during cold first boot.**
-  When the instance profile attaches but IMDS hasn't finished propagating
-  credentials, the first `aws s3 cp` fails with
-  `fatal error: Unable to locate credentials` and cloud-init's final
-  stage exits non-zero — exactly what we hit on range 1 of the 3-range
-  smoke bring-up. `user_data.sh.tpl` now polls `aws sts get-caller-identity`
-  up to 30 times (4s spacing = 120s ceiling) before the S3 download, so
-  the instance waits out the propagation window instead of failing hard.
-- **polaris `dns` container zone file was hard-coded to
-  `dc01 → 10.1.100.11`**, which is correct for range 0 but wrong for
-  every subsequent range — range 1's kali resolved the AD DC name to
-  range 0's DC and would have attacked the wrong forest. BIND zone file
-  now has a `__DC01_IP__` placeholder, and the container has a new
-  `entrypoint.sh` that `sed`-substitutes `$DC01_IP` (passed from
-  `docker-compose.override.yml` via user_data) before exec'ing `named`.
-  `user_data.sh.tpl` writes the override with `DC01_IP` set to the
-  range's a2 private IP, plumbed through from the `aws_instance.polaris`
-  `templatefile()` call via a new `a2_private_ip` per-range input
-  (`each.value.a2_ip` in `ranges.tf`).
-
 ### Added
-
-- **`scripts/polaris-aws-range/register_ranges_parallel.sh`** — batch
-  registers every range in `terraform output range_indices` by pulling
-  the per-index polaris instance id + subnet id + subnet cidr + private
-  IP from `terraform output -json`, staging `register_range.py` once on
-  the portal EC2, and running it per-range with the matching `POLARIS_*`
-  env vars. Emits one JSON object per range on stdout
-  (`{"attacker_uuid","range_id","range_index","participant_email"}`)
-  so follow-up tooling (playwright harness, CTF invite) can consume
-  the mapping without re-querying terraform.
 
 ## [3.92.0] - 2026-04-13
 
 ### Fixed
 
-- **a14-kali xfce4-screensaver auto-lock during idle RDP sessions** —
-  `xfce4-screensaver` (and `xfce4-power-manager`) are hard `Depends:` of
-  `kali-desktop-xfce`, so `apt purge` is off the table. Instead, the
-  Dockerfile now `dpkg-divert`s the two `/etc/xdg/autostart/*.desktop`
-  entries and removes the originals, so the screen-locker daemon never
-  spawns inside the xrdp session. `xset s off / s noblank / -dpms` is
-  baked into both `xsession` and `startwm.sh` as belt-and-suspenders.
-  Proven end-to-end on the live polaris VM: dpkg-divert list shows both
-  `.desktop -> .distrib` diversions, `ps auxw` shows no
-  `xfce4-screensaver` / `xfce4-power-manager` processes, `xset q -display
-  :10` reports `timeout: 0`, and a fresh Playwright RDP click lands on a
-  fully-rendered Xfce desktop with no unlock prompt.
-
 ### Changed
 
-- **`a14-kali` operator SSH key injection moved from a one-shot
-  `user_data` `docker exec` into the container entrypoint**, driven by a
-  `KALI_AUTHORIZED_KEY` environment variable passed through
-  `docker-compose.override.yml`. The old path ran once at first boot and
-  silently left the container without an authorized_keys file after any
-  `docker compose up -d --force-recreate a14-kali`, which broke the
-  portal Terminal UI's SSH path. Now every container start re-asserts
-  the key at correct ownership + perms (kali:kali 600).
-- **`scripts/polaris-aws-range/` terraform module split into
-  `main.tf` + `shared.tf` + `ranges.tf`**. Shared SG + IAM role + instance
-  profile live in `shared.tf` as single global resources (one SG name
-  per VPC, one IAM role name per account — same permissions every
-  range would use anyway). Per-range resources (subnet, route table,
-  routes, route-table association, polaris VM, A2 DC) live in
-  `ranges.tf` behind `for_each = local.range_subnets`, which derives
-  each range's /28 + pinned `.10` / `.11` private IPs from
-  `cidrsubnet(var.polaris_cidr_block, 4, tonumber(idx))` and
-  `cidrhost(...)`. `var.range_indices` defaults to `["0"]` so the
-  single-range smoke still applies unchanged, and N-range deploys are
-  just `terraform apply -var 'range_indices=["0","1","2"]'`. Outputs
-  reformatted into maps keyed by range index.
-
 ### Added
-
-- **`scripts/polaris-aws-range/a2_cold_bootstrap_parallel.sh`** — fan-out
-  wrapper that runs one `a2_cold_bootstrap.sh` per A2 instance id in
-  parallel, writes a per-instance log under `POLARIS_BOOTSTRAP_LOG_DIR`,
-  and emits a success/failure summary + non-zero exit if any child
-  fails. Reads targets from the command line OR from
-  `terraform output -json range_a2_instance_ids` when called with no
-  args. Safe to run N-wide because `a2_cold_bootstrap.sh` is per-instance
-  idempotent and every SSM command is scoped to its target id.
 
 ## [3.91.0] - 2026-04-13
 
 ### Added
 
-- **`scripts/polaris-aws-range/polaris_ctf_setup.py`** — creates an
-  ACTIVE `CTFEvent` for `scenario_id=polaris_manual_test` and invites
-  one participant through the real
-  `ctf.services.participant.invite_participant`, which in turn
-  auto-creates the Django User (with `username=email`), adds the user
-  to `CTF_PARTICIPANT_GROUP`, and generates the
-  `secrets.token_urlsafe(32)` invite token. Emits JSON on stdout with
-  event_id, participant_id, and invite_token so the caller can wire
-  the range + build the magic-link URL.
-- **`scripts/polaris-aws-range/polaris_ctf_attach.py`** — reads
-  `POLARIS_CTF_PARTICIPANT_ID` and `POLARIS_CMS_RANGE_INSTANCE_ID` from
-  the environment and patches `CTFParticipant.range_instance_id`,
-  `range_status="ready"`, and `status=ParticipantStatus.ACTIVE`. Lets
-  us hand a participant a range that was registered manually (via
-  `register_range.py`) instead of the normal
-  `cms.services.create_range` pipeline.
-- **`scripts/polaris-aws-range/polaris_ctf_cleanup.py`** —
-  hard-deletes the CTFParticipant + CTFEvent + Django User created by
-  the smoke test, after soft-destroying the participant's engine
-  Range and cms RangeInstance rows so the dashboard doesn't keep a
-  stale entry if the email is reused. Matches the explicit
-  expectation that smoke-test rows leave no trace behind.
-- Proved the full CTF magic-link flow end-to-end in the dev portal:
-  `/ctf/register/?token=<t>` → Django login → redirect to
-  `mission-control:dashboard` → participant-only nav (CTFd instead of
-  Assets/Docs, no Launch-a-Range panel) → Terminal connects to the
-  participant's Range 7 Kali → `whoami && hostname && dig +short
-  dc01.boreas.local` returns `kali / operator / 10.1.100.11` → RDP
-  button opens Guacamole to the same Kali Xfce desktop. Uses the live
-  polaris range (`i-00474db099dd5344c` / 10.1.100.10) and the A2 DC
-  (`i-0dc2a5a473c5058c6` / 10.1.100.11) from 3.90.0's cold rebuild.
-
 ## [3.90.0] - 2026-04-13
 
 ### Added
-
-- **`scripts/polaris-aws-range/a2_cold_bootstrap.sh`** — end-to-end
-  automation for promoting a fresh Windows Server 2022 EC2 to
-  `BOREAS.LOCAL`. Waits for SSM agent, installs AD-Domain-Services +
-  DNS via a wrapper that also queues the dc01 rename and registers a
-  SYSTEM scheduled task for `a2_setup.ps1`, reboots, retries
-  `Install-ADDSForest` on the renamed box, waits for the promotion
-  reboot, then re-runs `a2_setup.ps1` idempotently against the live
-  DC. Replaces the ad-hoc manual SSM steps that were required after
-  `terraform apply` in 3.88.0. The run_powershell_file helper builds
-  SSM `send-command` parameters via a python3 heredoc +
-  `--cli-input-json file://...`; the previous printf-based
-  PowerShell escape dance mangled `$`/`\` and failed at
-  Install-ADDSForest with "Unexpected token '\$b'".
-- **`scripts/polaris-aws-range/reset.sh`** — force-clean helper that
-  bypasses `docker compose down --remove-orphans` (which leaks the
-  `a15-ops-eng` container on re-up in compose v2.29) by directly
-  `docker rm -f`-ing any `build_*` containers + pruning the
-  `build_*` networks before `docker compose up -d`. Idempotent
-  against a warm polaris VM.
-- **`scripts/polaris-aws-range/user_data.sh.tpl`** now masks the
-  shifter-ubuntu base-AMI services that collide with Kali's
-  published ports: `ssh`, `xrdp`, `xrdp-sesman`, `apache2`, `smbd`,
-  `nmbd`, `mysql`, `vsftpd`. Without this the host sshd holds port
-  22 before docker-compose can publish `a14-kali` on the same port,
-  so the portal Terminal UI landed on the Ubuntu host instead of
-  Kali. Operator access to the VM is SSM Session Manager; host sshd
-  is unused.
-- **`kali_authorized_key` terraform variable** (`variables.tf`,
-  `main.tf`, `user_data.sh.tpl`) — the portal Terminal UI key-auths
-  into `a14-kali` as `kali` using a private key stored in Secrets
-  Manager. `user_data` now injects the matching public key into
-  `/home/kali/.ssh/authorized_keys` after `docker compose up -d`, so
-  a cold `terraform destroy` + `apply` cycle no longer needs a
-  manual SSM follow-up to re-wire portal terminal access.
-- **`register_range.py` accepts `POLARIS_*` environment variables**
-  for every per-run parameter (instance id, subnet id, subnet cidr,
-  kali private ip, ssh secret ARN, etc.), so the cold-rebuild
-  operator path is `docker exec -e POLARIS_KALI_INSTANCE_ID=... -i
-  portal python - < register_range.py` — no source edit per cycle.
 
 ## [3.89.0] - 2026-04-13
 
 ### Fixed
 
-- **rockyou.txt was gzipped on Kali by default.** The flag-17 Kerberoast
-  chain in `flags-07-19-front-office.md` runs `john --wordlist=/usr/share/
-  wordlists/rockyou.txt --format=krb5tgs` — Kali's default install ships
-  only `/usr/share/wordlists/rockyou.txt.gz` (~50 MB compressed vs ~140
-  MB decompressed), so the walkthrough command 404s out of the box and
-  the participant has to `gunzip -k` first. `a14/Dockerfile` now
-  explicitly adds `john`, `wordlists`, `ldap-utils`, `smbclient` to the
-  apt install list and runs `gunzip -k /usr/share/wordlists/rockyou.txt.gz`
-  at image-build time so the documented path works on first try.
-- **A16 missing `strings` / `file` / `xxd`.** Flag 30's GPG chain
-  walkthrough says "`strings full_integration_sim.mp4` reveals the
-  Simulation ID header" and other lab flags use `strings` for binary
-  triage on A16. `a16/Dockerfile` now installs `binutils file xxd` so
-  those commands exist on the box.
-
 ## [3.88.0] - 2026-04-13
 
 ### Added
 
-- **A2 Windows Server 2022 AD DC now deployed in-range.** New terraform
-  `aws_instance.a2_dc` launches a stock
-  `Windows_Server-2022-English-Full-Base` AMI into the same `10.1.100.0/28`
-  polaris subnet at `10.1.100.11`, using the shared instance profile +
-  security group. Minimal user-data (`a2_user_data.ps1.tpl`) sets the
-  Administrator password, disables Windows Firewall on all profiles, and
-  enables RDP; everything AD-specific then runs through SSM RunCommand so
-  failures are observable/re-runnable.
-- **`scripts/polaris-aws-range/a2_setup.ps1`** — idempotent post-promotion
-  PowerShell that creates the POLARIS OUs, 17 domain users (with passwords
-  matching the A1 mail / A3 wiki reuse chain), Lab-Access / Project-L /
-  Research-Coordination / Engineering-Support / SCADA-Admins /
-  Security-Staff groups, nests Project-L under
-  `Research-Coordination -> Engineering-Support` for flag 14, pins
-  `msDS-SupportedEncryptionTypes=4` (RC4-only) on svc-backup + svc-scada so
-  GetUserSPNs returns `$krb5tgs$23$` hashes that `hashcat -m 13100` /
-  john's `krb5tgs` format can crack, assigns Replicating Directory Changes
-  + Replicating Directory Changes All on svc-backup (flag 17 DCSync chain),
-  creates the `\\dc\badgelogs` share (Petrov anomaly CSV with flag 16) and
-  the DA-only `\\dc\admin_flag` share (flag 17 pass-the-hash target), and
-  sets the Project-L `info` attribute to `FLAG{2f8b4a6c1d9e7053}`.
-- **`shifter/development/range/polaris-test-kali`** Secrets Manager entry
-  (Windows side) — just a note: the Administrator password
-  (`CortexSavesTheDay!`) is hard-coded in the terraform variable
-  `a2_administrator_password` because the range is dev-only and the CTF
-  narrative depends on participants reading that cleartext from
-  walkthrough/shifter portal metadata.
-
 ### Fixed
 
-- **POLARIS compose DNS now has recursion + forwarders** (named.conf in
-  `scenario-dev/polaris/build/dns/`). Previously `recursion no`, so every
-  non-`boreas.local` / non-`boreas-systems.ctf` lookup from inside the
-  compose containers returned SERVFAIL — which meant `apt update` inside
-  a14-kali (and any other container) could not resolve external archives.
-  Recursion is scoped to `172.20.0.0/16 + 127.0.0.1` via `allow-recursion`
-  so this server cannot be used as an open resolver from outside the range.
-- **`dc01.boreas.local` DNS record.** Zone files in `build/dns/` now point
-  at `10.1.100.11` (the new in-range A2 EC2) instead of the legacy
-  `10.100.0.4` external-GCP-VM placeholder. `00-range-access-docker.md`,
-  `flags-07-19-front-office.md`, `isolation-smoketest.sh`, and
-  `A2-smoketest.sh` all updated to match.
-- **a14-kali PDF extraction tools.** `a14/Dockerfile` now installs
-  `poppler-utils` + `python3-pdfminer` at image-build time AND drops a
-  `/etc/profile.d/polaris-tools.sh` that puts `/opt/tools/bin` on PATH for
-  interactive SSH / `docker exec` login shells. Previous a14 image had
-  `pdfminer.six` installed inside `/opt/tools/` but `pdf2txt.py` was not on
-  PATH in login shells (the `ENV PATH=` line in the Dockerfile only
-  affects the PID 1 environment), so the flags 1/8/9/13/19 PDF-extraction
-  steps documented in the walkthroughs silently fell back to a hand-rolled
-  ASCII85+Flate decoder. Symlinks `/usr/local/bin/pdf2txt.py` and
-  `/usr/local/bin/impacket-smbclient.py` added for stability.
 - **Flag 15 walkthrough wording** (`flags-07-19-front-office.md`) — now
   explicitly says Kowalski's "creds backup" email is in **INBOX** (he sent
   to his own address; Dovecot has no Sent folder for that user). Previous
   "(Kowalski sent it to himself)" parenthetical was ambiguous and led at
   least one walkthrough-runner to check a non-existent Sent folder first.
-- **Flag 31 walkthrough path** (`flags-31-36-bunker.md`) — the
-  pre-populated `/root/scan_results.txt` short-circuit is now the primary
-  step; the live `nmap -sV -p 502,9100 172.20.50.0/24` is documented as
-  the fallback because the service-version probe is slow over the splice
-  pivot and can time out under automation.
-
 ## [3.87.0] - 2026-04-13
 
 ### Added
-
-- **`scripts/polaris-aws-range/`** — terraform + bootstrap for a one-VM
-  manual POLARIS range inside the existing dev range VPC. Creates a new
-  `/28` subnet (`10.1.100.0/28`) with a dedicated route table that
-  bypasses the domain-filtered Network Firewall (so `docker build` and
-  `apt install` can reach the internet during bake), one `m5.2xlarge`
-  Ubuntu instance, a permissive SG allowing VPC-internal + portal-peering
-  ingress on 22/3389, and an instance profile that can read the polaris
-  build tarball + SSM session manager.
-- **`scripts/polaris-aws-range/user_data.sh.tpl`** — cloud-init bootstrap
-  that installs Docker + the v2 compose plugin binary, masks host `ssh`
-  / `apache2` / `smbd` / `vsftpd` / `xrdp` / `mysql` services (the
-  `shifter-ubuntu-*` base AMI ships them pre-installed and they compete
-  for the ports we need to publish from the Kali container), pulls the
-  polaris build tarball from S3, writes a `docker-compose.override.yml`
-  that publishes a14-kali's 22 + 3389 to the host, runs
-  `docker compose up -d`, and starts everything under a systemd unit.
-- **`scripts/polaris-aws-range/register_range.py`** — idempotent manual
-  range registration script: fetches DB + Django + Cognito secrets from
-  Secrets Manager, soft-destroys any stale ready-range rows for the dev
-  user, and creates engine `Range` + cms `RangeInstance` rows pointing at
-  the polaris VM with an attacker (kali) instance spec. Runs inside the
-  portal docker container via SSM Run Command so no portal code change
-  is needed to turn a hand-built range into a portal-visible one.
-- **S3 bucket** `shifter-polaris-bake-<redacted-account-id>` — byte-stable
-  `polaris/build-v1.tar.gz` of the `scenario-dev/polaris/build/` tree
-  (includes `_shared/` GPG chain and research-analyst keypair so flag 30
-  stays deterministic across rebuilds).
-- **Secrets Manager entry** `shifter/development/range/polaris-test-kali`
-  holds the RSA private key the portal SSHes with. Secret ARN matches
-  the `shifter/*/range/*` wildcard the `dev-portal-ec2-role` already
-  allowlists — no IAM policy change required.
 
 ## [3.86.0] - 2026-04-12
 
@@ -2792,238 +1807,21 @@ release-please transition (#1776).
   `cat /root/.scada/hmi.json:8080/ping` and `cat` errors on the
   concatenated filename. Walkthrough now shows the working form with
   the trailing `#` that comments out the `:8080/ping` suffix.
-- **A9 nmap service-detection** — `nmap -sV -p 502,9100 172.20.50.0/24`
-  in flag 31 step 1 failed with `could not locate nse_main.lua`
-  because the alpine `nmap` package doesn't ship the NSE data files
-  as a dependency. A9 Dockerfile now adds `nmap-scripts` alongside
-  `nmap`, so `-sV` runs cleanly. Pre-populated `/root/scan_results.txt`
-  remains as the sanctioned alternative.
-- **Flag 30 step 2 (`gpg-agent.conf` read)** — walkthrough previously
-  said `cat /home/e.vasik/.gnupg/gpg-agent.conf` without naming an
-  account. `~e.vasik/.gnupg/` is mode 700, so the A16 `research-analyst`
-  key cannot read it. Walkthrough now explicitly pivots to A6 as
-  `e.vasik` (`Reactor#Core9`, discoverable from the A1 mailbox trail)
-  for that hop.
-- **Flag 26 openpyxl host** — walkthrough previously said "in Python:
-  openpyxl → check sheet_state" without specifying where Python runs.
-  A16 does not ship openpyxl; A6 does. Walkthrough now explicitly says
-  run the Python snippet from inside the SSH session on A6 as
-  `p.nielsen` (where `python3-openpyxl` is preinstalled), with a note
-  that `scp`-ing the xlsx back to Kali is the fallback if the tester
-  prefers to parse locally.
-
 ### Changed
 
-- **A7 Gitea stripped from the `shared` network — lab-only.** Previously
-  A7 was multi-homed on `shared` + `lab`, letting Kali reach Gitea
-  directly and bypass the Lab pivot for flags 24 and 29. A7 now only
-  lives on `lab` (172.20.30.20); every Gitea interaction must go
-  through the A16 research-analyst pivot, matching every other Lab
-  asset. `docker-compose.yml`, DNS zone files
-  (`dns/db.boreas.local`, `dns/db.boreas-systems.ctf` both now resolve
-  `git.boreas.local` → 172.20.30.20), walkthrough flag 24/29/30 steps,
-  bunker walkthrough prerequisites (bunker flags now explicitly
-  require A7 content to have been cloned earlier during the Lab
-  phase, since A9 and Kali cannot reach A7), `00-range-access-docker.md`
-  reachability table, and `isolation-smoketest.sh` all updated.
-- **A16 Dockerfile** gains `git`, `curl`, and `gnupg` so it can run the
-  full A7 cloning + flag 30 GPG decrypt chain as the on-ramp container.
-  `run-all-smoketests.sh` now routes the A7 smoketest through
-  `a16-research-analyst` instead of `a14-kali`.
-- **A14 smoketest** no longer asserts A7 Gitea is directly reachable
-  from Kali (that's a design-forbidden path now); it asserts A15,
-  A16, and the splice-link to A9 instead.
-- **Fixed the Gitea anonymous-clone false-negative** in
-  `A7-smoketest.sh`: the previous "anonymous clone of private repo
-  should fail" assertion was being evaluated from `a14-kali` which had
-  cached credentials in its filesystem — moving the runner to the
-  freshly-built `a16-research-analyst` container makes the anonymous
-  clone actually anonymous, so the hygiene check passes correctly.
-
 ### Proofs
-
-- **Full smoketest sweep**: 18 / 18 asset sweeps PASS (including A7
-  now), isolation smoketest 90 / 90 boundary assertions PASS.
-- **Lab full E2E via A16**: all 12 Lab flags (38 + 20–30) recovered
-  end-to-end from inside a14-kali, pivoting only via the real
-  participant chain `SSH p.shah@analyst01 → {ssh, psql, git, gpg}`.
-  No docker-exec into any Lab target. Flag 30's full A6 → A8 → A7 →
-  gpg-decrypt chain works through A16 including pulling the encrypted
-  file from research-analyst on A6, psql as `vasik` (Reactor#Core9)
-  for the compartment_b key blob, `.netrc`-authed git clone of
-  `aurora/weapons-integration` for the passphrase, and gpg
-  `--import` + `--decrypt` all inside Shah's shell on A16.
-- **SCADA chain via A15**: flag 37 / 18 / 19 recovered end-to-end via
-  `SSH s.ivanov@ops-eng01` → sudo-arg-injection → `hmi.json` loot →
-  inline Modbus writes from the A15 shell → critical-failure page.
 
 ## [3.85.0] - 2026-04-12
 
 ### Added
 
-- **POLARIS CTF range: A15 Ops Engineer Workstation** and **A16 Research
-  Data Analyst Workstation** introduced as dedicated Front Office pivot
-  hosts, with two new flags (37, 38) that gate the SCADA and Lab chains
-  respectively. Total flag count: 36 → 38.
-  - A15 (`ops-eng01.boreas.local`, 172.20.10.50 + 172.20.40.20) — Sergei
-    Ivanov's workstation. Multi-homed on `corporate` + `scada`. Attack
-    chain: OSINT (A0 leadership + A4 HR org_chart) → `Welcome1` default
-    password → SSH as `s.ivanov` → `sudo -l` reveals
-    `/opt/ops/scada_diag.sh` NOPASSWD → sudo arg-injection exploits the
-    unquoted `curl` sink → read root-owned `/root/.scada/hmi.json` which
-    contains both `svc-scada / Sc@da#2025!` and **flag 37**
-    (`FLAG{5c3e7a9f1b8d4602}`, Hard, 200pts, M3). A15 has `pymodbus`
-    preinstalled so flags 18 and 19 execute from inside the A15 shell.
-  - A16 (`analyst01.boreas.local`, 172.20.10.60 + 172.20.30.60) — Priya
-    Shah's research data analyst workstation. Multi-homed on `corporate`
-    + `lab`. Deliberately simpler chain than A15 (no privesc): OSINT
-    (A4 HR only, NOT A0) → `Welcome1` default → SSH as `p.shah` → read
-    `~/.reports/ANALYST_TOKEN` for **flag 38**
-    (`FLAG{8b2d4f1a0c5e7396}`, Medium, 100pts, M2). Home dir also
-    carries `~/.pgpass` (lab_general), a passphrase-less SSH key +
-    `~/.ssh/config` alias for `research-analyst@eng-ws01.boreas.local`
-    on A6, and an example `daily_integration_report.py`.
-  - New `research-analyst` read-only posix account on A6 (key-only
-    auth; public key pre-generated at `_shared/research-analyst-key/`
-    and COPY'd into A6 during image build). Can read `/opt/builds/`,
-    `/home/r.tanaka/simulations/standard/`, and `/tmp/.deleted/`.
-    **Cannot** read `/home/r.tanaka/simulations/midnight/`,
-    `/home/p.nielsen/designs/`, or `/home/jenkins/.credentials` (now
-    chmod 600). Flags 25, 26, 28 still require independent
-    nielsen/tanaka cred discovery; flag 20 still requires jenkins.
-- **New smoketests**: `tests/smoketests/A15-smoketest.sh` walks the
-  flag 37 compromise chain from inside `a14-kali`, validates the
-  sudo-arg-injection root path, extracts the hmi.json loot, and
-  proves A15 → `scada-gw` HMI + Modbus reachability.
-  `tests/smoketests/A16-smoketest.sh` walks the flag 38 chain, then
-  validates A16 → A8 psql and A16 → A6 `research-analyst` SSH pivots
-  plus the read/no-read scope of the `research-analyst` account.
-
 ### Changed
-
-- **A3 intranet reduced to `corporate`-only.** Legacy multi-home onto
-  `scada` and `lab` (used as a one-box pivot shortcut) has been
-  removed from `docker-compose.yml`. A3 is once again what its
-  hostname says: a corporate wiki server. SCADA reach is now A15,
-  Lab reach is now A16.
-- **`svc-scada` credential single-sourced through A15.** The
-  `service_account_vault.pdf` on A4 no longer lists the `svc-scada`
-  password in plaintext — the row now points at "held by ops, see
-  ivanov" as a breadcrumb. The only participant path to
-  `Sc@da#2025!` is the flag 37 privesc chain.
-- **A4 org chart updated** to include Sergei Ivanov (Ops Engineer —
-  Plant Systems) and Priya Shah (Senior Research Data Analyst). These
-  are the HR-share breadcrumbs for A15 + A16 discovery.
-- **A1 mail server seeded** with Sergei Ivanov's inbox (HR
-  welcome-back reset confirmation + Dariusz thread about the SCADA
-  cred cache). `s.ivanov / Welcome1` added to the A1 user list and
-  Dovecot passdb.
-- **A0 leadership page** adds Sergei Ivanov under a new "Department
-  Leads" section; contact page adds a Plant Operations mailto.
-- **A6 entrypoint** creates the `research-analyst` user, drops the
-  pre-generated public key into its `authorized_keys`, enforces
-  `jenkins/.credentials` at mode 600, and makes `/tmp/.deleted/`
-  world-traversable for the flag 30 chain.
-- **Flags 18 + 19 walkthrough** rewritten to run from inside the A15
-  SSH session after flag 37 rather than hand-waving a pivot. All
-  Modbus writes, HMI fetches, and maintenance-manual lookups are
-  routed through A15 or Kali as appropriate.
-- **Flags 20–30 walkthrough** rewritten to use A16 as the Lab
-  on-ramp. Each flag section now names its specific SSH/psql target
-  and which account is required. Flag 38 section added at the top
-  as the Lab entry point.
-- **Isolation smoketest** updated for the new topology: A3 no longer
-  reaches scada/lab; A15 reaches corporate+scada only; A16 reaches
-  corporate+lab only; A14 has permitted reach to A15 + A16 on
-  corporate and to A9 via the pre-wired `splice-link`.
-- **`run-all-smoketests.sh`** updated to route the A5 smoketest
-  through `a15-ops-eng`, and A6/A8 smoketests through
-  `a16-research-analyst`, instead of `a3-intranet`. A15 and A16
-  smoketests added.
-- **Design docs**: new `design/assets/A15-ops-workstation.md` and
-  `design/assets/A16-research-analyst.md`. `design/architecture.md`,
-  `design/assets/A3-web-app.md`, `design/assets/A5-scada-generator.md`,
-  `design/assets/A6-engineering-workstation.md`, and
-  `design/shared-constants.md` updated to reflect the new topology,
-  flag table (38 total), pivot ownership, and employee credential
-  index.
 
 ## [3.84.0] - 2026-04-12
 
 ### Fixed
 
-- **Walkthroughs brought current to live range state.** The four
-  flag-group walkthroughs and the range-access doc came over from
-  `shifter-k8s/temp/tests/smoketests/` in the last consolidation
-  and had drift from multiple old test environments baked in.
-  All corrections:
-  - `00-range-access.md` deleted — fully stale, documented the old
-    VM-based test environment (localhost ports, loose Python
-    processes, `/tmp/*-content/` file paths).
-  - `00-range-access-docker.md` — Administrator row updated to say
-    "use PTH" with pointer to `smbclient.py -hashes`; Gitea
-    `e_vasik` password `TestPass123!` → `Reactor#Core9`;
-    credentials table reconciled with actual AD password reuse;
-    "Managing the Range" section rewritten to use the new
-    `tests/setup.sh` / `tests/reset.sh` / `tests/run-all-smoketests.sh`
-    orchestration + `-p range` project naming against the compose
-    file at `build/docker-compose.yml`.
-  - `flags-01-06-osint.md` flag 2: `org_chart.txt` → `org_chart.pdf`
-    with `exiftool`/`pdfinfo` Author extraction; flag 6: quarterly
-    and annual reports `.txt` → `.pdf` with `pdftotext`/`pdf2txt.py`
-    extraction path.
-  - `flags-07-19-front-office.md` flag 16: removed
-    `/tmp/badge.csv` parenthetical leftover from the VM env;
-    flag 17: rewritten around pass-the-hash (`smbclient.py -hashes`)
-    since Administrator's cleartext is random.
-  - `flags-20-30-lab.md` flags 24, 29, 30: Gitea password
-    `TestPass123!` → AD-pattern passwords (`e_vasik:Reactor#Core9`,
-    `d_kowalski:P@ssw0rd123`) with `.netrc` guidance to dodge
-    URL-encoding `#`/`@`.
-  - `flags-31-36-bunker.md` — every IP reference corrected.
-    Bunker network was documented as `172.20.40.x` (wrong,
-    that's actually the SCADA network) and controllers as
-    `10.10.40.x` (wrong, that's from the VM env). All fixed to
-    `172.20.50.x` / hostnames (`tail-ctrl`, `leg-ctrl`,
-    `arms-ctrl`, `brain-main`) with `splice-relay` at 172.20.50.5.
-    Scan range `10.10.40.0/24` → `172.20.50.0/24`.
-
-- **Build-content IP drift** in parallel with the walkthroughs:
-  - `A4-file-share/build_documents.py`: network_diagram.pdf VLAN
-    subnets and server_inventory.xlsx per-host IPs switched from
-    `10.10.x.x` VM-era IPs to `172.20.x.x` docker network IPs so
-    the OSINT content participants find matches what they'll
-    actually route to.
-  - `A1-mail-server/build_mail.py`: Kowalski's SCADA VLAN ticket
-    email `scada-gw.internal (10.10.40.10)` → `(172.20.40.10)`.
-  - `A13-brain/server.py`: `subsystems` command output — the
-    controller/brain table showing connected hosts — switched
-    from `10.10.40.x` to `172.20.50.x`.
-  - `A9-splice-landing/modbus_client.py` help text examples and
-    `README.txt` relay description: `10.10.40.x` → `172.20.50.x`.
-  - `A9-splice-landing/scan_results.txt` (the pre-populated JTF-2
-    nmap output participants find on A9): full IP rewrite.
-
-- **a1-mail Roundcube serving at web root.** The Debian roundcube
-  package's `/etc/apache2/conf-enabled/roundcube.conf` ships the
-  `Alias /roundcube` line commented out, so a fresh install
-  serves the Apache default page at `/` with Roundcube
-  effectively unreachable. `a1/Dockerfile` now changes the
-  default site DocumentRoot to `/var/lib/roundcube/public_html`
-  and adds a roundcube-root conf via `a2enconf` so
-  `http://mail.boreas.local/` lands directly on the Roundcube
-  login page (required by the A1 smoketest and the walkthrough).
-
 ### Changed
-
-- **Design doc content-directory paths updated** (approved by
-  user). 15 design docs under `design/assets/A*.md` had
-  "Content directory: `docs/ctf/mechag/A*-*/`" lines left over
-  from before the consolidation. All 15 rewritten to point at
-  `scenario-dev/polaris/build/A*-*/`. `benchmark-report.md`
-  similarly rewritten (design doc filenames are now at
-  `scenario-dev/polaris/design/assets/A*.md` instead of
-  `docs/ctf/mechag/A*.md`).
 
 - **`tests/setup.sh` + `tests/reset.sh`** taught about the new
   nested layout: `COMPOSE_FILE` env override with default
@@ -3034,37 +1832,10 @@ release-please transition (#1776).
 
 ### Verified
 
-- Golden rebuild + full sweep against the new nested layout on
-  `ctf-range-builder`: **16/16 PASS**, `NORTHSTORM full range: PASS`.
-- Final `reset.sh` run leaves a5/a10/a11/a12/a13 in clean
-  pre-unlock state for participant use.
-
 ## [3.83.0] - 2026-04-12
 
 ### Changed
 
-- Consolidated all POLARIS / NORTHSTORM scenario work into
-  `scenario-dev/polaris/`. Prior to this, scenario artifacts
-  were scattered across `docs/ctf/`, `docs/ctf/mechag/`, and
-  a sibling `shifter-k8s/temp/` worktree. New layout:
-  - `scenario-dev/polaris/design/` — authoritative spec (source
-    of truth): `architecture.md`, `range-diagram.md`,
-    `benchmark-report.md`, `shared-constants.md`, plus per-asset
-    design docs under `design/assets/`.
-  - `scenario-dev/polaris/build/` — `docker-compose.yml`,
-    `ctfd-challenges.json`, `dns/`, `a0/`-`a14/` (Dockerfiles +
-    runtime configs), and `A0-boreas-website/`-`A14-kali/`
-    content dirs (intact to avoid touching Dockerfile COPY paths).
-  - `scenario-dev/polaris/tests/` — `setup.sh`, `reset.sh`,
-    `run-all-smoketests.sh`, `isolation-smoketest.sh`,
-    flattened `smoketests/` (A0-smoketest.sh … A14-smoketest.py),
-    and `walkthroughs/` (copied from `shifter-k8s/temp/tests/smoketests/`
-    — the four flag-group happy-path guides plus range-access
-    prereqs).
-  - `scenario-dev/polaris/notes/` — spike notes and
-    HANDOFF/BUILD-TODO (copied from `shifter-k8s/temp/`).
-  - `scenario-dev/polaris/README.md` — entry point with layout
-    map and "getting started" deploy/test commands.
 - Moves were `git mv` wherever possible to preserve history.
   Files from `shifter-k8s/` are copies (different repo, no
   shared git history).
@@ -3073,540 +1844,110 @@ release-please transition (#1776).
   new layout and fallback to the old flat layout if detected.
   Per-test paths switched from `<Content-Dir>/smoketest.ext`
   to `A<N>-smoketest.ext` reflecting the flattened tests/smoketests/.
-- `docs/ctf/` and `docs/ctf/mechag/` are now empty and removed.
-
 ### Known drift (deferred, needs approval per design-is-source-
 of-truth rule)
-
-- 15 design docs under `design/assets/A*.md` still reference
-  `docs/ctf/mechag/A*-*/` as the "Content directory". Those
-  references are now stale — the content dirs moved to
-  `scenario-dev/polaris/build/A*-*/`. Paths are semantic per
-  feedback_design_is_source_of_truth.md so they need user
-  approval before editing the design to match the new layout.
 
 ## [3.82.0] - 2026-04-12
 
 ### Fixed
 
-- Close out remaining repo path drift for a1, a3, a4, a5. These
-  four Dockerfiles still used the old single-context build
-  pattern (`COPY server.py`, `COPY build_mail.py`, etc) with
-  files that only existed on the range VM via duplication, not
-  in the repo. Migrated all four to parent-context builds to
-  match a0/a6/a7/a8/a9/a10/a11/a12/a13/a14:
-  - `a1/Dockerfile`: COPYs from `A1-mail-server/build_mail.py`
-    and `a1/{postfix-main.cf,dovecot-local.conf,entrypoint.sh}`.
-  - `a3/Dockerfile`: COPYs from `A3-web-app/server.py`.
-  - `a4/Dockerfile`: COPYs from `A4-file-share/build_documents.py`
-    and `a4/{smb.conf,entrypoint.sh}`.
-  - `a5/Dockerfile`: COPYs from `A5-scada-generator/server.py`.
-  - `docker-compose.yml`: a1-mail, a3-intranet, a4-fileshare,
-    a5-scada all switched to `context: .` with `dockerfile:
-    ./aN/Dockerfile`. All 14 docker-managed services in
-    docker-compose.yml now use the parent-context convention
-    (dns is self-contained and stays `build: ./dns`).
-
-  Golden rebuild verification: full teardown,
-  `docker compose build` from clean, `docker compose up -d`,
-  `run-all-smoketests.sh` → 16/16 PASS, final `reset.sh` for
-  clean participant state. Range is now reproducible from a
-  fresh repo clone for every service.
-
 ## [3.81.0] - 2026-04-12
 
 ### Added
 
-- `docs/ctf/mechag/setup.sh`: NORTHSTORM range setup orchestrator.
-  Runs `docker compose build` + `up -d`, waits for all 15 services
-  to report Running, then polls key readiness ports (a7 gitea
-  3000, a1 IMAP 143, a3 80, a4 445, a0 80) via a14-kali before
-  returning. Single entry point to take a freshly-synced
-  `/home/atomik/range/` to a live range.
-- `docs/ctf/mechag/reset.sh`: sticky-state reset. Force-recreates
-  the five services with one-shot unlock state (a5-scada thermal
-  runaway, a10/a11/a12 flag-register unlocks, a13-brain for
-  parity), then polls each one's primary port on its own
-  container's localhost until the embedded server is actually
-  accepting connections. localhost polling avoids the
-  cross-network unreachability problem where a single probe
-  container couldn't see every docker bridge.
-- `docs/ctf/mechag/run-all-smoketests.sh`: full-range test
-  sweep orchestrator. Calls reset.sh pre-flight, then copies
-  each per-asset smoketest into its designated runner container
-  (a14-kali / a3-intranet / a9-splice) in the correct pivot
-  order, executes with the correct interpreter (bash / python3 /
-  sh), captures per-asset PASS/FAIL, then runs the host-side
-  isolation smoketest, and aggregates a final summary. Proven
-  deterministic with three consecutive 16/16 PASS runs against
-  the live range (15 asset smoketests + isolation sweep = 475
-  underlying checks).
-
 ### Changed
-
-- VM cleanup pass on `/home/atomik/range/`: removed stale
-  file duplicates left over from before the parent-context
-  Dockerfile migration. Top-level copies of build-a6-content.sh
-  and build-gpg-chain.sh, plus per-asset copies of build
-  scripts / server.py / 01-init.sql / bare-repos.tar.gz /
-  bootstrap.sh / content files that now live in the A*-
-  content directories. `/home/atomik/range/a*/` now contains
-  only the Dockerfile and runtime configs.
 
 ## [3.80.0] - 2026-04-12
 
 ### Added
 
-- `docs/ctf/mechag/isolation-smoketest.sh`: cross-cutting
-  network isolation smoketest (70 checks) that validates the
-  full NORTHSTORM topology boundary enforcement. Runs from
-  the range host. For every (source, target) pair the design
-  specifies, tests TCP reachability via `docker exec` +
-  python3 sockets. Every designed pivot path proven to work,
-  every forbidden path proven to fail. Covers a14-kali
-  (shared+corporate), a3-intranet (THE PIVOT: corporate+
-  scada+lab), a7-gitea (shared+lab), a1-mail/a4-fileshare
-  (corporate only), a6-workstation (lab only), a5-scada
-  (scada only), and a9-splice/a13-brain (bunker-ot only).
-  Result: 70/70 PASS. The docker bridge topology enforces
-  the design boundaries purely by network attachment,
-  without iptables ACLs.
-
 ## [3.79.0] - 2026-04-12
 
 ### Fixed
 
-- A14 Kali repo path drift (last of the A* assets):
-  `a14/Dockerfile` COPYs content files from context root but
-  they live in `A14-kali/`, and it referenced `modbus_client.py`
-  which only exists in `A9-splice-landing/`. Moved `a14-kali`
-  compose build context to `.` with `dockerfile: ./a14/Dockerfile`
-  and updated all Dockerfile COPY paths. Now builds from a
-  fresh repo checkout.
-
 ### Added
-
-- `docs/ctf/mechag/A14-kali/smoketest.sh`: A14 attack platform
-  readiness smoketest (47 checks). A14 has no flags (it's the
-  participant's attack box, not a target) so the smoketest
-  verifies the platform is ready for use: home directory
-  content (README, mission_brief.pdf/.txt, flag_submit.sh,
-  modbus_scan.py, Claude system prompt), kali user and
-  sshd/xrdp services running, standard Kali offensive tools
-  (nmap, msfconsole, sqlmap, john, hashcat, gobuster, ffuf,
-  nc, curl, wget, python3, smbclient), full Impacket suite
-  at /opt/tools/bin (GetUserSPNs, secretsdump, psexec,
-  smbclient.py, lookupsid), Python libraries (pymodbus,
-  impacket, pdfminer.six, openpyxl, pdf2txt.py), Claude Code
-  CLI, TCP reachability of all 7 permitted targets (A0, A1,
-  A3, A4, A7, A2 via GCP, DNS), internal DNS resolution, and
-  AXFR zone transfer returning the _flag TXT record (flag 5
-  discovery path).
 
 ## [3.78.0] - 2026-04-12
 
 ### Fixed
 
-- A13 repo path drift: `a13/Dockerfile` COPYs `server.py`
-  from context root. Moved `a13-brain` compose build context
-  to parent dir.
-
 ### Added
-
-- `docs/ctf/mechag/A13-brain/smoketest.py`: A13 Mecha-Godzilla
-  brain end-to-end smoketest (17 checks). Runs from a9-splice.
-  Executes the full boss chain: TCP connect on port 9100,
-  receive 8-byte binary challenge, derive XOR key via
-  `SHA256("AHS-T-00482" + "AHS-L-00483" + "AHS-A-00484")[:8]`
-  (from A10/A11/A12 serials), send handshake response,
-  authenticate as `vasik` with `BRAIN_AUTH_TOKEN` from A7
-  navigation-controller config (not vasik's AD password),
-  run `status` and extract flag 35 from the SYSTEM
-  AUTHORIZATION TOKEN line, run `schematic` verifying
-  LEVIATHAN ASCII art, run `ai status` verifying DORMANT
-  state awaiting primary power, reject wrong override code,
-  and submit the full override code `7741-MN07-AL42`
-  (assembled from A0 registration / A6 MIDNIGHT-7 sim ID /
-  A8 assembly log metadata) to extract flag 36 with the
-  OPERATION NORTHSTORM COMPLETE seizure message.
 
 ## [3.77.0] - 2026-04-12
 
 ### Fixed
 
-- A12 repo path drift: `a12/Dockerfile` COPYs `server.py`
-  from context root. Moved `a12-arms` compose build context
-  to parent dir.
-
 ### Added
-
-- `docs/ctf/mechag/A12-arms-controller/smoketest.py`: A12
-  arms controller end-to-end smoketest (17 checks). Runs
-  from a9-splice. Verifies default register reads (joints,
-  actuator force, mode 0=stowed, primary effector status=0
-  offline / max=2400 MW / draw=1800 MW, kinetic caliber
-  500mm, 12 rounds/mag), flag zero pre-unlock, wrong
-  challenge write rejected before diagnostics, diagnostics
-  enable via coil 50, rolling nonce appears on input reg 60
-  (4-digit), XOR nonce with PO-2847 (cross-zone intel from
-  A4), confirmation readback reg 201 = 1, and ASCII decode
-  of reg 100-121 matching `FLAG{f0d8b2e6a4c71935}`.
 
 ## [3.76.0] - 2026-04-12
 
 ### Fixed
 
-- A11 leg controller Modbus server was silently dropping
-  response PDUs for any read that spanned the ankle position
-  registers. Root cause: `LEFT_JOINTS` and `RIGHT_JOINTS`
-  initialised ankle position/target to `-5` (degrees). Modbus
-  holding registers are uint16; pymodbus 3.12 refuses to pack
-  negative Python ints and fails silently with no response,
-  no log entry. Changed init to `[0, 0, 15, 15, 5, 5]`
-  (leg straight, ankles neutral). Confirmed A9's earlier
-  probes happened to use reads that didn't cross the negative
-  offset, which is why this only surfaced under the A11
-  smoketest's exhaustive register reads.
-- A11 repo path drift: `a11/Dockerfile` COPYs `server.py` from
-  context root. Moved `a11-leg` compose build context to
-  parent dir.
-
 ### Added
-
-- `docs/ctf/mechag/A11-leg-controller/smoketest.py`: A11 leg
-  controller end-to-end smoketest (19 checks). Runs from
-  inside a9-splice. Verifies default register reads (joints,
-  hydraulic pressures, gait mode 0=stationary, step length
-  4200mm, cycle 85s, per-leg mass 24000t, max force 200t
-  matching PO-2847), flag registers zero pre-unlock, wrong
-  sequence rejection, correct gait sequence 0->1->2->0 to
-  reg 30 releasing calibration code 4783 on input reg 60,
-  challenge write to reg 99 with calibration code, and
-  ASCII decode of reg 100-121 matching `FLAG{c7a1e3f9d0b52864}`.
 
 ## [3.75.0] - 2026-04-12
 
 ### Fixed
 
-- A10 repo path drift: `a10/Dockerfile` COPYs `server.py` from
-  context root but the file lives in `A10-tail-controller/`.
-  Moved `a10-tail` compose build context to parent dir.
-
 ### Added
-
-- `docs/ctf/mechag/A10-tail-controller/smoketest.py`: A10 tail
-  controller end-to-end smoketest (13 checks). Runs from inside
-  a9-splice (bunker OT entry point). Verifies default register
-  reads (motor positions, torque, mode=1 balance, length=120m,
-  mass=8500t), flag registers zero pre-unlock, the flag 32
-  unlock sequence (write reg 20=3 diagnostic mode, then write
-  reg 99=482 serial-derived challenge), ASCII decode of
-  registers 100-121 matching `FLAG{9b3e7c1d0f5a2846}`, mode
-  reset on wrong challenge, and all 10 motor enable coils ON.
-  Device identification test deferred to A9 smoketest which
-  already covers A10/A11/A12 via modbus_client.py devid.
 
 ## [3.74.0] - 2026-04-12
 
 ### Fixed
 
-- A9 repo path drift (same pattern as A6/A7/A8):
-  `a9/Dockerfile` COPYs README, scan_results, modbus_client.py
-  from context root but they live in `A9-splice-landing/`.
-  Moved `a9-splice` docker-compose build context to `.` with
-  `dockerfile: ./a9/Dockerfile` so the build works from a
-  fresh repo checkout.
-
 ### Added
-
-- `docs/ctf/mechag/A9-splice-landing/smoketest.sh`: A9 splice
-  landing box end-to-end smoketest (17 checks). Runs from
-  inside a9-splice (the only container on bunker-ot so no
-  pivot available). Verifies the JTF-2 field relay artifacts
-  (README POLARIS FIELD RELAY text, scan_results nmap dump,
-  modbus_client.py), the field tool set (python3, nmap,
-  ncat, tcpdump, ssh, pymodbus), TCP reachability of all 4
-  bunker hosts (A10-A13), Modbus FC 43 device identification
-  queries against A10/A11/A12 returning the expected
-  ProductName values (AHS-TAIL-7741, AHS-LEG-MN07,
-  AHS-ARM-AL42), and the flag 31 concatenation answer string
-  `AHS-TAIL-7741AHS-LEG-MN07AHS-ARM-AL42` that CTFd accepts.
 
 ## [3.73.0] - 2026-04-12
 
 ### Fixed
 
-- A8 repo path drift (same pattern as A6/A7): `a8/Dockerfile`
-  COPYs `01-init.sql` from context root but the file lives in
-  `A8-research-database/`. Moved `a8-database` docker-compose
-  build context to `.` with `dockerfile: ./a8/Dockerfile` so
-  the build works from a fresh repo checkout.
-
 ### Changed
 
-- `a3/Dockerfile`: added `postgresql-client` so a3-intranet can
-  run `psql` against A8 as the designed pivot host (A8 is on
-  lab VLAN 30, not reachable from a14-kali directly).
-
 ### Added
-
-- `docs/ctf/mechag/A8-research-database/smoketest.sh`: A8
-  research database end-to-end smoketest (16 checks). Runs
-  from a3-intranet via psql. Verifies lab_general auth via
-  A3 /.env discovery path, compartment isolation
-  (lab_general denied on compartment_b/c, lab_mfg denied on
-  compartment_b), flag 21 in compartment_a.structural_specs
-  frame_dorsal_plate row, both flag 27 paths (vasik direct
-  via AD password reuse + SECURITY DEFINER SQL injection in
-  research_public.search_research as lab_general) with
-  verification that the function actually has SECURITY
-  DEFINER, flag 28 via JSONB path
-  `metadata->'integration'->>'flag'` in compartment_c.assembly_log
-  as lab_mfg (A6 .pgpass pivot), A13 override-code piece
-  AL42 via `metadata->'integration'->>'code'`, and A6 flag 30
-  chain prerequisite (Vasik GPG private key base64 blob in
-  compartment_b.key_storage).
 
 ## [3.72.0] - 2026-04-12
 
 ### Fixed
 
-- A7 Gitea bootstrap drift (design vs build mismatch):
-  - `bootstrap.sh` user creation was missing `login_name` in the
-    POST payload, so Gitea stored users with empty login_name
-    and basic-auth failed ("user's password is invalid"). Added
-    `login_name` + `source_id` to the POST, plus a PATCH fallback
-    that corrects existing users on re-runs.
-  - Gitea user passwords were all hardcoded to `TestPass123!`
-    with no discovery path. Updated to match the A1/A2/A6 AD
-    credentials (e_vasik/Reactor#Core9, r_tanaka/SimEngine#42,
-    p_nielsen/Hydraulics1, m_webb/Welcome1, d_kowalski/P@ssw0rd123)
-    so the password-reuse pattern participants discover in the
-    Front Office also unlocks Gitea. k_yamamoto and f_okoye
-    (Lab-Access members without prior AD mapping) get
-    Sensor2025 / AIModel2025 respectively.
-- A7 repo path drift: `a7/Dockerfile` COPYs `bootstrap.sh` and
-  `bare-repos.tar.gz` but they live in `A7-source-repo/`. Moved
-  `a7-gitea` docker-compose build context to `.` with
-  `dockerfile: ./a7/Dockerfile` and updated COPY paths so the
-  image can be built from a fresh repo checkout.
-
 ### Added
-
-- `docs/ctf/mechag/A7-source-repo/smoketest.sh`: A7 end-to-end
-  smoketest (20 checks) runnable from a14-kali (A7 is
-  multi-homed on shared+lab so a14-kali reaches it directly via
-  shared). Verifies Gitea API, public org/repo discovery,
-  visibility boundaries (anonymous cannot see `aurora` org or
-  its repos; anonymous cannot clone private repos), authenticated
-  clone of all 4 aurora repos, flag 24 via `git log -p` on
-  navigation-controller removed CI token, flag 29 via
-  `git show <parent>:schematic.svg` recovery on leviathan-assembly,
-  LEGACY_PASSPHRASE cross-asset breadcrumb for A6 flag 30 in
-  weapons-integration/src/crypto_config.py, deploy_combat_ai.yml
-  playbook in manufacturing-orchestrator, and password-reuse
-  validation for r_tanaka and p_nielsen.
 
 ## [3.71.0] - 2026-04-12
 
 ### Fixed
 
-- A6 repo drift: `build-a6-content.sh` and `build-gpg-chain.sh`
-  existed on the range VM but were never committed to the repo,
-  so `a6/Dockerfile` could not build from a fresh clone. Added
-  both scripts to `A6-engineering-workstation/` alongside
-  `build_cog_xlsx.py`, moved `a6-workstation` docker-compose
-  build context to `.` with `dockerfile: ./a6/Dockerfile`, and
-  updated the Dockerfile COPY paths so it can reach both the
-  build dir (`a6/`) and the content dir
-  (`A6-engineering-workstation/`) at build time. Rebuilt and
-  recreated a6-workstation on the range successfully.
-
 ### Changed
 
-- `a3/Dockerfile`: added `openssh-client`, `sshpass`, and
-  `ca-certificates` so a3-intranet functions as a realistic
-  post-compromise pivot host. This is the only practical path
-  for a14-kali to reach the Lab VLAN (30) and SCADA VLAN (40)
-  per the design (A3 is the only asset multi-homed to all
-  three). Rebuilt and recreated a3-intranet.
-
 ### Added
-
-- `docs/ctf/mechag/A6-engineering-workstation/smoketest.sh`:
-  A6 engineering workstation end-to-end smoketest (22 checks).
-  Runs from inside a3-intranet and uses SSH pivot to reach
-  eng-ws01.boreas.local on lab VLAN 30. Verifies jenkins /
-  r.tanaka / p.nielsen logins, flag 20 in jenkins .credentials,
-  flag 22 in /opt/builds/latest/reactor_interface_spec, flag 23
-  as string in stress_test_44.dat binary (with bipedal
-  cross-references in logs 28/31/44), flag 25 in
-  MIDNIGHT-7_results.dat plus MN07-INTEG-20251028 simulation
-  ID (A13 override code piece), flag 26 in the hidden
-  Integration sheet of center_of_gravity_analysis.xlsx
-  extracted via stdlib `zipfile`, restricted perms on
-  r.tanaka/simulations/midnight and p.nielsen/designs,
-  p.nielsen .pgpass A8 cred breadcrumb, flag 30 prerequisites
-  (encrypted file + public key + gpg-agent.conf hint), and
-  simulation.log narrative content. Flag 30's full decryption
-  chain requires A7 passphrase + A8 private key blob so it's
-  deferred to the cross-asset verification task.
 
 ## [3.70.0] - 2026-04-12
 
 ### Added
 
-- `docs/ctf/mechag/A5-scada-generator/smoketest.py`: A5 SCADA
-  generator HMI + Modbus PLC end-to-end smoketest (19 checks).
-  Runs from inside a3-intranet (the multi-homed corporate+scada
-  pivot — A14 cannot reach A5 directly per design). Uses only
-  stdlib (socket + urllib) so it needs no pymodbus install in
-  the container. Verifies: flag 18 in dashboard footer;
-  architecture page reveals Modbus port 502 / HR 100 interlock
-  / HR 200 maintenance key; system logs contain D. Kowalski
-  sensor drift incident; `svc-scada` / `Sc@da#2025!` auth gated
-  on /control with wrong-password rejection; raw Modbus TCP
-  reads the register map; wrong maintenance key to HR 200 is
-  rejected; correct key 7734 bypasses HR 100 interlock and
-  disables thermal safety; fuel=100 + cooling=0 triggers
-  thermal runaway; flag 19 on the destroyed CRITICAL page.
-  Test is idempotent for destroyed containers (extracts flags
-  from the final page) but requires a fresh a5-scada container
-  to re-prove the attack chain.
-
 ## [3.69.0] - 2026-04-12
 
 ### Added
-
-- `docs/ctf/mechag/A4-file-share/smoketest.sh`: A4 file share
-  end-to-end smoketest (33 checks). Exercises every share ACL and
-  every flag path from the a14-kali container: anonymous read of
-  Public share and flag 11 from `cafeteria_menu_april.pdf` PDF
-  Author metadata; authenticated read of HR as `v.harlan` with
-  flag 9 on page 2 of `chen_james_termination.pdf` Case Reference
-  Number field; Procurement read with PO-2847 "Special
-  Instructions" cross-reference followed into
-  `specs/actuator_requirements_v4.pdf` for flag 13; IT share
-  anonymous-deny plus `svc-fileshare` (A1 Kowalski creds pivot)
-  authenticated read of `backup_verification.log` for flag 15;
-  Executive share read. Verifies design-specified share contents
-  (network_diagram, server_inventory, PO-3102/3455, reactor
-  invoice, org chart, Chen NDA, board minutes, budget summary).
 
 ## [3.68.0] - 2026-04-12
 
 ### Fixed
 
-- `docs/ctf/mechag/a3/Dockerfile`: create `/var/www/docs` base
-  directory with two placeholder files. Without this, both the
-  legit `/download?file=*` feature and the design-specified path
-  traversal attack (`/download?file=../../../etc/passwd`) failed
-  because Python's `os.path.realpath` lexically normalizes `..`
-  components on non-existent paths (resolving `/var/www/docs/..`
-  to `/var/www` then `/var` etc), so the traversal target
-  resolved to `/var/etc/passwd` instead of `/etc/passwd`. Fix
-  makes both legit downloads and the intended attack path work.
-
 ### Added
-
-- `docs/ctf/mechag/A3-web-app/smoketest.sh`: A3 intranet/wiki
-  end-to-end smoketest (24 checks). Verifies public pages,
-  username enumeration via `/forgot`, flag 7 in `/.env` and
-  `/config.bak` (plus A8 research DB cred breadcrumb),
-  admin/admin login, flag 12 in `/wiki/project-coordination`
-  HTML comment, all 4 wiki pages, IT KB internal hostnames
-  (dc01, scada-gw), LEVIATHAN Assembly Schedule draft visible
-  in admin panel with `[MOVED TO SECURE SYSTEM]` body, SQL
-  injection via `/search` dumping the users table, and path
-  traversal in `/download` reading `/etc/passwd`. Runnable from
-  the a14-kali container.
 
 ## [3.67.0] - 2026-04-12
 
 ### Added
 
-- `docs/ctf/mechag/A1-mail-server/smoketest.py`: A1 end-to-end
-  smoketest (27 checks). Exercises IMAP auth for all 6 mailboxes,
-  Roundcube webmail login flow, flag 10 retrieval from Kowalski's
-  welcome email, flag 8 extraction from Vasik's PDF attachment via
-  `pdf2txt.py`, the A4 cred pivot breadcrumb (svc-fileshare /
-  F1l3Sh@r3Svc! in Kowalski's "creds backup" email), and every
-  narrative thread the design specifies (MIDNIGHT-7, PO-2847,
-  Petrov anomaly, Kursk shipment, Novikov reactor). Runnable from
-  the a14-kali container.
-- `docs/ctf/mechag/A2-domain-controller/smoketest.sh`: A2 Windows
-  DC end-to-end smoketest (22 checks). Sweeps AD ports on
-  `dc01.boreas.local`, verifies `e.vasik` (A1 password reuse)
-  authenticates, Kerberoasts svc-backup via `GetUserSPNs.py`,
-  cracks the hash offline with john to `Password1`, DCSyncs the
-  Administrator NTLM hash via `secretsdump.py`, pass-the-hashes
-  into `\\dc01\admin_flag\` for flag 17, retrieves flag 16 from
-  `\\dc01\badgelogs\access_log_march_2026.csv` (Petrov Underground
-  Hatch entries), and confirms flag 14 via LDAP `(cn=Project-L)`
-  info attribute. Also verifies the Engineering-Support >
-  Research-Coordination > Project-L group nesting.
-
 ## [3.66.0] - 2026-04-11
 
 ### Changed
 
-- A0 Boreas Systems website rebuilt to match `A0-boreas-website.md`
-  design spec. Replaces the Flask prototype with `nginx:alpine` serving
-  static HTML + reportlab-generated PDFs via a multi-stage build:
-  - `a0/Dockerfile` now multi-stage (`python:3.12-slim` content-builder
-    feeding `nginx:alpine`), `a0/nginx.conf` added.
-  - `docker-compose.yml` a0-website build context moved to `.` with
-    `dockerfile: ./a0/Dockerfile` so the image can COPY from both
-    `a0/` and `A0-boreas-website/`.
-  - `A0-boreas-website/site/`: 14 static HTML pages + CSS (home,
-    about, leadership with CSS-gradient avatars, careers,
-    careers_apply, contact, news, status, robots.txt, admin/, portal/,
-    old/index, old/clients, internal/index).
-  - `A0-boreas-website/build_pdfs.py`: reportlab generator for
-    org_chart.pdf (flag 2 in Author metadata), boreas-Q1-2025.pdf,
-    boreas-Q2-2025.pdf, and boreas-annual-2025.pdf with the Kursk
-    Heavy Industries $12,000,000 line buried in 40 expense items.
-  - `/internal/` uses a hand-written `index.html` so the annual
-    report PDF lives on disk but is not listed — participants must
-    fuzz the filename pattern to find it.
-  - `A0-boreas-website/smoketest.sh` added — 22-check end-to-end
-    attacker-perspective test runnable from the a14-kali container.
-
 ### Removed
-
-- `A0-boreas-website/server.py` — obsolete Flask prototype.
 
 ## [3.65.0] - 2026-04-11
 
 ### Added
 
-- NORTHSTORM CTF range carry-over from the `shifter-k8s` branch onto
-  the new `polaris-ctf` branch. Brings in:
-  - All 16 mecha-asset build directories under
-    `docs/ctf/mechag/{a0..a14,dns}/` (Dockerfiles, entrypoints,
-    content, Modbus servers, scenario assets).
-  - All 14 design content folders under
-    `docs/ctf/mechag/A0-boreas-website/` … `A9-splice-landing/`
-    (mission briefs, prepared scripts, fixture data).
-  - `docs/ctf/mechag/docker-compose.yml`,
-    `ctfd-challenges.json`, `shared-constants.md`.
-- A14 Kali container rebuilt against the AWS packer scripts in
-  `shifter/packer/scripts/kali/`: `kali-linux-headless` metapackage,
-  XFCE + xrdp on 3389, sshd on 22, Claude Code CLI via npm, kali user,
-  CTF content overlay under `/home/kali/`. Mission brief generated as
-  PDF (`docs/ctf/mechag/A14-kali/mission_brief.pdf`).
-- Project DNS sidecar verified end-to-end: AXFR-enabled BIND with
-  `boreas-systems.ctf` and `boreas.local` zones, multi-homed onto
-  shared/corporate/lab networks.
-
 ### Changed
-
-- All 15 mecha asset design docs (`docs/ctf/mechag/A0-…A9-…md`) and
-  `docs/ctf/northstorm-architecture.md` updated to match the
-  shifter-k8s branch state. A14-kali design no longer specifies
-  per-participant rate limiting (false constraint), uses the `kali`
-  user (matching the AWS AMI), and documents RDP access in place of
-  the ttyd/Guacamole sidecar approach.
 
 ## [3.64.0] - 2026-04-11
 

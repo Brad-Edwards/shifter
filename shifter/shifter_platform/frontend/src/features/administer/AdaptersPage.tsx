@@ -17,7 +17,8 @@ import { AdapterPackBindings } from "./AdapterPackBindings";
 import { manifestPreview } from "./adapter-manifest";
 
 export function AdaptersPage() {
-  const organizations = useAdministrableOrganizations();
+  const [page, setPage] = useState(1);
+  const organizations = useAdministrableOrganizations(page);
   const [selected, setSelected] = useState("");
   const rows = organizations.data?.results ?? [];
   const organization = rows.find((row) => row.uuid === selected)?.uuid ?? rows[0]?.uuid ?? "";
@@ -33,6 +34,10 @@ export function AdaptersPage() {
         className="block rounded border bg-background p-2">
         {rows.map((row) => <option key={row.uuid} value={row.uuid}>{row.name}</option>)}
       </select>
+      {organizations.data?.next || organizations.data?.previous ? <nav aria-label="Organization pages" className="flex gap-2">
+        <Button variant="outline" disabled={!organizations.data.previous} onClick={() => setPage(page - 1)}>Previous organizations</Button>
+        <Button variant="outline" disabled={!organizations.data.next} onClick={() => setPage(page + 1)}>Next organizations</Button>
+      </nav> : null}
     </div> : null}
     {organization ? <InstalledPlugins key={organization} organization={organization} /> : null}
   </>;
@@ -41,6 +46,7 @@ export function AdaptersPage() {
 function InstalledPlugins({ organization }: Readonly<{ organization: string }>) {
   const [showPacks, setShowPacks] = useState(false);
   const query = useAdapters(organization);
+  const adapters = query.data?.pages.flatMap((page) => page.results) ?? [];
   const update = useSetAdapterState(organization);
   const [action, setAction] = useState<{ adapter: Adapter; kind: AdapterAction } | null>(null);
   const [username, setUsername] = useState("");
@@ -58,12 +64,18 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
       <Button variant="outline" className="mb-4" onClick={() => setShowPacks(!showPacks)} aria-expanded={showPacks}>
         {showPacks ? "Hide packs" : "Install packs and assign adapters"}
       </Button>
-      {showPacks ? <AdapterPackBindings organization={organization} adapters={query.data} /> : null}
+      {query.hasNextPage ? <div className="my-3 space-y-2">
+        <p>Load more installed versions to manage them or assign them to a pack.</p>
+        <Button variant="outline" disabled={query.isFetching} onClick={() => void query.fetchNextPage()}>
+          {query.isFetchingNextPage ? "Loading adapters…" : "Load more adapters"}
+        </Button>
+      </div> : null}
+      {showPacks ? <AdapterPackBindings organization={organization} adapters={adapters} /> : null}
       <h2 className="mb-3 text-lg font-semibold">Installed versions</h2>
-      {query.data.length === 0 ? <p>No plugins are installed.</p> : <Table>
+      {adapters.length === 0 ? <p>No plugins are installed.</p> : <Table>
         <TableHeader><TableRow><TableHead>Plugin</TableHead><TableHead>Version</TableHead>
           <TableHead>Status</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader>
-        <TableBody>{query.data.map((adapter) => {
+        <TableBody>{adapters.map((adapter) => {
           const manifest = manifestPreview(adapter.manifest);
           return <TableRow key={adapter.id}>
             <TableCell>{manifest?.plugin_id ?? "Unrecognized manifest"}</TableCell>

@@ -26,7 +26,7 @@ def queue_runtime_plugin_plans(envelope: dict) -> None:
     parsed = parse_raes_operation_input(envelope["payload"])
     if parsed.runtime_plugin is None:
         return
-    if parsed.range_backend != "gce":
+    if parsed.range_backend not in {"gce", "ec2"}:
         raise ValueError("Runtime plugins are not supported by this range backend")
     from uuid import UUID
 
@@ -35,6 +35,7 @@ def queue_runtime_plugin_plans(envelope: dict) -> None:
         parsed.plan,
         UUID(str(envelope["operation_id"])),
         parsed.legacy_range_id,
+        backend=parsed.range_backend,
     )
     RuntimePluginInvocation.objects.bulk_create(
         RuntimePluginInvocation(
@@ -68,12 +69,14 @@ def _authorized_request(row):
         raise ValueError("Plugin operation identity mismatch")
     parsed = parse_raes_operation_input(envelope["payload"])
     pin = parsed.runtime_plugin
-    if pin is None or parsed.range_backend != "gce":
+    if pin is None or parsed.range_backend not in {"gce", "ec2"}:
         raise ValueError("Missing plugin operation binding")
     target = Range.objects.get(request__request_id=row.request_id, provisioner_operation_id=row.operation_id)
     if target.id != parsed.legacy_range_id or target.status in {"destroyed", "destroying", "failed", "ready"}:
         raise ValueError("Plugin operation is no longer active")
-    requests = runtime_plugin_requests(pin, parsed.plan, row.operation_id, parsed.legacy_range_id)
+    requests = runtime_plugin_requests(
+        pin, parsed.plan, row.operation_id, parsed.legacy_range_id, backend=parsed.range_backend
+    )
     expected = next(request for request in requests if request.invocation_id == row.id)
     request = RuntimeInput.model_validate(row.input)
     if request.digest != expected.digest or row.input_digest != expected.digest or row.phase != expected.phase:

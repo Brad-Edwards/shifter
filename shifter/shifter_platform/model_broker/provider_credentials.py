@@ -1,6 +1,7 @@
 """Provider credentials exist in the broker only, scoped to approved identities."""
 
 import asyncio
+from contextlib import closing
 
 
 class ProviderCredentials:
@@ -36,17 +37,13 @@ class ProviderCredentials:
                     "content-type": "application/json",
                     "accept-encoding": "identity",
                 }
-        import boto3
         from botocore.auth import SigV4Auth
         from botocore.awsrequest import AWSRequest
-        from botocore.config import Config
         from botocore.credentials import Credentials
 
-        with boto3.client(
-            "sts",
-            region_name=target.region,
-            config=Config(connect_timeout=2, read_timeout=2, retries={"total_max_attempts": 1}),
-        ) as client:
+        from shared.model_access.aws_session import bounded_aws_session
+
+        with closing(bounded_aws_session(target.region).client("sts")) as client:
             result = client.assume_role(RoleArn=target.principal, RoleSessionName="model-broker", DurationSeconds=900)
         value = result["Credentials"]
         credentials = Credentials(value["AccessKeyId"], value["SecretAccessKey"], value["SessionToken"])

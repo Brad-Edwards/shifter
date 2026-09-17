@@ -16,6 +16,7 @@ from uuid import UUID
 from shared.model_access.credentials import ModelEnrollment
 from shared.model_access.guest_binding import ModelGuestBinding
 from shared.model_access.messages import strict_json
+from shared.model_access.network import broker_egress_destination
 from shared.model_access.workload_identity import workload_assertion
 
 from executors.factory import build_guest_execution_context
@@ -42,6 +43,15 @@ class EnrollmentDelivery:
     audience: str
     broker_url: str
     ca_pem: str
+    broker_vip: str = ""
+
+    def gce_egress_capability(self) -> dict[str, object]:
+        """Only an admitted enrollment opens the exact applied destination."""
+        if self.provider != "gcp":
+            raise ModelEnrollmentError("GCE broker egress requires the GCP provider")
+        capability = {"contract_version": "model-broker-egress/v1", "vip": self.broker_vip, "port": 443}
+        broker_egress_destination(capability, expected_vip=self.broker_vip, egress_mode="status-quo")
+        return capability
 
     def execute(self, _plan, instances: list[dict]) -> None:
         try:
@@ -124,7 +134,7 @@ def load_model_enrollment(run) -> EnrollmentDelivery | None:
         region = os.environ.get("AWS_REGION" if provider == "aws" else "CLOUD_REGION", "")
         if provider == "aws" and not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-[0-9]+", region):
             raise ValueError
-        return EnrollmentDelivery(
+        delivery = EnrollmentDelivery(
             operation_id=UUID(run.operation_id),
             bindings=run.input.model_enrollments,
             provider=provider,
@@ -133,7 +143,11 @@ def load_model_enrollment(run) -> EnrollmentDelivery | None:
             audience="shifter-model-control",
             broker_url=broker,
             ca_pem=ca,
+            broker_vip=os.environ.get("MODEL_BROKER_GUEST_VIP", "") if provider == "gcp" else "",
         )
+        if provider == "gcp":
+            delivery.gce_egress_capability()
+        return delivery
     except Exception:
         raise ModelEnrollmentError("Guest model enrollment configuration is unavailable") from None
 

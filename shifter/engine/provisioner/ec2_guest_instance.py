@@ -1,0 +1,288 @@
+"""Private EC2 guest creation and strict provider-observed reconciliation."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import ipaddress
+import json
+import re
+from dataclasses import asdict, dataclass
+from typing import Any
+from uuid import UUID
+
+from shared.raes.image_policy import validate_management_ssh_username
+
+from ec2_guest_secrets import Ec2GuestSecrets
+from guest_host_keys import linux_host_key_script, windows_host_key_script
+from raes_ec2_image import VerifiedEc2Image
+from raes_identity import RESERVED_MANAGEMENT_LOGIN
+
+
+class Ec2GuestError(ValueError):
+    """The observed EC2 guest cannot prove the intended ownership or containment."""
+
+
+@dataclass(frozen=True)
+class Ec2GuestPlan:
+    """Validated placement supplied by the trusted network realizer."""
+
+    environment: str
+    request_id: UUID
+    generation: UUID
+    range_id: int
+    instance_key: str
+    name: str
+    os_family: str
+    subnet_id: str
+    private_ip: str
+    security_group_id: str
+    image: VerifiedEc2Image
+
+    def __post_init__(self):
+        validate_management_ssh_username(self.image.management_ssh_username)
+        address = ipaddress.ip_address(self.private_ip)
+        private = any(
+            address in ipaddress.ip_network(cidr) for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+        )
+        if (
+            not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", self.environment)
+            or type(self.range_id) is not int
+            or self.range_id <= 0
+            or not isinstance(self.request_id, UUID)
+            or not isinstance(self.generation, UUID)
+            or not 1 <= len(self.instance_key) <= 1024
+            or not 1 <= len(self.name) <= 255
+            or self.os_family not in {"linux", "windows"}
+            or not private
+            or address.version != 4
+            or not re.fullmatch(r"subnet-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.subnet_id)
+            or not re.fullmatch(r"sg-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.security_group_id)
+        ):
+            raise Ec2GuestError("EC2 guest placement is invalid")
+
+    @property
+    def username(self) -> str:
+        return self.image.management_ssh_username or (
+            "Administrator" if self.os_family == "windows" else RESERVED_MANAGEMENT_LOGIN
+        )
+
+    @property
+    def token(self) -> str:
+        return hashlib.sha256(f"{self.request_id}:{self.generation}:{self.instance_key}".encode()).hexdigest()
+
+    def tags(self) -> list[dict[str, str]]:
+        """Opaque subject tags avoid copying authored/private identities into inventory."""
+        image_digest = hashlib.sha256(json.dumps(asdict(self.image), sort_keys=True).encode()).hexdigest()
+        values = {
+            "ManagedBy": "shifter",
+            "shifter:system": "shifter",
+            "shifter:environment": self.environment,
+            "shifter:request_id": str(self.request_id),
+            "shifter:range_id": str(self.range_id),
+            "shifter:generation": str(self.generation),
+            "shifter:subject": hashlib.sha256(self.instance_key.encode()).hexdigest(),
+            "shifter:image": image_digest,
+        }
+        return [{"Key": key, "Value": value} for key, value in values.items()]
+
+
+def _bootstrap(plan: Ec2GuestPlan, host_private_key: str, management_public_key: str) -> str:
+    if not re.fullmatch(r"ssh-rsa [A-Za-z0-9+/=]+", management_public_key):
+        raise Ec2GuestError("EC2 management public key is invalid")
+    encoded = base64.b64encode(host_private_key.encode()).decode()
+    if plan.os_family == "windows":
+        body = "<powershell>\n$ErrorActionPreference = 'Stop'\n" + windows_host_key_script(
+            encoded, management_public_key, plan.image.management_ssh_port
+        )
+        return body + "</powershell>\n<persist>true</persist>\n"
+    username = plan.username
+    body = f"""#!/bin/bash
+set -eu
+id -u {username} >/dev/null 2>&1 || useradd --create-home --shell /bin/bash {username}
+management_home=$(getent passwd {username} | cut -d: -f6)
+case "$management_home" in /*) ;; *) exit 1;; esac
+test "$management_home" != /
+install -d -o {username} -g {username} -m 700 "$management_home/.ssh"
+printf '%s\\n' '{management_public_key}' > "$management_home/.ssh/authorized_keys"
+chown {username}:{username} "$management_home/.ssh/authorized_keys"
+chmod 600 "$management_home/.ssh/authorized_keys"
+printf '%s\\n' '{username} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-shifter-management
+chmod 440 /etc/sudoers.d/90-shifter-management
+"""
+    return body + linux_host_key_script(encoded, plan.image.management_ssh_port)
+
+
+def guest_request(plan: Ec2GuestPlan, *, host_private_key: str, management_public_key: str) -> dict[str, Any]:
+    """Render a no-role, encrypted, private-only EC2 request with a retry token."""
+    user_data = _bootstrap(plan, host_private_key, management_public_key)
+    if len(user_data.encode()) > 16384:
+        raise Ec2GuestError("EC2 management bootstrap exceeds the user-data limit")
+    return {
+        "ImageId": plan.image.image_id,
+        "InstanceType": plan.image.instance_type,
+        "MinCount": 1,
+        "MaxCount": 1,
+        "ClientToken": plan.token,
+        "NetworkInterfaces": [
+            {
+                "DeviceIndex": 0,
+                "SubnetId": plan.subnet_id,
+                "PrivateIpAddress": plan.private_ip,
+                "AssociatePublicIpAddress": False,
+                "DeleteOnTermination": True,
+                "Groups": [plan.security_group_id],
+            }
+        ],
+        "MetadataOptions": {"HttpTokens": "required", "HttpPutResponseHopLimit": 1, "InstanceMetadataTags": "disabled"},
+        "BlockDeviceMappings": [
+            {
+                "DeviceName": plan.image.root_device,
+                "Ebs": {
+                    "Encrypted": True,
+                    "VolumeSize": plan.image.disk_size_gb,
+                    "VolumeType": plan.image.disk_type,
+                    "DeleteOnTermination": True,
+                },
+            }
+        ],
+        "TagSpecifications": [
+            {"ResourceType": kind, "Tags": plan.tags()} for kind in ("instance", "volume", "network-interface")
+        ],
+        "UserData": user_data,
+    }
+
+
+def _instances(response: dict[str, Any]) -> list[dict[str, Any]]:
+    if response.get("NextToken"):
+        raise Ec2GuestError("EC2 guest ownership observation exceeded its bound")
+    return [row for reservation in response.get("Reservations", []) for row in reservation.get("Instances", [])]
+
+
+def observe_ec2_guest(plan: Ec2GuestPlan, ec2: Any, instance_id: str) -> dict[str, Any]:
+    """Independently verify VM identity, containment and root snapshot provenance."""
+    rows = _instances(ec2.describe_instances(InstanceIds=[instance_id]))
+    if len(rows) != 1:
+        raise Ec2GuestError("EC2 guest observation is unavailable or ambiguous")
+    row = rows[0]
+    _verify_interface(plan, row)
+    expected = {
+        "InstanceId": instance_id,
+        "ImageId": plan.image.image_id,
+        "InstanceType": plan.image.instance_type,
+        "SubnetId": plan.subnet_id,
+        "PrivateIpAddress": plan.private_ip,
+        "Architecture": plan.image.architecture,
+    }
+    tags = {item["Key"]: item["Value"] for item in row.get("Tags", [])}
+    metadata = row.get("MetadataOptions", {})
+    if (
+        any(row.get(key) != value for key, value in expected.items())
+        or any(tags.get(item["Key"]) != item["Value"] for item in plan.tags())
+        or row.get("State", {}).get("Name") != "running"
+        or row.get("PublicIpAddress")
+        or row.get("IamInstanceProfile")
+        or {group["GroupId"] for group in row.get("SecurityGroups", [])} != {plan.security_group_id}
+        or metadata.get("HttpTokens") != "required"
+        or metadata.get("HttpPutResponseHopLimit") != 1
+        or any(interface.get("Association", {}).get("PublicIp") for interface in row.get("NetworkInterfaces", []))
+    ):
+        raise Ec2GuestError("EC2 guest identity or containment differs from the admitted plan")
+    disks = row.get("BlockDeviceMappings", [])
+    if (
+        row.get("RootDeviceName") != plan.image.root_device
+        or len(disks) != 1
+        or disks[0].get("DeviceName") != plan.image.root_device
+        or disks[0].get("Ebs", {}).get("DeleteOnTermination") is not True
+    ):
+        raise Ec2GuestError("EC2 guest root disk differs from the admitted plan")
+    volumes = ec2.describe_volumes(VolumeIds=[disks[0]["Ebs"]["VolumeId"]]).get("Volumes", [])
+    if len(volumes) != 1:
+        raise Ec2GuestError("EC2 guest boot volume observation is unavailable")
+    volume = volumes[0]
+    attachments = volume.get("Attachments", [])
+    expected_attachment = {"InstanceId": instance_id, "Device": plan.image.root_device, "State": "attached"}
+    if (
+        volume.get("VolumeId") != disks[0]["Ebs"]["VolumeId"]
+        or volume.get("SnapshotId") != plan.image.root_snapshot
+        or volume.get("Encrypted") is not True
+        or volume.get("Size") != plan.image.disk_size_gb
+        or volume.get("VolumeType") != plan.image.disk_type
+        or len(attachments) != 1
+        or any(attachments[0].get(key) != value for key, value in expected_attachment.items())
+    ):
+        raise Ec2GuestError("EC2 guest boot volume provenance or encryption differs")
+    return row
+
+
+def _verify_interface(plan: Ec2GuestPlan, row: dict[str, Any]) -> None:
+    interfaces = row.get("NetworkInterfaces", [])
+    if len(interfaces) != 1:
+        raise Ec2GuestError("EC2 guest interface inventory differs from intent")
+    interface = interfaces[0]
+    addresses = interface.get("PrivateIpAddresses", [])
+    if (
+        interface.get("SubnetId") != plan.subnet_id
+        or interface.get("PrivateIpAddress") != plan.private_ip
+        or interface.get("Ipv6Addresses")
+        or interface.get("Ipv4Prefixes")
+        or interface.get("Ipv6Prefixes")
+        or interface.get("Association")
+        or interface.get("Attachment", {}).get("DeviceIndex") != 0
+        or interface.get("Attachment", {}).get("DeleteOnTermination") is not True
+        or {group["GroupId"] for group in interface.get("Groups", [])} != {plan.security_group_id}
+        or len(addresses) != 1
+        or addresses[0].get("PrivateIpAddress") != plan.private_ip
+        or addresses[0].get("Primary") is not True
+        or addresses[0].get("Association")
+    ):
+        raise Ec2GuestError("EC2 guest interface has unadmitted addressing or attachment")
+
+
+def ensure_ec2_guest(plan: Ec2GuestPlan, ec2: Any, secrets: Ec2GuestSecrets) -> dict[str, Any]:
+    """Converge only this operation generation's guest, then return management facts."""
+    filters = [
+        {"Name": f"tag:{item['Key']}", "Values": [item["Value"]]}
+        for item in plan.tags()
+        if item["Key"] not in {"shifter:generation", "shifter:image"}
+    ]
+    filters.append(
+        {"Name": "instance-state-name", "Values": ["pending", "running", "stopping", "stopped", "shutting-down"]}
+    )
+    rows = _instances(ec2.describe_instances(Filters=filters, MaxResults=5))
+    if len(rows) > 1:
+        raise Ec2GuestError("EC2 guest ownership is ambiguous")
+    if rows:
+        instance_id = rows[0]["InstanceId"]
+        tags = {item["Key"]: item["Value"] for item in rows[0].get("Tags", [])}
+        if any(tags.get(item["Key"]) != item["Value"] for item in plan.tags()):
+            raise Ec2GuestError("EC2 guest belongs to another range or generation")
+        if rows[0].get("State", {}).get("Name") == "pending":
+            ec2.get_waiter("instance_running").wait(
+                InstanceIds=[instance_id], WaiterConfig={"Delay": 5, "MaxAttempts": 60}
+            )
+        observe_ec2_guest(plan, ec2, instance_id)
+    host_ref, public = secrets.host_ssh(plan.range_id, plan.instance_key, create=not rows)
+    private, host_public = secrets.host_identity(plan.range_id, plan.instance_key, create=not rows)
+    if not rows:
+        response = ec2.run_instances(**guest_request(plan, host_private_key=private, management_public_key=public))
+        created = response.get("Instances", [])
+        if len(created) != 1:
+            raise Ec2GuestError("EC2 creation returned an ambiguous result")
+        instance_id = created[0]["InstanceId"]
+        ec2.get_waiter("instance_running").wait(InstanceIds=[instance_id], WaiterConfig={"Delay": 5, "MaxAttempts": 60})
+        observe_ec2_guest(plan, ec2, instance_id)
+    return {
+        "uuid": plan.instance_key,
+        "name": plan.name,
+        "os": plan.os_family,
+        "asset_type": "ec2_vm",
+        "instance_id": instance_id,
+        "private_ip": plan.private_ip,
+        "host_ssh_username": plan.username,
+        "host_ssh_port": plan.image.management_ssh_port,
+        "host_ssh_key_secret_ref": host_ref,
+        "host_public_key": host_public,
+        "participant_access_channels": [],
+        "participant_access_usernames": {},
+    }

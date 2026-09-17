@@ -33,10 +33,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from shared.model_access.guest_binding import ModelGuestBinding
 from shared.raes.artifact_binding import MAX_ARTIFACT_BINDINGS, ArtifactBinding, ArtifactBindingError
 from shared.raes.content_delivery import ContentDeliveryError, DeliveryBinding
+from shared.raes.image_policy import validate_management_ssh_port, validate_management_ssh_username
 from shared.raes.participant_access import (
     MAX_ACCESS_BINDINGS,
     ParticipantAccessBinding,
@@ -101,6 +103,7 @@ _INPUT_KEYS = frozenset(
         "egress_mode",
         "runtime_plugin",
         "model_enrollments",
+        "resource_generation",
     }
 )
 
@@ -114,7 +117,9 @@ _INPUT_KEYS = frozenset(
 # deployment baseline) -- the exact pre-feature behavior, never a silent
 # *weakening*: a ``none`` zero-egress or an active egress posture is always carried
 # explicitly, so a missing field can never be read as "allow egress".
-_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings", "egress_mode", "runtime_plugin", "model_enrollments"})
+_OPTIONAL_INPUT_KEYS = frozenset(
+    {"artifact_bindings", "egress_mode", "runtime_plugin", "model_enrollments", "resource_generation"}
+)
 
 # Mirrors ``installation.range_egress.RangeEgressMode`` without importing it (the
 # provisioner image does not load the installation/pydantic machinery, exactly as
@@ -125,12 +130,22 @@ _DEFAULT_EGRESS_MODE = "status-quo"
 
 # Exactly the registry columns the resolver consumes. Anything else -- row id,
 # enabled flag, notes, timestamps -- is management metadata and stays server-side.
-_CANDIDATE_KEYS = frozenset({"source_version", "image_ref", "machine_type", "disk_size_gb", "disk_type"})
+_CANDIDATE_KEYS = frozenset(
+    {
+        "source_version",
+        "image_ref",
+        "machine_type",
+        "disk_size_gb",
+        "disk_type",
+        "management_ssh_port",
+        "management_ssh_username",
+    }
+)
 
 # Mirrors ``shared.range_instantiation_policy`` without importing it: that module
 # pulls settings/policy machinery the provisioner image does not load. The
 # vocabulary is closed here so an unknown backend fails at the wire.
-_VALID_RANGE_BACKENDS = frozenset({"gce", "gdc"})
+_VALID_RANGE_BACKENDS = frozenset({"gce", "gdc", "ec2"})
 
 _KEY_SEPARATOR = ":"
 _NODE_RESOURCE_TYPE = "node"
@@ -247,6 +262,7 @@ class RaesOperationInput:
     _image_candidates: dict[str, tuple[dict[str, Any], ...]]
     runtime_plugin: RuntimePluginPin | None = None
     model_enrollments: tuple[ModelGuestBinding, ...] = ()
+    resource_generation: str | None = None
 
     def artifact_binding_for(self, target: str) -> ArtifactBinding | None:
         """Return the fenced artifact binding for a node address, or None.
@@ -414,7 +430,18 @@ def _validated_artifact_bindings(value: object) -> tuple[ArtifactBinding, ...]:
 def _validated_candidate(raw: object, field: str) -> dict[str, Any]:
     """Return one registry candidate row closed on exactly the resolver's columns."""
     candidate = _require_mapping(raw, field)
-    _require_exact_keys(candidate, _CANDIDATE_KEYS, field)
+    _require_exact_keys(
+        candidate, _CANDIDATE_KEYS, field, optional=frozenset({"management_ssh_port", "management_ssh_username"})
+    )
+    if "management_ssh_port" in candidate:
+        try:
+            validate_management_ssh_port(candidate["management_ssh_port"])
+        except ValueError as exc:
+            raise RaesOperationInputError(f"{field}: {exc}") from None
+    try:
+        validate_management_ssh_username(candidate.get("management_ssh_username", ""))
+    except ValueError as exc:
+        raise RaesOperationInputError(f"{field}: {exc}") from None
     image_ref = candidate["image_ref"]
     if not isinstance(image_ref, str) or not image_ref.strip():
         raise RaesOperationInputError(f"{field} image_ref is invalid")
@@ -487,6 +514,13 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
             plugin.bindings.validate_plan(obj["plan"])
         except ValueError:
             raise RaesOperationInputError("raes operation input runtime plugin binding is invalid") from None
+    resource_generation = obj.get("resource_generation")
+    if resource_generation is not None or obj["range_backend"] == "ec2":
+        try:
+            valid_epoch = isinstance(resource_generation, str) and str(UUID(resource_generation)) == resource_generation
+        except ValueError:
+            valid_epoch = False
+        _require(valid_epoch, "raes operation input resource generation is missing or invalid")
     return RaesOperationInput(
         plan=_require_mapping(obj["plan"], "raes operation input plan"),
         delivery_bindings=_validated_bindings(obj["delivery_bindings"]),
@@ -499,6 +533,7 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
         _image_candidates=_validated_candidates(obj["image_candidates"]),
         runtime_plugin=plugin,
         model_enrollments=_model_enrollments(obj, plugin),
+        resource_generation=resource_generation,
     )
 
 
@@ -511,6 +546,7 @@ def build_raes_operation_input(
     instantiation_purpose: str | None,
     legacy_range_id: int,
     egress_mode: str = _DEFAULT_EGRESS_MODE,
+    resource_generation: str | None = None,
 ) -> dict[str, Any]:
     """Compose and validate the RAES operation-input payload in one step.
 
@@ -539,5 +575,7 @@ def build_raes_operation_input(
         payload["runtime_plugin"] = bindings.runtime_plugin.model_dump(mode="json")
     if bindings.model_enrollments:
         payload["model_enrollments"] = [row.model_dump(mode="json") for row in bindings.model_enrollments]
+    if resource_generation is not None:
+        payload["resource_generation"] = resource_generation
     parse_raes_operation_input(payload)
     return payload

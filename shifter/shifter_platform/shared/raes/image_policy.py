@@ -23,6 +23,7 @@ deliberately inert on import -- so this module imports stdlib only.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -36,6 +37,8 @@ class ResolvedImage:
     machine_type: str | None = None
     disk_size_gb: int | None = None
     disk_type: str | None = None
+    management_ssh_port: int = 22
+    management_ssh_username: str = ""
 
 
 #: Authored version sentinels meaning "unpinned / any" (raes defaults an
@@ -100,4 +103,20 @@ def _to_resolved(candidate: dict[str, Any]) -> ResolvedImage:
         machine_type=(candidate.get("machine_type") or "") or None,
         disk_size_gb=candidate.get("disk_size_gb"),
         disk_type=(candidate.get("disk_type") or "") or None,
+        management_ssh_port=validate_management_ssh_port(candidate.get("management_ssh_port", 22)),
+        management_ssh_username=validate_management_ssh_username(candidate.get("management_ssh_username", "")),
     )
+
+
+def validate_management_ssh_port(value: object) -> int:
+    """Validate the image-owned management transport independently of participant access."""
+    if type(value) is not int or not 1 <= value <= 65535:
+        raise ValueError("management_ssh_port must be an integer between 1 and 65535")
+    return value
+
+
+def validate_management_ssh_username(value: object) -> str:
+    """An optional image-owned OS login, with no domain or shell syntax."""
+    if not isinstance(value, str) or (value and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,31}", value)):
+        raise ValueError("management_ssh_username must be a local OS username or blank")
+    return value

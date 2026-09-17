@@ -103,10 +103,26 @@ def delivery(control, monkeypatch):
     monkeypatch.setenv("MODEL_ENROLLMENT_CA_PEM_B64", base64.b64encode(control.ca.encode()).decode())
     monkeypatch.setenv("MODEL_ENROLLMENT_CONTROL_URL", control.url)
     monkeypatch.setenv("MODEL_BROKER_GUEST_URL", "https://models.example.test")
+    monkeypatch.setenv("MODEL_BROKER_GUEST_VIP", "10.20.0.9")
     monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
     return SimpleNamespace(
         run=run, value=model_enrollment.load_model_enrollment(run), guest=guest, builder=builder, identity=identity
     )
+
+
+def test_enrollment_carries_only_the_applied_private_broker_destination(delivery):
+    assert delivery.value.gce_egress_capability() == {
+        "contract_version": "model-broker-egress/v1",
+        "vip": "10.20.0.9",
+        "port": 443,
+    }
+
+
+@pytest.mark.parametrize("vip", ["", "203.0.113.9", "127.0.0.1", "10.20.0.0/24"])
+def test_gcp_enrollment_rejects_missing_or_nonprivate_broker_destination(delivery, monkeypatch, vip):
+    monkeypatch.setenv("MODEL_BROKER_GUEST_VIP", vip)
+    with pytest.raises(model_enrollment.ModelEnrollmentError):
+        model_enrollment.load_model_enrollment(delivery.run)
 
 
 def test_delivers_exact_operation_and_allocation_only_over_stdin(control, delivery, caplog):

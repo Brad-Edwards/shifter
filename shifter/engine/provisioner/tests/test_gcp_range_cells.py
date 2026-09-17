@@ -1144,19 +1144,22 @@ def test_instance_resource_installs_key_for_host_login_user():
     assert body["labels"]["image-profile"] == host["image_profile_fingerprint"]
 
 
-def test_windows_dc_instance_gets_boot_firewall_script():
-    """The Windows DC gets a per-boot startup script (firewall off + sshd) so the
-    provisioner's SSH reaches it even if promotion re-enables the firewall; the
-    Linux host does not."""
+def test_windows_guest_bootstrap_preserves_firewall_profiles_and_opens_only_management_ssh():
+    """Core management reachability cannot disable the guest's firewall policy."""
     from gcp_range_cell_resources import instance_resource
 
     plan = render_range_cell_plan("req-123", _variables(), _sample_config())
     by_name = {inst["name"]: inst for inst in plan["instances"]}
 
-    dc_body = instance_resource(plan, by_name["dc01"], _sample_config(), ssh_public_key="ssh-ed25519 AAAA")
+    instance = {**by_name["dc01"], "ssh_port": 2222}
+    dc_body = instance_resource(plan, instance, _sample_config(), ssh_public_key="ssh-ed25519 AAAA")
     dc_meta = {item["key"]: item["value"] for item in dc_body["metadata"]["items"]}
     assert "windows-startup-script-ps1" in dc_meta
-    assert "Set-NetFirewallProfile" in dc_meta["windows-startup-script-ps1"]
+    script = dc_meta["windows-startup-script-ps1"]
+    assert "Set-NetFirewallProfile" not in script
+    assert "-LocalPort 2222" in script
+    assert "-Protocol TCP" in script
+    assert "-Action Allow" in script
     assert "sshd" in dc_meta["windows-startup-script-ps1"]
 
     host_body = instance_resource(plan, by_name["kali"], _sample_config(), ssh_public_key="ssh-ed25519 AAAA")

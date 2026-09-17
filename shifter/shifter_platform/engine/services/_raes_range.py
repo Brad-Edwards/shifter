@@ -25,7 +25,7 @@ from shared.raes.participant_access import ParticipantAccessBinding
 
 from ._common import _persist_task_arn
 from ._range_backend_binding import (
-    assert_backend_supports_egress_none,
+    assert_backend_supports_egress,
     backend_binding_fields,
     egress_binding_fields,
     require_workspace_binding,
@@ -159,7 +159,7 @@ def create_raes_range(
 
     binding_fields = backend_binding_fields(backend_admission)
     egress_fields = egress_binding_fields(egress_mode)
-    assert_backend_supports_egress_none(binding_fields.get("range_backend"), egress_fields["egress_mode"])
+    assert_backend_supports_egress(binding_fields.get("range_backend"), egress_fields["egress_mode"])
     user_model = get_user_model()
     with transaction.atomic():
         scope = bindings.runtime_plugin_scope
@@ -179,6 +179,7 @@ def create_raes_range(
             status=Range.Status.PROVISIONING,
             subnet_index=subnet_index,
             placement_zone=placement_zone,
+            resource_generation=uuid4() if binding_fields.get("range_backend") == "ec2" else None,
             range_config=compiled_plan,
             workspace_id=workspace_id,
             **binding_fields,
@@ -266,6 +267,8 @@ def _persist_range_bindings(range_obj: Range, bindings: RangeBindings) -> None:
             machine_type=binding.machine_type,
             disk_size_gb=binding.disk_size_gb,
             disk_type=binding.disk_type,
+            management_ssh_port=binding.management_ssh_port,
+            management_ssh_username=binding.management_ssh_username,
             binding_version=1,
         )
         for binding in bindings.artifact

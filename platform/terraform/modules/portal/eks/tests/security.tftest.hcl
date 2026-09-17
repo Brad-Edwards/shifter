@@ -1,3 +1,11 @@
+override_data {
+  target = data.aws_ssm_parameters_by_path.range_network
+  values = {
+    names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
+    values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
+  }
+}
+
 mock_provider "aws" {}
 
 override_resource {
@@ -471,7 +479,7 @@ run "enabled_broker_routes" {
   }
   assert {
     condition = alltrue([for table in aws_route_table.private :
-      length([for route in table.route : route if route.cidr_block == "10.50.1.0/24" && route.vpc_peering_connection_id == "pcx-mock-broker"]) == 1
+      length([for route in table.route : route if route.cidr_block == "10.50.0.0/16" && route.vpc_peering_connection_id == aws_vpc_peering_connection.range.id]) == 1
     ])
     error_message = "Every private EKS route table must return admitted guest traffic over the owned direct peering."
   }
@@ -482,5 +490,13 @@ run "enabled_broker_routes" {
       aws_vpc_security_group_ingress_rule.model_broker[0].to_port == 8443
     )
     error_message = "Only the model NLB security group may reach the broker's TLS target port."
+  }
+}
+
+run "range_management_independent_of_optional_broker" {
+  command = apply
+  assert {
+    condition     = !var.model_broker.enabled && length(aws_route.range_to_management) == 2 && aws_vpc_peering_connection.range.peer_vpc_id == "vpc-mock-range"
+    error_message = "Native guest management must exist without a model broker."
   }
 }

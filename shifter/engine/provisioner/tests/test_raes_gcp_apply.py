@@ -187,6 +187,27 @@ def test_missing_guest_os_evidence_fails_apply_and_cleans_up():
     assert clients.instances.get.call_count == 4
 
 
+def test_enrolled_guest_gets_exact_broker_firewall_before_enrollment():
+    clients = _clients()
+    secrets, _ = _secret_ops()
+    cfg = replace(_config(), model_broker_vip="10.20.0.9")
+
+    def enroll(_plan, _outputs):
+        rules = [call.kwargs["firewall_resource"] for call in clients.firewalls.insert.call_args_list]
+        broker = [rule for rule in rules if rule.get("destination_ranges") == ["10.20.0.9/32"]]
+        assert len(broker) == 1
+        assert broker[0]["allowed"] == [{"I_p_protocol": "tcp", "ports": ["443"]}]
+
+    options = _apply_options(
+        cfg,
+        clients,
+        secrets,
+        model_enrollment=enroll,
+        model_broker={"contract_version": "model-broker-egress/v1", "vip": "10.20.0.9", "port": 443},
+    )
+    apply_raes_range_cell("req-broker", 7, _plan(), _resolver, options)
+
+
 def _account_secret_ops() -> tuple[RaesAccountCredentialOps, SimpleNamespace]:
     mocks = SimpleNamespace(
         ensure_password=MagicMock(return_value=("projects/proj-1/secrets/password", "PASSWORD")),
@@ -1072,6 +1093,39 @@ def _access_transport(channel: str = "ssh") -> dict:
 
 class TestParticipantAccessRealization:
     """A declared endpoint reaches the output only with a verified credential (#1710)."""
+
+    @pytest.mark.parametrize("warm", [False, True])
+    def test_participant_identity_readback_failure_prevents_readiness(self, monkeypatch, warm):
+        from raes_gcp_apply import realize_access_on_existing_cell
+
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        account_ops, _ = _account_secret_ops()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            account_secret_ops=account_ops,
+            credential_installer=lambda **_kwargs: {"acct.analyst": "projects/proj-1/secrets/analyst-key"},
+        )
+        context = MagicMock()
+        context.wait_for_ready.return_value = True
+        context.executor.run_command.return_value = CommandResult(False, 1, "", "")
+        from raes_participant_host_keys import observe_participant_host_keys
+
+        def observe(instances):
+            observe_participant_host_keys(instances, execution_builder=lambda *_args, **_kwargs: context)
+
+        module = "raes_gcp_activation_apply" if warm else "raes_gcp_apply"
+        monkeypatch.setattr(f"{module}.observe_participant_host_keys", observe, raising=False)
+        apply = realize_access_on_existing_cell if warm else apply_raes_range_cell
+
+        def resolver(node):
+            return replace(_resolver(node), host_ssh_port=2222)
+
+        with pytest.raises(ValueError, match="identity readback failed"):
+            apply("req-1", 7, _access_plan(), resolver, options, access_bindings=[_access_transport()])
+        context.close.assert_called_once()
 
     def test_declared_ssh_publishes_the_account_credential_reference(self):
         clients = _clients()

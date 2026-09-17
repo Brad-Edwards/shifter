@@ -66,3 +66,9 @@ does not establish those properties.
 References: [NLB target attributes](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/edit-target-group-attributes.html),
 [TargetGroupBinding](https://kubernetes-sigs.github.io/aws-load-balancer-controller/latest/guide/targetgroupbinding/targetgroupbinding/),
 [Bedrock token counting](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html).
+
+Credential transport uses a bounded regional SDK session before resolving the
+workload identity. The same two-second connection/read timeouts and single attempt
+apply to implicit web-identity refresh and explicit role assumption; configuring
+only the final service client would leave the refresh on SDK defaults. Proxy
+environment variables are not used by these STS clients.

@@ -169,12 +169,9 @@ resource "aws_route_table" "private" {
     nat_gateway_id = aws_nat_gateway.this[each.key].id
   }
 
-  dynamic "route" {
-    for_each = var.model_broker.enabled ? toset(var.model_broker.admitted_subnets) : toset([])
-    content {
-      cidr_block                = route.value
-      vpc_peering_connection_id = module.model_broker[0].peering_id
-    }
+  route {
+    cidr_block                = local.range_network["vpc_cidr"]
+    vpc_peering_connection_id = aws_vpc_peering_connection.range.id
   }
 
   tags = merge(var.tags, {

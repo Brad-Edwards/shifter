@@ -699,3 +699,29 @@ class TestMultiRegionZonePoolPlacement:
 
         bound = patched.apply.call_args.kwargs["options"].config
         assert (bound.zone, bound.region) == ("us-central1-a", "us-central1")
+
+
+def test_ec2_provision_dispatches_from_immutable_backend_without_reading_gce_config(patched, monkeypatch):
+    from unittest.mock import Mock
+
+    native = Mock(return_value=patched.apply.return_value)
+    monkeypatch.setattr("raes_ec2_runtime.provision_ec2_run", native)
+    patched.read_input.side_effect = lambda *args, **kwargs: _run(
+        range_backend="ec2", resource_generation=_OPERATION_ID
+    )
+    raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+    native.assert_called_once()
+    patched.apply.assert_not_called()
+
+
+def test_ec2_destroy_dispatches_without_loading_plugin_or_gce_configuration(patched, monkeypatch):
+    from unittest.mock import Mock
+
+    native = Mock(return_value={"outcome": "VERIFIED_ABSENT", "residual_categories": [], "scope": {}})
+    monkeypatch.setattr("raes_ec2_runtime.destroy_ec2_run", native)
+    patched.read_input.side_effect = lambda *args, **kwargs: _run(
+        range_backend="ec2", resource_generation=_OPERATION_ID
+    )
+    raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
+    native.assert_called_once()
+    patched.destroy.assert_not_called()

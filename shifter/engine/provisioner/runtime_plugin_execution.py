@@ -60,13 +60,14 @@ def load_guest_plugin_plans(run: RaesOperationRun) -> GuestPluginPlans | None:
     if parsed.runtime_plugin is None:
         return None
     try:
-        if parsed.range_backend != "gce":
+        if parsed.range_backend not in {"gce", "ec2"}:
             raise ValueError("Unsupported plugin backend")
         requests = runtime_plugin_requests(
             parsed.runtime_plugin,
             parsed.plan,
             UUID(run.operation_id),
             parsed.legacy_range_id,
+            backend=parsed.range_backend,
         )
         deadline = time.monotonic() + 600
         while time.monotonic() < deadline:

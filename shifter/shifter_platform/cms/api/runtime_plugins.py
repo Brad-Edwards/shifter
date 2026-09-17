@@ -3,7 +3,7 @@
 from dataclasses import asdict
 from uuid import UUID
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -43,6 +43,11 @@ class RuntimePluginViewSerializer(serializers.Serializer):
     has_registry_credentials = serializers.BooleanField()
 
 
+class RuntimePluginPageSerializer(serializers.Serializer):
+    results = RuntimePluginViewSerializer(many=True)
+    next_cursor = serializers.UUIDField(allow_null=True)
+
+
 def _error(request: Request, exc: Exception) -> Response:
     denied = isinstance(exc, OrganizationAuthorizationError)
     return api_error_response(
@@ -58,10 +63,21 @@ class RuntimePluginListCreateView(APIView):
 
     permission_classes = [IsAuthenticatedSession]
 
-    @extend_schema(responses=RuntimePluginViewSerializer(many=True))
+    @extend_schema(
+        parameters=[OpenApiParameter("cursor", type=UUID)],
+        responses=RuntimePluginPageSerializer,
+    )
     def get(self, request: Request, organization_uuid: UUID) -> Response:
         try:
-            return Response([asdict(row) for row in list_runtime_plugins(request.user, organization_uuid)])
+            return Response(
+                asdict(
+                    list_runtime_plugins(
+                        request.user,
+                        organization_uuid,
+                        cursor=request.query_params.get("cursor"),
+                    )
+                )
+            )
         except (OrganizationAuthorizationError, ValidationError) as exc:
             return _error(request, exc)
 

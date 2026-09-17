@@ -182,6 +182,7 @@ def test_renderer_binds_applied_broker_to_platform_roles_and_endpoints():
             ),
             "vpc_id": "vpc-" + "1" * 17,
             "endpoint_cidrs": ["10.42.0.10/32"],
+            "guest_endpoint_cidrs": ["10.42.0.25/32"],
             "health_check_cidrs": ["10.42.0.0/20"],
         }
     }

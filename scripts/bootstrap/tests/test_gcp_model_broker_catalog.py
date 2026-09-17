@@ -14,6 +14,7 @@ from .test_gcp_control_plane import PINNED_IMAGE_TAG, _sample_gcp_control_plane_
 
 @pytest.mark.parametrize("adapter", ["bootstrap", "actions"])
 @pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.integration
 def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, adapter, enabled):
     """The mounted catalog overrides inherited disabled defaults only for control."""
     import importlib.util

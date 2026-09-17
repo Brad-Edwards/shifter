@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from shifter_adapter_sdk.model_access import ModelAccessError, access_token, enroll
 
+pytestmark = pytest.mark.integration
+
 ENROLLMENT = "11111111-1111-4111-8111-111111111111." + "e" * 43
 ACCESS = "11111111-1111-4111-8111-111111111111." + "a" * 43
 REFRESH = "11111111-1111-4111-8111-111111111111." + "r" * 43

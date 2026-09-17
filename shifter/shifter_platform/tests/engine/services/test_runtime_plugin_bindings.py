@@ -64,7 +64,7 @@ def pack(monkeypatch):
     )
 
 
-def launch(pack):
+def launch(pack, *, backend="gce"):
     plan = {"resources": {"node.web": {"resource_type": "node", "payload": {"os_family": "linux", "spec": {}}}}}
     request = uuid4()
     create_raes_range(
@@ -72,7 +72,7 @@ def launch(pack):
         user_id=pack.actor.id,
         workspace_id=1,
         compiled_plan=plan,
-        backend_admission=BackendAdmission(True, "gce", InstantiationPurpose.LIVE_FIRE, "", ""),
+        backend_admission=BackendAdmission(True, backend, InstantiationPurpose.LIVE_FIRE, "", ""),
         bindings=RangeBindings(runtime_plugin_scope=pack.scope),
     )
     target = Range.objects.get(request__request_id=request)
@@ -260,3 +260,13 @@ def test_warm_claim_cannot_skip_a_disabled_plugin_binding(pack, monkeypatch):
     change_runtime_plugin(pack.actor, pack.organization.uuid, pack.installed.id, "disable")
     assert attempt_warm_claim(replace(request, request_id=uuid4())) is None
     claim.assert_not_called()
+
+
+def test_aws_plugin_invocations_use_the_bound_provider_and_stable_resource_epoch(pack):
+    target = launch(pack, backend="ec2")
+    operation = OperationInput.objects.get(operation_id=target.provisioner_operation_id)
+    parsed = parse_raes_operation_input(operation.envelope["payload"])
+    assert parsed.resource_generation == str(target.resource_generation)
+    invocations = list(RuntimePluginInvocation.objects.filter(operation_id=target.provisioner_operation_id))
+    assert {row.phase for row in invocations} == {"validate", "configure", "verify"}
+    assert all(row.input["provider"] == "aws" for row in invocations)

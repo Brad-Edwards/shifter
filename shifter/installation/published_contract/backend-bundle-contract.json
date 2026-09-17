@@ -565,6 +565,20 @@
       ],
       "generated_outputs": [
         {
+          "description": "Public AWS runtime configuration value (ACCESS_NETWORK_CIDRS) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "ACCESS_NETWORK_CIDRS",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public AWS runtime configuration value (AGENT_S3_BUCKET) emitted into the platform runtime environment.",
           "destination": "runtime-env",
           "kind": "runtime-env",
@@ -864,6 +878,20 @@
           "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
+          "description": "Public AWS runtime configuration value (MODEL_BROKER_GUEST_CIDRS) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_GUEST_CIDRS",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public AWS runtime configuration value (MODEL_BROKER_GUEST_URL) emitted into the platform runtime environment.",
           "destination": "runtime-env",
           "kind": "runtime-env",
@@ -1082,6 +1110,20 @@
           ],
           "sensitivity": "secret-reference",
           "source": "an AWS Secrets Manager reference rendered from validated Terraform outputs"
+        },
+        {
+          "description": "Public AWS runtime configuration value (PORTAL_NETWORK_CIDRS) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PORTAL_NETWORK_CIDRS",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
           "description": "Public AWS runtime configuration value (PORTAL_VPC_CIDR) emitted into the platform runtime environment.",
@@ -2682,6 +2724,20 @@
           "destination": "runtime-env",
           "kind": "runtime-env",
           "name": "MODEL_BROKER_GUEST_URL",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (MODEL_BROKER_GUEST_VIP) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_GUEST_VIP",
           "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
           "process_roles": [
             "portal",

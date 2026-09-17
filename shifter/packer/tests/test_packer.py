@@ -1,5 +1,8 @@
 """
-Tests for Packer AMI build configuration.
+Packer configuration lint and behavior tests.
+
+TestScriptStructureLint and TestScriptContentLint are static lint checks only;
+the execution suites below exercise script behavior against controlled shims.
 
 Run with: pytest shifter/packer/tests/test_packer.py -v
 """
@@ -19,8 +22,8 @@ REPO_ROOT = PACKER_DIR.parent.parent
 PACKER_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "packer.yml"
 
 
-class TestScriptStructure:
-    """Test that all required scripts exist and have correct structure."""
+class TestScriptStructureLint:
+    """Lint-only checks of script presence and structure; no provisioning behavior."""
 
     @pytest.fixture
     def kali_scripts(self):
@@ -80,7 +83,7 @@ class TestScriptStructure:
         assert (SCRIPTS_DIR / "common" / "cleanup.sh").exists()
 
 
-class TestScriptContent:
+class TestScriptContentLint:
     """Test script content for best practices."""
 
     @pytest.fixture
@@ -174,6 +177,7 @@ class TestPackerTemplates:
         shutil.which("packer") is None,
         reason="Packer not installed",
     )
+    @pytest.mark.integration
     def test_packer_validate(self):
         """Packer templates should be valid."""
         packer_path = shutil.which("packer")

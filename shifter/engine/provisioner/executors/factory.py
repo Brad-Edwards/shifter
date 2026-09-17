@@ -121,6 +121,13 @@ def build_guest_execution_context(
         )
 
     if provider == "aws":
+        if instance_data.get("asset_type") == "ec2_vm":
+            from executors.ec2_guest_transport import native_ec2_executor
+
+            executor, target = native_ec2_executor(instance_data, secret_reader or get_secrets_store().get_secret)
+            return GuestExecutionContext(
+                executor=executor, target=target, document_name=document_name, transport_name="ssh"
+            )
         target = instance_data.get("instance_id", "")
         if not target:
             raise ValueError("AWS guest execution requires instance_id in instance output")

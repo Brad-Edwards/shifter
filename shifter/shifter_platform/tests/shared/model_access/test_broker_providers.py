@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from botocore.eventstream import ChecksumMismatch
 
 from model_broker.provider_usage import StreamUsage, bedrock_events, usage_from_message, vertex_events
 from model_broker.providers import MessagesProvider
@@ -193,7 +194,7 @@ async def test_corrupt_aws_crc_is_rejected():
     async def chunks():
         yield bytes(raw)
 
-    with pytest.raises(Exception, match="Checksum mismatch"):
+    with pytest.raises(ChecksumMismatch, match="Checksum mismatch"):
         [event async for event in bedrock_events(chunks())]
 
 

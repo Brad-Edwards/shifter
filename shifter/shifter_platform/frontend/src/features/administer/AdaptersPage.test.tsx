@@ -21,12 +21,13 @@ const adapter = {
   id: "adapter-1", organization_uuid: "org-1", manifest_digest: "digest",
   manifest, state: "ready", has_registry_credentials: false, failure_code: "",
 };
+const page = (results: unknown[]) => ({ results, next_cursor: null });
 const base = "/cms/organizations/org-1/plugins/";
 const isOrganizations = (url: string) => url === "/workspaces/organizations/";
 
 beforeEach(() => {
   mockApi.mockReset();
-  mockApi.mockImplementation(async (url) => isOrganizations(url) ? organizations : [adapter]);
+  mockApi.mockImplementation(async (url) => isOrganizations(url) ? organizations : page([adapter]));
 });
 
 describe("tenant plugin administration", () => {
@@ -41,7 +42,7 @@ describe("tenant plugin administration", () => {
   it("requires confirmation and preserves a rejected action", async () => {
     mockApi.mockImplementation(async (url, options) => {
       if (options?.method === "POST") throw new ApiError(400, { code: "invalid", message: "Plugin unavailable" });
-      return isOrganizations(url) ? organizations : [adapter];
+      return isOrganizations(url) ? organizations : page([adapter]);
     });
     renderRoute(<AdaptersPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
@@ -55,7 +56,7 @@ describe("tenant plugin administration", () => {
   });
 
   it("retains retired versions and offers no reactivation", async () => {
-    mockApi.mockImplementation(async (url) => isOrganizations(url) ? organizations : [{ ...adapter, state: "retired" }]);
+    mockApi.mockImplementation(async (url) => isOrganizations(url) ? organizations : page([{ ...adapter, state: "retired" }]));
     renderRoute(<AdaptersPage />);
     expect(await screen.findByText("Retained for existing ranges")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable" })).not.toBeInTheDocument();
@@ -77,7 +78,7 @@ describe("tenant plugin administration", () => {
     const user = userEvent.setup();
     mockApi.mockImplementation(async (url, options) => {
       if (options?.method === "POST") return { ...adapter, state: "checking" };
-      return isOrganizations(url) ? organizations : [];
+      return isOrganizations(url) ? organizations : page([]);
     });
     renderRoute(<AdaptersPage />);
     fireEvent.change(await screen.findByLabelText("Plugin installation file"), {
@@ -94,7 +95,7 @@ describe("tenant plugin administration", () => {
 
   it("allows failed installation retry with replacement private registry credentials", async () => {
     mockApi.mockImplementation(async (url, options) => options?.method === "POST" ? adapter :
-      isOrganizations(url) ? organizations : [{ ...adapter, state: "failed" }]);
+      isOrganizations(url) ? organizations : page([{ ...adapter, state: "failed" }]));
     renderRoute(<AdaptersPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Retry installation" }));
     const dialog = within(screen.getByRole("alertdialog"));
@@ -113,4 +114,37 @@ describe("tenant plugin administration", () => {
     const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
     expect(result.violations).toEqual([]);
   });
+});
+
+it("lets an administrator reach organizations beyond the first page", async () => {
+  mockApi.mockImplementation(async (url) => {
+    if (url === "/workspaces/organizations/") return {
+      ...organizations, count: 2, next: "/workspaces/organizations/?page=2", previous: null,
+    };
+    if (url === "/workspaces/organizations/?page=2") return {
+      results: [{ uuid: "org-2", name: "Second tenant" }], count: 2, next: null,
+      previous: "/workspaces/organizations/",
+    };
+    return page([]);
+  });
+  renderRoute(<AdaptersPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "Next organizations" }));
+  expect(await screen.findByRole("option", { name: "Second tenant" })).toBeInTheDocument();
+  await waitFor(() => expect(mockApi).toHaveBeenCalledWith("/cms/organizations/org-2/plugins/", expect.anything()));
+  expect(screen.getByRole("button", { name: "Next organizations" })).toBeDisabled();
+});
+
+it("loads older versions for administration and keeps earlier versions visible", async () => {
+  mockApi.mockImplementation(async (url) => {
+    if (isOrganizations(url)) return organizations;
+    if (url === base) return { results: [adapter], next_cursor: "next-page" };
+    if (url === `${base}?cursor=next-page`) return page([{ ...adapter, id: "adapter-2",
+      manifest: { ...manifest, plugin_id: "example.older", version: "0.9" } }]);
+    throw new Error("Unexpected request");
+  });
+  renderRoute(<AdaptersPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "Load more adapters" }));
+  expect(await screen.findByText("example.older")).toBeInTheDocument();
+  expect(screen.getByText("example.adapter")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Load more adapters" })).not.toBeInTheDocument();
 });

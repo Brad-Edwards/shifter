@@ -46,7 +46,6 @@ variables {
   private_subnets          = { "us-east-2a" = { id = "subnet-mock-platform", cidr = "10.42.0.0/20" } }
   range_vpc_id             = "vpc-mock-range"
   range_vpc_cidr           = "10.50.0.0/16"
-  range_route_table_id     = "rtb-11111111111111111"
 }
 
 run "private_broker_boundary" {
@@ -86,7 +85,7 @@ run "private_broker_boundary" {
       output.deployment.endpoint_cidrs == tolist(["10.42.0.10/32", "10.42.0.10/32"]) &&
       aws_vpc_security_group_ingress_rule.listener["10.50.1.0/24"].from_port == 443 &&
       length(aws_route53_zone.broker.vpc) == 2 &&
-      aws_route.range_to_broker["us-east-2a"].destination_cidr_block == "10.42.0.0/20"
+      output.deployment.guest_endpoint_cidrs == tolist(["10.42.0.10/32"])
     )
     error_message = "Broker network must use exact private API endpoints and range-private DNS/routing."
   }

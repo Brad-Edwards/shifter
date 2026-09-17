@@ -2,7 +2,7 @@
 
 from dataclasses import asdict
 from unittest.mock import Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.contrib.auth.models import User
@@ -54,8 +54,50 @@ def test_tenant_admin_installs_without_staff_operator_grants_or_execution(tenant
     response = client.post(url(organization), {"manifest": manifest}, format="json")
     assert response.status_code == 202
     assert response.json()["state"] == "checking"
-    assert len(client.get(url(organization)).json()) == 1
+    assert len(client.get(url(organization)).json()["results"]) == 1
     execute.assert_not_called()
+
+
+def test_installation_pages_are_bounded_complete_and_tenant_scoped(tenant, manifest):
+    actor, organization = tenant
+    rows = [
+        RuntimePluginInstallation(
+            id=UUID(int=i + 1),
+            organization_uuid=organization.uuid,
+            plugin_id=manifest["plugin_id"],
+            version=f"1.{i}",
+            manifest={**manifest, "version": f"1.{i}"},
+            manifest_digest=str(i),
+            installed_by=actor,
+            probe_expires_at=timezone.now(),
+        )
+        for i in range(53)
+    ]
+    RuntimePluginInstallation.objects.bulk_create(rows)
+    RuntimePluginInstallation.objects.filter(organization_uuid=organization.uuid).update(created_at=timezone.now())
+    foreign = RuntimePluginInstallation.objects.create(
+        organization_uuid=uuid4(),
+        plugin_id="other.adapter",
+        version="1",
+        manifest={},
+        manifest_digest="other",
+        installed_by=actor,
+        probe_expires_at=timezone.now(),
+    )
+    client = APIClient()
+    client.force_authenticate(user=actor)
+    first = client.get(url(organization)).json()
+    assert len(first["results"]) == 50
+    assert first["results"][0]["id"] == str(rows[-1].pk)
+    second = client.get(url(organization), {"cursor": first["next_cursor"]}).json()
+    assert len(second["results"]) == 3
+    assert second["next_cursor"] is None
+    ids = [row["id"] for row in first["results"] + second["results"]]
+    assert len(set(ids)) == 53
+    assert set(ids) == {str(row.pk) for row in rows}
+    assert str(foreign.pk) not in ids
+    assert client.get(url(organization), {"cursor": "not-a-cursor"}).status_code == 400
+    assert client.get(url(organization), {"cursor": str(foreign.pk)}).status_code == 400
 
 
 def test_staff_or_another_tenant_admin_cannot_inspect_or_mutate(tenant, manifest):

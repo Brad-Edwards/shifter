@@ -101,6 +101,8 @@ def _raes_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, 
                 "machine_type": row.machine_type,
                 "disk_size_gb": row.disk_size_gb,
                 "disk_type": row.disk_type,
+                **({"management_ssh_port": row.management_ssh_port} if row.management_ssh_port != 22 else {}),
+                **({"management_ssh_username": row.management_ssh_username} if row.management_ssh_username else {}),
             }
         )
     return projected
@@ -169,6 +171,8 @@ def _raes_artifact_bindings(target: Range) -> list[ArtifactBinding]:
             machine_type=row.machine_type,
             disk_size_gb=row.disk_size_gb,
             disk_type=row.disk_type,
+            management_ssh_port=row.management_ssh_port,
+            management_ssh_username=row.management_ssh_username,
         )
         for row in RaesArtifactSatisfactionBinding.objects.filter(range=target).order_by("pk")
     ]
@@ -206,6 +210,7 @@ def _raes_input_payload(target: Range, request: Request, *, suppress_access: boo
         instantiation_purpose=target.instantiation_purpose or None,
         legacy_range_id=target.id,
         egress_mode=target.egress_mode,
+        resource_generation=str(target.resource_generation) if target.resource_generation else None,
     )
 
 

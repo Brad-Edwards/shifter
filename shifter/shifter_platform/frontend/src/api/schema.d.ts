@@ -496,7 +496,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Organization administrators install their own plugins without staff status. */
-        get: operations["cms_organizations_plugins_list"];
+        get: operations["cms_organizations_plugins_retrieve"];
         put?: never;
         /** @description Organization administrators install their own plugins without staff status. */
         post: operations["cms_organizations_plugins_create"];
@@ -4883,6 +4883,10 @@ export interface components {
             disk_size_gb?: number | null;
             /** @default  */
             disk_type: string;
+            /** @default  */
+            management_ssh_username: string;
+            /** @default 22 */
+            management_ssh_port: number;
             /** @default true */
             enabled: boolean;
             /** @default  */
@@ -4915,6 +4919,8 @@ export interface components {
             readonly machine_type: string;
             readonly disk_size_gb: number | null;
             readonly disk_type: string;
+            readonly management_ssh_username: string;
+            readonly management_ssh_port: number;
             readonly enabled: boolean;
             readonly notes: string;
             readonly artifact_id: string;
@@ -5343,6 +5349,11 @@ export interface components {
             bindings: components["schemas"]["RuntimePluginBindings"];
             /** @default true */
             enabled: boolean;
+        };
+        RuntimePluginPage: {
+            results: components["schemas"]["RuntimePluginView"][];
+            /** Format: uuid */
+            next_cursor: string | null;
         };
         RuntimePluginTarget: {
             address: string;
@@ -6926,9 +6937,11 @@ export interface operations {
             };
         };
     };
-    cms_organizations_plugins_list: {
+    cms_organizations_plugins_retrieve: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string;
+            };
             header?: never;
             path: {
                 organization_uuid: string;
@@ -6942,7 +6955,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RuntimePluginView"][];
+                    "application/json": components["schemas"]["RuntimePluginPage"];
                 };
             };
             /** @description Authentication failed. */

@@ -179,6 +179,7 @@ class TestGcpKaliSourceImage:
         assert "systemctl enable regenerate-ssh-host-keys.service" in script
 
 
+@pytest.mark.integration
 class TestGcpPackerValidate:
     """`packer validate` passes against the GCE templates (when packer is present)."""
 

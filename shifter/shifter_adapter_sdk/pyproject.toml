@@ -26,6 +26,7 @@ shifter_adapter_sdk = ["py.typed"]
 dev = ["pytest>=9", "ruff>=0.15"]
 
 [tool.pytest.ini_options]
+markers = ["integration: executes external toolchains or isolated package environments"]
 testpaths = ["tests"]
 
 [tool.ruff]

@@ -149,11 +149,11 @@ def _assert_raes_adapter_supports(backend_admission: BackendAdmission | None) ->
     closed here -- before reservation and dispatch -- rather than binding ``gdc``
     and then running the hard-coded GCE adapter.
     """
-    if backend_admission is None or backend_admission.backend == _RAES_REALIZED_BACKEND:
+    if backend_admission is None or backend_admission.backend in {_RAES_REALIZED_BACKEND, "ec2"}:
         return
     raise CMSError(
         f"RAES-native provisioning has no realization adapter for range backend "
-        f"'{backend_admission.backend}'; only the GCE VM range-cell backend is implemented.",
+        f"'{backend_admission.backend}'; the GCE and EC2 VM range-cell backends are implemented.",
         details={"code": "unsupported-capability"},
     )
 
@@ -270,6 +270,12 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     from cms.services._range_workspace import resolve_effective_egress_mode
 
     egress_mode = resolve_effective_egress_mode(workspace_id)
+    from shared.range_instantiation_policy import assert_range_backend_egress_supported
+
+    try:
+        assert_range_backend_egress_supported(backend_admission.backend if backend_admission else None, egress_mode)
+    except ValueError as exc:
+        raise CMSError(str(exc)) from exc
 
     # PLAT-202: required model access is a fail-closed admission decision enforced
     # here, before any dispatch (cold, warm-claim, or non-user), so every launch

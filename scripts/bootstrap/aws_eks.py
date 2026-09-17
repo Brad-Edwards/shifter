@@ -846,6 +846,7 @@ def render_aws_values(
     runtime_env.update(
         {
             "MODEL_BROKER_GUEST_URL": "",
+            "MODEL_BROKER_GUEST_CIDRS": "",
             "MODEL_ENROLLMENT_CONTROL_URL": "",
             "MODEL_ENROLLMENT_CA_PEM_B64": "",
             **broker.get("enrollment_env", {}),

@@ -27,11 +27,10 @@ def workload_assertion(*, provider: str, region: str, audience: str) -> str:
                 return "Bearer " + credential.token
         if provider != "aws":
             raise ValueError
-        import boto3
-
+        from shared.model_access.aws_session import bounded_aws_session
         from shared.model_access.control_identity import aws_control_assertion
 
-        credential = boto3.Session(region_name=region).get_credentials()
+        credential = bounded_aws_session(region).get_credentials()
         if credential is None:
             raise ValueError
         return aws_control_assertion(credentials=credential.get_frozen_credentials(), region=region, audience=audience)

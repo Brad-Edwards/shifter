@@ -7,6 +7,7 @@ import { renderRoute } from "@/test/utils";
 vi.mock("@/api/client", () => ({ apiFetch: vi.fn() }));
 
 import { apiFetch } from "@/api/client";
+import { ApiError } from "@/api/errors";
 
 import { ChallengesPage } from "./ChallengesPage";
 
@@ -25,7 +26,9 @@ function challenge(overrides: Record<string, unknown> = {}) {
   };
 }
 
-beforeEach(() => mockApi.mockReset());
+beforeEach(() => {
+  mockApi.mockReset();
+});
 
 describe("ChallengesPage", () => {
   it("renders challenges grouped by category with solved status", async () => {
@@ -77,6 +80,12 @@ describe("ChallengesPage", () => {
     mockApi.mockResolvedValue([]);
     renderRoute(<ChallengesPage />);
     expect(await screen.findByText("No challenges available yet")).toBeInTheDocument();
+  });
+
+  it("reports a rejected query", async () => {
+    mockApi.mockRejectedValue(new ApiError(503, { code: "unavailable", message: "Service unavailable" }));
+    renderRoute(<ChallengesPage />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load challenges");
   });
 
   it("has no axe violations when loaded", async () => {
