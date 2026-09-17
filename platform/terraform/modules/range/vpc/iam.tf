@@ -4,7 +4,6 @@
 # - IAM role with EC2 assume role trust
 # - SSM managed instance core policy for Systems Manager access
 # - S3 read access for agent installers
-# - Bedrock access for Claude Code on range instances
 # - Instance profile to attach role to EC2 instances
 #
 # Range guests do NOT access SSM Parameter Store via this role. Guest setup is
@@ -62,30 +61,6 @@ resource "aws_iam_role_policy" "range_instance_s3" {
           "s3:GetObject"
         ]
         Resource = "arn:aws:s3:::${var.agent_s3_bucket}/*"
-      }
-    ]
-  })
-}
-
-# Bedrock access for Claude Code on range instances (Kali and Victim)
-resource "aws_iam_role_policy" "range_instance_bedrock" {
-  name = "bedrock-claude-code"
-  role = aws_iam_role.range_instance.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
-          "bedrock:ListInferenceProfiles"
-        ]
-        Resource = [
-          "arn:aws:bedrock:*:*:inference-profile/*",
-          "arn:aws:bedrock:*:*:foundation-model/*"
-        ]
       }
     ]
   })

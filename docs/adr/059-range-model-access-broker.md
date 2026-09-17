@@ -95,3 +95,10 @@ Their integration tests verify the exact exception and incompatible-posture
 rejections. M08 owns production enrollment and operation projection; M05 owns
 the listener call to the transport-peer binding contract. Installing the
 package alone establishes neither enrollment nor peer authentication.
+
+The [AWS packaging contract](../architecture/model-access/aws-packaging.md)
+applies the same broker boundary to EKS: exact-subject IRSA, separate regional
+invocation roles, direct range peering, private DNS and TLS passthrough with
+preserved client IPs, and exact private STS/Bedrock endpoint egress. The shared
+guest role loses direct Bedrock authority. Terraform/Helm and offline tests do
+not establish live provider parity; AWS and GCP require separate qualification.

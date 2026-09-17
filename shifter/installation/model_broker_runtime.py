@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import ssl
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -26,6 +27,10 @@ class ModelBrokerRuntimeSettings(BaseModel):
     @classmethod
     def validate_guest_ca(cls, value):
         if value:
+            if not re.fullmatch(
+                r"(?:\s*-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----\s*)+", value
+            ):
+                raise ValueError("guest trust accepts only public PEM certificates")
             try:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
                 context.load_verify_locations(cadata=value)
@@ -36,6 +41,8 @@ class ModelBrokerRuntimeSettings(BaseModel):
 
 def project_broker_runtime(value, *, catalog_json, provider, model_identities=None):
     """Reject incomplete execution bindings before Helm or cloud deployment."""
+    if provider not in {"gcp", "aws"}:
+        raise ValueError("unsupported broker provider")
     settings = ModelBrokerRuntimeSettings.model_validate(value)
     if not settings.fingerprint_secret_name:
         raise ValueError("model broker requires a versioned fingerprint Secret")

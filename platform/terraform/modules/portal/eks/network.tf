@@ -169,6 +169,14 @@ resource "aws_route_table" "private" {
     nat_gateway_id = aws_nat_gateway.this[each.key].id
   }
 
+  dynamic "route" {
+    for_each = var.model_broker.enabled ? toset(var.model_broker.admitted_subnets) : toset([])
+    content {
+      cidr_block                = route.value
+      vpc_peering_connection_id = module.model_broker[0].peering_id
+    }
+  }
+
   tags = merge(var.tags, {
     Name = "${var.cluster_name}-private-${each.key}"
   })

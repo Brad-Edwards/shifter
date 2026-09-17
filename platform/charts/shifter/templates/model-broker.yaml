@@ -1,14 +1,26 @@
 {{- if .Values.modelBroker.enabled }}
 {{- $b := .Values.modelBroker }}
 {{- $active := eq (get (default dict $b.control_env) "MODEL_ACCESS_ENABLED") "true" }}
-{{- if or (ne .Values.provider.name "gcp") (not .Values.network.enabled) }}
-{{- fail "model broker requires GCP and enforced NetworkPolicy" }}
+{{- if or (not (has .Values.provider.name (list "gcp" "aws"))) (not .Values.network.enabled) }}
+{{- fail "model broker requires a supported provider and enforced NetworkPolicy" }}
 {{- end }}
 {{- if not (regexMatch "^[^@[:space:]]+@sha256:[0-9a-f]{64}$" .Values.images.platform) }}
 {{- fail "model broker requires the attested digest-pinned platform image" }}
 {{- end }}
-{{- range $key := list "hostname" "vip" "tls_secret_name" "control_tls_secret_name" "trust_configmap_name" "gsa" "region" "catalog_json" "catalog_digest" "identities_json" }}
+{{- range $key := list "hostname" "tls_secret_name" "control_tls_secret_name" "trust_configmap_name" "region" "catalog_json" "catalog_digest" "identities_json" }}
 {{- $_ := required (printf "modelBroker.%s is required" $key) (index $b $key) }}
+{{- end }}
+{{- $subject := $b.gsa }}
+{{- if eq .Values.provider.name "aws" }}
+{{- $subject = required "AWS broker requires role_arn" $b.role_arn }}
+{{- range $key := list "target_group_arn" "vpc_id" "endpoint_cidrs" "health_check_cidrs" }}
+{{- if empty (index $b $key) }}{{ fail (printf "AWS broker requires %s" $key) }}{{ end }}
+{{- end }}
+{{- if or $b.gsa $b.vip $b.global_access }}{{ fail "AWS broker cannot carry GCP identity or transport" }}{{ end }}
+{{- else }}
+{{- $_ := required "GCP broker requires gsa" $b.gsa }}
+{{- $_ := required "GCP broker requires vip" $b.vip }}
+{{- if or $b.role_arn $b.target_group_arn $b.endpoint_cidrs $b.health_check_cidrs $b.vpc_id }}{{ fail "GCP broker cannot carry AWS identity or transport" }}{{ end }}
 {{- end }}
 {{- if not $b.admitted_subnets }}{{ fail "modelBroker.admitted_subnets is required" }}{{ end }}
 {{- if gt (add (len $b.catalog_json) (len $b.identities_json) (len $b.providers_json) (len (toJson $b.enrollment_env))) 98304 }}
@@ -28,7 +40,7 @@
 {{- range $key := list "providers_json" "provisioner_subject" "fingerprint_secret_name" "fingerprint_key_version" }}
 {{- $_ := required (printf "active model broker requires %s" $key) (index $b $key) }}
 {{- end }}
-{{- if eq $b.provisioner_subject $b.gsa }}{{ fail "broker and provisioner identities must differ" }}{{ end }}
+{{- if eq $b.provisioner_subject $subject }}{{ fail "broker and provisioner identities must differ" }}{{ end }}
 {{- end }}
 {{- if and $active (ne (get $catalog "contract_version") "model-access-policy/v3") }}
 {{- fail "active model broker requires v3 accounting catalog" }}
@@ -41,7 +53,12 @@ metadata:
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
   annotations:
+    {{- if eq .Values.provider.name "gcp" }}
     iam.gke.io/gcp-service-account: {{ $b.gsa | quote }}
+    {{- else }}
+    eks.amazonaws.com/role-arn: {{ $b.role_arn | quote }}
+    eks.amazonaws.com/sts-regional-endpoints: "true"
+    {{- end }}
 automountServiceAccountToken: false
 ---
 apiVersion: v1
@@ -101,7 +118,12 @@ spec:
               containerPort: 8443
           env:
             - name: MODEL_BROKER_PROVIDER
-              value: gcp
+              value: {{ .Values.provider.name | quote }}
+            {{- if eq .Values.provider.name "aws" }}
+            - {name: AWS_EC2_METADATA_DISABLED, value: "true"}
+            - {name: AWS_STS_REGIONAL_ENDPOINTS, value: regional}
+            - {name: AWS_DEFAULT_REGION, value: {{ $b.region | quote }}}
+            {{- end }}
             - name: MODEL_BROKER_PROVIDERS_PATH
               value: /etc/shifter/model-access/providers.json
             {{- if $active }}
@@ -199,20 +221,39 @@ metadata:
   namespace: {{ .Values.namespaces.platform }}
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
+  {{- if eq .Values.provider.name "gcp" }}
   annotations:
     networking.gke.io/load-balancer-type: Internal
     networking.gke.io/internal-load-balancer-allow-global-access: {{ $b.global_access | quote }}
+  {{- end }}
 spec:
+  {{- if eq .Values.provider.name "gcp" }}
   type: LoadBalancer
   externalTrafficPolicy: Local
   loadBalancerIP: {{ $b.vip | quote }}
   loadBalancerSourceRanges:
     {{- toYaml $b.admitted_subnets | nindent 4 }}
+  {{- else }}
+  type: ClusterIP
+  {{- end }}
   selector: {app.kubernetes.io/component: model-broker}
   ports:
     - {name: https, port: 443, targetPort: https, protocol: TCP}
+{{- if eq .Values.provider.name "aws" }}
 ---
-# M05 owns the matching dedicated Engine control deployment/listener.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: model-broker
+  namespace: {{ .Values.namespaces.platform }}
+spec:
+  targetGroupARN: {{ $b.target_group_arn | quote }}
+  targetType: ip
+  vpcID: {{ $b.vpc_id | quote }}
+  serviceRef: {name: model-broker, port: 443}
+{{- end }}
+---
+# Dedicated private Engine control listener.
 apiVersion: v1
 kind: Service
 metadata:

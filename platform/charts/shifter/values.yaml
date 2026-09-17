@@ -341,6 +341,11 @@ edge:
 # M06 packages the M05 process contract; enable only with qualified listener images.
 modelBroker:
   enabled: false
+  role_arn: ""
+  target_group_arn: ""
+  vpc_id: ""
+  endpoint_cidrs: []
+  health_check_cidrs: []
   hostname: ""
   vip: ""
   admitted_subnets: []

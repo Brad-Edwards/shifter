@@ -864,6 +864,48 @@
           "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
+          "description": "Public AWS runtime configuration value (MODEL_BROKER_GUEST_URL) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_BROKER_GUEST_URL",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public AWS runtime configuration value (MODEL_ENROLLMENT_CA_PEM_B64) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_ENROLLMENT_CA_PEM_B64",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public AWS runtime configuration value (MODEL_ENROLLMENT_CONTROL_URL) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_ENROLLMENT_CONTROL_URL",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public AWS runtime configuration value (NGFW_AMI_ID) emitted into the platform runtime environment.",
           "destination": "runtime-env",
           "kind": "runtime-env",
@@ -1538,9 +1580,215 @@
         }
       ],
       "settings_schema": {
+        "$defs": {
+          "AwsModelBrokerSettings": {
+            "additionalProperties": false,
+            "description": "Operator-owned endpoint and exact regional model inventory; never keys.\n\nCross-region inference profiles require separate geography/IAM qualification.\nThis transport admits regional Anthropic foundation models only.",
+            "properties": {
+              "admitted_subnets": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 256,
+                "title": "Admitted Subnets",
+                "type": "array"
+              },
+              "control_tls_secret_name": {
+                "default": "",
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
+                "title": "Control Tls Secret Name",
+                "type": "string"
+              },
+              "enabled": {
+                "default": false,
+                "title": "Enabled",
+                "type": "boolean"
+              },
+              "hostname": {
+                "default": "",
+                "maxLength": 253,
+                "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$|^$",
+                "title": "Hostname",
+                "type": "string"
+              },
+              "invocation_models": {
+                "maxProperties": 32,
+                "patternProperties": {
+                  "^[a-z][a-z0-9-]{0,23}$": {
+                    "maxLength": 128,
+                    "pattern": "^anthropic\\.[a-z0-9-]+-v[0-9]+:[0-9]+$",
+                    "type": "string"
+                  }
+                },
+                "title": "Invocation Models",
+                "type": "object"
+              },
+              "tls_secret_name": {
+                "default": "",
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
+                "title": "Tls Secret Name",
+                "type": "string"
+              },
+              "trust_configmap_name": {
+                "default": "",
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
+                "title": "Trust Configmap Name",
+                "type": "string"
+              }
+            },
+            "title": "AwsModelBrokerSettings",
+            "type": "object"
+          },
+          "ModelBrokerRuntimeSettings": {
+            "additionalProperties": false,
+            "description": "Mounted provider bindings and versioned Kubernetes Secret references only.",
+            "properties": {
+              "fingerprint_key_version": {
+                "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+                "title": "Fingerprint Key Version",
+                "type": "string"
+              },
+              "fingerprint_previous_secret_name": {
+                "default": "",
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
+                "title": "Fingerprint Previous Secret Name",
+                "type": "string"
+              },
+              "fingerprint_secret_name": {
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$",
+                "title": "Fingerprint Secret Name",
+                "type": "string"
+              },
+              "guest_trust_ca_pem": {
+                "default": "",
+                "maxLength": 16384,
+                "title": "Guest Trust Ca Pem",
+                "type": "string"
+              },
+              "provider_inventory": {
+                "$ref": "#/$defs/ProviderInventory"
+              }
+            },
+            "required": [
+              "provider_inventory",
+              "fingerprint_secret_name",
+              "fingerprint_key_version"
+            ],
+            "title": "ModelBrokerRuntimeSettings",
+            "type": "object"
+          },
+          "ProviderInventory": {
+            "additionalProperties": false,
+            "description": "Closed mounted non-secret configuration independent of guest packages.",
+            "properties": {
+              "contract_version": {
+                "const": "model-broker-providers/v1",
+                "title": "Contract Version",
+                "type": "string"
+              },
+              "targets": {
+                "items": {
+                  "$ref": "#/$defs/ProviderTarget"
+                },
+                "maxItems": 128,
+                "minItems": 1,
+                "title": "Targets",
+                "type": "array"
+              }
+            },
+            "required": [
+              "contract_version",
+              "targets"
+            ],
+            "title": "ProviderInventory",
+            "type": "object"
+          },
+          "ProviderTarget": {
+            "additionalProperties": false,
+            "description": "Explicit approved transport, principal and conservative model context bound.",
+            "properties": {
+              "context_window_tokens": {
+                "maximum": 2000000,
+                "minimum": 1,
+                "title": "Context Window Tokens",
+                "type": "integer"
+              },
+              "count_region": {
+                "default": "",
+                "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$|^$",
+                "title": "Count Region",
+                "type": "string"
+              },
+              "credential_reference": {
+                "maxLength": 256,
+                "title": "Credential Reference",
+                "type": "string"
+              },
+              "model": {
+                "pattern": "^[a-zA-Z0-9@.:/-]{1,256}$",
+                "title": "Model",
+                "type": "string"
+              },
+              "principal": {
+                "maxLength": 256,
+                "title": "Principal",
+                "type": "string"
+              },
+              "project": {
+                "default": "",
+                "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$|^$",
+                "title": "Project",
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "vertex-v1",
+                  "bedrock-v1"
+                ],
+                "title": "Provider",
+                "type": "string"
+              },
+              "region": {
+                "pattern": "^[a-z][a-z0-9-]{1,62}[a-z0-9]$",
+                "title": "Region",
+                "type": "string"
+              },
+              "shard_id": {
+                "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+                "title": "Shard Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "shard_id",
+              "provider",
+              "region",
+              "model",
+              "credential_reference",
+              "principal",
+              "context_window_tokens"
+            ],
+            "title": "ProviderTarget",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
         "description": "Closed operator-intent settings for the AWS backend (PLAT-2006, GH #728).\n\nOnly genuine operator intent lives here. Terraform variables, generated runtime\noutputs, workflow secret names, and provider SDK payloads are *not* settings — copying\nthem in would turn ``settings`` into a second provider schema (preflight #728).\n``extra='forbid'`` fails unknown AWS settings closed, so a typo or a stale key is a\nconfig-time error rather than a silently-ignored value.\n\nThe shared cross-backend ``range_egress`` policy is intentionally *absent*: it is owned\nand validated by :mod:`installation.range_egress` (which surfaces verbatim, non-secret\nCIDR diagnostics, #775), and the loader validates it separately for every backend. See\nthe module docstring.",
         "properties": {
+          "model_broker": {
+            "$ref": "#/$defs/AwsModelBrokerSettings"
+          },
+          "model_broker_runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelBrokerRuntimeSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "region": {
             "pattern": "^[a-z]{2}(?:-[a-z]+)+-\\d+$",
             "title": "Region",

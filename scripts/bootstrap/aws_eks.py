@@ -26,6 +26,7 @@ if str(_SHIFTER_PACKAGE_ROOT) not in sys.path:
 from installation.loader import load_root_config  # noqa: E402
 from installation.render import (  # noqa: E402
     render_mission_control_lease_env,
+    render_model_access_catalog,
     render_model_access_env,
 )
 from installation.runtime_inventory import (  # noqa: E402
@@ -323,6 +324,10 @@ def _validate_terraform_inputs(
         raise ValueError("the protected EKS Terraform input region does not match shifter.yaml")
     if payload["domain_name"] != config.deployment.domain:
         raise ValueError("the protected EKS Terraform input domain does not match shifter.yaml")
+    from installation.aws_model_broker import AwsModelBrokerSettings, validate_aws_broker_intent
+
+    if AwsModelBrokerSettings.model_validate(payload.get("model_broker", {})) != validate_aws_broker_intent(config):
+        raise ValueError("protected Terraform broker input differs from shifter.yaml")
     return resolved
 
 
@@ -827,9 +832,29 @@ def render_aws_values(
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
+    from installation.aws_model_broker import project_aws_model_broker
+
+    broker = project_aws_model_broker(
+        terraform_outputs.get("model_broker", {}).get("value"),
+        config=config,
+        catalog_json=render_model_access_catalog(config),
+        model_access_env=render_model_access_env(config),
+        account_id=_aws_account_id(terraform_outputs),
+    )
+    if broker["enabled"] and broker["provisioner_subject"] != roles["provisioner"]:
+        raise ValueError("broker enrollment identity differs from the provisioner workload")
+    runtime_env.update(
+        {
+            "MODEL_BROKER_GUEST_URL": "",
+            "MODEL_ENROLLMENT_CONTROL_URL": "",
+            "MODEL_ENROLLMENT_CA_PEM_B64": "",
+            **broker.get("enrollment_env", {}),
+        }
+    )
     edge_client_cidrs = _cidr_output(terraform_outputs, "edge_client_cidrs")
     return {
         "provider": {"name": "aws"},
+        "modelBroker": broker,
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
         "capabilities": {"kubernetesJobLauncher": True},
         "provisioner": {"taskRunner": "aws"},
@@ -866,7 +891,9 @@ def render_aws_values(
         "network": {
             "enabled": True,
             "ingressSourceCidrs": _cidr_output(terraform_outputs, "ingress_source_cidrs"),
-            "providerApiCidrs": _cidr_output(terraform_outputs, "provider_api_cidrs"),
+            "providerApiCidrs": sorted(
+                set(_cidr_output(terraform_outputs, "provider_api_cidrs") + broker.get("endpoint_cidrs", []))
+            ),
             "privateServiceCidrs": _cidr_output(terraform_outputs, "private_service_cidrs"),
             "kubernetesApiCidrs": _cidr_output(terraform_outputs, "kubernetes_api_cidrs"),
             "rangeClusterApiCidrs": [],

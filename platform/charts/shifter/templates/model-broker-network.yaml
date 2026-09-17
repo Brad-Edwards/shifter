@@ -13,6 +13,9 @@ spec:
         {{- range .Values.modelBroker.admitted_subnets }}
         - ipBlock: {cidr: {{ . | quote }}}
         {{- end }}
+        {{- range .Values.modelBroker.health_check_cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
       ports: [{protocol: TCP, port: 8443}]
   egress:
     - to:
@@ -25,6 +28,7 @@ spec:
         - podSelector:
             matchLabels: {app.kubernetes.io/component: model-access-control}
       ports: [{protocol: TCP, port: 8444}]
+    {{- if eq .Values.provider.name "gcp" }}
     - to:
         # Fixed Google private API VIP. Adapter origins remain separately closed.
         - ipBlock: {cidr: 199.36.153.8/30}
@@ -33,6 +37,13 @@ spec:
         # GKE Dataplane V2 workload identity credential transport only.
         - ipBlock: {cidr: 169.254.169.254/32}
       ports: [{protocol: TCP, port: 80}, {protocol: TCP, port: 8080}]
+    {{- else }}
+    - to:
+        {{- range .Values.modelBroker.endpoint_cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports: [{protocol: TCP, port: 443}]
+    {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

@@ -75,3 +75,8 @@ output "kubernetes_api_cidrs" {
   description = "Private cluster API reachability CIDRs consumed by chart network policy."
   value       = var.private_subnet_cidrs
 }
+
+output "model_broker" {
+  description = "Applied private model broker configuration."
+  value       = module.eks.model_broker
+}

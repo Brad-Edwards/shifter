@@ -53,6 +53,14 @@ def test_projects_nonsecret_inventory_and_versioned_secret_reference(active_runt
     assert projected["fingerprint_secret_name"] == "broker-fingerprint-v1"
 
 
+@pytest.mark.parametrize("material", ["-----BEGIN PRIVATE KEY-----\nYWJj\n-----END PRIVATE KEY-----", "not a CA"])
+def test_guest_trust_refuses_nonpublic_certificate_material(active_runtime, material):
+    settings, catalog = active_runtime
+    settings["guest_trust_ca_pem"] = material
+    with pytest.raises(ValueError):
+        project(settings, catalog)
+
+
 @pytest.mark.parametrize("fault", ["identity", "shard", "model", "key", "count_price", "disabled", "cloud"])
 def test_rejects_execution_config_that_cannot_enforce_catalog(active_runtime, fault):
     settings, catalog = active_runtime

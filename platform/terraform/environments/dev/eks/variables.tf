@@ -176,3 +176,17 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "model_broker" {
+  description = "Optional private model broker intent rendered from installation settings."
+  type = object({
+    enabled                 = optional(bool, false)
+    hostname                = optional(string, "")
+    admitted_subnets        = optional(list(string), [])
+    tls_secret_name         = optional(string, "")
+    control_tls_secret_name = optional(string, "")
+    trust_configmap_name    = optional(string, "")
+    invocation_models       = optional(map(string), {})
+  })
+  default = {}
+}

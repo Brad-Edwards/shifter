@@ -3852,7 +3852,7 @@
       },
       {
         "id": "ADR-059-R3",
-        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and deployment-selected provider destinations. GCP preserves the no-service-account guest default and exact range network boundaries. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback.",
+        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and deployment-selected provider destinations. GCP preserves the no-service-account guest default and exact range network boundaries. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback. AWS packaging uses exact-subject broker IRSA, separate regional invocation roles, private STS/Bedrock endpoints and a private TLS-pass-through NLB preserving actual guest peers over direct VPC peering; offline packaging tests do not establish live AWS qualification.",
         "checks": []
       }
     ],

@@ -1112,3 +1112,13 @@ HTTP redirects, implicit retries, arbitrary URLs and unsupported billing feature
 are rejected. Stream framing, CRCs, complete usage, disconnect cancellation and
 revocation are tested through the HTTP/provider boundaries. These local tests do
 not qualify effective cloud IAM, networking, guest delivery or model availability.
+
+## AWS model broker packaging
+
+ADR-059's EKS packaging checks live in
+`platform/terraform/modules/portal/eks-model-broker/tests/boundary.tftest.hcl`,
+`shifter/installation/tests/test_aws_model_broker.py`, and the broker chart tests.
+They exercise exact invocation IAM, private endpoint/routing readback, deployment
+intent mismatch rejection and the combined NetworkPolicy permissions. Run native
+Terraform tests, installer tests and chart tests when these boundaries change.
+Live AWS and GCP qualification remains a separate release obligation.

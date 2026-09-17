@@ -47,7 +47,9 @@ spec:
             - configMapRef: {name: platform-runtime}
           env:
             - name: MODEL_CONTROL_PROVIDER
-              value: gcp
+              value: {{ .Values.provider.name | quote }}
+            - name: MODEL_CONTROL_REGION
+              value: {{ .Values.modelBroker.region | quote }}
             - name: MODEL_CONTROL_PROVISIONER_SUBJECT
               value: {{ .Values.modelBroker.provisioner_subject | quote }}
             {{- range $name, $value := $controlEnv }}
@@ -59,7 +61,7 @@ spec:
             - name: MODEL_CONTROL_TLS_KEY
               value: /etc/shifter/model-control/tls/tls.key
             - name: MODEL_CONTROL_BROKER_SUBJECT
-              value: {{ .Values.modelBroker.gsa | quote }}
+              value: {{ ternary .Values.modelBroker.role_arn .Values.modelBroker.gsa (eq .Values.provider.name "aws") | quote }}
             - name: MODEL_CONTROL_AUDIENCE
               value: shifter-model-control
           ports:

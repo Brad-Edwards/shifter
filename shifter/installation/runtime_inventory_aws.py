@@ -92,6 +92,9 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "MODEL_ACCESS_CATALOG_DIGEST",
         "MODEL_ACCESS_CATALOG_PATH",
         "MODEL_ACCESS_ENABLED",
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "SITE_URL",
     }
 )
@@ -107,6 +110,9 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
 # task definition (``platform/terraform/modules/engine-provisioner/task_definition.tf``).
 AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "CLOUD_PROVIDER",
         "ENVIRONMENT",
         "AWS_REGION",

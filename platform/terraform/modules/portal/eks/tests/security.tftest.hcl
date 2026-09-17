@@ -439,3 +439,48 @@ run "security_contract" {
     error_message = "The ingress WAF must publish request logs."
   }
 }
+
+
+run "enabled_broker_routes" {
+  command = apply
+  variables {
+    model_broker = {
+      enabled                 = true
+      hostname                = "models.example.test"
+      admitted_subnets        = ["10.50.1.0/24"]
+      tls_secret_name         = "broker-tls"
+      control_tls_secret_name = "control-tls"
+      trust_configmap_name    = "model-ca"
+      invocation_models       = { primary = "anthropic.example-model-v1:0" }
+    }
+  }
+  override_data {
+    target = data.aws_ssm_parameters_by_path.broker_range[0]
+    values = {
+      names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
+      values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
+    }
+  }
+  override_module {
+    target = module.model_broker[0]
+    outputs = {
+      peering_id                 = "pcx-mock-broker"
+      listener_security_group_id = "sg-mock-broker"
+      deployment                 = null
+    }
+  }
+  assert {
+    condition = alltrue([for table in aws_route_table.private :
+      length([for route in table.route : route if route.cidr_block == "10.50.1.0/24" && route.vpc_peering_connection_id == "pcx-mock-broker"]) == 1
+    ])
+    error_message = "Every private EKS route table must return admitted guest traffic over the owned direct peering."
+  }
+  assert {
+    condition = (
+      aws_vpc_security_group_ingress_rule.model_broker[0].referenced_security_group_id == "sg-mock-broker" &&
+      aws_vpc_security_group_ingress_rule.model_broker[0].from_port == 8443 &&
+      aws_vpc_security_group_ingress_rule.model_broker[0].to_port == 8443
+    )
+    error_message = "Only the model NLB security group may reach the broker's TLS target port."
+  }
+}
