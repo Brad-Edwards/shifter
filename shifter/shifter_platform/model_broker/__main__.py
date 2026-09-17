@@ -14,13 +14,15 @@ from shared.model_access.provider_runtime import ProviderInventory
 from shared.model_access.runtime import load_mounted_catalog
 
 
-def application_from_environment():
+def application_from_environment() -> BrokerApplication:
     """Validate every mounted configuration binding before opening a listener."""
     catalog = load_mounted_catalog(
         enabled=True,
         path=os.environ["MODEL_BROKER_CATALOG_PATH"],
         expected_digest=os.environ["MODEL_BROKER_CATALOG_DIGEST"],
     )
+    if catalog is None:
+        raise ValueError("model broker requires an enabled mounted catalog")
     with Path(os.environ["MODEL_BROKER_PROVIDERS_PATH"]).open("rb") as stream:
         inventory = ProviderInventory.model_validate(strict_json(stream.read(98_305), limit=98_304))
     targets = {target.shard_id: target for target in inventory.targets}
@@ -57,14 +59,15 @@ def application_from_environment():
     )
 
 
-def main():
+def main() -> None:
     """TLS and real socket peers are mandatory; forwarded identity is disabled."""
     import uvicorn
 
     app = application_from_environment()
     uvicorn.run(
         app,
-        host="0.0.0.0",  # noqa: S104 # nosec B104 -- private Service and enforced NetworkPolicy only.
+        # Private service binding: TLS, workload authentication and default-deny NetworkPolicy apply.
+        host="0.0.0.0",  # noqa: S104 # nosec B104 # NOSONAR(S8392)
         port=8443,
         ssl_certfile=os.environ["MODEL_BROKER_TLS_CERT"],
         ssl_keyfile=os.environ["MODEL_BROKER_TLS_KEY"],

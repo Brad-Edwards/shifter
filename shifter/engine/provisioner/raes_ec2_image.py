@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from botocore.client import BaseClient
 from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.image_policy import (
     ResolvedImage,
@@ -63,23 +64,7 @@ def resolve_ec2_image(
     binding: ArtifactBinding | None = None,
 ) -> Ec2ImageProfile:
     """Resolve a fenced artifact first, then exact registry pin, then concrete AMI."""
-    if binding is not None:
-        if binding.target != node.address or (binding.image_id and binding.image_id != binding.image_ref):
-            raise Ec2ImageError("EC2 artifact binding identity does not match the node")
-        resolved = ResolvedImage(
-            binding.image_ref,
-            binding.machine_type or None,
-            binding.disk_size_gb,
-            binding.disk_type or None,
-            binding.management_ssh_port,
-            binding.management_ssh_username,
-        )
-    else:
-        resolved = resolve_from_candidates(candidates, version=node.image.version if node.image else None)
-        if resolved is None and node.image and _AMI.fullmatch(node.image.name):
-            resolved = ResolvedImage(node.image.name)
-        if resolved is None:
-            raise Ec2ImageError("No exact EC2 image mapping is registered for the authored source")
+    resolved = _resolve_source(node, candidates, binding)
     if not _AMI.fullmatch(resolved.image_ref):
         raise Ec2ImageError("EC2 realization requires an exact AMI ID")
     machine = resolved.machine_type or "m7i.large"
@@ -104,13 +89,44 @@ def resolve_ec2_image(
     )
 
 
+def _resolve_source(
+    node: RaesPlanNode, candidates: Sequence[dict[str, Any]], binding: ArtifactBinding | None
+) -> ResolvedImage:
+    """Select the immutable artifact binding or exact authored registry candidate."""
+    if binding is not None:
+        if binding.target != node.address or (binding.image_id and binding.image_id != binding.image_ref):
+            raise Ec2ImageError("EC2 artifact binding identity does not match the node")
+        resolved = ResolvedImage(
+            binding.image_ref,
+            binding.machine_type or None,
+            binding.disk_size_gb,
+            binding.disk_type or None,
+            binding.management_ssh_port,
+            binding.management_ssh_username,
+        )
+    else:
+        resolved = _registry_source(node, candidates)
+    return resolved
+
+
+def _registry_source(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) -> ResolvedImage:
+    """Require a registry match or an explicitly authored concrete AMI."""
+    resolved = resolve_from_candidates(candidates, version=node.image.version if node.image else None)
+    if resolved is None and node.image and _AMI.fullmatch(node.image.name):
+        resolved = ResolvedImage(node.image.name)
+    if resolved is None:
+        raise Ec2ImageError("No exact EC2 image mapping is registered for the authored source")
+    return resolved
+
+
 def _only(rows: object, label: str) -> dict[str, Any]:
+    """Require exactly one structured provider observation."""
     if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
         raise Ec2ImageError(f"EC2 {label} observation is unavailable or ambiguous")
     return rows[0]
 
 
-def verify_ec2_image(node: RaesPlanNode, profile: Ec2ImageProfile, ec2: Any) -> VerifiedEc2Image:
+def verify_ec2_image(node: RaesPlanNode, profile: Ec2ImageProfile, ec2: BaseClient) -> VerifiedEc2Image:
     """Verify image and type through authenticated EC2 reads before any mutation."""
     image = _only(ec2.describe_images(ImageIds=[profile.image_id]).get("Images"), "image")
     machine = _only(
@@ -123,6 +139,28 @@ def verify_ec2_image(node: RaesPlanNode, profile: Ec2ImageProfile, ec2: Any) -> 
     expected_windows = node.os_family == "windows"
     if node.os_family not in {"linux", "windows"} or (image.get("Platform") == "windows") != expected_windows:
         raise Ec2ImageError("EC2 image platform differs from the authored operating-system family")
+    architecture = _verify_instance_type(node, profile, image, machine)
+    root, snapshot, requested_size = _verify_root_disk(image, profile)
+    return VerifiedEc2Image(
+        profile.image_id,
+        profile.instance_type,
+        root,
+        snapshot,
+        requested_size,
+        profile.disk_type,
+        architecture,
+        profile.management_ssh_port,
+        profile.management_ssh_username,
+    )
+
+
+def _verify_instance_type(
+    node: RaesPlanNode,
+    profile: Ec2ImageProfile,
+    image: dict[str, Any],
+    machine: dict[str, Any],
+) -> str:
+    """Prove architecture compatibility and authored CPU and memory capacity."""
     architecture = image.get("Architecture")
     if (
         machine.get("InstanceType") != profile.instance_type
@@ -137,6 +175,11 @@ def verify_ec2_image(node: RaesPlanNode, profile: Ec2ImageProfile, ec2: Any) -> 
     ):
         if type(actual) is not int or actual < required:
             raise Ec2ImageError("EC2 instance type is smaller than the authored resources")
+    return architecture
+
+
+def _verify_root_disk(image: dict[str, Any], profile: Ec2ImageProfile) -> tuple[str, str, int]:
+    """Require a sole valid root snapshot and enough capacity for its image."""
     root = image.get("RootDeviceName")
     if not isinstance(root, str) or not re.fullmatch(r"/dev/[a-z][a-z0-9]{1,30}", root):
         raise Ec2ImageError("EC2 root device is invalid")
@@ -155,14 +198,4 @@ def verify_ec2_image(node: RaesPlanNode, profile: Ec2ImageProfile, ec2: Any) -> 
     requested_size = profile.disk_size_gb if profile.disk_size_gb is not None else max(30, size)
     if requested_size < size:
         raise Ec2ImageError("EC2 boot volume cannot be smaller than the source snapshot")
-    return VerifiedEc2Image(
-        profile.image_id,
-        profile.instance_type,
-        root,
-        snapshot,
-        requested_size,
-        profile.disk_type,
-        architecture,
-        profile.management_ssh_port,
-        profile.management_ssh_username,
-    )
+    return root, snapshot, requested_size

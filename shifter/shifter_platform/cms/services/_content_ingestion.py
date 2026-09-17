@@ -107,6 +107,23 @@ class RegisteredPack:
     created: bool
 
 
+def _authorize_registration(
+    user: User, request: PackRegistrationRequest, organization_uuid: UUID | None
+) -> UUID | None:
+    """Authorize the ingestion scope and validate caller-supplied revision identity."""
+    if organization_uuid is None:
+        validate_cms_authoring_user(user, "register_pack")
+    else:
+        from workspaces.services import get_organization_profile
+
+        organization_uuid = get_organization_profile(user, organization_uuid).uuid
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", request.package_name):
+            raise CMSError("Invalid pack identity")
+    if request.expected_package_digest and not re.fullmatch(r"sha256:[a-f0-9]{64}", request.expected_package_digest):
+        raise CMSError("Invalid expected package digest")
+    return organization_uuid
+
+
 def register_pack(
     *,
     user: User,
@@ -135,16 +152,7 @@ def register_pack(
             scenario_id that does not match the pack's validated identity, or an
             invalid reference record.
     """
-    if organization_uuid is None:
-        validate_cms_authoring_user(user, "register_pack")
-    else:
-        from workspaces.services import get_organization_profile
-
-        organization_uuid = get_organization_profile(user, organization_uuid).uuid
-        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", request.package_name):
-            raise CMSError("Invalid pack identity")
-    if request.expected_package_digest and not re.fullmatch(r"sha256:[a-f0-9]{64}", request.expected_package_digest):
-        raise CMSError("Invalid expected package digest")
+    organization_uuid = _authorize_registration(user, request, organization_uuid)
     existing = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
     if existing is not None:
         if existing.organization_uuid != organization_uuid:
@@ -183,11 +191,7 @@ def register_pack(
         # Reference-shape violation from the model's provenance-only validator.
         raise CMSError("Invalid pack reference") from exc
     except IntegrityError as exc:
-        if idempotent:
-            raced = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
-            if raced is not None and raced.organization_uuid == organization_uuid:
-                return _reuse_existing(raced, request, idempotent=True)
-        raise CMSError(f"A pack with id '{request.scenario_id}' is already registered") from exc
+        return _registration_race(request, organization_uuid, idempotent, exc)
 
     logger.info(
         "register_pack: registered scenario_id=%s source_kind=%s",
@@ -202,6 +206,20 @@ def register_pack(
         conformance_status=row.conformance_status,
         created=True,
     )
+
+
+def _registration_race(
+    request: PackRegistrationRequest,
+    organization_uuid: UUID | None,
+    idempotent: bool,
+    exc: IntegrityError,
+) -> RegisteredPack:
+    """Reuse only an identical concurrent winner in the same organization scope."""
+    if idempotent:
+        raced = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
+        if raced is not None and raced.organization_uuid == organization_uuid:
+            return _reuse_existing(raced, request, idempotent=True)
+    raise CMSError(f"A pack with id '{request.scenario_id}' is already registered") from exc
 
 
 def _existing_registration(

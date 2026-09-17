@@ -426,7 +426,8 @@ def _replay(
     from engine.models import ModelRequestReservation
 
     if not idempotency.caller_key_hmac:
-        return None  # no idempotency key: always a new invocation
+        # No idempotency key means this is always a new invocation.
+        return None
     versions = set(
         ModelRequestReservation.objects.filter(
             allocation=allocation,

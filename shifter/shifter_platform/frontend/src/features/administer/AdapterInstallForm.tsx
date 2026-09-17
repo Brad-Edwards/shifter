@@ -58,7 +58,7 @@ export function AdapterInstallForm({ organization }: Readonly<{ organization: st
         <form onSubmit={submit} className="space-y-4">
           <p>Upload the plugin author&apos;s installation file. Shifter checks compatibility before enabling this version.</p>
           {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
-          {success ? <p role="status">Installation started. Compatibility checks are running.</p> : null}
+          {success ? <output className="block">Installation started. Compatibility checks are running.</output> : null}
           <Label htmlFor="adapter-manifest">Plugin installation file</Label>
           <Input id="adapter-manifest" ref={fileInput} type="file" accept="application/json,.json"
             disabled={review || install.isPending} onChange={(event) => void readManifest(event.target.files?.[0])} />
@@ -71,7 +71,7 @@ export function AdapterInstallForm({ organization }: Readonly<{ organization: st
               <Label htmlFor="registry-password">Registry password or access token</Label>
               <Input id="registry-password" type="password" autoComplete="new-password" value={password}
                 disabled={review || install.isPending} onChange={(event) => setPassword(event.target.value)} />
-              {!validCredentials ? <p>Enter both the registry username and password or access token.</p> : null}
+              {validCredentials ? null : <p>Enter both the registry username and password or access token.</p>}
             </div>
           </details>
           {preview ? <dl className="grid gap-2 break-all text-sm" aria-label="Plugin installation details">

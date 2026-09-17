@@ -10,11 +10,16 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
+from botocore.client import BaseClient
 from botocore.exceptions import BotoCoreError, ClientError
 
 from utils.crypto import derive_ssh_public_key, generate_rdp_password, generate_ssh_host_keypair, generate_ssh_keypair
+
+if TYPE_CHECKING:
+    from raes_account_credentials import RaesAccountCredentialOps
+    from raes_active_directory import RaesDirectorySecretOps
 
 _KINDS = frozenset(
     {
@@ -37,10 +42,10 @@ class Ec2SecretError(RuntimeError):
 class Ec2GuestSecrets:
     """Exact ownership checks, atomic first creation, no implicit rotation."""
 
-    def __init__(self, client: Any, *, environment: str, kms_key: str):
+    def __init__(self, client: BaseClient, *, environment: str, kms_key: str) -> None:
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", environment):
             raise Ec2SecretError("EC2 credential deployment namespace is invalid")
-        if not re.fullmatch(r"arn:aws(?:-us-gov|-cn)?:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+", kms_key):
+        if not re.fullmatch(r"arn:aws(?:-us-gov|-cn)?:kms:[a-z0-9-]+:(?a:\d){12}:key/[A-Za-z0-9-]+", kms_key):
             raise Ec2SecretError("EC2 credentials require an exact deployment KMS key")
         self.client = client
         self.environment = environment
@@ -70,7 +75,7 @@ class Ec2GuestSecrets:
             or any(tags.get(key) != value for key, value in self._tags(range_id).items())
             or not isinstance(arn, str)
             or not re.fullmatch(
-                r"arn:aws(?:-us-gov|-cn)?:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:"
+                r"arn:aws(?:-us-gov|-cn)?:secretsmanager:[a-z0-9-]+:(?a:\d){12}:secret:"
                 + re.escape(name)
                 + r"-[A-Za-z0-9]{6}",
                 arn,
@@ -92,19 +97,7 @@ class Ec2GuestSecrets:
                     raise
                 if not create:
                     raise Ec2SecretError("Existing EC2 guest management identity is unavailable") from None
-                value = factory()
-                if not isinstance(value, str) or not 1 <= len(value.encode()) <= 65536:
-                    raise Ec2SecretError("EC2 credential payload is invalid") from None
-                try:
-                    self.client.create_secret(
-                        Name=name,
-                        SecretString=value,
-                        KmsKeyId=self.kms_key,
-                        Tags=[{"Key": key, "Value": value} for key, value in self._tags(range_id).items()],
-                    )
-                except ClientError as collision:
-                    if collision.response.get("Error", {}).get("Code") != "ResourceExistsException":
-                        raise
+                self._create(name, range_id, factory)
                 arn = self._owned(name, range_id)
             value = self.client.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT").get("SecretString")
             if not isinstance(value, str) or not 1 <= len(value.encode()) <= 65536:
@@ -112,6 +105,22 @@ class Ec2GuestSecrets:
             return arn, value
         except (BotoCoreError, ClientError):
             raise Ec2SecretError("EC2 credential operation failed") from None
+
+    def _create(self, name: str, range_id: int, factory: Callable[[], str]) -> None:
+        """Atomically create bounded credential bytes, accepting a concurrent winner."""
+        value = factory()
+        if not isinstance(value, str) or not 1 <= len(value.encode()) <= 65536:
+            raise Ec2SecretError("EC2 credential payload is invalid") from None
+        try:
+            self.client.create_secret(
+                Name=name,
+                SecretString=value,
+                KmsKeyId=self.kms_key,
+                Tags=[{"Key": key, "Value": value} for key, value in self._tags(range_id).items()],
+            )
+        except ClientError as collision:
+            if collision.response.get("Error", {}).get("Code") != "ResourceExistsException":
+                raise
 
     def delete(self, range_id: int, kind: str, subjects: tuple[str, ...]) -> None:
         """Delete only a proven range-owned credential; absence is idempotent."""
@@ -155,7 +164,7 @@ class Ec2GuestSecrets:
 
     def delete_account(self, range_id: int, instance_key: str, username: str, auth_method: str) -> None:
         # Stable secret-category identifiers; neither value is a credential.
-        kind = {"password": "account-password", "key": "account-key"}.get(auth_method)  # nosec B105
+        kind = {"password": "account-password", "key": "account-key"}.get(auth_method)
         if kind is None:
             raise Ec2SecretError("EC2 account authentication method is invalid")
         self.delete(range_id, kind, (instance_key, username))
@@ -169,13 +178,13 @@ class Ec2GuestSecrets:
     def domain_account(self, range_id: int, domain_id: str, account: str, strength: str) -> tuple[str, str]:
         return self._password(range_id, "domain-account", (domain_id, account), strength)
 
-    def account_ops(self):
+    def account_ops(self) -> RaesAccountCredentialOps:
         """Bind the existing provider-neutral account realizer to AWS storage."""
         from raes_account_credentials import RaesAccountCredentialOps
 
         return RaesAccountCredentialOps(self.account_password, self.account_key, self.delete_account)
 
-    def directory_ops(self):
+    def directory_ops(self) -> RaesDirectorySecretOps:
         """Bind the existing provider-neutral directory realizer to AWS storage."""
         from raes_active_directory import RaesDirectorySecretOps
 

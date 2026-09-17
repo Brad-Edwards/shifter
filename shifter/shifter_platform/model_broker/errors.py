@@ -8,7 +8,7 @@ from shared.model_access.provider import ProviderUsage, VerifiedUsage
 class NoBillableEffect(ContractError):
     """The adapter proves it never started a billable invocation."""
 
-    def __init__(self, code: str, *, count_only: bool):
+    def __init__(self, code: str, *, count_only: bool) -> None:
         super().__init__(code)
         components = (
             (BillingComponent.REQUEST,)

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
-def bounded_aws_session(region: str):
+if TYPE_CHECKING:
+    import boto3
+
+
+def bounded_aws_session(region: str) -> boto3.Session:
     """Apply transport bounds to implicit web-identity refresh as well as STS.
 
     A Config on the final STS client alone does not reach the credential

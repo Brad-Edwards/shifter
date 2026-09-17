@@ -61,7 +61,7 @@ def scenario_source(scenario_type: str, is_default: bool) -> str:
     return "builtin" if is_default else "custom"
 
 
-def get_catalog_presentation(scenario_id: str, *, user=None) -> dict[str, Any] | None:
+def get_catalog_presentation(scenario_id: str, *, user: User | None = None) -> dict[str, Any] | None:
     """Return the read-only presentation DTO for a scenario id, or None if absent.
 
     Includes disabled entries for review, within the caller's organization scope.

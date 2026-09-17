@@ -22,10 +22,11 @@ export const organizationKeys = {
 };
 
 export function useAdministrableOrganizations(page = 1) {
+  const suffix = page > 1 ? `?page=${page}` : "";
   return useQuery({
     queryKey: [...organizationKeys.administrable, page],
     queryFn: ({ signal }) =>
-      apiFetch<PaginatedOrganizationProfileList>(`/workspaces/organizations/${page > 1 ? `?page=${page}` : ""}`, { signal }),
+      apiFetch<PaginatedOrganizationProfileList>(`/workspaces/organizations/${suffix}`, { signal }),
   });
 }
 

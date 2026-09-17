@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, NoReturn
 
 from pydantic import Field, JsonValue, StrictBool, StrictFloat, StrictInt, ValidationError
 
 from shared.model_access.catalog import ContractError
 from shared.model_access.core_models import AccessLimits, ClosedModel, Identifier
+
+JsonObject = dict[str, Any]
 
 MAX_MESSAGE_BYTES = 1_000_000
 MAX_RESPONSE_BYTES = 8_000_000
@@ -86,12 +88,13 @@ class MessagesRequest(CountTokensRequest):
     stop_sequences: Annotated[list[Annotated[str, Field(max_length=256)]], Field(max_length=16)] | None = None
 
 
-def strict_json(raw: bytes, *, limit: int = MAX_MESSAGE_BYTES) -> dict:
+def strict_json(raw: bytes, *, limit: int = MAX_MESSAGE_BYTES) -> JsonObject:
     """Bound parsing before validation; reject duplicate keys, nonfinite and depth."""
     if len(raw) > limit:
         raise ContractError("messages.too_large")
 
-    def pairs(items):
+    def pairs(items: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
+        """Reject duplicate JSON members before constructing their mapping."""
         result = {}
         for key, value in items:
             if key in result:
@@ -99,7 +102,8 @@ def strict_json(raw: bytes, *, limit: int = MAX_MESSAGE_BYTES) -> dict:
             result[key] = value
         return result
 
-    def nonfinite(_):
+    def nonfinite(_: str) -> NoReturn:
+        """Reject JSON decoder extensions for nonfinite numbers."""
         raise ValueError("nonfinite")
 
     try:
@@ -116,11 +120,11 @@ def strict_json(raw: bytes, *, limit: int = MAX_MESSAGE_BYTES) -> dict:
         if not isinstance(value, dict):
             raise ValueError("object required")
         return value
-    except (ValueError, UnicodeError, RecursionError):
+    except (ValueError, RecursionError):
         raise ContractError("messages.invalid_json") from None
 
 
-def parse_messages(raw: bytes, *, count_only: bool, limits: AccessLimits):
+def parse_messages(raw: bytes, *, count_only: bool, limits: AccessLimits) -> CountTokensRequest | MessagesRequest:
     """Reject unsupported fields without including participant data in errors."""
     value = strict_json(raw, limit=min(MAX_MESSAGE_BYTES, limits.max_request_bytes))
     try:

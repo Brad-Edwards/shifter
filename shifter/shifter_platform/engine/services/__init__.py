@@ -152,7 +152,12 @@ from ._receipt import (
     register_receipt_verifier,
     revoke_receipt_verifier,
 )
-from ._runtime_plugin_bindings import bind_runtime_plugin, has_runtime_plugin_binding, list_runtime_plugin_bindings
+from ._runtime_plugin_bindings import (
+    RuntimePluginPackView,
+    bind_runtime_plugin,
+    has_runtime_plugin_binding,
+    list_runtime_plugin_bindings,
+)
 from ._runtime_plugin_controller import reconcile_runtime_plugins
 from ._runtime_plugin_operations import reconcile_runtime_plugin_operations
 from ._runtime_plugins import change_runtime_plugin, install_runtime_plugin, list_runtime_plugins
@@ -246,6 +251,7 @@ __all__ = (
     "ReservationOutcome",
     "RetryBindingResult",
     "RetryKeyConflict",
+    "RuntimePluginPackView",
     "SSHConnection",
     "SecretsError",
     "SharingError",

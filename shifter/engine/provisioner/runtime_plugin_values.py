@@ -5,13 +5,14 @@ from __future__ import annotations
 import base64
 import ipaddress
 import json
+from typing import Any
 
 from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from shifter_adapter_sdk.guest import MAX_RUNTIME_VALUES_BYTES
 from shifter_adapter_sdk.runtime import GuestAction, RuntimeInput
 
 
-def resolve_runtime_values(action: GuestAction, request: RuntimeInput, outputs: dict[str, dict]) -> str:
+def resolve_runtime_values(action: GuestAction, request: RuntimeInput, outputs: dict[str, dict[str, Any]]) -> str:
     """Encode only declared fields; management keys and arbitrary outputs are absent."""
     values = {}
     for name, reference in action.runtime_values.items():

@@ -30,17 +30,21 @@ if TYPE_CHECKING:
     from engine.models import ModelAccessCredential, ModelAllocation, ModelPendingGrant, Range
 
 _DENIED = "credential.unavailable"
+_NETWORK_UNAVAILABLE = "credential.network_unavailable"
 
 
 def _hash(value: str) -> str:
+    """Hash opaque capability bytes without retaining their plaintext."""
     return hashlib.sha256(value.encode("ascii")).hexdigest()
 
 
 def _token(grant_id: UUID) -> str:
+    """Mint an opaque capability carrying the public grant identifier."""
     return f"{grant_id}.{secrets.token_urlsafe(32)}"
 
 
 def _parse_token(value: str) -> UUID:
+    """Validate a bounded token envelope and return only its public grant identity."""
     try:
         if not isinstance(value, str) or len(value) != 80 or not value.isascii():
             raise ValueError
@@ -55,6 +59,7 @@ def _parse_token(value: str) -> UUID:
 
 
 def _lock_binding(allocation_id: UUID, moment: datetime) -> tuple[ModelAllocation, ModelPendingGrant, Range]:
+    """Lock the range, allocation and grant in canonical authorization order."""
     from engine.models import ModelAllocation, ModelPendingGrant, Range
 
     candidate = ModelAllocation.objects.filter(pk=allocation_id).first()
@@ -91,7 +96,7 @@ def issue_model_enrollment(*, allocation_id: UUID, operation_id: UUID, now: date
         previous = ModelAccessCredential.objects.select_for_update().filter(grant=grant).first()
         if previous is not None:
             grant.grant_epoch += 1
-            fence_revoked_requests(allocation_id=allocation.pk, now=moment)
+            fence_revoked_requests(allocation_id=allocation.pk)
         grant.state = "pending"
         grant.save(update_fields=["state", "grant_epoch"])
         token = _token(grant.public_id)
@@ -114,6 +119,7 @@ def issue_model_enrollment(*, allocation_id: UUID, operation_id: UUID, now: date
 
 
 def _trusted_subnets(range_obj: Range, allocation: ModelAllocation) -> list[str]:
+    """Resolve only incumbent private subnet reservations owned by this range."""
     from engine.models import SubnetAllocation
 
     # A participant/request cannot choose a network. Read the incumbent subnet
@@ -124,18 +130,21 @@ def _trusted_subnets(range_obj: Range, allocation: ModelAllocation) -> list[str]
         .values_list("cidr", flat=True)[:65]
     )
     if not values or len(values) > 64:
-        raise ContractError("credential.network_unavailable")
+        raise ContractError(_NETWORK_UNAVAILABLE)
     for value in values:
         try:
             subnet = ipaddress.IPv4Network(value, strict=True)
         except ValueError:
-            raise ContractError("credential.network_unavailable") from None
+            raise ContractError(_NETWORK_UNAVAILABLE) from None
         if not any(subnet.subnet_of(private) for private in RFC1918_IPV4_NETWORKS):
-            raise ContractError("credential.network_unavailable")
+            raise ContractError(_NETWORK_UNAVAILABLE)
     return values
 
 
-def _lock_credential(token: str, peer: str, kind: str, moment: datetime):
+def _lock_credential(
+    token: str, peer: str, kind: str, moment: datetime
+) -> tuple[ModelAllocation, ModelPendingGrant, ModelAccessCredential]:
+    """Lock and verify the current credential, token deadline and socket peer."""
     from engine.models import ModelAccessCredential, ModelPendingGrant
 
     public_id = _parse_token(token)
@@ -146,14 +155,7 @@ def _lock_credential(token: str, peer: str, kind: str, moment: datetime):
     credential = ModelAccessCredential.objects.select_for_update().filter(grant=grant).first()
     if credential is None or credential.grant_epoch != grant.grant_epoch or credential.hard_expires_at <= moment:
         raise ContractError(_DENIED)
-    if (kind == "enrollment" and grant.state != "pending") or (kind != "enrollment" and grant.state != "active"):
-        raise ContractError(_DENIED)
-    expected = getattr(credential, f"{kind}_hash")
-    if not expected or not secrets.compare_digest(expected, _hash(token)):
-        raise ContractError(_DENIED)
-    deadline = getattr(credential, f"{kind}_expires_at", credential.hard_expires_at)
-    if deadline is None or deadline <= moment:
-        raise ContractError(_DENIED)
+    _verify_token(credential, grant, token, kind, moment)
     current_subnets = _trusted_subnets(range_obj, allocation)
     if current_subnets != credential.admitted_subnets or not any(
         peer_matches_binding(peer, subnet) for subnet in current_subnets
@@ -162,7 +164,26 @@ def _lock_credential(token: str, peer: str, kind: str, moment: datetime):
     return allocation, grant, credential
 
 
+def _verify_token(
+    credential: ModelAccessCredential,
+    grant: ModelPendingGrant,
+    token: str,
+    kind: str,
+    moment: datetime,
+) -> None:
+    """Require the current token kind, constant-time hash match and unexpired deadline."""
+    if (kind == "enrollment" and grant.state != "pending") or (kind != "enrollment" and grant.state != "active"):
+        raise ContractError(_DENIED)
+    expected = getattr(credential, f"{kind}_hash")
+    if not expected or not secrets.compare_digest(expected, _hash(token)):
+        raise ContractError(_DENIED)
+    deadline = getattr(credential, f"{kind}_expires_at", credential.hard_expires_at)
+    if deadline is None or deadline <= moment:
+        raise ContractError(_DENIED)
+
+
 def _rotate(grant: ModelPendingGrant, credential: ModelAccessCredential, moment: datetime) -> ModelTokenPair:
+    """Replace both guest capabilities while consuming the previous token pair."""
     access, refresh = _token(grant.public_id), _token(grant.public_id)
     expires = min(moment + timedelta(minutes=5), credential.hard_expires_at)
     credential.enrollment_hash = ""
@@ -218,6 +239,7 @@ def authenticate_model_access(
 
 
 def _audit(grant: ModelPendingGrant, context: str) -> None:
+    """Audit credential lifecycle events without recording capability material."""
     from engine.models import ModelAccessCredential
     from shared.audit import AuditActorType, AuditEvent, audit_log
     from shared.audit.vocabulary import AuditAction, AuditEntityType

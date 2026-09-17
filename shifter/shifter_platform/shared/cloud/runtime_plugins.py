@@ -30,7 +30,8 @@ def plugin_task_profile(*, image_pull_secret: str = "") -> KubernetesTaskProfile
             container_name=PLUGIN_CONTAINER,
             run_as_uid=65532,
             run_as_gid=65532,
-            writable_mounts=(("tmp", "/tmp", "Memory", "16Mi"),),  # noqa: S108 # nosec B108
+            # A per-pod bounded tmpfs, not a shared host directory; no host mounts are admitted.
+            writable_mounts=(("tmp", "/tmp", "Memory", "16Mi"),),  # noqa: S108 # nosec B108 # NOSONAR(S5443)
         ),
         image_pull_secrets=(image_pull_secret,) if image_pull_secret else (),
         resource_requests={"cpu": "100m", "memory": "64Mi", "ephemeral-storage": "16Mi"},
@@ -54,6 +55,7 @@ def plugin_task_identity(request: RuntimeInput | InspectionInput) -> dict[str, A
 
 
 def plugin_task_ref(request: RuntimeInput | InspectionInput) -> str:
+    """Derive the isolated Job reference from the immutable invocation identity."""
     return f"{PLUGIN_NAMESPACE}/{build_idempotent_job_name(PLUGIN_CONTAINER, str(request.invocation_id))}"
 
 

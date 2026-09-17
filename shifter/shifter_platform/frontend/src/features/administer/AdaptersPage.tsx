@@ -25,7 +25,7 @@ export function AdaptersPage() {
   const error = describeMutationError(organizations.error, "Organizations could not be loaded.");
   return <>
     <PageHeader title="Adapters" description="Install and manage your organization's runtime plugins." />
-    {organizations.isPending ? <p role="status">Loading organizations…</p> : null}
+    {organizations.isPending ? <output className="block">Loading organizations…</output> : null}
     {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
     {organizations.isSuccess && rows.length === 0 ? <p>You need organization administrator access to install plugins.</p> : null}
     {rows.length > 0 ? <div className="mb-6 space-y-2">
@@ -57,7 +57,7 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
     update.reset(); setUsername(""); setPassword(""); setAction({ adapter, kind });
   }
   return <>
-    {query.isPending ? <p role="status">Loading plugins…</p> : null}
+    {query.isPending ? <output className="block">Loading plugins…</output> : null}
     {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
     {query.isSuccess ? <>
       <AdapterInstallForm organization={organization} />
@@ -72,30 +72,7 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
       </div> : null}
       {showPacks ? <AdapterPackBindings organization={organization} adapters={adapters} /> : null}
       <h2 className="mb-3 text-lg font-semibold">Installed versions</h2>
-      {adapters.length === 0 ? <p>No plugins are installed.</p> : <Table>
-        <TableHeader><TableRow><TableHead>Plugin</TableHead><TableHead>Version</TableHead>
-          <TableHead>Status</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader>
-        <TableBody>{adapters.map((adapter) => {
-          const manifest = manifestPreview(adapter.manifest);
-          return <TableRow key={adapter.id}>
-            <TableCell>{manifest?.plugin_id ?? "Unrecognized manifest"}</TableCell>
-            <TableCell>{manifest?.version ?? "Unavailable"}</TableCell>
-            <TableCell><Badge variant="outline">{adapter.state === "checking" ? "Checking compatibility" : adapter.state}</Badge>
-              {adapter.state === "failed" ? <p>Installation failed. Check the package and registry sign-in, then retry.</p> : null}
-            </TableCell>
-            <TableCell><div className="flex gap-2">
-              {adapter.state === "retired" ? <span>Retained for existing ranges</span> : <>
-                {adapter.state === "failed" ? <Button variant="outline" disabled={update.isPending}
-                  onClick={() => choose(adapter, "retry")}>Retry installation</Button> : null}
-                <Button variant="outline" disabled={update.isPending}
-                  onClick={() => choose(adapter, adapter.state === "disabled" ? "enable" : "disable")}>
-                  {adapter.state === "disabled" ? "Enable" : "Disable"}</Button>
-                <Button variant="outline" disabled={update.isPending} onClick={() => choose(adapter, "retire")}>Retire</Button>
-              </>}
-            </div></TableCell>
-          </TableRow>;
-        })}</TableBody>
-      </Table>}
+      <AdapterVersions adapters={adapters} pending={update.isPending} choose={choose} />
     </> : null}
     <ConfirmDialog open={action !== null} onOpenChange={(open) => { if (!open && !update.isPending) setAction(null); }}
       title={`${label} this plugin version?`} confirmLabel={`${label} plugin`}
@@ -111,7 +88,7 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
         <Input id="retry-username" value={username} disabled={update.isPending} onChange={(event) => setUsername(event.target.value)} autoComplete="off" />
         <Label htmlFor="retry-password">Registry password or access token</Label>
         <Input id="retry-password" type="password" value={password} disabled={update.isPending} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
-        {Boolean(username) !== Boolean(password) ? <p>Enter both fields to change registry sign-in.</p> : null}
+        {Boolean(username) === Boolean(password) ? null : <p>Enter both fields to change registry sign-in.</p>}
       </div> : null}>
       {action?.kind === "enable" || action?.kind === "retry"
         ? "Shifter will run compatibility checks before enabling this version."
@@ -119,4 +96,33 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
       {action?.kind === "retire" ? " Retirement cannot be reversed." : ""}
     </ConfirmDialog>
   </>;
+}
+
+function AdapterVersions({ adapters, pending, choose }: Readonly<{
+  adapters: Adapter[]; pending: boolean; choose: (adapter: Adapter, kind: AdapterAction) => void;
+}>) {
+  return (adapters.length === 0 ? <p>No plugins are installed.</p> : <Table>
+        <TableHeader><TableRow><TableHead>Plugin</TableHead><TableHead>Version</TableHead>
+          <TableHead>Status</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader>
+        <TableBody>{adapters.map((adapter) => {
+          const manifest = manifestPreview(adapter.manifest);
+          return <TableRow key={adapter.id}>
+            <TableCell>{manifest?.plugin_id ?? "Unrecognized manifest"}</TableCell>
+            <TableCell>{manifest?.version ?? "Unavailable"}</TableCell>
+            <TableCell><Badge variant="outline">{adapter.state === "checking" ? "Checking compatibility" : adapter.state}</Badge>
+              {adapter.state === "failed" ? <p>Installation failed. Check the package and registry sign-in, then retry.</p> : null}
+            </TableCell>
+            <TableCell><div className="flex gap-2">
+              {adapter.state === "retired" ? <span>Retained for existing ranges</span> : <>
+                {adapter.state === "failed" ? <Button variant="outline" disabled={pending}
+                  onClick={() => choose(adapter, "retry")}>Retry installation</Button> : null}
+                <Button variant="outline" disabled={pending}
+                  onClick={() => choose(adapter, adapter.state === "disabled" ? "enable" : "disable")}>
+                  {adapter.state === "disabled" ? "Enable" : "Disable"}</Button>
+                <Button variant="outline" disabled={pending} onClick={() => choose(adapter, "retire")}>Retire</Button>
+              </>}
+            </div></TableCell>
+          </TableRow>;
+        })}</TableBody>
+      </Table>);
 }

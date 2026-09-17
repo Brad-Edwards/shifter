@@ -34,8 +34,8 @@ export function PackUploadForm({ organization, packs }: Readonly<{ organization:
     <Input key={fileKey} id="pack-upload-file" type="file" accept=".tar,.tar.gz,.tgz" disabled={upload.isPending}
       onChange={(event) => { setArchive(event.target.files?.[0] ?? null); upload.reset(); }} />
     <Button disabled={!valid || upload.isPending} onClick={() => setConfirm(true)}>Review pack installation</Button>
-    {upload.isSuccess ? <p role="status">Installed {upload.data.name} version {upload.data.package_version}.
-      Assign an adapter below if this pack requires one.</p> : null}
+    {upload.isSuccess ? <output className="block">Installed {upload.data.name} version {upload.data.package_version}.
+      Assign an adapter below if this pack requires one.</output> : null}
     <ConfirmDialog open={confirm} onOpenChange={(open) => { if (!upload.isPending) setConfirm(open); }}
       title={previous ? "Install this pack update?" : "Install this content pack?"}
       confirmLabel="Install pack" pending={upload.isPending} error={upload.error} confirmDisabled={!valid}

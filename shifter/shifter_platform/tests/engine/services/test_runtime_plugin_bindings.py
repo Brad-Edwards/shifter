@@ -53,11 +53,9 @@ def pack(monkeypatch):
     scope = RuntimePluginScope(organization_uuid=organization.uuid, pack_id="example", pack_digest="sha256:" + "b" * 64)
     binding = bind_runtime_plugin(
         actor,
-        organization.uuid,
+        RuntimePluginScope(organization_uuid=organization.uuid, pack_digest=scope.pack_digest, pack_id="example"),
         installed.id,
-        scope.pack_digest,
         {"targets": {"server": "node.web"}},
-        pack_id="example",
     )
     return SimpleNamespace(
         actor=actor, organization=organization, installed=installed, manifest=manifest, scope=scope, binding=binding
@@ -88,11 +86,11 @@ def test_existing_range_keeps_original_version_after_pack_upgrade_and_retirement
     RuntimePluginInstallation.objects.filter(pk=replacement.id).update(state="ready")
     bind_runtime_plugin(
         pack.actor,
-        pack.organization.uuid,
+        RuntimePluginScope(
+            organization_uuid=pack.organization.uuid, pack_digest=pack.scope.pack_digest, pack_id="example"
+        ),
         replacement.id,
-        pack.scope.pack_digest,
         {"targets": {"server": "node.web"}},
-        pack_id="example",
     )
     change_runtime_plugin(pack.actor, pack.organization.uuid, pack.installed.id, "retire")
     assert retained_runtime_plugin_pin(target) == original
@@ -119,32 +117,30 @@ def test_binding_cannot_select_another_tenant_executable(pack):
     with pytest.raises(ValidationError, match="unavailable"):
         bind_runtime_plugin(
             pack.actor,
-            other.uuid,
+            RuntimePluginScope(organization_uuid=other.uuid, pack_digest=pack.scope.pack_digest, pack_id="example"),
             pack.installed.id,
-            pack.scope.pack_digest,
             {"targets": {"server": "node.web"}},
-            pack_id="example",
         )
     outsider = User.objects.create_user(username="staff-outsider", is_staff=True)
     with pytest.raises(OrganizationAuthorizationError):
         bind_runtime_plugin(
             outsider,
-            pack.organization.uuid,
+            RuntimePluginScope(
+                organization_uuid=pack.organization.uuid, pack_digest=pack.scope.pack_digest, pack_id="example"
+            ),
             pack.installed.id,
-            pack.scope.pack_digest,
             {"targets": {"server": "node.web"}},
-            pack_id="example",
         )
 
 
 def test_missing_guest_fails_without_persisting_a_range(pack):
     bind_runtime_plugin(
         pack.actor,
-        pack.organization.uuid,
+        RuntimePluginScope(
+            organization_uuid=pack.organization.uuid, pack_digest=pack.scope.pack_digest, pack_id="example"
+        ),
         pack.installed.id,
-        pack.scope.pack_digest,
         {"targets": {"server": "node.absent"}},
-        pack_id="example",
     )
     with pytest.raises(ValidationError, match="compiled guests"):
         launch(pack)

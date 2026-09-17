@@ -12,6 +12,8 @@ class RuntimePluginInstallation(models.Model):
     """Executable identity is pinned; probes never grant readiness to a range."""
 
     class State(models.TextChoices):
+        """Lifecycle states recorded by the installation controller."""
+
         CHECKING = "checking", "Checking compatibility"
         READY = "ready", "Ready"
         FAILED = "failed", "Installation failed"
@@ -35,6 +37,8 @@ class RuntimePluginInstallation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Enforce durable identity uniqueness and legal lifecycle states."""
+
         indexes = [models.Index(fields=["organization_uuid", "-created_at", "-id"], name="runtime_plugin_admin_page")]
         constraints = [
             models.UniqueConstraint(
@@ -64,6 +68,8 @@ class RuntimePluginPackBinding(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Enforce durable identity uniqueness and legal lifecycle states."""
+
         constraints = [
             models.UniqueConstraint(
                 fields=["organization_uuid", "pack_id"],
@@ -103,6 +109,8 @@ class RuntimePluginInvocation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Enforce durable identity uniqueness and legal lifecycle states."""
+
         db_table = "engine_runtime_plugin_invocation"
         constraints = [
             models.UniqueConstraint(fields=["operation_id", "phase"], name="runtime_plugin_operation_phase"),

@@ -20,6 +20,7 @@ from shared.raes.operation_input import (
     MAX_IMAGE_CANDIDATES,
     RaesInputBindings,
     RaesOperationInputError,
+    RaesRangeIdentity,
     build_raes_operation_input,
     image_lookup_key,
     parse_raes_operation_input,
@@ -125,6 +126,7 @@ def _built(**overrides: object) -> dict:
         access=kwargs.pop("access_bindings", ()),  # type: ignore[arg-type]
         artifact=kwargs.pop("artifact_bindings", ()),  # type: ignore[arg-type]
     )
+    kwargs["identity"] = RaesRangeIdentity(kwargs.pop("legacy_range_id"), kwargs.pop("resource_generation", None))  # type: ignore[arg-type]
     return build_raes_operation_input(bindings=bindings, **kwargs)  # type: ignore[arg-type]
 
 
@@ -350,8 +352,7 @@ def test_ec2_resource_ownership_epoch_survives_operation_input_roundtrip():
         image_candidates={},
         range_backend="ec2",
         instantiation_purpose="live_fire",
-        legacy_range_id=7,
-        resource_generation=generation,
+        identity=RaesRangeIdentity(7, generation),
     )
     assert parse_raes_operation_input(payload).resource_generation == generation
     del payload["resource_generation"]
@@ -368,6 +369,5 @@ def test_ec2_cannot_launch_or_cleanup_with_a_missing_or_noncanonical_ownership_e
             image_candidates={},
             range_backend="ec2",
             instantiation_purpose="live_fire",
-            legacy_range_id=7,
-            resource_generation=generation,
+            identity=RaesRangeIdentity(7, generation),
         )

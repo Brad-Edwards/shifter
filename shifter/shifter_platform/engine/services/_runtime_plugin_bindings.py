@@ -18,11 +18,13 @@ from ._runtime_plugins import _authorize
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from engine.models import Range
+    from engine.models import Range, RuntimePluginPackBinding
 
 
 @dataclass(frozen=True)
 class RuntimePluginPackView:
+    """Current tenant pack selection and the installation readiness it depends on."""
+
     id: UUID
     organization_uuid: UUID
     pack_id: str
@@ -35,19 +37,18 @@ class RuntimePluginPackView:
 
 def bind_runtime_plugin(
     user: User,
-    organization_uuid: UUID,
+    scope: RuntimePluginScope,
     installation_id: UUID,
-    pack_digest: str,
     bindings: object,
     *,
-    pack_id: str,
     enabled: bool = True,
     audit: RequestAudit | None = None,
 ) -> RuntimePluginPackView:
     """Authorize and update a pack's selection, without changing any range pin."""
     from engine.models import RuntimePluginInstallation, RuntimePluginPackBinding
 
-    organization_uuid = _authorize(user, organization_uuid)
+    organization_uuid = _authorize(user, scope.organization_uuid)
+    pack_id, pack_digest = scope.pack_id, scope.pack_digest
     try:
         RuntimePluginScope(organization_uuid=organization_uuid, pack_id=pack_id, pack_digest=pack_digest)
         parsed = PluginTargetBindings.model_validate(bindings)
@@ -118,6 +119,7 @@ def bind_runtime_plugin(
 
 
 def list_runtime_plugin_bindings(user: User, organization_uuid: UUID) -> list[RuntimePluginPackView]:
+    """List explicit selections owned by the authorized organization."""
     from engine.models import RuntimePluginPackBinding
 
     organization_uuid = _authorize(user, organization_uuid)
@@ -190,6 +192,7 @@ def resolve_runtime_plugin_pin(scope: RuntimePluginScope, plan: dict[str, Any]) 
 
 
 def persist_runtime_plugin_pin(target: Range, pin: RuntimePluginPin | None) -> None:
+    """Retain the admitted installation and guest mapping for the range lifetime."""
     from engine.models import RuntimePluginRangeBinding
 
     if pin is not None:
@@ -218,7 +221,8 @@ def retained_runtime_plugin_pin(target: Range) -> RuntimePluginPin | None:
         raise ValidationError("The range's runtime plugin binding is invalid") from None
 
 
-def _view(row: Any) -> RuntimePluginPackView:
+def _view(row: RuntimePluginPackBinding) -> RuntimePluginPackView:
+    """Project a stored pack binding and current installation state."""
     return RuntimePluginPackView(
         row.id,
         row.organization_uuid,

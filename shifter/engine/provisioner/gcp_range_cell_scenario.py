@@ -255,7 +255,6 @@ def _profile_for_instance(
 
 
 def _host_access(
-    config: GCERangeCellConfig,
     profile: GCERangeImageProfile,
     os_type: str,
     role: str,
@@ -308,7 +307,7 @@ def build_instance_plans(
             role = str(instance.get("role", "victim"))
             os_type = str(instance.get("os_type", instance.get("os", "ubuntu")))
             profile = _profile_for_instance(config, instance, require_images=require_images)
-            ssh_username, host_ssh_username, ssh_port = _host_access(config, profile, os_type, role)
+            ssh_username, host_ssh_username, ssh_port = _host_access(profile, os_type, role)
             service_account_email = _range_host_service_account(config, profile, range_host_pool_slot)
             image_key = str(instance.get("ami_key") or "").strip()
             resource_name = _short_resource_name(

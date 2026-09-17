@@ -1,6 +1,6 @@
 """Deployment-owned provider targets; participants select only logical aliases."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -24,7 +24,7 @@ class ProviderTarget(ClosedModel):
     context_window_tokens: Annotated[int, Field(strict=True, ge=1, le=2_000_000)]
 
     @model_validator(mode="after")
-    def validate_identity(self):
+    def validate_identity(self) -> Self:
         import re
 
         if self.provider == "vertex-v1":
@@ -40,12 +40,12 @@ class ProviderTarget(ClosedModel):
         elif (
             self.project
             or self.count_region
-            or not re.fullmatch(r"arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9/+=,.@_-]+", self.principal)
+            or not re.fullmatch(r"arn:aws:iam::(?a:\d){12}:role/[a-zA-Z0-9/+=,.@_-]+", self.principal)
         ):
             raise ValueError("Bedrock requires an approved invocation role")
         return self
 
-    def bind(self, shard: ModelShard):
+    def bind(self, shard: ModelShard) -> Self:
         if (
             shard.shard_id != self.shard_id
             or shard.provider_adapter_id != self.provider
@@ -65,7 +65,7 @@ class ProviderInventory(ClosedModel):
     targets: Annotated[list[ProviderTarget], Field(min_length=1, max_length=128)]
 
     @model_validator(mode="after")
-    def unique_targets(self):
+    def unique_targets(self) -> Self:
         if len({target.shard_id for target in self.targets}) != len(self.targets):
             raise ValueError("duplicate provider target")
         return self

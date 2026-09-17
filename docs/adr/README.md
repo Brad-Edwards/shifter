@@ -688,3 +688,9 @@ for sandbox configuration. Module contract tests pin the same provider family
 as both deployment roots, so a newer module-only schema cannot mask an invalid
 deployment configuration. Native range power capabilities are refused before
 legacy worker dispatch because native realization has a separate member inventory.
+
+The runtime security annotations also cover Sonar's wildcard-listener and shared
+temporary-directory findings: broker/control sockets are private Kubernetes
+Services with mandatory TLS, workload authentication and enforced NetworkPolicy;
+the plugin `/tmp` is a per-pod, size-bounded memory volume, with host mounts denied.
+These scoped annotations retain those deployment controls and their contract tests.

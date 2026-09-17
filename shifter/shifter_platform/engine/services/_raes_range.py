@@ -144,15 +144,7 @@ def create_raes_range(
         verify_existing_workspace_binding(existing, request_uuid, workspace_id)
         verify_existing_egress_binding(existing, request_uuid, egress_mode)
         _verify_existing_participant_access(existing, bindings.participant_access)
-        pin = retained_runtime_plugin_pin(existing)
-        scope = bindings.runtime_plugin_scope
-        if pin is not None and (
-            scope is None
-            or pin.organization_uuid != scope.organization_uuid
-            or pin.pack_digest != scope.pack_digest
-            or pin.pack_id != scope.pack_id
-        ):
-            raise ValueError("Range replay cannot change its runtime plugin pack identity")
+        _verify_existing_plugin_scope(existing, bindings.runtime_plugin_scope)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
@@ -192,6 +184,18 @@ def create_raes_range(
     if bindings.defer_dispatch:
         return RaesRangeRef(str(request_uuid), str(range_obj.uuid), range_obj.status, True)
     return dispatch_created_raes_range(request_uuid)
+
+
+def _verify_existing_plugin_scope(existing: Range, scope: RuntimePluginScope | None) -> None:
+    """Reject replay that changes the administrator-selected tenant or pack revision."""
+    pin = retained_runtime_plugin_pin(existing)
+    if pin is not None and (
+        scope is None
+        or pin.organization_uuid != scope.organization_uuid
+        or pin.pack_digest != scope.pack_digest
+        or pin.pack_id != scope.pack_id
+    ):
+        raise ValueError("Range replay cannot change its runtime plugin pack identity")
 
 
 def dispatch_created_raes_range(request_uuid: UUID) -> RaesRangeRef:

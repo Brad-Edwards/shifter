@@ -1,22 +1,26 @@
 """Tenant administration over verified catalog packs and Engine plugin bindings."""
 
 from dataclasses import asdict
+from typing import Any
 from uuid import UUID
 
+from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Q
 
 from cms.models import RaesPackageSource
 from cms.scenarios.catalog_presentation import list_catalog_presentations
 from cms.scenarios.realizability import _availability_provider, _trusted_scenario_path
-from engine.services import bind_runtime_plugin, list_runtime_plugin_bindings
+from engine.services import RuntimePluginPackView, bind_runtime_plugin, list_runtime_plugin_bindings
+from shared.audit import RequestAudit
 from shared.exceptions import ValidationError
 from shared.raes.realizability import RealizabilityOutcome, assess_scenario_capability
-from shared.runtime_plugin_binding import PluginTargetBindings
+from shared.runtime_plugin_binding import PluginTargetBindings, RuntimePluginScope
 from workspaces.services import get_organization_profile
 
 
-def list_runtime_plugin_packs(user, organization_uuid: UUID) -> list[dict]:
+def list_runtime_plugin_packs(user: User, organization_uuid: UUID) -> list[dict[str, Any]]:
+    """List verified packs visible to an authorized organization administrator."""
     get_organization_profile(user, organization_uuid)
     bindings = {row.pack_id: row for row in list_runtime_plugin_bindings(user, organization_uuid)}
     available = dict(
@@ -44,7 +48,7 @@ def list_runtime_plugin_packs(user, organization_uuid: UUID) -> list[dict]:
     return sorted(packs, key=lambda row: row["id"])
 
 
-def runtime_plugin_pack_detail(user, organization_uuid: UUID, pack_id: str) -> dict:
+def runtime_plugin_pack_detail(user: User, organization_uuid: UUID, pack_id: str) -> dict[str, Any]:
     """Return selectable guest identities only; never apply a compiled plan."""
     entry = next((row for row in list_runtime_plugin_packs(user, organization_uuid) if row["id"] == pack_id), None)
     if entry is None:
@@ -67,7 +71,15 @@ def runtime_plugin_pack_detail(user, organization_uuid: UUID, pack_id: str) -> d
     }
 
 
-def set_runtime_plugin_pack(user, organization_uuid: UUID, pack_id: str, payload: dict, *, audit=None):
+def set_runtime_plugin_pack(
+    user: User,
+    organization_uuid: UUID,
+    pack_id: str,
+    payload: dict[str, Any],
+    *,
+    audit: RequestAudit | None = None,
+) -> RuntimePluginPackView:
+    """Bind a verified pack revision to an administrator-selected installation."""
     detail = runtime_plugin_pack_detail(user, organization_uuid, pack_id)
     if payload["pack_digest"] != detail["pack_digest"]:
         raise ValidationError("The pack changed; reload its current version before saving")
@@ -83,11 +95,9 @@ def set_runtime_plugin_pack(user, organization_uuid: UUID, pack_id: str, payload
             raise ValidationError("The pack changed; reload its current version before saving")
         return bind_runtime_plugin(
             user,
-            organization_uuid,
+            RuntimePluginScope(organization_uuid=organization_uuid, pack_digest=detail["pack_digest"], pack_id=pack_id),
             payload["installation_id"],
-            detail["pack_digest"],
             bindings.model_dump(mode="json"),
-            pack_id=pack_id,
             enabled=payload["enabled"],
             audit=audit,
         )

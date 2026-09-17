@@ -32,8 +32,8 @@ export function AdapterPackBindings({ organization, adapters }: Readonly<{ organ
     <h2 className="text-lg font-semibold">Pack assignments</h2>
     <p>Choose an installed adapter and match its required targets to guests in your pack. Existing ranges retain their original assignment.</p>
     {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
-    {packs.isPending ? <p role="status">Loading packs…</p> : null}
-    {saved ? <p role="status">Assignment saved. Existing ranges keep their original adapter.</p> : null}
+    {packs.isPending ? <output className="block">Loading packs…</output> : null}
+    {saved ? <output className="block">Assignment saved. Existing ranges keep their original adapter.</output> : null}
     {packs.data ? <>
       <PackUploadForm organization={organization} packs={packs.data.results} />
       {packs.data.results.length === 0 ? <p>No accessible packs are registered.</p> : <Table>
@@ -48,7 +48,7 @@ export function AdapterPackBindings({ organization, adapters }: Readonly<{ organ
         <Button variant="outline" disabled={!packs.data.next} onClick={() => setPage(page + 1)}>Next packs</Button>
       </div>
     </> : null}
-    {selected && detail.isPending ? <p role="status">Checking pack contents and guest targets…</p> : null}
+    {selected && detail.isPending ? <output className="block">Checking pack contents and guest targets…</output> : null}
     {selected && detail.data ? <PackAssignmentForm key={`${selected}:${detail.data.pack_digest}`} organization={organization}
       pack={detail.data} adapters={adapters} onSaved={() => { setSelected(""); setSaved(true); }} /> : null}
   </section>;

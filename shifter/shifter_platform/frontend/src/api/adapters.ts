@@ -7,7 +7,7 @@ export type Adapter = components["schemas"]["RuntimePluginView"];
 export type AdapterInstall = components["schemas"]["RuntimePluginInstall"];
 export type AdapterAction = components["schemas"]["RuntimePluginAction"]["action"];
 type AdapterPage = components["schemas"]["RuntimePluginPage"];
-type Credentials = AdapterInstall["registry_credentials"];
+type Credentials = NonNullable<AdapterInstall["registry_credentials"]>;
 const key = (organization: string) => ["installed-plugins", organization] as const;
 const base = (organization: string) => `/cms/organizations/${organization}/plugins/`;
 

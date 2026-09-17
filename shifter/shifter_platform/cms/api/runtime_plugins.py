@@ -19,21 +19,29 @@ from .preparation_adapters import PreparationSerializer, preparation_request_aud
 
 
 class RegistryCredentialsSerializer(PreparationSerializer):
+    """Write-only credentials for the isolated image pull."""
+
     username = serializers.CharField(max_length=8192, trim_whitespace=False)
     password = serializers.CharField(max_length=8192, trim_whitespace=False, write_only=True)
 
 
 class RuntimePluginInstallSerializer(PreparationSerializer):
+    """A conforming adapter manifest and optional registry credentials."""
+
     manifest = serializers.JSONField()
     registry_credentials = RegistryCredentialsSerializer(required=False, write_only=True)
 
 
 class RuntimePluginActionSerializer(PreparationSerializer):
+    """An administrator lifecycle action for an installed adapter."""
+
     action = serializers.ChoiceField(choices=["disable", "enable", "retry", "retire"])
     registry_credentials = RegistryCredentialsSerializer(required=False, write_only=True)
 
 
 class RuntimePluginViewSerializer(serializers.Serializer):
+    """Installation status without stored registry credentials."""
+
     id = serializers.UUIDField()
     organization_uuid = serializers.UUIDField()
     manifest = serializers.JSONField()
@@ -44,11 +52,14 @@ class RuntimePluginViewSerializer(serializers.Serializer):
 
 
 class RuntimePluginPageSerializer(serializers.Serializer):
+    """A bounded installation page with an opaque continuation cursor."""
+
     results = RuntimePluginViewSerializer(many=True)
     next_cursor = serializers.UUIDField(allow_null=True)
 
 
 def _error(request: Request, exc: OrganizationAuthorizationError | ValidationError) -> Response:
+    """Return a bounded user-facing error without diagnostic details."""
     denied = isinstance(exc, OrganizationAuthorizationError)
     message = exc.message if isinstance(exc, ValidationError) else "Organization access denied"
     return api_error_response(
@@ -100,6 +111,8 @@ class RuntimePluginListCreateView(APIView):
 
 
 class RuntimePluginActionView(APIView):
+    """Apply authorized lifecycle actions to an organization's adapter."""
+
     permission_classes = [IsAuthenticatedSession]
 
     @extend_schema(request=RuntimePluginActionSerializer, responses=RuntimePluginViewSerializer)

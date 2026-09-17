@@ -21,6 +21,7 @@ from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import (
     RaesInputBindings,
+    RaesRangeIdentity,
     build_raes_operation_input,
     candidate_key,
     plan_image_lookup_keys,
@@ -208,9 +209,8 @@ def _raes_input_payload(target: Range, request: Request, *, suppress_access: boo
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,
-        legacy_range_id=target.id,
+        identity=RaesRangeIdentity(target.id, str(target.resource_generation) if target.resource_generation else None),
         egress_mode=target.egress_mode,
-        resource_generation=str(target.resource_generation) if target.resource_generation else None,
     )
 
 

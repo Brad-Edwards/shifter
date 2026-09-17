@@ -11,6 +11,7 @@ from uuid import UUID
 
 from shared.model_access.network import RFC1918_IPV4_NETWORKS
 
+from ec2_range_cleanup import Ec2CleanupScope
 from raes_ec2_image import VerifiedEc2Image
 from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 
@@ -20,6 +21,7 @@ class Ec2NetworkError(ValueError):
 
 
 def _network(value: str) -> ipaddress.IPv4Network:
+    """Parse a canonical subnet wholly contained in private IPv4 address space."""
     try:
         network = ipaddress.IPv4Network(value, strict=True)
     except ValueError:
@@ -43,10 +45,10 @@ class Ec2NetworkConfig:
     access_cidrs: tuple[str, ...] = ()
     broker_cidrs: tuple[str, ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if (
             not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", self.environment)
-            or not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-[0-9]+", self.region)
+            or not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-(?a:\d)+", self.region)
             or not re.fullmatch(re.escape(self.region) + r"[a-z]", self.zone)
             or not re.fullmatch(r"vpc-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.vpc_id)
             or not re.fullmatch(r"rtb-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.base_route_table_id)
@@ -55,6 +57,10 @@ class Ec2NetworkConfig:
             or len(self.broker_cidrs) > 16
         ):
             raise Ec2NetworkError("EC2 deployment network coordinates are invalid")
+        self._validate_endpoints()
+
+    def _validate_endpoints(self) -> None:
+        """Keep all platform destinations outside guest subnets and broker routes exact."""
         vpc = _network(self.vpc_cidr)
         for cidr in (*self.management_cidrs, *self.access_cidrs, *self.broker_cidrs):
             network = _network(cidr)
@@ -66,6 +72,8 @@ class Ec2NetworkConfig:
 
 @dataclass(frozen=True)
 class Ec2SubnetIntent:
+    """A reserved portable network and its opaque cloud resource name."""
+
     address: str
     cidr: str
     resource_name: str
@@ -73,6 +81,8 @@ class Ec2SubnetIntent:
 
 @dataclass(frozen=True)
 class Ec2GroupIntent:
+    """Exact ingress and egress grants for a realized guest."""
+
     address: str
     resource_name: str
     ingress: tuple[dict[str, Any], ...]
@@ -81,6 +91,8 @@ class Ec2GroupIntent:
 
 @dataclass(frozen=True)
 class Ec2GuestPlacement:
+    """One guest instance and its allocated private address."""
+
     node_address: str
     instance_key: str
     subnet_address: str
@@ -89,6 +101,8 @@ class Ec2GuestPlacement:
 
 @dataclass(frozen=True)
 class Ec2NetworkPlan:
+    """Immutable network placement and ownership for an operation generation."""
+
     config: Ec2NetworkConfig
     request_id: UUID
     generation: UUID
@@ -111,6 +125,7 @@ class Ec2NetworkPlan:
 
 
 def _name(range_id: int, address: str) -> str:
+    """Derive a bounded opaque resource name from the range and authored address."""
     return f"shifter-r-{range_id}-{hashlib.sha256(address.encode()).hexdigest()[:24]}"
 
 
@@ -120,6 +135,7 @@ def allocation_networks(plan: RaesPlan) -> tuple[RaesPlanNetwork, ...]:
 
 
 def _permission(protocol: str, cidrs: tuple[str, ...], port: int | None = None) -> dict[str, Any]:
+    """Render an AWS grant with canonical unique destination CIDRs."""
     result: dict[str, Any] = {"IpProtocol": protocol, "IpRanges": [{"CidrIp": cidr} for cidr in sorted(set(cidrs))]}
     if port is not None:
         result.update(FromPort=port, ToPort=port)
@@ -130,76 +146,24 @@ def plan_ec2_network(
     plan: RaesPlan,
     *,
     config: Ec2NetworkConfig,
-    request_id: UUID,
-    generation: UUID,
-    range_id: int,
+    scope: Ec2CleanupScope,
     allocated_cidrs: dict[str, str],
     images: dict[str, VerifiedEc2Image],
     participant_channels: dict[str, tuple[str, ...]],
     egress_mode: str,
 ) -> Ec2NetworkPlan:
     """Bind allocation, network selection, sizing and narrow guest security groups."""
-    if (
-        not isinstance(request_id, UUID)
-        or not isinstance(generation, UUID)
-        or type(range_id) is not int
-        or range_id <= 0
-    ):
+    request_id, generation, range_id = scope.request_id, scope.generation, scope.range_id
+    if (scope.environment, scope.region, scope.vpc_id) != (config.environment, config.region, config.vpc_id):
         raise Ec2NetworkError("EC2 range ownership is invalid")
-    if egress_mode not in {"status-quo", "deny-all", "none"} or (egress_mode == "none" and config.broker_cidrs):
-        raise Ec2NetworkError("EC2 egress posture does not admit the requested broker exception")
-    networks = allocation_networks(plan)
-    if not 1 <= len(networks) <= 32 or set(allocated_cidrs) != {network.address for network in networks}:
-        raise Ec2NetworkError("EC2 subnet allocation does not match the compiled networks")
-    if len({node.address for node in plan.nodes}) != len(plan.nodes) or set(images) != {
-        node.address for node in plan.nodes
-    }:
-        raise Ec2NetworkError("EC2 image inventory does not match the compiled guests")
-    subnets = []
-    cidrs: dict[str, ipaddress.IPv4Network] = {}
-    for network in networks:
-        allocated = _network(allocated_cidrs[network.address])
-        if (
-            not allocated.subnet_of(_network(config.vpc_cidr))
-            or not 16 <= allocated.prefixlen <= 28
-            or any(allocated.overlaps(other) for other in cidrs.values())
-            or (network.cidr is not None and network.cidr != str(allocated))
-            or network.gateway is not None
-        ):
-            raise Ec2NetworkError("EC2 allocation cannot substitute authored network addressing")
-        cidrs[network.address] = allocated
-        subnets.append(Ec2SubnetIntent(network.address, str(allocated), _name(range_id, network.address)))
+    networks = _validate_network_coverage(plan, config, allocated_cidrs, images, egress_mode)
+    subnets, cidrs = _plan_subnets(networks, allocated_cidrs, config, range_id)
     guests: list[Ec2GuestPlacement] = []
     groups = []
     used = {network.address: 4 for network in networks}
     for node in plan.nodes:
-        if node.acls:
-            raise Ec2NetworkError("EC2 security groups cannot realize ordered node ACLs")
-        if len(node.network_addresses) == 1 and node.network_addresses[0] in cidrs:
-            network_address = node.network_addresses[0]
-        elif not node.network_addresses and node.network_selection_open:
-            network_address = networks[0].address
-        else:
-            raise Ec2NetworkError("EC2 requires one declared or open primary network per guest")
-        if any(net.internal and net.address == network_address for net in networks) and config.broker_cidrs:
-            raise Ec2NetworkError("An internal EC2 network cannot receive broker egress")
-        guest_network = cidrs[network_address]
-        if (
-            type(node.count) is not int
-            or node.count < 1
-            or used[network_address] + node.count >= guest_network.num_addresses
-        ):
-            raise Ec2NetworkError("EC2 subnet cannot accommodate the authored guest count")
-        for _index in range(node.count):
-            guests.append(
-                Ec2GuestPlacement(
-                    node.address,
-                    f"{node.address}#{_index}",
-                    network_address,
-                    str(guest_network.network_address + used[network_address]),
-                )
-            )
-            used[network_address] += 1
+        placed, guest_network = _place_node(node, networks, cidrs, config, used)
+        guests.extend(placed)
         if len(guests) > 256:
             raise Ec2NetworkError("EC2 guest count exceeds the realization bound")
         groups.append(
@@ -214,6 +178,100 @@ def plan_ec2_network(
             )
         )
     return Ec2NetworkPlan(config, request_id, generation, range_id, tuple(subnets), tuple(groups), tuple(guests))
+
+
+def _validate_network_coverage(
+    plan: RaesPlan,
+    config: Ec2NetworkConfig,
+    allocated_cidrs: dict[str, str],
+    images: dict[str, VerifiedEc2Image],
+    egress_mode: str,
+) -> tuple[RaesPlanNetwork, ...]:
+    """Require exact network and image coverage under the admitted egress posture."""
+    if egress_mode not in {"status-quo", "deny-all", "none"} or (egress_mode == "none" and config.broker_cidrs):
+        raise Ec2NetworkError("EC2 egress posture does not admit the requested broker exception")
+    networks = allocation_networks(plan)
+    if not 1 <= len(networks) <= 32 or set(allocated_cidrs) != {network.address for network in networks}:
+        raise Ec2NetworkError("EC2 subnet allocation does not match the compiled networks")
+    if len({node.address for node in plan.nodes}) != len(plan.nodes) or set(images) != {
+        node.address for node in plan.nodes
+    }:
+        raise Ec2NetworkError("EC2 image inventory does not match the compiled guests")
+    return networks
+
+
+def _place_node(
+    node: RaesPlanNode,
+    networks: tuple[RaesPlanNetwork, ...],
+    cidrs: dict[str, ipaddress.IPv4Network],
+    config: Ec2NetworkConfig,
+    used: dict[str, int],
+) -> tuple[list[Ec2GuestPlacement], ipaddress.IPv4Network]:
+    """Allocate every replica without crossing subnet capacity or reserved address space."""
+    placed = []
+    network_address = _node_network(node, networks, cidrs, config)
+    guest_network = cidrs[network_address]
+    if (
+        type(node.count) is not int
+        or node.count < 1
+        or used[network_address] + node.count >= guest_network.num_addresses
+    ):
+        raise Ec2NetworkError("EC2 subnet cannot accommodate the authored guest count")
+    for _index in range(node.count):
+        placed.append(
+            Ec2GuestPlacement(
+                node.address,
+                f"{node.address}#{_index}",
+                network_address,
+                str(guest_network.network_address + used[network_address]),
+            )
+        )
+        used[network_address] += 1
+    return placed, guest_network
+
+
+def _node_network(
+    node: RaesPlanNode,
+    networks: tuple[RaesPlanNetwork, ...],
+    cidrs: dict[str, ipaddress.IPv4Network],
+    config: Ec2NetworkConfig,
+) -> str:
+    """Choose the sole admitted primary network and enforce internal-network egress."""
+    if node.acls:
+        raise Ec2NetworkError("EC2 security groups cannot realize ordered node ACLs")
+    if len(node.network_addresses) == 1 and node.network_addresses[0] in cidrs:
+        network_address = node.network_addresses[0]
+    elif not node.network_addresses and node.network_selection_open:
+        network_address = networks[0].address
+    else:
+        raise Ec2NetworkError("EC2 requires one declared or open primary network per guest")
+    if any(net.internal and net.address == network_address for net in networks) and config.broker_cidrs:
+        raise Ec2NetworkError("An internal EC2 network cannot receive broker egress")
+    return network_address
+
+
+def _plan_subnets(
+    networks: tuple[RaesPlanNetwork, ...],
+    allocated_cidrs: dict[str, str],
+    config: Ec2NetworkConfig,
+    range_id: int,
+) -> tuple[list[Ec2SubnetIntent], dict[str, ipaddress.IPv4Network]]:
+    """Preserve authored addressing while binding exact nonoverlapping reservations."""
+    subnets = []
+    cidrs: dict[str, ipaddress.IPv4Network] = {}
+    for network in networks:
+        allocated = _network(allocated_cidrs[network.address])
+        if (
+            not allocated.subnet_of(_network(config.vpc_cidr))
+            or not 16 <= allocated.prefixlen <= 28
+            or any(allocated.overlaps(other) for other in cidrs.values())
+            or (network.cidr is not None and network.cidr != str(allocated))
+            or network.gateway is not None
+        ):
+            raise Ec2NetworkError("EC2 allocation cannot substitute authored network addressing")
+        cidrs[network.address] = allocated
+        subnets.append(Ec2SubnetIntent(network.address, str(allocated), _name(range_id, network.address)))
+    return subnets, cidrs
 
 
 def _group_for_node(
@@ -234,13 +292,20 @@ def _group_for_node(
         if channel not in {"ssh", "rdp"} or not config.access_cidrs:
             raise Ec2NetworkError("EC2 participant access requires an admitted channel and source network")
         ingress.append(_permission("tcp", config.access_cidrs, 22 if channel == "ssh" else 3389))
-    for service in node.services:
-        if service.protocol not in {"tcp", "udp"} or type(service.port) is not int or not 1 <= service.port <= 65535:
-            raise Ec2NetworkError("EC2 service port cannot be realized")
-        ingress.append(_permission(service.protocol, range_cidrs, service.port))
+    ingress.extend(_service_grants(node, range_cidrs))
     egress = [_permission("-1", range_cidrs)]
     if config.broker_cidrs:
         egress.append(_permission("tcp", config.broker_cidrs, 443))
     if sum(len(rule["IpRanges"]) for rule in ingress) > 60:
         raise Ec2NetworkError("EC2 security group ingress exceeds the rule budget")
     return Ec2GroupIntent(node.address, _name(range_id, node.address), tuple(ingress), tuple(egress))
+
+
+def _service_grants(node: RaesPlanNode, range_cidrs: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Validate authored TCP/UDP service ports before rendering range-only ingress."""
+    ingress = []
+    for service in node.services:
+        if service.protocol not in {"tcp", "udp"} or type(service.port) is not int or not 1 <= service.port <= 65535:
+            raise Ec2NetworkError("EC2 service port cannot be realized")
+        ingress.append(_permission(service.protocol, range_cidrs, service.port))
+    return ingress

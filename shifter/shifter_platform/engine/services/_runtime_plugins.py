@@ -37,11 +37,14 @@ class RuntimePluginView:
 
 @dataclass(frozen=True)
 class RuntimePluginPage:
+    """A bounded tenant installation page with its continuation cursor."""
+
     results: tuple[RuntimePluginView, ...]
     next_cursor: str | None
 
 
 def _authorize(user: User, organization_uuid: UUID) -> UUID:
+    """Require active organization administration before reading or mutating plugins."""
     from workspaces.services import OrganizationAuthorizationError, get_organization_profile
 
     if not (user and user.is_authenticated and user.is_active):
@@ -50,6 +53,7 @@ def _authorize(user: User, organization_uuid: UUID) -> UUID:
 
 
 def _credentials(payload: object) -> str:
+    """Serialize only bounded username and password fields for encrypted storage."""
     if payload is None:
         return ""
     if (
@@ -105,6 +109,7 @@ def install_runtime_plugin(
 
 
 def list_runtime_plugins(user: User, organization_uuid: UUID, *, cursor: str | None = None) -> RuntimePluginPage:
+    """Page through installations owned by the authorized organization."""
     from engine.models import RuntimePluginInstallation
 
     organization_uuid = _authorize(user, organization_uuid)
@@ -159,26 +164,32 @@ def change_runtime_plugin(
                 raise ValidationError("A retired plugin version cannot be reactivated")
             return _view(row)
         previous = row.state
-        if action in {"retry", "enable"}:
-            if action == "retry" and row.state != "failed":
-                raise ValidationError("Only failed installations may be retried")
-            if action == "enable" and row.state != "disabled":
-                raise ValidationError("Only disabled installations may be enabled")
-            row.state = "checking"
-            row.probe_id = uuid4()
-            row.probe_expires_at = timezone.now() + timedelta(minutes=10)
-            row.verified_at = None
-            row.failure_code = ""
-            if credentials:
-                row.registry_credentials = credentials
-        else:
-            row.state = "disabled" if action == "disable" else "retired"
+        _apply_action(row, action, credentials)
         row.save()
         _audit(user, row, AuditAction.UPDATE, audit, previous=previous)
         return _view(row)
 
 
+def _apply_action(row: RuntimePluginInstallation, action: str, credentials: str) -> None:
+    """Validate the state transition and reset probe identity before rechecking."""
+    if action in {"retry", "enable"}:
+        if action == "retry" and row.state != "failed":
+            raise ValidationError("Only failed installations may be retried")
+        if action == "enable" and row.state != "disabled":
+            raise ValidationError("Only disabled installations may be enabled")
+        row.state = "checking"
+        row.probe_id = uuid4()
+        row.probe_expires_at = timezone.now() + timedelta(minutes=10)
+        row.verified_at = None
+        row.failure_code = ""
+        if credentials:
+            row.registry_credentials = credentials
+    else:
+        row.state = "disabled" if action == "disable" else "retired"
+
+
 def _view(row: RuntimePluginInstallation) -> RuntimePluginView:
+    """Project installation status without returning stored registry credentials."""
     return RuntimePluginView(
         row.id,
         row.organization_uuid,
@@ -198,6 +209,7 @@ def _audit(
     *,
     previous: str = "",
 ) -> None:
+    """Record actor attribution and bounded installation state changes."""
     attribution = audit or RequestAudit()
     audit_log(
         AuditEvent(

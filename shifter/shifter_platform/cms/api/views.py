@@ -45,7 +45,7 @@ def _not_found(request: Request, message: str = "Scenario not found") -> Respons
     return api_error_response(code="not_found", message=message, status_code=status.HTTP_404_NOT_FOUND, request=request)
 
 
-def _raes_detail_payload(scenario_id: str, *, user=None) -> dict[str, Any] | None:
+def _raes_detail_payload(scenario_id: str, *, user: User | None = None) -> dict[str, Any] | None:
     """Build the read-only Scenario Catalog projection for one RAES source."""
     entry = catalog_presentation.get_catalog_presentation(scenario_id, user=user)
     if entry is None:

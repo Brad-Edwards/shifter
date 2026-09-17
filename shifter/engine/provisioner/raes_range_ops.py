@@ -35,14 +35,7 @@ from typing import Any
 from shared.operation_results import MAX_DIAGNOSTIC_CHARS, ResultStep
 from shared.raes.completion_evidence import build_completion_evidence
 from shared.raes.operation_input import RaesOperationInput, image_lookup_key
-from shared.range_instantiation_policy import (
-    POLICY_DENIAL_CODE,
-    PREREQUISITE_DENIAL_CODE,
-    InstantiationPurpose,
-    evaluate_gcp_backend_admission,
-)
 
-from cloud.exceptions import CloudError
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_operation_input import (
@@ -64,6 +57,7 @@ from raes_gcp_network_allocation import (
     allocated_networks_for_provision as _allocated_networks_for_provision,
 )
 from raes_plan import RaesPlan, RaesPlanNode, parse_plan
+from raes_range_contract import _classify_failure, _require_gce_live_fire_binding
 from raes_range_members import realized_members as _realized_members
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
@@ -84,49 +78,16 @@ _FAILURE_REASON_CODE = "cloud_operation_failed"
 _INPUT_REASON_CODE = "dependency_unavailable"
 
 #: Reported when the realization contract itself was violated (bad plan, missing proof).
-_INVALID_STATE_REASON_CODE = "invalid_state"
+
 
 #: Reported when a cloud operation exceeded its budget.
-_TIMEOUT_REASON_CODE = "cloud_timeout"
+
 
 _RESOURCE = "raes-range"
 
 
 class RaesGenerationError(RuntimeError):
     """An RAES operation was invoked without its canonical operation generation."""
-
-
-def _binding_error(message: str, code: str) -> CloudError:
-    """Return an authored lifecycle failure with a stable classification."""
-    error = CloudError(message)
-    error.code = code
-    return error
-
-
-def _require_gce_live_fire_binding(operation_input: RaesOperationInput) -> str:
-    """Validate the projected ownership/purpose pair for a normal RAES range."""
-    raw_backend = operation_input.range_backend
-    if not raw_backend:
-        raise _binding_error(
-            "RAES GCP range ownership binding is missing",
-            PREREQUISITE_DENIAL_CODE,
-        )
-    try:
-        purpose = InstantiationPurpose(operation_input.instantiation_purpose)
-    except (TypeError, ValueError):
-        raise _binding_error(
-            "RAES GCP range instantiation purpose is missing or invalid",
-            PREREQUISITE_DENIAL_CODE,
-        ) from None
-    if purpose is not InstantiationPurpose.LIVE_FIRE:
-        raise _binding_error(
-            "Normal RAES GCP ranges require the live_fire instantiation purpose",
-            POLICY_DENIAL_CODE,
-        )
-    admission = evaluate_gcp_backend_admission(raw_backend, None, purpose)
-    if not admission.admitted:
-        raise _binding_error(admission.reason, admission.code)
-    return admission.backend
 
 
 def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> GCERangeCellConfig:
@@ -199,30 +160,6 @@ def _report_failure(
         ResultStep.RAES_TERMINAL_FAILED,
         {"reason_code": reason_code, "diagnostic": diagnostic[:MAX_DIAGNOSTIC_CHARS]},
     )
-
-
-def _classify_failure(exc: BaseException, stage: str) -> tuple[str, str]:
-    """Map a realization failure onto an authored reason code and diagnostic.
-
-    The exception *message* must never cross this boundary. RAES failures travel
-    through cloud-provider, storage, content-delivery, and guest-realization
-    code whose messages can carry provider response bodies, resource ids,
-    storage references, signed URLs, and guest output; the result inbox is a
-    durable channel readable by anyone permitted to inspect diagnostics, and an
-    authenticated range author can deliberately provoke failures to populate it.
-    Truncation bounds size, not confidentiality, and ``safe_log_value`` is
-    injection defence, not redaction (ADR-043-R5).
-
-    The exception *type* is a code identifier rather than runtime data, so it
-    crosses to keep the channel useful for triage. Full context stays in the
-    provisioner's own logs, where the raw error is re-raised to the task runner.
-    """
-    if isinstance(exc, RaesRealizationError):
-        # Authored by this module, so its text is already safe to report.
-        return _INVALID_STATE_REASON_CODE, f"{stage}: {exc}"
-    if isinstance(exc, TimeoutError):
-        return _TIMEOUT_REASON_CODE, f"{stage} timed out ({type(exc).__name__})"
-    return _FAILURE_REASON_CODE, f"{stage} failed ({type(exc).__name__})"
 
 
 def _load_input(ref: OperationRef, operation_id: str, operation: str, request_id: str) -> RaesOperationRun:
@@ -331,16 +268,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             generation_id=run.operation_id,
         )
     except Exception as exc:
-        if (
-            network_allocation is not None
-            and network_allocation.network_cidrs
-            and raes_plan is not None
-            and config is not None
-            and not pre_mutation_release_attempted
-        ):
-            cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config, network_allocation)
-            if cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
-                _release_subnet_allocations_best_effort(request_id, operation_id=generation)
+        _release_failed_provision_allocation(run, raes_plan, config, network_allocation, pre_mutation_release_attempted)
         reason_code, diagnostic = _classify_failure(exc, "raes range provision")
         logger.error("RAES range provision failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
@@ -355,6 +283,28 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         ResultStep.RAES_TERMINAL_READY,
         {"raes_status": "succeeded", "members": members, "completion": completion},
     )
+
+
+def _release_failed_provision_allocation(
+    run: RaesOperationRun,
+    raes_plan: RaesPlan | None,
+    config: GCERangeCellConfig | None,
+    network_allocation: GceNetworkAllocation | None,
+    pre_mutation_release_attempted: bool,
+) -> None:
+    """Release failed GCE addressing only after proving original resources absent."""
+    if (
+        network_allocation is not None
+        and network_allocation.network_cidrs
+        and raes_plan is not None
+        and config is not None
+        and not pre_mutation_release_attempted
+    ):
+        cleanup_inventory = _raes_cleanup_inventory(
+            run.request_id, run.input.legacy_range_id, raes_plan, config, network_allocation
+        )
+        if cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
+            _release_subnet_allocations_best_effort(run.request_id, operation_id=run.operation_id)
 
 
 def run_raes_range_activate(request_id: str, *, operation_id: str | None = None) -> None:

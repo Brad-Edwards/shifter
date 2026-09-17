@@ -2,11 +2,19 @@
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from shared.model_access import ContractError
+from shared.model_access.messages import JsonObject
+
+ASGIScope = dict[str, Any]
+ASGIMessage = dict[str, Any]
+Receive = Callable[[], Awaitable[ASGIMessage]]
+Send = Callable[[ASGIMessage], Awaitable[None]]
 
 
-def headers(scope: dict) -> dict[str, str]:
+def headers(scope: ASGIScope) -> dict[str, str]:
     """Reject ambiguous duplicate security headers and compressed request bodies."""
     result = {}
     for name, value in scope.get("headers", ()):
@@ -22,10 +30,10 @@ def headers(scope: dict) -> dict[str, str]:
     return result
 
 
-async def body(receive, *, limit: int, timeout: float = 5) -> bytes:
+async def body(receive: Receive, *, limit: int) -> bytes:
     """Reject chunked overflow and slow/disconnected uploads before parsing."""
     value = bytearray()
-    async with asyncio.timeout(timeout):
+    async with asyncio.timeout(5):
         while True:
             message = await receive()
             if message["type"] != "http.request":
@@ -38,7 +46,7 @@ async def body(receive, *, limit: int, timeout: float = 5) -> bytes:
                 return bytes(value)
 
 
-async def json_response(send, status: int, value: dict) -> None:
+async def json_response(send: Send, status: int, value: JsonObject) -> None:
     """No cache or reflected upstream headers; callers supply safe error codes."""
     payload = json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
     await send(

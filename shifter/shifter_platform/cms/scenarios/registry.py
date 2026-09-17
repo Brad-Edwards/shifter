@@ -213,7 +213,7 @@ def list_all_scenarios(user: User | None = None, *, include_unavailable: bool = 
     return result
 
 
-def _raes_source_entries(metadata_map: dict[str, Any], *, user=None) -> list[ScenarioProjection]:
+def _raes_source_entries(metadata_map: dict[str, Any], *, user: User | None = None) -> list[ScenarioProjection]:
     """Build the authoritative RAES catalog entries."""
     entries = []
     from workspaces.services import content_organization_uuids
@@ -233,7 +233,7 @@ def _raes_source_entries(metadata_map: dict[str, Any], *, user=None) -> list[Sce
     return entries
 
 
-def get_catalog_entry(scenario_id: str, *, user=None) -> ScenarioProjection | None:
+def get_catalog_entry(scenario_id: str, *, user: User | None = None) -> ScenarioProjection | None:
     """Return the unified projection entry for a scenario id, or None if absent.
 
     Includes disabled entries for review while enforcing organization ownership

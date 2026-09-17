@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Callable
 from typing import Any
 
 from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from shared.model_access.network import RFC1918_IPV4_NETWORKS
 
-from executors.factory import build_guest_execution_context
+from executors.factory import GuestExecutionContext, build_guest_execution_context
 
 _ALGORITHMS = ("ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa")
 
 
 def _key(output: str) -> str:
+    """Validate observed SSH keys and select the strongest supported algorithm."""
     if not isinstance(output, str) or not 1 <= len(output.encode()) <= 8192:
         raise ValueError("Participant SSH host identity is unavailable")
     keys: dict[str, str] = {}
@@ -35,7 +37,11 @@ def _key(output: str) -> str:
     raise ValueError("Participant SSH host identity is unavailable")
 
 
-def observe_participant_host_keys(instances: list[dict[str, Any]], *, execution_builder=build_guest_execution_context):
+def observe_participant_host_keys(
+    instances: list[dict[str, Any]],
+    *,
+    execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context,
+) -> None:
     """Never substitute a management-server key for a distinct participant server."""
     for instance in instances:
         if "ssh" not in instance.get("participant_access_channels", []):
@@ -47,21 +53,29 @@ def observe_participant_host_keys(instances: list[dict[str, Any]], *, execution_
                 raise ValueError("Pinned SSH host identity is unavailable")
             instance["participant_ssh_host_public_key"] = management_key
             continue
-        address = ipaddress.IPv4Address(instance["private_ip"])
-        if not any(address in network for network in RFC1918_IPV4_NETWORKS):
-            raise ValueError("Participant SSH address is outside the guest network")
-        context = execution_builder(instance, os_type=instance["os"])
-        try:
-            if not context.wait_for_ready(60):
-                raise ValueError("Management transport is unavailable for participant identity readback")
-            command = f"ssh-keyscan -T 5 -p 22 -t ed25519,ecdsa,rsa {address}"
-            if instance["os"] == "windows":
-                command = "$ErrorActionPreference = 'Stop'\n" + command + "\nif ($LASTEXITCODE -ne 0) { exit 1 }"
-            result = context.executor.run_command(
-                context.target, command, timeout_seconds=30, document_name=context.document_name
-            )
-            if not result.success or result.exit_code != 0:
-                raise ValueError("Participant SSH host identity readback failed")
-            instance["participant_ssh_host_public_key"] = _key(result.stdout)
-        finally:
-            context.close()
+        _observe_separate_participant_key(instance, execution_builder)
+
+
+def _observe_separate_participant_key(
+    instance: dict[str, Any],
+    execution_builder: Callable[..., GuestExecutionContext],
+) -> None:
+    """Read the distinct participant listener through the pinned management connection."""
+    address = ipaddress.IPv4Address(instance["private_ip"])
+    if not any(address in network for network in RFC1918_IPV4_NETWORKS):
+        raise ValueError("Participant SSH address is outside the guest network")
+    context = execution_builder(instance, os_type=instance["os"])
+    try:
+        if not context.wait_for_ready(60):
+            raise ValueError("Management transport is unavailable for participant identity readback")
+        command = f"ssh-keyscan -T 5 -p 22 -t ed25519,ecdsa,rsa {address}"
+        if instance["os"] == "windows":
+            command = "$ErrorActionPreference = 'Stop'\n" + command + "\nif ($LASTEXITCODE -ne 0) { exit 1 }"
+        result = context.executor.run_command(
+            context.target, command, timeout_seconds=30, document_name=context.document_name
+        )
+        if not result.success or result.exit_code != 0:
+            raise ValueError("Participant SSH host identity readback failed")
+        instance["participant_ssh_host_public_key"] = _key(result.stdout)
+    finally:
+        context.close()

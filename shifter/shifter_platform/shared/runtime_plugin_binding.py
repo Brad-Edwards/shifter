@@ -6,7 +6,7 @@ inside that plan. A retained pin remains usable for cleanup after registry edits
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID, uuid5
 
 from pydantic import Field, model_validator
@@ -87,7 +87,7 @@ class RuntimePluginPin(RuntimePluginScope):
 
 def runtime_plugin_requests(
     pin: RuntimePluginPin,
-    plan: dict,
+    plan: dict[str, Any],
     operation_id: UUID,
     range_id: int,
     *,

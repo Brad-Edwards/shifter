@@ -7,10 +7,13 @@ import re
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4, uuid5
 
 import yaml
 from django.conf import settings
+from django.contrib.auth.models import User
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 
 from cms.models import RaesPackageSource
@@ -29,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_archive(path: Path, name: str, report: str) -> tuple[str, str]:
+    """Verify bounded archive contents and return their digest and package version."""
     with stage_uploaded_pack(
         path,
         expected_pack_name=name,
@@ -50,7 +54,14 @@ def _validate_archive(path: Path, name: str, report: str) -> tuple[str, str]:
         return digest, version
 
 
-def _persist(user, organization_uuid, request, report, request_id):
+def _persist(
+    user: User,
+    organization_uuid: UUID,
+    request: PackRegistrationRequest,
+    report: str,
+    request_id: str,
+) -> dict[str, Any]:
+    """Register validated bytes and their conformance evidence atomically."""
     with transaction.atomic():
         # Reauthorize after foreign-input validation and storage I/O.
         get_organization_profile(user, organization_uuid)
@@ -91,7 +102,26 @@ def _persist(user, organization_uuid, request, report, request_id):
         }
 
 
-def upload_tenant_pack(*, user, organization_uuid: UUID, name: str, archive, expected_digest="", request_id="") -> dict:
+def _write_archive(archive: UploadedFile, path: Path) -> None:
+    """Copy upload chunks while enforcing the archive byte limit."""
+    size = 0
+    with path.open("wb") as stream:
+        for chunk in archive.chunks():
+            size += len(chunk)
+            if size > settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES:
+                raise ValueError("Archive exceeds its bound")
+            stream.write(chunk)
+
+
+def upload_tenant_pack(
+    *,
+    user: User,
+    organization_uuid: UUID,
+    name: str,
+    archive: UploadedFile,
+    expected_digest: str = "",
+    request_id: str = "",
+) -> dict[str, Any]:
     """Validate bytes before storing; never execute, install, or select an adapter."""
     organization_uuid = get_organization_profile(user, organization_uuid).uuid
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", name):
@@ -107,13 +137,7 @@ def upload_tenant_pack(*, user, organization_uuid: UUID, name: str, archive, exp
     with tempfile.TemporaryDirectory(prefix="tenant-pack-upload-") as directory:
         path = Path(directory) / "archive"
         try:
-            size = 0
-            with path.open("wb") as stream:
-                for chunk in archive.chunks():
-                    size += len(chunk)
-                    if size > settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES:
-                        raise ValueError("Archive exceeds its bound")
-                    stream.write(chunk)
+            _write_archive(archive, path)
             digest, version = _validate_archive(path, name, report)
         except Exception:
             raise ValidationError("The pack archive failed validation; check its name, content and size") from None

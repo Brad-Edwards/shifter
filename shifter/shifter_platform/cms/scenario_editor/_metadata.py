@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 _MAX_REPORTED_GAPS = 3
 
 
-def _verify_scenario_exists(scenario_id: str, *, user) -> None:
+def _verify_scenario_exists(scenario_id: str, *, user: User) -> None:
     """Confirm the RAES source exists before metadata changes."""
     if get_catalog_entry(scenario_id, user=user) is None:
         logger.error(

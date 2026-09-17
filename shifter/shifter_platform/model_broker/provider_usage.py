@@ -2,24 +2,27 @@
 
 import base64
 import json
+from collections.abc import AsyncIterable, AsyncIterator
 
 from botocore.eventstream import EventStreamBuffer
 
 from shared.model_access import ContractError
 from shared.model_access.core_models import BillingComponent
-from shared.model_access.messages import strict_json
+from shared.model_access.messages import JsonObject, strict_json
 from shared.model_access.provider import ProviderUsage, VerifiedUsage
 
 _MAX_EVENT = 1_048_576
+_INVALID_STREAM = "provider.invalid_stream"
 
 
-def _units(value):
+def _units(value: object) -> int:
+    """Accept bounded nonnegative provider usage counters without coercion."""
     if type(value) is not int or not 0 <= value <= 2_000_000:
         raise ContractError("provider.invalid_usage")
     return value
 
 
-def usage_from_message(value: dict) -> ProviderUsage:
+def usage_from_message(value: JsonObject) -> ProviderUsage:
     """Conservatively price cache reads; undeclared cache writes cannot settle."""
     usage = value.get("usage", {})
     if _units(usage.get("cache_creation_input_tokens", 0)):
@@ -42,33 +45,35 @@ def usage_from_message(value: dict) -> ProviderUsage:
 class StreamUsage:
     """Require a complete Messages stream before releasing any conservative hold."""
 
-    def __init__(self):
-        self.input_usage = None
-        self.output_tokens = None
+    def __init__(self) -> None:
+        self.input_usage: JsonObject | None = None
+        self.output_tokens: int | None = None
         self.stopped = False
 
-    def observe(self, event):
+    def observe(self, event: JsonObject) -> None:
+        """Track one ordered event and reject events after terminal completion."""
         kind = event.get("type")
         if self.stopped:
-            raise ContractError("provider.invalid_stream")
+            raise ContractError(_INVALID_STREAM)
         if kind == "message_start":
             if self.input_usage is not None:
-                raise ContractError("provider.invalid_stream")
+                raise ContractError(_INVALID_STREAM)
             self.input_usage = event.get("message", {}).get("usage", {})
         elif kind == "message_delta":
             self.output_tokens = event.get("usage", {}).get("output_tokens")
         elif kind == "message_stop":
             self.stopped = True
         elif kind not in {"content_block_start", "content_block_delta", "content_block_stop", "ping"}:
-            raise ContractError("provider.invalid_stream")
+            raise ContractError(_INVALID_STREAM)
 
-    def result(self):
+    def result(self) -> ProviderUsage:
+        """Return billable usage only after both counters and stream completion."""
         if not self.stopped or self.input_usage is None or self.output_tokens is None:
             raise ContractError("provider.incomplete_usage")
         return usage_from_message({"usage": {**self.input_usage, "output_tokens": self.output_tokens}})
 
 
-async def vertex_events(chunks):
+async def vertex_events(chunks: AsyncIterable[bytes]) -> AsyncIterator[JsonObject]:
     """Reframe complete SSE events so partial frames cannot bypass usage checks."""
     pending = bytearray()
     async for chunk in chunks:
@@ -87,7 +92,7 @@ async def vertex_events(chunks):
         raise ContractError("provider.truncated_stream")
 
 
-async def bedrock_events(chunks):
+async def bedrock_events(chunks: AsyncIterable[bytes]) -> AsyncIterator[JsonObject]:
     """Decode CRC-checked AWS event frames without retaining an unbounded buffer."""
     buffer = EventStreamBuffer()
     pending_bytes = 0
@@ -104,13 +109,14 @@ async def bedrock_events(chunks):
             try:
                 raw = base64.b64decode(payload["bytes"], validate=True)
             except (ValueError, KeyError, TypeError):
-                raise ContractError("provider.invalid_stream") from None
+                raise ContractError(_INVALID_STREAM) from None
             yield strict_json(raw, limit=_MAX_EVENT)
     if pending_bytes:
         raise ContractError("provider.truncated_stream")
 
 
-def encode_sse(event):
+def encode_sse(event: JsonObject) -> bytes:
+    """Encode one validated provider event in the guest SSE transport."""
     return (
         b"event: "
         + event["type"].encode("ascii")

@@ -41,12 +41,13 @@ def image():
 
 
 def build(raes=None, cfg=None, **kwargs):
+    from ec2_range_cleanup import Ec2CleanupScope
+
+    cfg = cfg or config()
     return plan_ec2_network(
         raes or topology(),
-        config=cfg or config(),
-        request_id=UUID(int=1),
-        generation=UUID(int=2),
-        range_id=7,
+        config=cfg,
+        scope=Ec2CleanupScope(cfg.environment, cfg.region, cfg.vpc_id, UUID(int=1), UUID(int=2), 7),
         allocated_cidrs=kwargs.get("allocated", {"net.lan": "10.50.1.0/28"}),
         images={"node.host": image()},
         participant_channels={"node.host": ("ssh",)},

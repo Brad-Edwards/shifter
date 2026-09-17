@@ -25,6 +25,7 @@ from django.db import transaction
 from django.db.models import F
 
 from shared.model_access import BillingBound, ContractError, ModelAccessCatalog, validate_catalog
+from shared.model_access.core_models import BillingComponent, Price
 from shared.model_access.effective_policy import EffectivePolicy
 from shared.model_access.provider import ProviderUsage
 
@@ -45,6 +46,7 @@ _DEFAULT_HORIZON_SECONDS = 900
 _DISPATCH_LEASE_SECONDS = 10
 _CONTINUATION_LEASE_SECONDS = 5
 _REVOKED = "request.revoked"
+_USAGE_INCOMPLETE = "request.usage_incomplete"
 _LEASE_EXPIRED = "request.lease_expired"
 # Transport-fence states in which no new provider work may start.
 _CLOSED_TRANSPORT = {"revoking", "revoked", "closed"}
@@ -166,7 +168,7 @@ def settle_request(
                 provider_request_ref=provider_request_ref,
                 now=now,
             )
-        raise ContractError("request.usage_incomplete")
+        raise ContractError(_USAGE_INCOMPLETE)
     with transaction.atomic():
         reservation = _lock_request(request_uuid=request_uuid)
         if reservation.settlement_state == "settled":
@@ -175,7 +177,7 @@ def settle_request(
         if reservation.settlement_state == "unknown_charged":
             from ._model_request_reconcile import apply_late_evidence
 
-            return apply_late_evidence(request_uuid=request_uuid, usage=usage, now=now)
+            return apply_late_evidence(request_uuid=request_uuid, usage=usage)
         settled = _settled_charge(reservation, usage)
         _apply_settlement(reservation, settled, usage, provider_request_ref)
         _close_lease(reservation)
@@ -184,7 +186,7 @@ def settle_request(
         return settled
 
 
-def release_before_dispatch(*, request_uuid: UUID, now: datetime | None = None) -> None:
+def release_before_dispatch(*, request_uuid: UUID) -> None:
     """Release money/concurrency on a proven pre-transport failure; keep rate count."""
 
     with transaction.atomic():
@@ -234,7 +236,7 @@ def charge_unknown(
         _lifecycle_audit(reservation, "MODEL_REQUEST_UNKNOWN", f"unknown reason={uncertainty_reason}")
 
 
-def fence_revoked_requests(*, allocation_id: UUID, now: datetime | None = None) -> int:
+def fence_revoked_requests(*, allocation_id: UUID) -> int:
     """Mark active dispatch leases revoking after a grant epoch is fenced."""
     from engine.models import ModelDispatchLease, ModelRequestReservation
 
@@ -293,21 +295,12 @@ def _usage_incomplete(reservation: ModelRequestReservation, usage: ProviderUsage
 def _settled_charge(reservation: ModelRequestReservation, usage: ProviderUsage) -> int:
     """Compute the settled charge from proven usage and the snapshot price schedule."""
     if _usage_incomplete(reservation, usage):
-        raise ContractError("request.usage_incomplete")
+        raise ContractError(_USAGE_INCOMPLETE)
     if reservation.billing_bound:
         bound = BillingBound.model_validate(reservation.billing_bound)
         if {item.component for item in usage.items} != {amount.component for amount in bound.amounts}:
-            raise ContractError("request.usage_incomplete")
-    catalog = _snapshot_catalog(reservation)
-    alias = next((item for item in catalog.aliases if item.logical_alias == reservation.logical_alias), None)
-    if alias is None:
-        raise ContractError("request.alias_unavailable")
-    schedule = next(
-        (item for item in catalog.price_schedules if item.price_schedule_id == alias.price_schedule_id), None
-    )
-    if schedule is None:
-        raise ContractError("request.price_unavailable")
-    prices = {price.component: price for price in schedule.prices}
+            raise ContractError(_USAGE_INCOMPLETE)
+    prices = _settlement_prices(reservation)
     total = 0
     for item in usage.items:
         if not item.provider_verified:
@@ -320,6 +313,21 @@ def _settled_charge(reservation: ModelRequestReservation, usage: ProviderUsage) 
     if total > reservation.canonical_request_cost:
         raise ContractError("request.usage_exceeds_bound")
     return total
+
+
+def _settlement_prices(reservation: ModelRequestReservation) -> dict[BillingComponent, Price]:
+    """Resolve prices exclusively from the reservation's immutable catalog snapshot."""
+    catalog = _snapshot_catalog(reservation)
+    alias = next((item for item in catalog.aliases if item.logical_alias == reservation.logical_alias), None)
+    if alias is None:
+        raise ContractError("request.alias_unavailable")
+    schedule = next(
+        (item for item in catalog.price_schedules if item.price_schedule_id == alias.price_schedule_id), None
+    )
+    if schedule is None:
+        raise ContractError("request.price_unavailable")
+    prices = {price.component: price for price in schedule.prices}
+    return prices
 
 
 def _locked_postings(
@@ -450,7 +458,8 @@ def _lock_reservation(reservation_id: int) -> ModelRequestReservation:
     return _lock_request(request_uuid=candidate.request_uuid)
 
 
-def _assert_request_current(reservation, moment: datetime) -> None:
+def _assert_request_current(reservation: ModelRequestReservation, moment: datetime) -> None:
+    """Enforce the immutable policy request deadline before renewing provider effects."""
     policy = EffectivePolicy.model_validate(reservation.allocation.snapshot["effective_policy"])
     if policy.effective_profile is None:
         raise ContractError("request.policy_unavailable")

@@ -236,6 +236,20 @@ def _run_atomic_claim(request: WarmClaimRequest, candidates: list[tuple[str, str
     return outcome
 
 
+def _can_claim_base_range(request: WarmClaimRequest) -> bool:
+    """Require workspace authority and cold admission for any adapter binding."""
+    # Warm compatibility currently describes the base realization only. A pack
+    # with any plugin selection (including disabled/retired) must go through cold
+    # admission; otherwise a ready base image could silently skip its adapter.
+    from engine.services import has_runtime_plugin_binding
+    from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+    authorization = authorize_bound_workspace(request.user, request.workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+    if authorization.organization_uuid is None:
+        return False
+    return not has_runtime_plugin_binding(authorization.organization_uuid, request.scenario)
+
+
 def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | None = None) -> UUID | None:
     """Attempt to claim a compatible ready warm generation for this launch.
 
@@ -247,18 +261,7 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     from shared.warm_pool.metrics import CLAIM_HIT, emit_claim_outcome
 
     candidates = _resolve_claim_candidates(request, override)
-    if not candidates:
-        return None
-    # Warm compatibility currently describes the base realization only. A pack
-    # with any plugin selection (including disabled/retired) must go through cold
-    # admission; otherwise a ready base image could silently skip its adapter.
-    from engine.services import has_runtime_plugin_binding
-    from workspaces.services import WorkspaceOperation, authorize_bound_workspace
-
-    authorization = authorize_bound_workspace(request.user, request.workspace_id, WorkspaceOperation.LAUNCH_RANGE)
-    if authorization.organization_uuid is None:
-        return None
-    if has_runtime_plugin_binding(authorization.organization_uuid, request.scenario):
+    if not candidates or not _can_claim_base_range(request):
         return None
     outcome = _run_atomic_claim(request, candidates)
     if outcome is None:

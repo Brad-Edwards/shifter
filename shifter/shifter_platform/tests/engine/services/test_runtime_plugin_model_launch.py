@@ -53,11 +53,9 @@ def _prepared_plugin_launch(django_user_model):
     )
     bind_runtime_plugin(
         target.user,
-        organization.uuid,
+        RuntimePluginScope(organization_uuid=organization.uuid, pack_digest=scope.pack_digest, pack_id=scope.pack_id),
         installed.id,
-        scope.pack_digest,
         {"targets": {"server": "node.web"}},
-        pack_id=scope.pack_id,
     )
     with transaction.atomic():
         pin = resolve_runtime_plugin_pin(scope, target.range_config)

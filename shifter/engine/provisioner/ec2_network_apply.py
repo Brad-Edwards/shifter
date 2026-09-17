@@ -7,19 +7,23 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 
-from ec2_range_network import Ec2NetworkConfig, Ec2NetworkError, Ec2NetworkPlan, Ec2SubnetIntent
+from ec2_range_network import Ec2GroupIntent, Ec2NetworkConfig, Ec2NetworkError, Ec2NetworkPlan, Ec2SubnetIntent
 
 
 @dataclass(frozen=True)
 class Ec2NetworkResources:
+    """Provider identities of the realized range-owned network resources."""
+
     subnets: dict[str, str]
     groups: dict[str, str]
     route_table_id: str
 
 
 def _rows(response: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Require a complete lookup with at most one ownership candidate."""
     if response.get("NextToken"):
         raise Ec2NetworkError("EC2 owned-resource lookup exceeded its bound")
     values = response.get(key, [])
@@ -29,12 +33,13 @@ def _rows(response: dict[str, Any], key: str) -> list[dict[str, Any]]:
 
 
 def _owned(row: dict[str, Any], plan: Ec2NetworkPlan, subject: str) -> None:
+    """Verify all ownership tags against the intended range generation."""
     tags = {item["Key"]: item["Value"] for item in row.get("Tags", [])}
     if any(tags.get(item["Key"]) != item["Value"] for item in plan.tags(subject)):
         raise Ec2NetworkError("EC2 network resource belongs to another range or generation")
 
 
-def peer_routes(config: Ec2NetworkConfig, ec2: Any) -> dict[str, str]:
+def peer_routes(config: Ec2NetworkConfig, ec2: BaseClient) -> dict[str, str]:
     """Select only active peering routes for exact private platform destinations."""
     rows = _rows(ec2.describe_route_tables(RouteTableIds=[config.base_route_table_id]), "RouteTables")
     if not rows or rows[0].get("VpcId") != config.vpc_id:
@@ -42,25 +47,31 @@ def peer_routes(config: Ec2NetworkConfig, ec2: Any) -> dict[str, str]:
     destinations = {*config.management_cidrs, *config.access_cidrs, *config.broker_cidrs}
     result = {}
     for destination in sorted(destinations):
-        target = ipaddress.IPv4Network(destination)
-        candidates = []
-        for route in rows[0].get("Routes", []):
-            prefix = route.get("DestinationCidrBlock")
-            if not prefix or route.get("State") != "active" or not route.get("VpcPeeringConnectionId"):
-                continue
-            network = ipaddress.IPv4Network(prefix)
-            if network.prefixlen and target.subnet_of(network):
-                candidates.append((network.prefixlen, route["VpcPeeringConnectionId"]))
-        if not candidates:
-            raise Ec2NetworkError("EC2 platform destination has no active private peering route")
-        candidates.sort(reverse=True)
-        if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
-            raise Ec2NetworkError("EC2 platform destination has ambiguous routing")
-        result[destination] = candidates[0][1]
+        result[destination] = _peer_for_destination(rows[0].get("Routes", []), destination)
     return result
 
 
-def _subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, ec2: Any) -> str:
+def _peer_for_destination(routes: list[dict[str, Any]], destination: str) -> str:
+    """Choose the unique most-specific active private peer for one destination."""
+    target = ipaddress.IPv4Network(destination)
+    candidates = []
+    for route in routes:
+        prefix = route.get("DestinationCidrBlock")
+        if not prefix or route.get("State") != "active" or not route.get("VpcPeeringConnectionId"):
+            continue
+        network = ipaddress.IPv4Network(prefix)
+        if network.prefixlen and target.subnet_of(network):
+            candidates.append((network.prefixlen, route["VpcPeeringConnectionId"]))
+    if not candidates:
+        raise Ec2NetworkError("EC2 platform destination has no active private peering route")
+    candidates.sort(reverse=True)
+    if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
+        raise Ec2NetworkError("EC2 platform destination has ambiguous routing")
+    return candidates[0][1]
+
+
+def _subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, ec2: BaseClient) -> str:
+    """Converge one reserved subnet without adopting foreign or exposed resources."""
     filters = [{"Name": "vpc-id", "Values": [plan.config.vpc_id]}, {"Name": "cidr-block", "Values": [wanted.cidr]}]
     rows = _rows(ec2.describe_subnets(Filters=filters, MaxResults=5), "Subnets")
     if not rows:
@@ -79,6 +90,12 @@ def _subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, ec2: Any) -> str:
         raise Ec2NetworkError("EC2 subnet creation is not yet observable")
     row = rows[0]
     _owned(row, plan, wanted.address)
+    _verify_subnet(plan, wanted, row)
+    return row["SubnetId"]
+
+
+def _verify_subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, row: dict[str, Any]) -> None:
+    """Require exact subnet placement and disabled public or IPv6 addressing."""
     if (
         row.get("VpcId") != plan.config.vpc_id
         or row.get("CidrBlock") != wanted.cidr
@@ -88,7 +105,6 @@ def _subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, ec2: Any) -> str:
         or row.get("Ipv6CidrBlockAssociationSet")
     ):
         raise Ec2NetworkError("EC2 subnet placement or address exposure differs from intent")
-    return row["SubnetId"]
 
 
 def _permissions(values: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> frozenset[str]:
@@ -105,7 +121,8 @@ def _permissions(values: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> f
     return frozenset(normalized)
 
 
-def _rules(ec2: Any, group: dict[str, Any], direction: str, wanted: tuple[dict[str, Any], ...]) -> None:
+def _rules(ec2: BaseClient, group: dict[str, Any], direction: str, wanted: tuple[dict[str, Any], ...]) -> None:
+    """Replace security group grants with the exact intended rules."""
     key = "IpPermissions" if direction == "ingress" else "IpPermissionsEgress"
     current = group.get(key, [])
     if _permissions(current) == _permissions(wanted):
@@ -116,7 +133,8 @@ def _rules(ec2: Any, group: dict[str, Any], direction: str, wanted: tuple[dict[s
         getattr(ec2, "authorize_security_group_" + direction)(GroupId=group["GroupId"], IpPermissions=list(wanted))
 
 
-def _group(plan: Ec2NetworkPlan, wanted: Any, ec2: Any) -> str:
+def _group(plan: Ec2NetworkPlan, wanted: Ec2GroupIntent, ec2: BaseClient) -> str:
+    """Converge and independently read back a range-owned security group."""
     filters = [
         {"Name": "vpc-id", "Values": [plan.config.vpc_id]},
         {"Name": "group-name", "Values": [wanted.resource_name]},
@@ -154,7 +172,8 @@ def _group(plan: Ec2NetworkPlan, wanted: Any, ec2: Any) -> str:
     return group["GroupId"]
 
 
-def _route_table(plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str, str], ec2: Any) -> str:
+def _route_table(plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str, str], ec2: BaseClient) -> str:
+    """Attach range subnets only to the admitted private routing table."""
     subject = "backend.ec2.route-table"
     filters = [
         {"Name": "vpc-id", "Values": [plan.config.vpc_id]},
@@ -176,6 +195,19 @@ def _route_table(plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str
     _owned(row, plan, subject)
     if row.get("VpcId") != plan.config.vpc_id:
         raise Ec2NetworkError("EC2 route table is outside the admitted network")
+    _apply_routes(plan, row, subnets, routes, ec2)
+    _verify_routes(plan, subnets, routes, row["RouteTableId"], ec2)
+    return row["RouteTableId"]
+
+
+def _apply_routes(
+    plan: Ec2NetworkPlan,
+    row: dict[str, Any],
+    subnets: dict[str, str],
+    routes: dict[str, str],
+    ec2: BaseClient,
+) -> None:
+    """Converge private routes and reject existing associations outside this range."""
     existing = set()
     for route in row.get("Routes", []):
         cidr = route.get("DestinationCidrBlock")
@@ -188,6 +220,11 @@ def _route_table(plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str
         ec2.create_route(
             RouteTableId=row["RouteTableId"], DestinationCidrBlock=cidr, VpcPeeringConnectionId=routes[cidr]
         )
+    _associate_subnets(row, subnets, ec2)
+
+
+def _associate_subnets(row: dict[str, Any], subnets: dict[str, str], ec2: BaseClient) -> None:
+    """Attach only owned subnets without replacing another explicit route association."""
     associated = set()
     for association in row.get("Associations", []):
         if association.get("Main") or association.get("SubnetId") not in subnets.values():
@@ -201,13 +238,12 @@ def _route_table(plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str
         if attached and attached[0].get("RouteTableId") != row["RouteTableId"]:
             raise Ec2NetworkError("EC2 subnet is explicitly associated with another route table")
         ec2.associate_route_table(RouteTableId=row["RouteTableId"], SubnetId=subnet_id)
-    _verify_routes(plan, subnets, routes, row["RouteTableId"], ec2)
-    return row["RouteTableId"]
 
 
 def _verify_routes(
-    plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str, str], table_id: str, ec2: Any
+    plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str, str], table_id: str, ec2: BaseClient
 ) -> None:
+    """Verify exact routing and association coverage after network convergence."""
     rows = _rows(ec2.describe_route_tables(RouteTableIds=[table_id]), "RouteTables")
     if not rows:
         raise Ec2NetworkError("EC2 route table readback is unavailable")
@@ -219,13 +255,20 @@ def _verify_routes(
         for route in row.get("Routes", [])
         if route.get("State") == "active"
     }
-    associations = row.get("Associations", [])
+    _verify_associations(row.get("Associations", []), subnets)
     if (
         row.get("RouteTableId") != table_id
         or row.get("VpcId") != plan.config.vpc_id
         or observed != expected
         or len(row.get("Routes", [])) != len(expected)
-        or {item.get("SubnetId") for item in associations} != set(subnets.values())
+    ):
+        raise Ec2NetworkError("EC2 route table readback differs from the admitted network")
+
+
+def _verify_associations(associations: list[dict[str, Any]], subnets: dict[str, str]) -> None:
+    """Require exactly one settled association for each admitted subnet."""
+    if (
+        {item.get("SubnetId") for item in associations} != set(subnets.values())
         or len(associations) != len(subnets)
         or any(
             item.get("Main") or item.get("AssociationState", {}).get("State") != "associated" for item in associations
@@ -234,7 +277,7 @@ def _verify_routes(
         raise Ec2NetworkError("EC2 route table readback differs from the admitted network")
 
 
-def ensure_ec2_network(plan: Ec2NetworkPlan, ec2: Any) -> Ec2NetworkResources:
+def ensure_ec2_network(plan: Ec2NetworkPlan, ec2: BaseClient) -> Ec2NetworkResources:
     """Validate base routing before mutations, then converge only tagged ownership."""
     vpcs = _rows(ec2.describe_vpcs(VpcIds=[plan.config.vpc_id]), "Vpcs")
     if (

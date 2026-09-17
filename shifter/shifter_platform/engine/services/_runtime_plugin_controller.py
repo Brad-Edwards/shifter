@@ -84,6 +84,7 @@ def reconcile_runtime_plugins(*, limit: int = 3) -> int:
 
 
 def _reconcile(row: RuntimePluginInstallation) -> None:
+    """Run or expire one current isolated compatibility probe."""
     state, failure_code = "checking", ""
     request = None
     try:
@@ -95,19 +96,7 @@ def _reconcile(row: RuntimePluginInstallation) -> None:
             state, failure_code = "failed", "installation-timeout"
             interrupt_plugin(request)
         else:
-            # A pull secret is born with its Job owner; a crash or rejected Job
-            # cannot leave unowned registry credentials. Kubelet retries pulls
-            # while the corresponding immutable secret is being created.
-            secret_name = f"runtime-plugin-pull-{request.invocation_id.hex}" if row.registry_credentials else ""
-            launch_plugin(request, image_pull_secret=secret_name)
-            _pull_secret(row, request)
-            result = observe_plugin(request)
-            if result is not None:
-                if not isinstance(result, InspectionResult):
-                    raise ValueError("Invalid installation result")
-                result.authorize(request)
-                state = "ready" if result.status == "compatible" else "failed"
-                failure_code = "" if state == "ready" else "incompatible-plugin"
+            state, failure_code = _observe_probe(row, request)
     except Exception:
         # Kubernetes/image errors can contain registry addresses and diagnostic
         # output. Persist and audit only a closed, tenant-actionable code.
@@ -115,7 +104,27 @@ def _reconcile(row: RuntimePluginInstallation) -> None:
     _record(row, state, failure_code)
 
 
+def _observe_probe(row: RuntimePluginInstallation, request: InspectionInput) -> tuple[str, str]:
+    """Authorize a bounded worker result against the exact installation probe."""
+    state, failure_code = "checking", ""
+    # A pull secret is born with its Job owner; a crash or rejected Job
+    # cannot leave unowned registry credentials. Kubelet retries pulls
+    # while the corresponding immutable secret is being created.
+    secret_name = f"runtime-plugin-pull-{request.invocation_id.hex}" if row.registry_credentials else ""
+    launch_plugin(request, image_pull_secret=secret_name)
+    _pull_secret(row, request)
+    result = observe_plugin(request)
+    if result is not None:
+        if not isinstance(result, InspectionResult):
+            raise ValueError("Invalid installation result")
+        result.authorize(request)
+        state = "ready" if result.status == "compatible" else "failed"
+        failure_code = "" if state == "ready" else "incompatible-plugin"
+    return state, failure_code
+
+
 def _record(row: RuntimePluginInstallation, state: str, failure_code: str) -> None:
+    """Persist only current probe evidence under the installation row lock."""
     from engine.models import RuntimePluginInstallation
 
     with transaction.atomic():

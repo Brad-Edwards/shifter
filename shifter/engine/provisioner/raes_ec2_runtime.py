@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from typing import Any
 from uuid import UUID
 
+from botocore.client import BaseClient
 from botocore.config import Config
 from shared.model_access.aws_session import bounded_aws_session
 from shared.raes.operation_input import image_lookup_key
@@ -19,15 +22,19 @@ from shared.range_instantiation_policy import (
 from ec2_guest_secrets import Ec2GuestSecrets
 from ec2_range_cleanup import Ec2CleanupScope, destroy_ec2_resources, inventory_ec2_resources
 from ec2_range_network import Ec2NetworkConfig, allocation_networks
+from model_enrollment import EnrollmentDelivery
+from provisioner_db_operation_input import RaesOperationRun
 from raes_ec2_apply import RaesEc2ApplyOptions, apply_raes_ec2_range, delete_ec2_guest_credentials
-from raes_ec2_image import resolve_ec2_image
-from raes_plan import parse_plan
+from raes_ec2_image import Ec2ImageProfile, resolve_ec2_image
+from raes_plan import RaesPlanNode, parse_plan
 from range_subnet_allocation import _release_subnet_allocations_best_effort, _reserve_range_subnet_cidrs
+from runtime_plugin_execution import GuestPluginPlans
 
 logger = logging.getLogger(__name__)
 
 
-def _scope(run) -> Ec2CleanupScope:
+def _scope(run: RaesOperationRun) -> Ec2CleanupScope:
+    """Require a deployment-bound native EC2 live-fire operation."""
     if os.environ.get("CLOUD_PROVIDER") != "aws" or run.input.range_backend != "ec2":
         raise ValueError("Native EC2 lifecycle requires the bound AWS provider")
     purpose = InstantiationPurpose(run.input.instantiation_purpose)
@@ -44,7 +51,8 @@ def _scope(run) -> Ec2CleanupScope:
 
 
 @contextmanager
-def _clients(scope):
+def _clients(scope: Ec2CleanupScope) -> Iterator[tuple[BaseClient, Ec2GuestSecrets]]:
+    """Open bounded cloud clients and close both after the operation."""
     session = bounded_aws_session(scope.region)
     config = Config(connect_timeout=5, read_timeout=30, retries={"total_max_attempts": 3}, proxies={})
     with ExitStack() as stack:
@@ -56,11 +64,13 @@ def _clients(scope):
 
 
 def _cidrs(name: str) -> tuple[str, ...]:
+    """Read deployment-owned endpoint CIDRs without inventing default routes."""
     value = os.environ.get(name, "")
     return tuple(item.strip() for item in value.split(",")) if value else ()
 
 
-def _network(scope, enrollment) -> Ec2NetworkConfig:
+def _network(scope: Ec2CleanupScope, enrollment: EnrollmentDelivery | None) -> Ec2NetworkConfig:
+    """Project deployment coordinates and admitted broker reachability."""
     return Ec2NetworkConfig(
         environment=scope.environment,
         region=scope.region,
@@ -74,7 +84,12 @@ def _network(scope, enrollment) -> Ec2NetworkConfig:
     )
 
 
-def provision_ec2_run(run, plugin_plans=None, enrollment=None):
+def provision_ec2_run(
+    run: RaesOperationRun,
+    plugin_plans: GuestPluginPlans | None = None,
+    enrollment: EnrollmentDelivery | None = None,
+) -> dict[str, Any]:
+    """Reserve portable addressing and execute the immutable native EC2 realization."""
     scope = _scope(run)
     assert_range_backend_egress_supported("ec2", run.input.egress_mode)
     config = _network(scope, enrollment)
@@ -88,7 +103,8 @@ def provision_ec2_run(run, plugin_plans=None, enrollment=None):
         raise ValueError("EC2 authored addressing requires an exact subnet reservation capability")
     spec = {"subnets": [{"uuid": network.address, "name": network.name} for network in networks]}
 
-    def resolve(node):
+    def resolve(node: RaesPlanNode) -> Ec2ImageProfile:
+        """Resolve the node image solely from its immutable operation bindings."""
         name = image_lookup_key(source_name=node.image.name if node.image else None, os_family=node.os_family)
         return resolve_ec2_image(
             node,
@@ -130,7 +146,7 @@ def provision_ec2_run(run, plugin_plans=None, enrollment=None):
             raise
 
 
-def destroy_ec2_run(run):
+def destroy_ec2_run(run: RaesOperationRun) -> dict[str, Any]:
     """Cleanup does not load enabled plugins, current images, or broker settings."""
     scope = _scope(run)
     plan = parse_plan(run.input.plan, cleanup_only=True)

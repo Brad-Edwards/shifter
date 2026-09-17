@@ -2,16 +2,18 @@
 
 from uuid import UUID
 
+from django.contrib.auth.models import AnonymousUser, User
+
 from workspaces.models import Organization, OrganizationMembership, WorkspaceMembership
 
 
-def content_organization_uuids(actor) -> frozenset[UUID]:
+def content_organization_uuids(actor: User | AnonymousUser | None) -> frozenset[UUID]:
     """Return current organization memberships, including active workspace seats.
 
     Staff status does not grant access. The explicit platform superuser override
     may inspect all organizations; inactive and anonymous callers see none.
     """
-    if not getattr(actor, "is_authenticated", False) or not getattr(actor, "is_active", False):
+    if not isinstance(actor, User) or not actor.is_authenticated or not actor.is_active:
         return frozenset()
     if actor.is_superuser:
         return frozenset(Organization.objects.values_list("uuid", flat=True))

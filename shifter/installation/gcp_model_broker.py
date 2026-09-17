@@ -203,7 +203,7 @@ def _broker_catalog_projection(catalog_json: str, model_access_env: str) -> dict
 
 
 def project_model_broker(
-    output: object, *, catalog_json: str = "", model_access_env: str = "", runtime_settings=None
+    output: object, *, catalog_json: str = "", model_access_env: str = "", runtime_settings: object = None
 ) -> dict[str, object]:
     """Validate Terraform readback and produce the sole broker Helm projection."""
     if output is None:

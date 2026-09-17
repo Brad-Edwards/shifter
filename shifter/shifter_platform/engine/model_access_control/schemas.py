@@ -11,16 +11,22 @@ from shared.model_access.provider import ProviderUsage
 
 
 class TokenRequest(ClosedModel):
+    """A guest credential paired with the broker-observed transport peer."""
+
     token: SecretStr
     transport_peer: Annotated[str, Field(max_length=45)]
 
 
 class EnrollmentRequest(ClosedModel):
+    """The exact allocation and operation authorized to enroll a guest."""
+
     allocation_id: UUID
     operation_id: UUID
 
 
 class ReservationRequest(TokenRequest):
+    """A logical model request with a closed billing bound and retry identity."""
+
     request_uuid: UUID
     logical_alias: Identifier
     billing_bound: BillingBound
@@ -37,12 +43,16 @@ class ReservationRequest(TokenRequest):
 
 
 class AdvanceRequest(TokenRequest):
+    """A request lease action authenticated with the original guest identity."""
+
     request_uuid: UUID
     action: Literal["dispatch", "check", "continue"]
     dispatch_token: SecretStr = SecretStr("")
 
 
 class FinishRequest(ClosedModel):
+    """A closed settlement, uncertainty or reservation-release outcome."""
+
     request_uuid: UUID
     action: Literal["settle", "unknown", "release"]
     usage: ProviderUsage | None = None

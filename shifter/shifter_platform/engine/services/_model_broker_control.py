@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from django.db import transaction
@@ -30,12 +32,7 @@ def reserve_model_call(
     request_uuid: UUID,
     logical_alias: str,
     billing_bound: BillingBound,
-    caller_key_hmac: str | None = None,
-    intent_fingerprint_hmac: str | None = None,
-    key_version: str | None = None,
-    prior_caller_key_hmacs: tuple[str, ...] = (),
-    prior_intent_fingerprint_hmacs: tuple[str, ...] = (),
-    retained_key_versions: tuple[str, ...] = (),
+    idempotency: RequestIdempotency | None = None,
     now: datetime | None = None,
 ) -> ReservationOutcome:
     """Authentication and reservation share the generation/epoch lock transaction."""
@@ -47,15 +44,7 @@ def reserve_model_call(
             request_uuid=request_uuid,
             logical_alias=logical_alias,
             billing_bound=billing_bound,
-            idempotency=RequestIdempotency(
-                caller_key_hmac=caller_key_hmac,
-                intent_fingerprint_hmac=intent_fingerprint_hmac,
-                key_version=key_version,
-                prior_caller_key_hmacs=prior_caller_key_hmacs,
-                prior_intent_fingerprint_hmacs=prior_intent_fingerprint_hmacs,
-                retained_key_versions=retained_key_versions,
-                intent_contract_version="model-messages/v1",
-            ),
+            idempotency=replace(idempotency or RequestIdempotency(), intent_contract_version="model-messages/v1"),
             now=moment,
         )
 
@@ -68,7 +57,7 @@ def advance_model_call(
     action: str,
     dispatch_token: str = "",
     now: datetime | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Each provider-effect lease must still belong to the authenticated guest."""
     from engine.models import ModelRequestReservation
 
@@ -105,7 +94,7 @@ def finish_model_call(
     request_uuid: UUID,
     action: str,
     usage: ProviderUsage | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Broker-only settlement survives guest revocation and preserves liabilities.
 
     This operation must only be reachable after workload authentication, never

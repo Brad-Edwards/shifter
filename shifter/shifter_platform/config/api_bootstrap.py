@@ -156,6 +156,11 @@ def _modes_for_user(user: User | None) -> dict[str, object]:
     }
 
 
+def _can_manage_adapters(user: User | None) -> bool:
+    """Expose adapter administration only to active organization administrators."""
+    return bool(user is not None and user.is_active and (user.is_superuser or list_administrable_organizations(user)))
+
+
 class BootstrapView(APIView):
     """Return the SPA session bootstrap payload for the current principal."""
 
@@ -184,11 +189,7 @@ class BootstrapView(APIView):
                 "can_view_users": bool(session_user is not None and session_user.has_perm("auth.view_user")),
                 "can_change_users": bool(session_user is not None and session_user.has_perm("auth.change_user")),
                 "can_delete_users": bool(session_user is not None and session_user.has_perm("auth.delete_user")),
-                "can_manage_adapters": bool(
-                    session_user is not None
-                    and session_user.is_active
-                    and (session_user.is_superuser or list_administrable_organizations(session_user))
-                ),
+                "can_manage_adapters": _can_manage_adapters(session_user),
             },
             "modes": _modes_for_user(session_user),
         }

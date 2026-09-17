@@ -1,6 +1,6 @@
 """Application import surface for the independently packaged worker contract."""
 
-from shifter_adapter_sdk.preparation import (  # noqa: F401
+from shifter_adapter_sdk.preparation import (
     MAX_RESULT_BYTES,
     BoundedText,
     BuildEvidence,
@@ -17,3 +17,21 @@ from shifter_adapter_sdk.preparation import (  # noqa: F401
     ProviderID,
     RawDiskObservation,
 )
+
+__all__ = [
+    "MAX_RESULT_BYTES",
+    "BoundedText",
+    "BuildEvidence",
+    "CleanupEvidence",
+    "ClosedModel",
+    "Digest",
+    "FailureCode",
+    "ImageRef",
+    "InputEvidence",
+    "InputObservation",
+    "OutputEvidence",
+    "Phase",
+    "PreparationWorkerResult",
+    "ProviderID",
+    "RawDiskObservation",
+]

@@ -1,7 +1,13 @@
 """Operation-fenced planning requests; plugin code runs only in isolated Jobs."""
 
+from __future__ import annotations
+
 from contextlib import suppress
 from datetime import timedelta
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from engine.models import OperationInput, RuntimePluginInstallation, RuntimePluginInvocation
 
 from django.db import transaction
 from django.utils import timezone
@@ -15,7 +21,7 @@ from shared.runtime_plugin_binding import runtime_plugin_requests
 from ._runtime_plugin_controller import _pull_secret
 
 
-def queue_runtime_plugin_plans(envelope: dict) -> None:
+def queue_runtime_plugin_plans(envelope: dict[str, Any]) -> None:
     """Called in the launch transaction; never imports the installed distribution."""
     from engine.models import RuntimePluginInvocation
 
@@ -51,11 +57,8 @@ def queue_runtime_plugin_plans(envelope: dict) -> None:
     )
 
 
-def _authorized_request(row):
-    from engine.models import OperationInput, Range, RuntimePluginInstallation
-
-    operation = OperationInput.objects.get(operation_id=row.operation_id, request_id=row.request_id)
-    envelope = validate_operation_envelope(operation.envelope)
+def _verify_operation_identity(operation: OperationInput, envelope: dict[str, Any]) -> None:
+    """Reject a durable envelope whose correlation fields differ from its operation."""
     if any(
         str(envelope[key]) != str(getattr(operation, key))
         for key in (
@@ -67,6 +70,15 @@ def _authorized_request(row):
         )
     ) or (operation.resource, operation.operation) != ("raes-range", "provision"):
         raise ValueError("Plugin operation identity mismatch")
+
+
+def _authorized_request(row: RuntimePluginInvocation) -> tuple[RuntimeInput, RuntimePluginInstallation]:
+    """Reconstruct the authorized request from durable operation and executable pins."""
+    from engine.models import OperationInput, Range, RuntimePluginInstallation
+
+    operation = OperationInput.objects.get(operation_id=row.operation_id, request_id=row.request_id)
+    envelope = validate_operation_envelope(operation.envelope)
+    _verify_operation_identity(operation, envelope)
     parsed = parse_raes_operation_input(envelope["payload"])
     pin = parsed.runtime_plugin
     if pin is None or parsed.range_backend not in {"gce", "ec2"}:
@@ -77,10 +89,7 @@ def _authorized_request(row):
     requests = runtime_plugin_requests(
         pin, parsed.plan, row.operation_id, parsed.legacy_range_id, backend=parsed.range_backend
     )
-    expected = next(request for request in requests if request.invocation_id == row.id)
-    request = RuntimeInput.model_validate(row.input)
-    if request.digest != expected.digest or row.input_digest != expected.digest or row.phase != expected.phase:
-        raise ValueError("Plugin invocation identity mismatch")
+    request = _verify_invocation(row, requests)
     installation = RuntimePluginInstallation.objects.get(
         pk=pin.installation_id, organization_uuid=pin.organization_uuid
     )
@@ -89,7 +98,17 @@ def _authorized_request(row):
     return request, installation
 
 
+def _verify_invocation(row: RuntimePluginInvocation, requests: tuple[RuntimeInput, ...]) -> RuntimeInput:
+    """Verify the durable phase request against the reconstructed immutable operation."""
+    expected = next(request for request in requests if request.invocation_id == row.id)
+    request = RuntimeInput.model_validate(row.input)
+    if request.digest != expected.digest or row.input_digest != expected.digest or row.phase != expected.phase:
+        raise ValueError("Plugin invocation identity mismatch")
+    return request
+
+
 def reconcile_runtime_plugin_operations(*, limit: int = 6) -> int:
+    """Reconcile a bounded batch of pending isolated planning invocations."""
     from engine.models import RuntimePluginInvocation
 
     if not 1 <= limit <= 30:
@@ -100,7 +119,21 @@ def reconcile_runtime_plugin_operations(*, limit: int = 6) -> int:
     return len(rows)
 
 
-def _reconcile(row) -> None:
+def _observe_plan(request: RuntimeInput) -> tuple[RuntimePlan | None, str]:
+    """Authorize the isolated worker result before accepting its planned state."""
+    state = "pending"
+    result = observe_plugin(request)
+    if result is not None:
+        if not isinstance(result, RuntimePlan):
+            raise ValueError("Invalid plugin plan")
+        result = RuntimePlan.model_validate(result)
+        result.authorize(request)
+        state = "planned" if result.status == "planned" else "failed"
+    return result, state
+
+
+def _reconcile(row: RuntimePluginInvocation) -> None:
+    """Record only planning evidence still authorized by the locked range generation."""
     from engine.models import Range, RuntimePluginInvocation
 
     result, state = None, "pending"
@@ -112,13 +145,7 @@ def _reconcile(row) -> None:
         secret_name = f"runtime-plugin-pull-{request.invocation_id.hex}" if installation.registry_credentials else ""
         launch_plugin(request, image_pull_secret=secret_name)
         _pull_secret(installation, request)
-        result = observe_plugin(request)
-        if result is not None:
-            if not isinstance(result, RuntimePlan):
-                raise ValueError("Invalid plugin plan")
-            result = RuntimePlan.model_validate(result)
-            result.authorize(request)
-            state = "planned" if result.status == "planned" else "failed"
+        result, state = _observe_plan(request)
     except Exception:
         # Private code, scripts and registry diagnostics never enter public logs.
         state = "failed"

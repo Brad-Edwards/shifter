@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from uuid import UUID
 
+from botocore.client import BaseClient
+from shared.model_access.network import RFC1918_IPV4_NETWORKS
 from shared.raes.image_policy import validate_management_ssh_username
 
 from ec2_guest_secrets import Ec2GuestSecrets
@@ -39,12 +41,8 @@ class Ec2GuestPlan:
     security_group_id: str
     image: VerifiedEc2Image
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         validate_management_ssh_username(self.image.management_ssh_username)
-        address = ipaddress.ip_address(self.private_ip)
-        private = any(
-            address in ipaddress.ip_network(cidr) for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
-        )
         if (
             not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", self.environment)
             or type(self.range_id) is not int
@@ -53,7 +51,16 @@ class Ec2GuestPlan:
             or not isinstance(self.generation, UUID)
             or not 1 <= len(self.instance_key) <= 1024
             or not 1 <= len(self.name) <= 255
-            or self.os_family not in {"linux", "windows"}
+        ):
+            raise Ec2GuestError("EC2 guest placement is invalid")
+        self._validate_placement()
+
+    def _validate_placement(self) -> None:
+        """Require one private IPv4 interface in the admitted subnet and group."""
+        address = ipaddress.ip_address(self.private_ip)
+        private = any(address in network for network in RFC1918_IPV4_NETWORKS)
+        if (
+            self.os_family not in {"linux", "windows"}
             or not private
             or address.version != 4
             or not re.fullmatch(r"subnet-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.subnet_id)
@@ -88,6 +95,7 @@ class Ec2GuestPlan:
 
 
 def _bootstrap(plan: Ec2GuestPlan, host_private_key: str, management_public_key: str) -> str:
+    """Render the pinned management identity bootstrap for the admitted operating system."""
     if not re.fullmatch(r"ssh-rsa [A-Za-z0-9+/=]+", management_public_key):
         raise Ec2GuestError("EC2 management public key is invalid")
     encoded = base64.b64encode(host_private_key.encode()).decode()
@@ -154,18 +162,55 @@ def guest_request(plan: Ec2GuestPlan, *, host_private_key: str, management_publi
 
 
 def _instances(response: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten only a complete bounded EC2 instance observation."""
     if response.get("NextToken"):
         raise Ec2GuestError("EC2 guest ownership observation exceeded its bound")
     return [row for reservation in response.get("Reservations", []) for row in reservation.get("Instances", [])]
 
 
-def observe_ec2_guest(plan: Ec2GuestPlan, ec2: Any, instance_id: str) -> dict[str, Any]:
+def observe_ec2_guest(plan: Ec2GuestPlan, ec2: BaseClient, instance_id: str) -> dict[str, Any]:
     """Independently verify VM identity, containment and root snapshot provenance."""
     rows = _instances(ec2.describe_instances(InstanceIds=[instance_id]))
     if len(rows) != 1:
         raise Ec2GuestError("EC2 guest observation is unavailable or ambiguous")
     row = rows[0]
     _verify_interface(plan, row)
+    _verify_identity(plan, row, instance_id)
+    _verify_metadata_containment(row)
+    disks = row.get("BlockDeviceMappings", [])
+    if (
+        row.get("RootDeviceName") != plan.image.root_device
+        or len(disks) != 1
+        or disks[0].get("DeviceName") != plan.image.root_device
+        or disks[0].get("Ebs", {}).get("DeleteOnTermination") is not True
+    ):
+        raise Ec2GuestError("EC2 guest root disk differs from the admitted plan")
+    _verify_boot_volume(plan, ec2, instance_id, disks[0]["Ebs"]["VolumeId"])
+    return row
+
+
+def _verify_boot_volume(plan: Ec2GuestPlan, ec2: BaseClient, instance_id: str, volume_id: str) -> None:
+    """Verify the sole attached root volume against the admitted snapshot and sizing."""
+    volumes = ec2.describe_volumes(VolumeIds=[volume_id]).get("Volumes", [])
+    if len(volumes) != 1:
+        raise Ec2GuestError("EC2 guest boot volume observation is unavailable")
+    volume = volumes[0]
+    attachments = volume.get("Attachments", [])
+    expected_attachment = {"InstanceId": instance_id, "Device": plan.image.root_device, "State": "attached"}
+    if (
+        volume.get("VolumeId") != volume_id
+        or volume.get("SnapshotId") != plan.image.root_snapshot
+        or volume.get("Encrypted") is not True
+        or volume.get("Size") != plan.image.disk_size_gb
+        or volume.get("VolumeType") != plan.image.disk_type
+        or len(attachments) != 1
+        or any(attachments[0].get(key) != value for key, value in expected_attachment.items())
+    ):
+        raise Ec2GuestError("EC2 guest boot volume provenance or encryption differs")
+
+
+def _verify_identity(plan: Ec2GuestPlan, row: dict[str, Any], instance_id: str) -> None:
+    """Require exact VM identity, ownership tags and private-only instance metadata."""
     expected = {
         "InstanceId": instance_id,
         "ImageId": plan.image.image_id,
@@ -175,71 +220,71 @@ def observe_ec2_guest(plan: Ec2GuestPlan, ec2: Any, instance_id: str) -> dict[st
         "Architecture": plan.image.architecture,
     }
     tags = {item["Key"]: item["Value"] for item in row.get("Tags", [])}
-    metadata = row.get("MetadataOptions", {})
     if (
         any(row.get(key) != value for key, value in expected.items())
         or any(tags.get(item["Key"]) != item["Value"] for item in plan.tags())
         or row.get("State", {}).get("Name") != "running"
-        or row.get("PublicIpAddress")
-        or row.get("IamInstanceProfile")
         or {group["GroupId"] for group in row.get("SecurityGroups", [])} != {plan.security_group_id}
+    ):
+        raise Ec2GuestError("EC2 guest identity or containment differs from the admitted plan")
+
+
+def _verify_metadata_containment(row: dict[str, Any]) -> None:
+    """Require hop-limited authenticated metadata and no public interface association."""
+    metadata = row.get("MetadataOptions", {})
+    if (
+        row.get("PublicIpAddress")
+        or row.get("IamInstanceProfile")
         or metadata.get("HttpTokens") != "required"
         or metadata.get("HttpPutResponseHopLimit") != 1
         or any(interface.get("Association", {}).get("PublicIp") for interface in row.get("NetworkInterfaces", []))
     ):
         raise Ec2GuestError("EC2 guest identity or containment differs from the admitted plan")
-    disks = row.get("BlockDeviceMappings", [])
-    if (
-        row.get("RootDeviceName") != plan.image.root_device
-        or len(disks) != 1
-        or disks[0].get("DeviceName") != plan.image.root_device
-        or disks[0].get("Ebs", {}).get("DeleteOnTermination") is not True
-    ):
-        raise Ec2GuestError("EC2 guest root disk differs from the admitted plan")
-    volumes = ec2.describe_volumes(VolumeIds=[disks[0]["Ebs"]["VolumeId"]]).get("Volumes", [])
-    if len(volumes) != 1:
-        raise Ec2GuestError("EC2 guest boot volume observation is unavailable")
-    volume = volumes[0]
-    attachments = volume.get("Attachments", [])
-    expected_attachment = {"InstanceId": instance_id, "Device": plan.image.root_device, "State": "attached"}
-    if (
-        volume.get("VolumeId") != disks[0]["Ebs"]["VolumeId"]
-        or volume.get("SnapshotId") != plan.image.root_snapshot
-        or volume.get("Encrypted") is not True
-        or volume.get("Size") != plan.image.disk_size_gb
-        or volume.get("VolumeType") != plan.image.disk_type
-        or len(attachments) != 1
-        or any(attachments[0].get(key) != value for key, value in expected_attachment.items())
-    ):
-        raise Ec2GuestError("EC2 guest boot volume provenance or encryption differs")
-    return row
 
 
 def _verify_interface(plan: Ec2GuestPlan, row: dict[str, Any]) -> None:
+    """Reject extra addresses, public exposure or unadmitted interface attachments."""
     interfaces = row.get("NetworkInterfaces", [])
     if len(interfaces) != 1:
         raise Ec2GuestError("EC2 guest interface inventory differs from intent")
     interface = interfaces[0]
-    addresses = interface.get("PrivateIpAddresses", [])
+    _verify_primary_address(interface, plan.private_ip)
     if (
         interface.get("SubnetId") != plan.subnet_id
         or interface.get("PrivateIpAddress") != plan.private_ip
-        or interface.get("Ipv6Addresses")
-        or interface.get("Ipv4Prefixes")
-        or interface.get("Ipv6Prefixes")
-        or interface.get("Association")
+        or any(interface.get(field) for field in ("Ipv6Addresses", "Ipv4Prefixes", "Ipv6Prefixes", "Association"))
         or interface.get("Attachment", {}).get("DeviceIndex") != 0
         or interface.get("Attachment", {}).get("DeleteOnTermination") is not True
         or {group["GroupId"] for group in interface.get("Groups", [])} != {plan.security_group_id}
-        or len(addresses) != 1
-        or addresses[0].get("PrivateIpAddress") != plan.private_ip
+    ):
+        raise Ec2GuestError("EC2 guest interface has unadmitted addressing or attachment")
+
+
+def _verify_primary_address(interface: dict[str, Any], private_ip: str) -> None:
+    """Permit exactly the admitted primary private address, with no public association."""
+    addresses = interface.get("PrivateIpAddresses", [])
+    if (
+        len(addresses) != 1
+        or addresses[0].get("PrivateIpAddress") != private_ip
         or addresses[0].get("Primary") is not True
         or addresses[0].get("Association")
     ):
         raise Ec2GuestError("EC2 guest interface has unadmitted addressing or attachment")
 
 
-def ensure_ec2_guest(plan: Ec2GuestPlan, ec2: Any, secrets: Ec2GuestSecrets) -> dict[str, Any]:
+def _resume_guest(plan: Ec2GuestPlan, ec2: BaseClient, row: dict[str, Any]) -> str:
+    """Reuse only the exact tagged generation and verify its running state."""
+    instance_id = row["InstanceId"]
+    tags = {item["Key"]: item["Value"] for item in row.get("Tags", [])}
+    if any(tags.get(item["Key"]) != item["Value"] for item in plan.tags()):
+        raise Ec2GuestError("EC2 guest belongs to another range or generation")
+    if row.get("State", {}).get("Name") == "pending":
+        ec2.get_waiter("instance_running").wait(InstanceIds=[instance_id], WaiterConfig={"Delay": 5, "MaxAttempts": 60})
+    observe_ec2_guest(plan, ec2, instance_id)
+    return instance_id
+
+
+def ensure_ec2_guest(plan: Ec2GuestPlan, ec2: BaseClient, secrets: Ec2GuestSecrets) -> dict[str, Any]:
     """Converge only this operation generation's guest, then return management facts."""
     filters = [
         {"Name": f"tag:{item['Key']}", "Values": [item["Value"]]}
@@ -253,15 +298,7 @@ def ensure_ec2_guest(plan: Ec2GuestPlan, ec2: Any, secrets: Ec2GuestSecrets) -> 
     if len(rows) > 1:
         raise Ec2GuestError("EC2 guest ownership is ambiguous")
     if rows:
-        instance_id = rows[0]["InstanceId"]
-        tags = {item["Key"]: item["Value"] for item in rows[0].get("Tags", [])}
-        if any(tags.get(item["Key"]) != item["Value"] for item in plan.tags()):
-            raise Ec2GuestError("EC2 guest belongs to another range or generation")
-        if rows[0].get("State", {}).get("Name") == "pending":
-            ec2.get_waiter("instance_running").wait(
-                InstanceIds=[instance_id], WaiterConfig={"Delay": 5, "MaxAttempts": 60}
-            )
-        observe_ec2_guest(plan, ec2, instance_id)
+        instance_id = _resume_guest(plan, ec2, rows[0])
     host_ref, public = secrets.host_ssh(plan.range_id, plan.instance_key, create=not rows)
     private, host_public = secrets.host_identity(plan.range_id, plan.instance_key, create=not rows)
     if not rows:

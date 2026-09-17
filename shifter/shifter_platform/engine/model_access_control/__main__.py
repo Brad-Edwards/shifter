@@ -1,6 +1,8 @@
 """Start the dedicated TLS listener after normal Engine secret hydration."""
 
 import os
+from collections.abc import Mapping
+from uuid import UUID
 
 
 def main() -> None:
@@ -13,6 +15,7 @@ def main() -> None:
     import uvicorn
     from django.conf import settings
     from django.db import connection
+    from google.auth.transport import Response
     from google.auth.transport.requests import Request
 
     from engine.model_access_control.server import ControlApplication
@@ -31,11 +34,19 @@ def main() -> None:
     session.trust_env = False
     google_request = Request(session=session)
 
-    def bounded_google_request(*args, **kwargs):
+    def bounded_google_request(
+        url: str,
+        method: str = "GET",
+        body: bytes | None = None,
+        headers: Mapping[str, str] | None = None,
+        **kwargs: object,
+    ) -> Response:
+        """Limit certificate retrieval during workload verification to two seconds."""
         kwargs["timeout"] = 2
-        return google_request(*args, **kwargs)
+        return google_request(url, method=method, body=body, headers=headers, **kwargs)
 
-    def verify(assertion, *, operation_id):
+    def verify(assertion: str, *, operation_id: UUID | None) -> None:
+        """Verify a distinct broker or operation-bound provisioner identity."""
         expected = provisioner if operation_id else broker
         bound_audience = f"{audience}:enroll:{operation_id}" if operation_id else audience
         if provider == "gcp":
@@ -51,7 +62,8 @@ def main() -> None:
                 session=session,
             )
 
-    def ready():
+    def ready() -> bool:
+        """Admit readiness only while the Engine database responds."""
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
@@ -62,7 +74,8 @@ def main() -> None:
     try:
         uvicorn.run(
             ControlApplication(verify_identity=verify, ready=ready),
-            host="0.0.0.0",  # noqa: S104 # nosec B104 -- private Kubernetes listener; TLS, IAM and NetworkPolicy gate every call.
+            # Private service binding; TLS, workload authentication and default-deny NetworkPolicy apply.
+            host="0.0.0.0",  # noqa: S104 # nosec B104 # NOSONAR(S8392)
             port=8444,
             ssl_certfile=os.environ["MODEL_CONTROL_TLS_CERT"],
             ssl_keyfile=os.environ["MODEL_CONTROL_TLS_KEY"],

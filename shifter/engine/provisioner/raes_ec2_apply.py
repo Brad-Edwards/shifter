@@ -7,13 +7,15 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from botocore.client import BaseClient
+
 from ec2_guest_instance import Ec2GuestPlan, ensure_ec2_guest, observe_ec2_guest
 from ec2_guest_secrets import Ec2GuestSecrets
 from ec2_network_apply import Ec2NetworkResources, ensure_ec2_network
 from ec2_range_cleanup import Ec2CleanupScope, destroy_ec2_resources
 from ec2_range_network import Ec2NetworkConfig, Ec2NetworkPlan, plan_ec2_network
-from executors.factory import build_guest_execution_context
-from raes_access import join_participant_access
+from executors.factory import GuestExecutionContext, build_guest_execution_context
+from raes_access import RealizedAccessBinding, join_participant_access
 from raes_account_credentials import delete_instance_account_credentials, install_instance_account_credentials
 from raes_active_directory import delete_raes_directory_secrets, realize_raes_active_directory
 from raes_composition_verification import assert_composition_is_verifiable, verify_bootstrap_composition
@@ -39,11 +41,11 @@ class RaesEc2ApplyOptions:
 
     config: Ec2NetworkConfig
     generation: UUID
-    ec2: Any
+    ec2: BaseClient
     secrets: Ec2GuestSecrets
     allocated_cidrs: dict[str, str]
     egress_mode: str = "deny-all"
-    execution_builder: Callable[..., Any] = build_guest_execution_context
+    execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
     credential_installer: Callable[..., dict[str, str]] = install_instance_account_credentials
     directory_realizer: Callable[..., None] = realize_raes_active_directory
     content_delivery_realizer: Callable[..., None] = realize_raes_content_delivery
@@ -54,6 +56,7 @@ class RaesEc2ApplyOptions:
 
 
 def _scope(request_id: str, range_id: int, options: RaesEc2ApplyOptions) -> Ec2CleanupScope:
+    """Recover original ownership coordinates for native cleanup."""
     return Ec2CleanupScope(
         options.config.environment,
         options.config.region,
@@ -69,9 +72,8 @@ def destroy_raes_ec2_range(
 ) -> dict[str, Any]:
     """Remove owned resources before retiring their management/account identities."""
     result = destroy_ec2_resources(_scope(request_id, range_id, options), options.ec2)
-    if result["outcome"] != "VERIFIED_ABSENT":
-        return result
-    delete_ec2_guest_credentials(range_id, plan, options.secrets)
+    if result["outcome"] == "VERIFIED_ABSENT":
+        delete_ec2_guest_credentials(range_id, plan, options.secrets)
     return result
 
 
@@ -88,6 +90,7 @@ def delete_ec2_guest_credentials(range_id: int, plan: RaesPlan, secrets: Ec2Gues
 
 
 def _bootstrap(node: RaesPlanNode, plan: RaesPlan, output: dict[str, Any], options: RaesEc2ApplyOptions) -> None:
+    """Run authored bootstrap through the trusted guest transport."""
     script = node_bootstrap_script(node, plan)
     if not script:
         return
@@ -109,9 +112,10 @@ def _guests(
     network: Ec2NetworkPlan,
     plan: RaesPlan,
     images: dict[str, VerifiedEc2Image],
-    access: Any,
+    access: tuple[RealizedAccessBinding, ...],
     options: RaesEc2ApplyOptions,
 ) -> tuple[list[dict[str, Any]], list[Ec2GuestPlan], Ec2NetworkResources]:
+    """Realize admitted guests and publish their management transport identities."""
     resources = ensure_ec2_network(network, options.ec2)
     nodes = {node.address: node for node in plan.nodes}
     accounts = _accounts_by_node(plan)
@@ -163,6 +167,7 @@ def _verify(
     delivery_bindings: list[dict[str, Any]] | None,
     range_id: int,
 ) -> dict[str, Any]:
+    """Verify operating systems, participant access and compiled composition."""
     verified: set[str] = set()
     if plan.domains:
         options.directory_realizer(
@@ -226,9 +231,7 @@ def apply_raes_ec2_range(
     network = plan_ec2_network(
         plan,
         config=options.config,
-        request_id=scope.request_id,
-        generation=scope.generation,
-        range_id=range_id,
+        scope=scope,
         allocated_cidrs=options.allocated_cidrs,
         images=images,
         participant_channels={

@@ -85,3 +85,27 @@ def test_rejects_execution_config_that_cannot_enforce_catalog(active_runtime, fa
         overrides["provider"] = "aws"
     with pytest.raises(ValueError):
         project(settings, catalog, **overrides)
+
+
+@pytest.mark.parametrize(
+    "material",
+    [
+        "-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----",
+        "-----BEGIN CERTIFICATE-----" + " " * 15000,
+        "-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----\ntrailing data",
+        "-----BEGIN CERTIFICATE-----\n!invalid!\n-----END CERTIFICATE-----",
+    ],
+)
+def test_guest_ca_rejects_malformed_or_non_x509_bundles(active_runtime, material):
+    settings, catalog = active_runtime
+    settings["guest_trust_ca_pem"] = material
+    with pytest.raises(ValueError):
+        project(settings, catalog)
+
+
+def test_certificate_envelope_scan_accepts_multiple_public_blocks():
+    from installation.model_broker_runtime import _validate_certificate_envelopes
+
+    # The envelope parser checks boundaries/base64; SSL separately validates X.509.
+    block = "-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----"
+    _validate_certificate_envelopes("\n" + block + "\n\n" + block + "\n")

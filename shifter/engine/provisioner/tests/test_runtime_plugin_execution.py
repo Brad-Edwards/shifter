@@ -10,7 +10,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared.raes.operation_input import RaesInputBindings, build_raes_operation_input, parse_raes_operation_input
+from shared.raes.operation_input import (
+    RaesInputBindings,
+    RaesRangeIdentity,
+    build_raes_operation_input,
+    parse_raes_operation_input,
+)
 from shared.runtime_plugin_binding import RuntimePluginPin, runtime_plugin_requests
 from shifter_adapter_sdk.runtime import RuntimePlan
 
@@ -45,7 +50,7 @@ def run():
         image_candidates={},
         range_backend="gce",
         instantiation_purpose="live_fire",
-        legacy_range_id=7,
+        identity=RaesRangeIdentity(7, None),
     )
     return RaesOperationRun(str(uuid4()), str(uuid4()), parse_raes_operation_input(payload))
 

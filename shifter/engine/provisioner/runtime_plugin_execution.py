@@ -5,15 +5,18 @@ from __future__ import annotations
 import base64
 import time
 from dataclasses import dataclass
+from typing import Any, cast
 from uuid import UUID
 
+from shared.raes.participant_access import ParticipantAccessBinding
 from shared.runtime_plugin_binding import runtime_plugin_requests
 from shifter_adapter_sdk.guest import RUNTIME_VALUES_ENV
-from shifter_adapter_sdk.runtime import RuntimeInput, RuntimePlan
+from shifter_adapter_sdk.runtime import GuestAction, GuestTarget, RuntimeInput, RuntimePlan
 
 from executors.factory import build_guest_execution_context
 from provisioner_db import get_db_connection
 from provisioner_db_operation_input import RaesOperationRun
+from raes_plan import RaesPlan
 from runtime_plugin_values import resolve_runtime_values
 
 
@@ -23,10 +26,12 @@ class RuntimePluginExecutionError(RuntimeError):
 
 @dataclass(frozen=True)
 class GuestPluginPlans:
+    """The complete authorized phase plans returned by isolated workers."""
+
     requests: tuple[RuntimeInput, ...]
     plans: tuple[RuntimePlan, ...]
 
-    def execute(self, _raes_plan, instances: list[dict]) -> None:
+    def execute(self, _raes_plan: RaesPlan, instances: list[dict[str, Any]]) -> None:
         """Run configure then verify inside apply's existing cleanup boundary."""
         try:
             _execute(self, instances)
@@ -36,6 +41,7 @@ class GuestPluginPlans:
 
 def _read_plan(request: RuntimeInput) -> RuntimePlan | None:
     # A transport projection only: no plugin registry or Engine domain reads.
+    """Read only a digest-matched authorized planning result from the transport projection."""
     with get_db_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             "SELECT state, input_digest, result FROM engine_runtime_plugin_invocation "
@@ -73,15 +79,20 @@ def load_guest_plugin_plans(run: RaesOperationRun) -> GuestPluginPlans | None:
         while time.monotonic() < deadline:
             plans = tuple(_read_plan(request) for request in requests)
             if all(plan is not None for plan in plans):
-                _validate_value_requirements(requests, plans, parsed.access_bindings)
-                return GuestPluginPlans(requests, plans)
+                complete = cast(tuple[RuntimePlan, ...], plans)
+                _validate_value_requirements(requests, complete, parsed.access_bindings)
+                return GuestPluginPlans(requests, complete)
             time.sleep(2)
     except Exception:
         raise RuntimePluginExecutionError("Runtime plugin planning failed") from None
     raise RuntimePluginExecutionError("Runtime plugin planning timed out")
 
 
-def _validate_value_requirements(requests, plans, access_bindings) -> None:
+def _validate_value_requirements(
+    requests: tuple[RuntimeInput, ...],
+    plans: tuple[RuntimePlan, ...],
+    access_bindings: tuple[ParticipantAccessBinding, ...],
+) -> None:
     """Reject unavailable participant access before any cloud mutation."""
     ssh_nodes = {binding.target_address for binding in access_bindings if binding.channel == "ssh"}
     for request, plan in zip(requests, plans, strict=True):
@@ -109,24 +120,12 @@ def _quiet_script(script: str, os_family: str, values_b64: str) -> str:
     )
 
 
-def _execute(bundle: GuestPluginPlans, instances: list[dict]) -> None:
+def _execute(bundle: GuestPluginPlans, instances: list[dict[str, Any]]) -> None:
+    """Resolve all runtime values before executing bounded guest actions."""
     outputs = {instance["uuid"]: instance for instance in instances}
     if len(outputs) != len(instances) or len(bundle.requests) != 3 or len(bundle.plans) != 3:
         raise ValueError("Invalid plugin guest coverage")
-    # Validate the complete plan set and every target before executing one action.
-    prepared_actions = []
-    for request, result in zip(bundle.requests, bundle.plans, strict=True):
-        result = RuntimePlan.model_validate(result)
-        result.authorize(request)
-        if result.status != "planned":
-            raise ValueError("Plugin planning failed")
-        for target in request.targets.values():
-            if f"{target.node_address}#0" not in outputs:
-                raise ValueError("Plugin guest is unavailable")
-        for action in result.actions:
-            prepared_actions.append(
-                (request.targets[action.binding], action, resolve_runtime_values(action, request, outputs))
-            )
+    prepared_actions = _prepare_actions(bundle, outputs)
     for target, action, values_b64 in prepared_actions:
         execution = build_guest_execution_context(
             outputs[f"{target.node_address}#0"],
@@ -146,3 +145,25 @@ def _execute(bundle: GuestPluginPlans, instances: list[dict]) -> None:
                 raise ValueError("Plugin action failed")
         finally:
             execution.close()
+
+
+def _prepare_actions(
+    bundle: GuestPluginPlans,
+    outputs: dict[str, dict[str, Any]],
+) -> list[tuple[GuestTarget, GuestAction, str]]:
+    """Validate every phase and target before allowing any guest mutation."""
+    # Validate the complete plan set and every target before executing one action.
+    prepared_actions = []
+    for request, result in zip(bundle.requests, bundle.plans, strict=True):
+        result = RuntimePlan.model_validate(result)
+        result.authorize(request)
+        if result.status != "planned":
+            raise ValueError("Plugin planning failed")
+        for target in request.targets.values():
+            if f"{target.node_address}#0" not in outputs:
+                raise ValueError("Plugin guest is unavailable")
+        for action in result.actions:
+            prepared_actions.append(
+                (request.targets[action.binding], action, resolve_runtime_values(action, request, outputs))
+            )
+    return prepared_actions
