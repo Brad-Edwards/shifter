@@ -157,10 +157,9 @@ jobs:
             quality_only:
               - '.github/workflows/_quality.yml'
               - '.github/quality-path-filters.yaml'
-              # Retired in #1311; deletion and attempted resurrection run the
-              # remaining Terraform/security ownership gates without deploy.
-              - 'scripts/polaris-aws-range/**'
-              - 'scenario-dev/polaris/tests/**'
+              # Local smoke tooling and synthetic pack fixtures are quality-only.
+              - 'scripts/stack-smoke/**'
+              - 'scenario-dev/**'
               # Guardrail scripts that the Quality workflow invokes
               # directly (their CI steps live in _quality.yml's
               # terraform-lint job). A change to these scripts or their

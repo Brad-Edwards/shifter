@@ -1033,6 +1033,10 @@ class SymbolFacadeAllowlistTests(unittest.TestCase):
         self.assertEqual(
             ADR_GUARD.load_allowed_symbols(cfg),
             {
+                "engine": {
+                    "workspaces.services": ["OrganizationAuthorizationError", "get_organization_profile"]
+                },
+                "config": {"workspaces.services": ["list_administrable_organizations"]},
                 "mission_control": {
                     "engine.services": [
                         "SSHConnection",
@@ -1128,8 +1132,8 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
         ]
         portal_image_globs = portal_image_globs or ["shifter/shifter_platform/**"]
         quality_only_globs = quality_only_globs or [
-            "scripts/polaris-aws-range/**",
-            "scenario-dev/polaris/tests/**",
+            "scripts/stack-smoke/**",
+            "scenario-dev/**",
         ]
         platform_lines = "".join(f"              - '{glob}'\n" for glob in platform_globs)
         quality_non_docs_filter = ""
@@ -1423,8 +1427,8 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "            portal_image:\n"
                 "              - 'shifter/shifter_platform/**'\n"
                 "            quality_only:\n"
-                "              - 'scripts/polaris-aws-range/**'\n"
-                "              - 'scenario-dev/polaris/tests/**'\n"
+                "              - 'scripts/stack-smoke/**'\n"
+                "              - 'scenario-dev/**'\n"
                 "  pr-gate:\n"
                 "    steps:\n"
                 "      - run: |\n"
@@ -1545,33 +1549,33 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertIn("quality_only", violations[0].message)
 
-    def test_flags_quality_only_filter_without_polaris_range_glob(self) -> None:
+    def test_flags_quality_only_filter_without_smoke_glob(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             self._write_workflows(
                 repo_root,
-                self._deploy_text(quality_only_globs=["scenario-dev/polaris/tests/**"]),
+                self._deploy_text(quality_only_globs=["scenario-dev/**"]),
                 self._platform_text(),
             )
 
             violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
 
             self.assertEqual(len(violations), 1)
-            self.assertIn("scripts/polaris-aws-range/**", violations[0].message)
+            self.assertIn("scripts/stack-smoke/**", violations[0].message)
 
-    def test_flags_quality_only_filter_without_polaris_tests_glob(self) -> None:
+    def test_flags_quality_only_filter_without_scenario_glob(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             self._write_workflows(
                 repo_root,
-                self._deploy_text(quality_only_globs=["scripts/polaris-aws-range/**"]),
+                self._deploy_text(quality_only_globs=["scripts/stack-smoke/**"]),
                 self._platform_text(),
             )
 
             violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
 
             self.assertEqual(len(violations), 1)
-            self.assertIn("scenario-dev/polaris/tests/**", violations[0].message)
+            self.assertIn("scenario-dev/**", violations[0].message)
 
     def test_flags_missing_portal_image_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1694,8 +1698,8 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "            portal_image:\n"
                 "              - 'shifter/shifter_platform/**'\n"
                 "            quality_only:\n"
-                "              - 'scripts/polaris-aws-range/**'\n"
-                "              - 'scenario-dev/polaris/tests/**'\n"
+                "              - 'scripts/stack-smoke/**'\n"
+                "              - 'scenario-dev/**'\n"
                 "      - id: quality_non_docs\n"
                 "        with:\n"
                 "          predicate-quantifier: every\n"
@@ -5076,10 +5080,10 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
                 self.assertEqual(v.rule_id, "ADR-004-R8")
                 self.assertNotIn("XYZ-123", v.message)
 
-    def test_flags_polaris_build_output(self) -> None:
+    def test_flags_scenario_build_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            build_dir = repo_root / "scenario-dev" / "polaris" / "build" / "A16-research-analyst"
+            build_dir = repo_root / "scenario-dev" / "example" / "build" / "guest"
             build_dir.mkdir(parents=True)
             (build_dir / "runtime-token").write_text("challenge-local-token", encoding="utf-8")
 
@@ -5087,15 +5091,15 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
 
             self.assertEqual(
                 {v.path for v in violations},
-                {"scenario-dev/polaris/build/A16-research-analyst/runtime-token"},
+                {"scenario-dev/example/build/guest/runtime-token"},
             )
             self.assertEqual({v.rule_id for v in violations}, {"ADR-004-R8"})
             self.assertNotIn("challenge-local-token", violations[0].message)
 
-    def test_flags_polaris_operator_run_outputs(self) -> None:
+    def test_flags_operator_run_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            script_dir = repo_root / "scripts" / "polaris-aws-range"
+            script_dir = repo_root / "scripts" / "example-range"
             script_dir.mkdir(parents=True)
             (script_dir / "provisioning_state.json").write_text('{"outcomes": {}}', encoding="utf-8")
             (script_dir / "provisioning_status.md").write_text("# status", encoding="utf-8")
@@ -5106,11 +5110,11 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
             violations = ADR_GUARD.check_no_tracked_generated_artifacts(repo_root, None)
 
             flagged_paths = {v.path for v in violations}
-            self.assertIn("scripts/polaris-aws-range/provisioning_state.json", flagged_paths)
-            self.assertIn("scripts/polaris-aws-range/provisioning_status.md", flagged_paths)
-            self.assertIn("scripts/polaris-aws-range/health_report.md", flagged_paths)
-            self.assertIn("scripts/polaris-aws-range/postprovision_status.md", flagged_paths)
-            self.assertNotIn("scripts/polaris-aws-range/README.md", flagged_paths)
+            self.assertIn("scripts/example-range/provisioning_state.json", flagged_paths)
+            self.assertIn("scripts/example-range/provisioning_status.md", flagged_paths)
+            self.assertIn("scripts/example-range/health_report.md", flagged_paths)
+            self.assertIn("scripts/example-range/postprovision_status.md", flagged_paths)
+            self.assertNotIn("scripts/example-range/README.md", flagged_paths)
             for v in violations:
                 self.assertEqual(v.rule_id, "ADR-004-R8")
                 self.assertNotIn("outcomes", v.message)
@@ -5873,7 +5877,7 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
     # A globally-routable public IPv4 not in the well-known-infra allowlist,
     # assembled so the literal never appears in this tracked source.
     REAL_PUBLIC_IP = "45.77." + "12.9"
-    ACCT_BUCKET = "shifter-polaris-bake-dev-" + "9" * 12
+    ACCT_BUCKET = "shifter-example-bake-dev-" + "9" * 12
     UUID_BUCKET = "shifter-dev-infra-" + "-".join(
         ["a" * 8, "b" * 4, "c" * 4, "d" * 4, "e" * 12]
     )
@@ -6569,7 +6573,7 @@ class MissionControlFlagLiteralsTests(unittest.TestCase):
             self._write(repo_root, "shifter/shifter_platform/ctf/models/challenge.py", f'F = "{self.CONCRETE}"\n')
             self._write(repo_root, "shifter/shifter_platform/templates/ctf/board.html", f"<i>{self.CONCRETE}</i>\n")
             self._write(repo_root, "docs/example.md", f"Example flag: {self.CONCRETE}\n")
-            self._write(repo_root, "scenario-dev/polaris/board/challenge.json", f'{{"flag": "{self.CONCRETE}"}}\n')
+            self._write(repo_root, "scenario-dev/example/board/challenge.json", f'{{"flag": "{self.CONCRETE}"}}\n')
             violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
             self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
 

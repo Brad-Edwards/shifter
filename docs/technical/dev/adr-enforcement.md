@@ -387,7 +387,7 @@ The first slice intentionally stays small:
   replacement check must inspect that same saved plan. Non-deploy support/test
   surfaces that are not under `shifter/**` or `mcp/**` must use the
   `quality_only` filter/output rather than being hidden in a deploy bucket:
-  `scripts/polaris-aws-range/**` and `scenario-dev/polaris/tests/**` are
+  `scripts/stack-smoke/**` and `scenario-dev/**` are
   required entries so the orphaned support suites run Quality without launching
   Terraform plans, image builds, or environment deploys. On apply workflows,
   `_shifter-platform.yml` still pushes the Guacamole ECR images before the
@@ -682,8 +682,8 @@ The first slice intentionally stays small:
   Terraform plan outputs (`tfplan`, `tfplan.binary`, `plan.out`,
   `*.tfplan`, `*.tfplan.binary`) under
   `platform/terraform/environments/` and
-  `platform/terraform/gcp/environments/`; Polaris range build output
-  under `scenario-dev/polaris/build/`; and license / authcode bootstrap
+  `platform/terraform/gcp/environments/`; scenario build output
+  under `scenario-dev/<pack>/build/`; and license / authcode bootstrap
   material (`authcodes`, `*.authcodes`) under `temp/bootstrap/`.
   Enumeration uses `git ls-files` (tracked +
   staged + untracked-but-not-ignored) so ignored ephemeral
@@ -745,8 +745,8 @@ The first slice intentionally stays small:
   ellipsis form (`FLAG{...}`), and angle-bracket templates
   (`FLAG{<16-hex>}`). The path scope deliberately excludes tests,
   docs, the native `ctf` app (where `FLAG{...}` is a documented
-  format hint), and Polaris scenario content under
-  `scenario-dev/polaris/`, where flags are legitimate challenge
+  format hint), and synthetic scenario fixtures under
+  `scenario-dev/`, where flags are legitimate challenge
   content. Failure reporting names the repo-relative path and line
   only; the matched value is never echoed. CTF flags are low-entropy
   and are not caught by gitleaks; this is the complementary
@@ -1033,3 +1033,15 @@ the rendered CEL against actual neutral-runner manifests and privilege overrides
 API tests cover tenant denial, immutable versions, encrypted registry credentials,
 retry and stale probe completion. These tests do not replace live isolation or
 range-lifecycle qualification.
+
+
+### External image and pack ownership (ADR-041-R10)
+
+Private content and image recipes are maintained by their owning repositories.
+Core quality jobs validate shared base-image behavior and synthetic fixtures;
+private pack tests move with the implementation. Domain-controller builds require
+an explicit profile and seed, with no scenario-specific default. Source removal
+is preceded by a hash-verified private archive. This does not establish live
+qualification of an external adapter on either cloud.
+
+The independent adapter SDK has its own dependency update entry, like every other Python package root. Private image recipes and their dependency update targets belong to the pack owner.

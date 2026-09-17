@@ -74,8 +74,6 @@ jobs:
       # the guard's own verification to run on any contract/classifier/guard-file
       # change so it cannot self-bypass (#1530, ADR-004-R24).
       guard_selfcheck: ${{ steps.selfcheck.outputs.guard_selfcheck }}
-      ctfd_workshop: ${{ steps.detect.outputs.ctfd_workshop }}
-      polaris_tests: ${{ steps.detect.outputs.polaris_tests }}
       stack_smoke: ${{ steps.detect.outputs.stack_smoke }}
       # Build / deployment / runtime image owners (#1530). Reserved routing
       # outputs: no blocking job consumes them yet (gaps tracked by #1698), but
@@ -563,28 +561,6 @@ jobs:
 
       - name: terraform test
         run: terraform -chdir="${SUITE_PATH}" test -no-color
-
-  # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
-  # shipped 38/39 challenges unsubmittable because flag-row reconciliation
-  # sat behind a category allowlist; these tests exercise the flag/hint
-  # reconciliation, manifest validation, and post-sync verification with a
-  # fake CTFd client. The scripts import siblings by bare name, so the test
-  # runs from the package directory (its name contains a hyphen, so the
-  # `unittest scripts.<pkg>` form the check_tf_* tests use is unavailable).
-  # Pure stdlib — no dependency install needed.
-  ctfd-workshop-tests:
-    permissions:
-      contents: read
-    name: Test (ctfd-workshop)
-    needs: [paths]
-    if: ${{ !inputs.skip_tests && (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.ctfd_workshop == 'true') }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Run Polaris CTFd sync tests
-        working-directory: scripts/ctfd-workshop
-        run: python3 -m unittest test_sync_polaris_ctfd
 
   shifter-platform-lint:
     permissions:
@@ -1865,23 +1841,6 @@ jobs:
       # would only measure the tests covering themselves (cf. the packer lane).
       - name: Run chart contract tests
         run: uv run --python 3.12 --with pyyaml --with pytest python -m pytest platform/charts/shifter/tests/ -q
-
-  polaris-tests:
-    permissions:
-      contents: read
-    name: Tests (polaris smoke scripts)
-    needs: [paths]
-    if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.polaris_tests == 'true')) }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Validate Python and shell syntax
-        run: |
-          python3 -m compileall -q scenario-dev/polaris/tests
-          while IFS= read -r -d '' script; do
-            bash -n "$script"
-          done < <(find scenario-dev/polaris/tests -type f -name '*.sh' -print0)
 
   check-layer-imports-tests:
     permissions:

@@ -356,16 +356,11 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
                 f"{job_id} must remain on normal shifter-platform routing",
             )
 
-    def test_surviving_polaris_tests_keep_neutral_quality_route(self):
-        polaris_test_path = "scenario-dev/polaris/tests/isolation-smoketest.sh"
-        self.assertTrue(ADR_GUARD._dw_path_matches_any(polaris_test_path, self.filters["polaris_tests"]))
-        path_outputs = self.jobs["paths"].get("outputs", {})
-        self.assertIn("polaris_tests", path_outputs)
-        job = self.jobs["polaris-tests"]
-        self.assertIn("needs.paths.outputs.polaris_tests", ADR_GUARD._dw_job_if(job))
-        run_steps = "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
-        self.assertIn("python3 -m compileall", run_steps)
-        self.assertIn('bash -n "$script"', run_steps)
+    def test_quality_jobs_do_not_execute_pack_owned_scenario_tests(self):
+        for job in self.jobs.values():
+            run_steps = "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
+            self.assertNotIn("find scenario-dev/", run_steps)
+            self.assertNotIn("compileall -q scenario-dev/", run_steps)
 
     def test_adapter_specific_quality_route_is_removed(self):
         self.assertNotIn("scenario_smoketest", self.filters)

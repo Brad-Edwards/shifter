@@ -113,8 +113,6 @@ if command -v packer &> /dev/null; then
         -var 'ami_prefix=validation' \
         -var 'vpc_id=' \
         -var 'subnet_id=' \
-        -var 'builder_instance_profile=packer-validation' \
-        -var 'polaris_tarball_s3_uri=s3://validation/polaris.tar.gz' \
         "$PACKER_DIR"; then
         log_pass "Packer directory configuration is valid"
     else

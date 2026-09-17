@@ -45,7 +45,11 @@ participant access fails before cloud mutation; missing realized values fail
 inside apply's cleanup boundary. Management keys, secret references, provider
 credentials and arbitrary output fields are not exposed by this contract.
 
-Private adapter migration, removal of existing scenario-specific core code,
+The embedded private content tree, dedicated image recipes, workshop tooling and
+corresponding build/test jobs have been removed from core after hash-verified
+preservation in the owning repository. Shared image checks remain in core.
+
+Private adapter migration, removal of remaining scenario-specific runtime code,
 additional host capabilities needed by external
 adapters, and SDK publication remain outstanding. An installation's `ready` status means its
 compatibility probe succeeded; it does not mean a pack is runnable or a range is

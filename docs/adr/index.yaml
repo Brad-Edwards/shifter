@@ -215,7 +215,7 @@
       },
       {
         "id": "ADR-004-R8",
-        "description": "Generated and pre-staging sensitive artifacts must not be tracked in source: Terraform plan outputs (tfplan, tfplan.binary, plan.out, *.tfplan) under platform/terraform/environments/ and platform/terraform/gcp/environments/, Polaris range build output under scenario-dev/polaris/build/, Polaris AWS operator run outputs (provisioning_state.json, provisioning_status.md, health_report.md, postprovision_status.md) under scripts/polaris-aws-range/, and license/authcode bootstrap material (authcodes, *.authcodes) under temp/bootstrap/. The blocked path/name set is centralized in scripts/adr_guard/adr_guard.py; the guardrail fails closed and emits repo-relative paths only, never file contents.",
+        "description": "Generated and pre-staging sensitive artifacts must not be tracked in source: Terraform plan outputs under AWS/GCP environment roots, scenario build output under scenario-dev/<pack>/build/, operator provisioning state and status/health reports under scripts/, and license/authcode bootstrap material under temp/bootstrap/. Detection uses generic layout and artifact names, never private scenario identities. The guardrail fails closed and emits repo-relative paths only, never contents.",
         "checks": [
           "no-tracked-generated-artifacts"
         ]
@@ -264,7 +264,7 @@
       },
       {
         "id": "ADR-004-R16",
-        "description": "Mission Control runtime code MUST NOT contain hardcoded CTF challenge flag literals. The `no-mission-control-flag-literals` check in `scripts/adr_guard/adr_guard.py` scans the `shifter/shifter_platform/mission_control/` package (all runtime; its tests live under `shifter/shifter_platform/tests/mission_control/`, outside scope) and the `shifter/shifter_platform/templates/mission_control/` template tree (covering inline `<script>` JavaScript) for answer-shaped `FLAG{...}` literals (case-insensitive). Detection is by pattern, never by a denylist of real values. Format-hint placeholders that describe the answer shape rather than carry one are intentionally NOT flagged: an empty body (`FLAG{}`), the ellipsis form (`FLAG{...}`), and angle-bracket templates (`FLAG{<16-hex>}`). The path scope deliberately excludes tests, docs, the native `ctf` app (`CTFChallenge`/`CTFFlag` and `ctf.services`/templates, where `FLAG{...}` is a documented format hint), and Polaris scenario content under `scenario-dev/polaris/`, where flags are legitimate challenge content. Challenge answers belong to the CTF/CTFd content domain, not the Mission Control application path. CTF flags are low-entropy and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary repo-specific backstop. Violation messages name the repo-relative path and line only \u2014 never the matched value. The check runs at the `fast` and `ci` levels via the existing `python3 scripts/adr_guard/adr_guard.py --all --level ci` invocation in pre-commit and `.github/workflows/_quality.yml`. Closes the #560 regression gap (the `box_info` literal-flag map removed during the mission_control views package split) and blocks reintroduction.",
+        "description": "Mission Control runtime code MUST NOT contain hardcoded CTF challenge flag literals. The `no-mission-control-flag-literals` check in `scripts/adr_guard/adr_guard.py` scans the `shifter/shifter_platform/mission_control/` package (all runtime; its tests live under `shifter/shifter_platform/tests/mission_control/`, outside scope) and the `shifter/shifter_platform/templates/mission_control/` template tree (covering inline `<script>` JavaScript) for answer-shaped `FLAG{...}` literals (case-insensitive). Detection is by pattern, never by a denylist of real values. Format-hint placeholders that describe the answer shape rather than carry one are intentionally NOT flagged: an empty body (`FLAG{}`), the ellipsis form (`FLAG{...}`), and angle-bracket templates (`FLAG{<16-hex>}`). The path scope deliberately excludes tests, docs, the native `ctf` app (`CTFChallenge`/`CTFFlag` and `ctf.services`/templates, where `FLAG{...}` is a documented format hint), and synthetic scenario fixtures under `scenario-dev/`, where flags are legitimate challenge content. Challenge answers belong to the CTF/CTFd content domain, not the Mission Control application path. CTF flags are low-entropy and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary repo-specific backstop. Violation messages name the repo-relative path and line only \u2014 never the matched value. The check runs at the `fast` and `ci` levels via the existing `python3 scripts/adr_guard/adr_guard.py --all --level ci` invocation in pre-commit and `.github/workflows/_quality.yml`. Closes the #560 regression gap (the `box_info` literal-flag map removed during the mission_control views package split) and blocks reintroduction.",
         "checks": [
           "no-mission-control-flag-literals"
         ]
@@ -1465,8 +1465,7 @@
       "shifter/engine/provisioner/terraform/modules/range/main.tf",
       "shifter/engine/provisioner/terraform/modules/range/variables.tf",
       "shifter/engine/provisioner/terraform_vars.py",
-      "shifter/packer/README.md",
-      "scenario-dev/polaris/tests/isolation-smoketest.sh"
+      "shifter/packer/README.md"
     ]
   },
   {
@@ -1637,7 +1636,6 @@
       "docs/architecture/gcp-range-cell-boundary-controls-preflight-1345.md",
       "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
       "docs/architecture/gcp-normal-scenario-range-cell-migration-preflight-1350.md",
-      "scripts/polaris-aws-range/ranges.tf",
       "shifter/engine/provisioner/range_terraform_runner.py",
       "shifter/engine/provisioner/gdc_range_networks.py",
       "shifter/engine/provisioner/gdc_vmruntime_assets.py"
@@ -1677,7 +1675,7 @@
       },
       {
         "id": "ADR-031-R6",
-        "description": "The #1310/#1311 hard cut makes the RAES package-source registry the only scenario catalog and launch authority. The public create_range seam always dispatches a conformance-passed, digest-bound RAES package; no catalog selector, native-provisioning flag, legacy YAML/DB authoring path, CyberScript fallback, or same-schema rollback branch exists. Provision, status, and teardown select from persisted validated RAES range state. Polaris ships as one canonical RAES environment pack and real AWS/GCP deployment validation is tracked separately as the final #1319 child because no live or development Shifter deployments existed at cutover time.",
+        "description": "The #1310/#1311 hard cut makes the RAES package-source registry the only scenario catalog and launch authority. The public create_range seam always dispatches a conformance-passed, digest-bound RAES package; no catalog selector, native-provisioning flag, legacy YAML/DB authoring path, CyberScript fallback, or same-schema rollback branch exists. Provision, status, and teardown select from persisted validated RAES range state. Private packs are installed independently through the tenant ingestion boundary; cloud qualification remains separately required.",
         "checks": []
       }
     ],
@@ -1709,7 +1707,7 @@
     "title": "How Shifter realizes RAES scenarios",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter realizes RAES by riding the RAES contract end to end, not by shadowing it. The pinned raes runtime (inside shared.raes) compiles a scenario into an RAES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the RAES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference RAES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized RAES ProvisioningPlan itself, read by a version-gated plain-data consumer whose semantics are tested against released public RAES accessors without importing the RAES module family. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. Participant-domain interactive-access intent may accompany it only as the separately validated, immutable compiled-address sidecar governed by ADR-032-R10; it never becomes provisioning-plan content or a participant-runtime capability claim. A consumer may materialize a bounded, process-local realization projection after validating the envelope, exact producer version, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute RAES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. RAES is a deliberate stack commitment: Shifter depends on the raes PyPI distribution pinned to a released version.",
+    "decision": "Shifter realizes RAES by riding the RAES contract end to end, not by shadowing it. The pinned raes runtime (inside shared.raes) compiles a scenario into an RAES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the RAES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference RAES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized RAES ProvisioningPlan itself, read by a version-gated plain-data consumer whose semantics are tested against released public RAES accessors without importing the RAES module family. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. Participant-domain interactive-access intent may accompany it only as the separately validated, immutable compiled-address sidecar governed by ADR-032-R10; it never becomes provisioning-plan content or a participant-runtime capability claim. A consumer may materialize a bounded, process-local realization projection after validating the envelope, exact producer version, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute RAES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. RAES is a deliberate stack commitment: Shifter depends on the raes PyPI distribution pinned to a released version.",
     "interface_contract": {
       "kind": "raes-plan-accessor-boundary/v1",
       "transport": {
@@ -2404,11 +2402,18 @@
       {
         "id": "ADR-041-R8",
         "description": "Tenant organization administrators may install their own immutable digest-pinned runtime plugins through the tenant UI without operator approval or per-plugin cloud grants. The independent author SDK defines the isolated runtime protocol separately from the legacy verification ABI. Plugin code must execute only in the restricted networkless worker namespace without application or cloud credentials. Installation compatibility requires current invocation-bound worker evidence; disable, retry and retirement fence stale completion. Registry credentials are encrypted at rest and never returned, audited or mounted in the worker. Core reauthorizes runtime plans against the original operation and target bindings; a plan or compatibility probe is not evidence of guest execution or range readiness. Engine and config consume only explicitly allowed organization-authority facade symbols. Contract, admission and tenant authorization tests use synthetic plugins; live qualification and full range integration remain separately required.",
-        "checks": ["layer-imports"]
+        "checks": [
+          "layer-imports"
+        ]
       },
       {
         "id": "ADR-041-R9",
         "description": "Runtime guest values MUST be closed references to an original guest binding's private address or verified participant SSH public key, resolved by core after realization and delivered only to the action as bounded JSON data. The worker cannot select arbitrary output fields, cloud coordinates, secrets or management keys. Participant key references require a declared SSH endpoint before cloud mutation and the public key from verified authored-account installation; there is no management-key fallback. The complete plan set and every realized value MUST validate before the first guest action. AWS and GCP lifecycle acceptance are independent and both required for extraction; local plan tests do not establish live parity.",
+        "checks": []
+      },
+      {
+        "id": "ADR-041-R10",
+        "description": "Core image workflows and quality jobs must not build, seed, validate, or publish private scenario images or execute private pack tests. Pack-owned content, image recipes, private scripts, and their behavioral tests live in the owning repository. Shared base-image and domain-controller build tools remain generic, require explicit domain/content inputs, and retain first-boot, reboot, credential-cleanup, encryption and protected-ref checks. Private source must be preserved with a hash inventory before removal; history rewriting is not part of extraction.",
         "checks": []
       }
     ],
@@ -2419,7 +2424,6 @@
     ],
     "evidence": [
       "docs/architecture/scenario-verification-plugin-seam-adr.md",
-      "docs/architecture/aces-polaris-scenario-smoketest-coverage-preflight-1293.md",
       "docs/technical/shifter_platform/scenario-verification.md",
       "shifter/shifter_adapter_sdk/verification",
       "docs/architecture/external-scenario-runtime-design.md",
