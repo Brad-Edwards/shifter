@@ -61,7 +61,7 @@ class ProviderPort:
     def build(self, shard, limits):
         return self
 
-    def billing_bound(self, message, *, count_only):
+    def message_billing_bound(self, message, *, count_only):
         return _bound()
 
     @asynccontextmanager

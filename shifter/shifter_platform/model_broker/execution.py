@@ -69,7 +69,7 @@ class BrokerInvocation:
 
     async def _reserve(self) -> bool:
         """Deduplicate before any potentially billable provider work starts."""
-        bounded = self.provider.billing_bound(self.request.message, count_only=self.request.count_only)
+        bounded = self.provider.message_billing_bound(self.request.message, count_only=self.request.count_only)
         reserved = await self.control.call(
             "reserve",
             {

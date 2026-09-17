@@ -449,6 +449,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Validate and install an organization-owned scenario pack. */
         post: operations["cms_organizations_packs_create"];
         delete?: never;
         options?: never;
@@ -463,6 +464,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List packs that the organization administrator can bind. */
         get: operations["cms_organizations_plugin_packs_list"];
         put?: never;
         post?: never;
@@ -479,8 +481,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Inspect verified guests and update the organization's binding. */
         get: operations["cms_organizations_plugin_packs_retrieve"];
         put?: never;
+        /** @description Inspect verified guests and update the organization's binding. */
         post: operations["cms_organizations_plugin_packs_create"];
         delete?: never;
         options?: never;
@@ -515,6 +519,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Apply authorized lifecycle actions to an organization's adapter. */
         post: operations["cms_organizations_plugins_actions_create"];
         delete?: never;
         options?: never;
@@ -5237,7 +5242,7 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description Write-only credentials for the isolated image pull. */
         RegistryCredentials: {
             username: string;
             password: string;
@@ -5284,7 +5289,7 @@ export interface components {
          * @enum {string}
          */
         ResourceStatusEnum: "pending" | "provisioning" | "ready" | "pausing" | "paused" | "resuming" | "destroying" | "destroyed" | "failed";
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description An administrator lifecycle action for an installed adapter. */
         RuntimePluginAction: {
             action: components["schemas"]["RuntimePluginActionActionEnum"];
             registry_credentials?: components["schemas"]["RegistryCredentials"];
@@ -5297,7 +5302,7 @@ export interface components {
          * @enum {string}
          */
         RuntimePluginActionActionEnum: "disable" | "enable" | "retry" | "retire";
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description Guest target mappings and bounded adapter parameters. */
         RuntimePluginBindings: {
             targets: {
                 [key: string]: string;
@@ -5306,11 +5311,12 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description A conforming adapter manifest and optional registry credentials. */
         RuntimePluginInstall: {
             manifest: unknown;
             registry_credentials?: components["schemas"]["RegistryCredentials"];
         };
+        /** @description Catalog pack identity with its current administrator binding. */
         RuntimePluginPack: {
             id: string;
             name: string;
@@ -5319,6 +5325,7 @@ export interface components {
             /** @default false */
             can_update: boolean;
         };
+        /** @description An organization's explicit pack-to-installation selection. */
         RuntimePluginPackBinding: {
             /** Format: uuid */
             id: string;
@@ -5332,6 +5339,7 @@ export interface components {
             enabled: boolean;
             installation_state: string;
         };
+        /** @description Verified pack revision and the guests available for binding. */
         RuntimePluginPackDetail: {
             id: string;
             name: string;
@@ -5341,7 +5349,7 @@ export interface components {
             can_update: boolean;
             targets: components["schemas"]["RuntimePluginTarget"][];
         };
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description An optimistic update pinned to the verified pack digest. */
         RuntimePluginPackUpdate: {
             /** Format: uuid */
             installation_id: string;
@@ -5350,15 +5358,18 @@ export interface components {
             /** @default true */
             enabled: boolean;
         };
+        /** @description A bounded installation page with an opaque continuation cursor. */
         RuntimePluginPage: {
             results: components["schemas"]["RuntimePluginView"][];
             /** Format: uuid */
             next_cursor: string | null;
         };
+        /** @description A selectable compiled guest address and operating system. */
         RuntimePluginTarget: {
             address: string;
             os_family: string;
         };
+        /** @description Installation status without stored registry credentials. */
         RuntimePluginView: {
             /** Format: uuid */
             id: string;
@@ -5558,6 +5569,7 @@ export interface components {
             /** Format: uuid */
             participant_id: string;
         };
+        /** @description The immutable registered pack identity and conformance result. */
         TenantPackInstalled: {
             scenario_id: string;
             name: string;
@@ -5569,7 +5581,7 @@ export interface components {
             conformance_status: string;
             created: boolean;
         };
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description Named pack archive with an optional expected revision digest. */
         TenantPackUpload: {
             name: string;
             /** Format: uri */

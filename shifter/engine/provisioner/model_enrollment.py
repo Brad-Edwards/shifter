@@ -25,7 +25,7 @@ from executors.factory import build_guest_execution_context
 from provisioner_db_operation_input import RaesOperationRun
 from raes_plan import RaesPlan
 
-_ORIGIN = re.compile(r"https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[1-9](?a:\d){0,4})?")
+_ORIGIN = re.compile(r"https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[1-9]\d{0,4})?", flags=re.ASCII)
 
 
 class ModelEnrollmentError(RuntimeError):
@@ -153,7 +153,7 @@ def load_model_enrollment(run: RaesOperationRun) -> EnrollmentDelivery | None:
         if provider not in {"aws", "gcp"}:
             raise ValueError
         region = os.environ.get("AWS_REGION" if provider == "aws" else "CLOUD_REGION", "")
-        if provider == "aws" and not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-(?a:\d)+", region):
+        if provider == "aws" and not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-\d+", region, flags=re.ASCII):
             raise ValueError
         delivery = EnrollmentDelivery(
             operation_id=UUID(run.operation_id),

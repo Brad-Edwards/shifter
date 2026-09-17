@@ -150,6 +150,9 @@ spec:
               value: shifter-model-control
             - name: MODEL_BROKER_TLS_CERT
               value: /etc/shifter/model-broker/tls/tls.crt
+            - name: MODEL_BROKER_BIND_ADDRESS
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
             - name: MODEL_BROKER_TLS_KEY
               value: /etc/shifter/model-broker/tls/tls.key
             - name: MODEL_BROKER_CA_FILE

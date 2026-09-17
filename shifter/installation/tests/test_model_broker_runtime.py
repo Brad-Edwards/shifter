@@ -94,6 +94,8 @@ def test_rejects_execution_config_that_cannot_enforce_catalog(active_runtime, fa
         "-----BEGIN CERTIFICATE-----" + " " * 15000,
         "-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----\ntrailing data",
         "-----BEGIN CERTIFICATE-----\n!invalid!\n-----END CERTIFICATE-----",
+        "-----BEGIN CERTIFICATE-----\n\n-----END CERTIFICATE-----",
+        "-----BEGIN OTHER-----\nYWJj\n-----END CERTIFICATE-----",
     ],
 )
 def test_guest_ca_rejects_malformed_or_non_x509_bundles(active_runtime, material):
@@ -109,3 +111,54 @@ def test_certificate_envelope_scan_accepts_multiple_public_blocks():
     # The envelope parser checks boundaries/base64; SSL separately validates X.509.
     block = "-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----"
     _validate_certificate_envelopes("\n" + block + "\n\n" + block + "\n")
+
+
+def test_unsupported_deployment_provider_cannot_activate_runtime(active_runtime):
+    settings, catalog = active_runtime
+    with pytest.raises(ValueError, match="unsupported broker provider"):
+        project(settings, catalog, provider="unknown")
+
+
+@pytest.mark.parametrize("subject", [None, "", "broker", "foreign", "valid"])
+def test_active_gcp_projection_binds_separate_platform_provisioner(active_runtime, subject):
+    from installation.gcp_model_broker import project_model_broker
+
+    settings, catalog = active_runtime
+    policy = seal_catalog(catalog)
+    output = {
+        "enabled": True,
+        "hostname": "models.example.test",
+        "vip": "10.40.0.25",
+        "admitted_subnets": ["10.50.1.0/24"],
+        "tls_secret_name": "broker-tls",
+        "control_tls_secret_name": "control-tls",
+        "trust_configmap_name": "model-ca",
+        "model_projects": {"models-example": "model-invoke"},
+        "region": "europe-west4",
+        "gsa": "model-broker@platform-example.iam.gserviceaccount.com",
+        "model_identities": {"models-example": "model-invoke@models-example.iam.gserviceaccount.com"},
+    }
+    if subject is not None:
+        output["provisioner_subject"] = {
+            "": "",
+            "broker": output["gsa"],
+            "foreign": "provisioner@foreign-example.iam.gserviceaccount.com",
+            "valid": "provisioner@platform-example.iam.gserviceaccount.com",
+        }[subject]
+    args = {
+        "catalog_json": policy.model_dump_json(),
+        "model_access_env": (
+            "MODEL_ACCESS_ENABLED=true\n"
+            "MODEL_ACCESS_CATALOG_PATH=/etc/shifter/model-access/catalog.json\n"
+            f"MODEL_ACCESS_CATALOG_DIGEST={policy.digest}\n"
+        ),
+        "runtime_settings": settings,
+    }
+    if subject == "valid":
+        projected = project_model_broker(output, **args)
+        assert projected["provisioner_subject"] == output["provisioner_subject"]
+        assert json.loads(projected["providers_json"]) == settings["provider_inventory"]
+        assert projected["enrollment_env"] == {}
+    else:
+        with pytest.raises(ValueError, match="distinct applied provisioner identity"):
+            project_model_broker(output, **args)

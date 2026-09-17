@@ -58,6 +58,9 @@ spec:
             {{- end }}
             - name: MODEL_CONTROL_TLS_CERT
               value: /etc/shifter/model-control/tls/tls.crt
+            - name: MODEL_CONTROL_BIND_ADDRESS
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
             - name: MODEL_CONTROL_TLS_KEY
               value: /etc/shifter/model-control/tls/tls.key
             - name: MODEL_CONTROL_BROKER_SUBJECT

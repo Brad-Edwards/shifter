@@ -82,14 +82,9 @@ function InstalledPlugins({ organization }: Readonly<{ organization: string }>) 
         id: action.adapter.id, action: action.kind,
         ...(username && password ? { registry_credentials: { username, password } } : {}),
       }, { onSuccess: () => { setAction(null); setUsername(""); setPassword(""); } }); }}
-      content={action?.kind === "retry" ? <div className="mt-3 space-y-2">
-        <p>Leave these fields empty to keep the existing registry sign-in.</p>
-        <Label htmlFor="retry-username">Registry username</Label>
-        <Input id="retry-username" value={username} disabled={update.isPending} onChange={(event) => setUsername(event.target.value)} autoComplete="off" />
-        <Label htmlFor="retry-password">Registry password or access token</Label>
-        <Input id="retry-password" type="password" value={password} disabled={update.isPending} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
-        {Boolean(username) === Boolean(password) ? null : <p>Enter both fields to change registry sign-in.</p>}
-      </div> : null}>
+      content={action?.kind === "retry" ? <RegistryRetryFields
+        username={username} password={password} pending={update.isPending}
+        onUsername={setUsername} onPassword={setPassword} /> : null}>
       {action?.kind === "enable" || action?.kind === "retry"
         ? "Shifter will run compatibility checks before enabling this version."
         : "New range launches cannot use this version. Existing range and cleanup references are retained."}
@@ -125,4 +120,18 @@ function AdapterVersions({ adapters, pending, choose }: Readonly<{
           </TableRow>;
         })}</TableBody>
       </Table>);
+}
+
+function RegistryRetryFields({ username, password, pending, onUsername, onPassword }: Readonly<{
+  username: string; password: string; pending: boolean;
+  onUsername: (value: string) => void; onPassword: (value: string) => void;
+}>) {
+  return (<div className="mt-3 space-y-2">
+        <p>Leave these fields empty to keep the existing registry sign-in.</p>
+        <Label htmlFor="retry-username">Registry username</Label>
+        <Input id="retry-username" value={username} disabled={pending} onChange={(event) => onUsername(event.target.value)} autoComplete="off" />
+        <Label htmlFor="retry-password">Registry password or access token</Label>
+        <Input id="retry-password" type="password" value={password} disabled={pending} onChange={(event) => onPassword(event.target.value)} autoComplete="new-password" />
+        {Boolean(username) === Boolean(password) ? null : <p>Enter both fields to change registry sign-in.</p>}
+      </div>);
 }

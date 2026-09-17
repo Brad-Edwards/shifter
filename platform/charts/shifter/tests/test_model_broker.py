@@ -92,7 +92,11 @@ def test_aws_broker_uses_only_private_endpoints_and_exact_irsa(tmp_path):
     docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
     by_name = {(doc["kind"], doc["metadata"]["name"]): doc for doc in docs}
     pod = by_name["Deployment", "model-broker"]["spec"]["template"]
-    env = {item["name"]: item["value"] for item in pod["spec"]["containers"][0]["env"]}
+    env = {
+        item["name"]: item["value"]
+        for item in pod["spec"]["containers"][0]["env"]
+        if "value" in item
+    }
     assert env["MODEL_BROKER_PROVIDER"] == "aws"
     assert env["AWS_EC2_METADATA_DISABLED"] == "true"
     assert env["AWS_STS_REGIONAL_ENDPOINTS"] == "regional"
@@ -111,7 +115,9 @@ def test_aws_broker_uses_only_private_endpoints_and_exact_irsa(tmp_path):
     control = by_name["Deployment", "model-access-control"]["spec"]["template"]["spec"][
         "containers"
     ][0]
-    control_env = {item["name"]: item["value"] for item in control["env"]}
+    control_env = {
+        item["name"]: item["value"] for item in control["env"] if "value" in item
+    }
     assert control_env["MODEL_CONTROL_REGION"] == "us-east-2"
     assert control_env["MODEL_CONTROL_PROVIDER"] == "aws"
     assert control_env["MODEL_CONTROL_BROKER_SUBJECT"] == env.get(
@@ -348,3 +354,24 @@ def test_control_environment_rejects_unbound_catalog(tmp_path, mutation, error_d
     assert result.returncode != 0
     for detail in error_details:
         assert detail in result.stderr
+
+
+@pytest.mark.parametrize("provider", ["gcp", "aws"])
+def test_model_listeners_bind_downward_api_private_pod_address(tmp_path, provider):
+    result = render(tmp_path, aws_values() if provider == "aws" else enabled_values())
+    assert result.returncode == 0, result.stderr
+    deployments = {
+        doc["metadata"]["name"]: doc
+        for doc in yaml.safe_load_all(result.stdout)
+        if doc and doc["kind"] == "Deployment"
+    }
+    for name, variable in [
+        ("model-broker", "MODEL_BROKER_BIND_ADDRESS"),
+        ("model-access-control", "MODEL_CONTROL_BIND_ADDRESS"),
+    ]:
+        container = deployments[name]["spec"]["template"]["spec"]["containers"][0]
+        binding = next(item for item in container["env"] if item["name"] == variable)
+        assert binding == {
+            "name": variable,
+            "valueFrom": {"fieldRef": {"fieldPath": "status.podIP"}},
+        }

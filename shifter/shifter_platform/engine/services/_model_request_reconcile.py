@@ -34,7 +34,7 @@ from ._model_request_lifecycle import (
 )
 
 if TYPE_CHECKING:
-    from engine.models import ModelDispatchLease, ModelRequestReservation
+    from engine.models import ModelRequestReservation
 
 
 def close_expired_revocations(*, now: datetime | None = None, limit: int = 100) -> int:
@@ -119,29 +119,24 @@ def reconcile_expired_dispatches(*, now: datetime | None = None, limit: int = 10
     return swept
 
 
-def _expired_dispatch_lease(reservation: ModelRequestReservation, moment: datetime) -> ModelDispatchLease | None:
-    """Lock an expired dispatched lease, retaining live or already settled requests."""
-    from engine.models import ModelDispatchLease
-
-    if reservation.state != "dispatched" or reservation.settlement_state != "open":
-        return None
-    lease = ModelDispatchLease.objects.select_for_update().filter(reservation=reservation).first()
-    if lease is None or (lease.continuation_deadline or lease.dispatch_deadline) > moment:
-        return None
-    return lease
-
-
 def _reconcile_expired_reservation(reservation: ModelRequestReservation, moment: datetime) -> bool:
     """Release stale undispatched work or retain uncertain dispatched work for charging."""
-    from engine.models import ModelReconciliationObligation
-
     if reservation.state == "reserved":
         expired = reservation.created_at + timedelta(seconds=120) <= moment
         if expired:
             release_before_dispatch(request_uuid=reservation.request_uuid)
         return expired
-    lease = _expired_dispatch_lease(reservation, moment)
-    if lease is None:
+    return _reconcile_expired_dispatch(reservation, moment)
+
+
+def _reconcile_expired_dispatch(reservation: ModelRequestReservation, moment: datetime) -> bool:
+    """Lock an expired dispatched lease and preserve its uncertain liability."""
+    from engine.models import ModelDispatchLease, ModelReconciliationObligation
+
+    if reservation.state != "dispatched" or reservation.settlement_state != "open":
+        return False
+    lease = ModelDispatchLease.objects.select_for_update().filter(reservation=reservation).first()
+    if lease is None or (lease.continuation_deadline or lease.dispatch_deadline) > moment:
         return False
     reservation.state = "unknown"
     reservation.uncertainty_reason = "dispatch_lease_expired"

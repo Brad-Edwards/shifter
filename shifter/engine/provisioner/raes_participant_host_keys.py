@@ -18,6 +18,15 @@ def _key(output: str) -> str:
     """Validate observed SSH keys and select the strongest supported algorithm."""
     if not isinstance(output, str) or not 1 <= len(output.encode()) <= 8192:
         raise ValueError("Participant SSH host identity is unavailable")
+    keys = _parse_host_keys(output)
+    for algorithm in _ALGORITHMS:
+        if algorithm in keys:
+            return keys[algorithm]
+    raise ValueError("Participant SSH host identity is unavailable")
+
+
+def _parse_host_keys(output: str) -> dict[str, str]:
+    """Reject malformed or conflicting observations before choosing a host key."""
     keys: dict[str, str] = {}
     for line in output.splitlines():
         if not line or line.startswith("#"):
@@ -31,10 +40,7 @@ def _key(output: str) -> str:
         if algorithm in keys and keys[algorithm] != value:
             raise ValueError("Participant SSH host identity is ambiguous")
         keys[algorithm] = value
-    for algorithm in _ALGORITHMS:
-        if algorithm in keys:
-            return keys[algorithm]
-    raise ValueError("Participant SSH host identity is unavailable")
+    return keys
 
 
 def observe_participant_host_keys(

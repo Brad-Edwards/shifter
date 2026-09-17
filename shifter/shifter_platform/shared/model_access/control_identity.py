@@ -76,7 +76,6 @@ def _validated_aws_headers(
     value = strict_json(base64.b64decode(assertion[8:], altchars=b"-_", validate=True), limit=8192)
     headers = value["headers"]
     _validate_assertion_shape(value, headers)
-    origin = _sts_origin(region)
     if headers.get("host") != origin.removeprefix("https://") or headers.get(_AUDIENCE_HEADER) != audience:
         raise ValueError
     if headers.get("content-type") != "application/x-www-form-urlencoded":
@@ -135,7 +134,7 @@ def verify_aws_control_assertion(
         root = ElementTree.fromstring(raw)
         arn = root.findtext(".//{https://sts.amazonaws.com/doc/2011-06-15/}Arn", default="")
         role = re.fullmatch(
-            r"arn:aws:iam::((?a:\d){12}):role/(?:[A-Za-z0-9+=,.@_-]+/)*([A-Za-z0-9+=,.@_-]+)", expected_role
+            r"arn:aws:iam::(\d{12}):role/(?:[A-Za-z0-9+=,.@_-]+/)*([A-Za-z0-9+=,.@_-]+)", expected_role, flags=re.ASCII
         )
         if role is None or not re.fullmatch(
             rf"arn:aws:sts::{role.group(1)}:assumed-role/{re.escape(role.group(2))}/[A-Za-z0-9+=,.@_-]+", arn

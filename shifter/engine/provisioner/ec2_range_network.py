@@ -48,7 +48,7 @@ class Ec2NetworkConfig:
     def __post_init__(self) -> None:
         if (
             not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", self.environment)
-            or not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-(?a:\d)+", self.region)
+            or not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-\d+", self.region, flags=re.ASCII)
             or not re.fullmatch(re.escape(self.region) + r"[a-z]", self.zone)
             or not re.fullmatch(r"vpc-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.vpc_id)
             or not re.fullmatch(r"rtb-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.base_route_table_id)

@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 
 
 InvocationName = Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,23}$")]
-RegionalModel = Annotated[str, Field(pattern=re.compile(r"^anthropic\.[a-z0-9-]+-v(?a:\d)+:(?a:\d)+$"), max_length=128)]
-ROLE_PATTERN = r"arn:aws:iam::(?a:\d){12}:role/[A-Za-z0-9/+=,.@_-]+"
+RegionalModel = Annotated[str, Field(pattern=r"^anthropic\.[a-z0-9-]+-v[0-9]+:[0-9]+$", max_length=128)]
+ROLE_PATTERN = r"arn:aws:iam::\d{12}:role/[A-Za-z0-9/+=,.@_-]+"
 
 
 class AwsModelBrokerSettings(BaseModel):
@@ -177,7 +177,10 @@ def _validate_output_settings(output: dict[str, Any], settings: AwsModelBrokerSe
 def _validate_identities(output: dict[str, Any], settings: AwsModelBrokerSettings, account_id: str) -> dict[str, str]:
     """Bind separate broker, provisioner and invocation roles to this account."""
     for key in ("role_arn", "provisioner_subject"):
-        if not re.fullmatch(ROLE_PATTERN, output.get(key, "")) or output[key].split(":")[4] != account_id:
+        if (
+            not re.fullmatch(ROLE_PATTERN, output.get(key, ""), flags=re.ASCII)
+            or output[key].split(":")[4] != account_id
+        ):
             raise ValueError("broker requires exact platform-account workload roles")
     if output["role_arn"] == output["provisioner_subject"]:
         raise ValueError("broker and provisioner roles must differ")
@@ -192,7 +195,7 @@ def _validate_invocation_roles(roles: dict[str, str], output: dict[str, Any], ac
     """Keep invocation identities distinct from one another and the platform roles."""
     if len(set(roles.values())) != len(roles) or any(
         not isinstance(role, str)
-        or not re.fullmatch(ROLE_PATTERN, role)
+        or not re.fullmatch(ROLE_PATTERN, role, flags=re.ASCII)
         or role.split(":")[4] != account_id
         or role in {output["role_arn"], output["provisioner_subject"]}
         for role in roles.values()

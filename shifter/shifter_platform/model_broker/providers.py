@@ -134,32 +134,27 @@ class MessagesProvider(ModelProviderAdapter):
 
         return CancellationResult(disposition=CancellationDisposition.UNSUPPORTED)
 
-    def billing_bound(
-        self,
-        message: CountTokensRequest | None = None,
-        *,
-        count_only: bool = False,
-        model: str | None = None,
-        features: tuple[str, ...] = (),
-        request_bytes: int = 0,
-    ) -> BillingBound:
-        if model is not None and (model != self.target.model or set(features) - {"messages", "token-count"}):
+    def billing_bound(self, *, model: str, features: tuple[str, ...], request_bytes: int) -> BillingBound:
+        """Implement the provider contract using the deployment's conservative limits."""
+        if model != self.target.model or set(features) - {"messages", "token-count"}:
             raise ContractError("provider.capability_mismatch")
         if request_bytes > self.limits.max_request_bytes:
             raise ContractError("messages.too_large")
-        count_only = count_only or features == ("token-count",)
+        return self._billing_bound(count_only=features == ("token-count",), output_limit=self.limits.max_output_tokens)
 
-        # Count endpoints are free but still consume rate/concurrency. The
-        # catalog carries a zero-price `request` component for this operation.
+    def message_billing_bound(self, message: CountTokensRequest, *, count_only: bool) -> BillingBound:
+        """Use the validated message's output limit for its pre-dispatch reservation."""
+        output_limit = message.max_tokens if isinstance(message, MessagesRequest) else self.limits.max_output_tokens
+        return self._billing_bound(count_only=count_only, output_limit=output_limit)
+
+    def _billing_bound(self, *, count_only: bool, output_limit: int) -> BillingBound:
+        """Count endpoints are free but still consume rate and concurrency capacity."""
         amounts = (
             [(BillingComponent.REQUEST, 1)]
             if count_only
             else [
                 (BillingComponent.INPUT_TOKENS, self.target.context_window_tokens),
-                (
-                    BillingComponent.OUTPUT_TOKENS,
-                    message.max_tokens if isinstance(message, MessagesRequest) else self.limits.max_output_tokens,
-                ),
+                (BillingComponent.OUTPUT_TOKENS, output_limit),
             ]
         )
         return BillingBound(
@@ -220,10 +215,10 @@ class MessagesProvider(ModelProviderAdapter):
             raise ContractError("provider.invalid_count")
         return tokens
 
-    @asynccontextmanager
-    async def invoke(
+    async def _validated_count(
         self, message: CountTokensRequest, *, count_only: bool, before_transport: Callable[[], Awaitable[str]]
-    ) -> AsyncIterator[ProviderResponse]:
+    ) -> int:
+        """Check the free count and context bounds before attempting billable work."""
         # The count is covered by the request's existing reservation and lease.
         # It cannot mint a second grant or bypass rate/concurrency admission.
         try:
@@ -238,6 +233,13 @@ class MessagesProvider(ModelProviderAdapter):
                 raise NoBillableEffect("messages.unsupported_request", count_only=False)
             if tokens + message.max_tokens > self.target.context_window_tokens:
                 raise NoBillableEffect("messages.context_limit", count_only=False)
+        return tokens
+
+    @asynccontextmanager
+    async def invoke(
+        self, message: CountTokensRequest, *, count_only: bool, before_transport: Callable[[], Awaitable[str]]
+    ) -> AsyncIterator[ProviderResponse]:
+        tokens = await self._validated_count(message, count_only=count_only, before_transport=before_transport)
         if count_only:
 
             async def counted() -> AsyncIterator[bytes]:

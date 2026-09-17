@@ -1625,6 +1625,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/packs/": {
       "post": {
         "operationId": "cms_organizations_packs_create",
+        "description": "Validate and install an organization-owned scenario pack.",
         "parameters": [
           {
             "in": "path",
@@ -1694,6 +1695,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/": {
       "get": {
         "operationId": "cms_organizations_plugin_packs_list",
+        "description": "List packs that the organization administrator can bind.",
         "parameters": [
           {
             "in": "path",
@@ -1762,6 +1764,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/{pack_id}/": {
       "get": {
         "operationId": "cms_organizations_plugin_packs_retrieve",
+        "description": "Inspect verified guests and update the organization's binding.",
         "parameters": [
           {
             "in": "path",
@@ -1827,6 +1830,7 @@
       },
       "post": {
         "operationId": "cms_organizations_plugin_packs_create",
+        "description": "Inspect verified guests and update the organization's binding.",
         "parameters": [
           {
             "in": "path",
@@ -2060,6 +2064,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/plugins/{plugin_id}/actions/": {
       "post": {
         "operationId": "cms_organizations_plugins_actions_create",
+        "description": "Apply authorized lifecycle actions to an organization's adapter.",
         "parameters": [
           {
             "in": "path",
@@ -20591,7 +20596,7 @@
       },
       "RegistryCredentials": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "Write-only credentials for the isolated image pull.",
         "properties": {
           "username": {
             "type": "string",
@@ -20707,7 +20712,7 @@
       },
       "RuntimePluginAction": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "An administrator lifecycle action for an installed adapter.",
         "properties": {
           "action": {
             "$ref": "#/components/schemas/RuntimePluginActionActionEnum"
@@ -20737,7 +20742,7 @@
       },
       "RuntimePluginBindings": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "Guest target mappings and bounded adapter parameters.",
         "properties": {
           "targets": {
             "type": "object",
@@ -20760,7 +20765,7 @@
       },
       "RuntimePluginInstall": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "A conforming adapter manifest and optional registry credentials.",
         "properties": {
           "manifest": {},
           "registry_credentials": {
@@ -20778,6 +20783,7 @@
       },
       "RuntimePluginPack": {
         "type": "object",
+        "description": "Catalog pack identity with its current administrator binding.",
         "properties": {
           "id": {
             "type": "string"
@@ -20810,6 +20816,7 @@
       },
       "RuntimePluginPackBinding": {
         "type": "object",
+        "description": "An organization's explicit pack-to-installation selection.",
         "properties": {
           "id": {
             "type": "string",
@@ -20852,6 +20859,7 @@
       },
       "RuntimePluginPackDetail": {
         "type": "object",
+        "description": "Verified pack revision and the guests available for binding.",
         "properties": {
           "id": {
             "type": "string"
@@ -20891,7 +20899,7 @@
       },
       "RuntimePluginPackUpdate": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "An optimistic update pinned to the verified pack digest.",
         "properties": {
           "installation_id": {
             "type": "string",
@@ -20917,6 +20925,7 @@
       },
       "RuntimePluginPage": {
         "type": "object",
+        "description": "A bounded installation page with an opaque continuation cursor.",
         "properties": {
           "results": {
             "type": "array",
@@ -20937,6 +20946,7 @@
       },
       "RuntimePluginTarget": {
         "type": "object",
+        "description": "A selectable compiled guest address and operating system.",
         "properties": {
           "address": {
             "type": "string"
@@ -20952,6 +20962,7 @@
       },
       "RuntimePluginView": {
         "type": "object",
+        "description": "Installation status without stored registry credentials.",
         "properties": {
           "id": {
             "type": "string",
@@ -21531,6 +21542,7 @@
       },
       "TenantPackInstalled": {
         "type": "object",
+        "description": "The immutable registered pack identity and conformance result.",
         "properties": {
           "scenario_id": {
             "type": "string"
@@ -21574,7 +21586,7 @@
       },
       "TenantPackUpload": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "Named pack archive with an optional expected revision digest.",
         "properties": {
           "name": {
             "type": "string",

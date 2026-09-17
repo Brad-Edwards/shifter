@@ -33,7 +33,7 @@ class Ec2CleanupScope:
     def __post_init__(self) -> None:
         if (
             not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", self.environment)
-            or not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-(?a:\d)+", self.region)
+            or not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-\d+", self.region, flags=re.ASCII)
             or not re.fullmatch(r"vpc-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.vpc_id)
             or not isinstance(self.request_id, UUID)
             or not isinstance(self.generation, UUID)
@@ -88,7 +88,7 @@ def _inventory_rows(category: str, rows: object) -> list[dict[str, Any]]:
     if category == "instances":
         rows = [row for reservation in rows for row in reservation.get("Instances", [])]
         rows = [row for row in rows if row.get("State", {}).get("Name") != "terminated"]
-    if not isinstance(rows, list) or len(rows) > 1000:
+    if len(rows) > 1000:
         raise Ec2CleanupError("EC2 cleanup inventory is malformed")
     return rows
 

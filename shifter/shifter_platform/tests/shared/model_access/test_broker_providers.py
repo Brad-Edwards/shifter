@@ -83,8 +83,15 @@ async def test_fixed_provider_origins_count_before_invoke_and_normalize_usage(pr
         adapter = MessagesProvider(
             target=target(provider), limits=_limits(), credentials=CredentialsPort(), client=client
         )
-        bound = adapter.billing_bound(message(), count_only=False)
+        bound = adapter.message_billing_bound(message(), count_only=False)
         assert bound.amounts[0].units == 200_000  # full model context; no character-count estimate
+        contract_bound = adapter.billing_bound(model=target(provider).model, features=("messages",), request_bytes=20)
+        assert contract_bound.amounts[0].units == bound.amounts[0].units
+        assert contract_bound.amounts[1].units == _limits().max_output_tokens
+        free_count = adapter.billing_bound(model=target(provider).model, features=("token-count",), request_bytes=20)
+        assert [(amount.component, amount.units) for amount in free_count.amounts] == [("request", 1)]
+        with pytest.raises(ContractError, match=r"provider\.capability_mismatch"):
+            adapter.billing_bound(model="unapproved-model", features=("messages",), request_bytes=20)
         async with adapter.invoke(message(), count_only=False, before_transport=lease) as result:
             raw = b"".join([chunk async for chunk in result.chunks])
         assert json.loads(raw)["content"][0]["text"] == "answer"

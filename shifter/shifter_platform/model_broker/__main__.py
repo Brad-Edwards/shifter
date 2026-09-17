@@ -10,6 +10,7 @@ from model_broker.provider_credentials import ProviderCredentials
 from model_broker.providers import ProviderRegistry
 from model_broker.server import BrokerApplication
 from shared.model_access.messages import strict_json
+from shared.model_access.network import private_listener_address
 from shared.model_access.provider_runtime import ProviderInventory
 from shared.model_access.runtime import load_mounted_catalog
 
@@ -66,8 +67,8 @@ def main() -> None:
     app = application_from_environment()
     uvicorn.run(
         app,
-        # Private service binding: TLS, workload authentication and default-deny NetworkPolicy apply.
-        host="0.0.0.0",  # noqa: S104 # nosec B104 # NOSONAR(S8392)
+        # Bind the private pod interface; TLS and NetworkPolicy remain mandatory.
+        host=private_listener_address(os.environ["MODEL_BROKER_BIND_ADDRESS"]),
         port=8443,
         ssl_certfile=os.environ["MODEL_BROKER_TLS_CERT"],
         ssl_keyfile=os.environ["MODEL_BROKER_TLS_KEY"],

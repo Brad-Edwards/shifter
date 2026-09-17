@@ -45,7 +45,9 @@ class Ec2GuestSecrets:
     def __init__(self, client: BaseClient, *, environment: str, kms_key: str) -> None:
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", environment):
             raise Ec2SecretError("EC2 credential deployment namespace is invalid")
-        if not re.fullmatch(r"arn:aws(?:-us-gov|-cn)?:kms:[a-z0-9-]+:(?a:\d){12}:key/[A-Za-z0-9-]+", kms_key):
+        if not re.fullmatch(
+            r"arn:aws(?:-us-gov|-cn)?:kms:[a-z0-9-]+:\d{12}:key/[A-Za-z0-9-]+", kms_key, flags=re.ASCII
+        ):
             raise Ec2SecretError("EC2 credentials require an exact deployment KMS key")
         self.client = client
         self.environment = environment
@@ -75,10 +77,11 @@ class Ec2GuestSecrets:
             or any(tags.get(key) != value for key, value in self._tags(range_id).items())
             or not isinstance(arn, str)
             or not re.fullmatch(
-                r"arn:aws(?:-us-gov|-cn)?:secretsmanager:[a-z0-9-]+:(?a:\d){12}:secret:"
+                r"arn:aws(?:-us-gov|-cn)?:secretsmanager:[a-z0-9-]+:\d{12}:secret:"
                 + re.escape(name)
                 + r"-[A-Za-z0-9]{6}",
                 arn,
+                flags=re.ASCII,
             )
         ):
             raise Ec2SecretError("EC2 credential ownership is unavailable")
@@ -164,7 +167,7 @@ class Ec2GuestSecrets:
 
     def delete_account(self, range_id: int, instance_key: str, username: str, auth_method: str) -> None:
         # Stable secret-category identifiers; neither value is a credential.
-        kind = {"password": "account-password", "key": "account-key"}.get(auth_method)
+        kind = {"password": "account-password", "key": "account-key"}.get(auth_method)  # nosec B105
         if kind is None:
             raise Ec2SecretError("EC2 account authentication method is invalid")
         self.delete(range_id, kind, (instance_key, username))

@@ -21,6 +21,7 @@ def main() -> None:
     from engine.model_access_control.server import ControlApplication
     from shared.model_access import ContractError
     from shared.model_access.control_identity import verify_aws_control_assertion, verify_google_control_assertion
+    from shared.model_access.network import private_listener_address
 
     if not settings.MODEL_ACCESS_ENABLED or settings.MODEL_ACCESS_CATALOG is None:
         raise RuntimeError("model control requires enabled model access")
@@ -74,8 +75,8 @@ def main() -> None:
     try:
         uvicorn.run(
             ControlApplication(verify_identity=verify, ready=ready),
-            # Private service binding; TLS, workload authentication and default-deny NetworkPolicy apply.
-            host="0.0.0.0",  # noqa: S104 # nosec B104 # NOSONAR(S8392)
+            # Bind the private pod interface; TLS and NetworkPolicy remain mandatory.
+            host=private_listener_address(os.environ["MODEL_CONTROL_BIND_ADDRESS"]),
             port=8444,
             ssl_certfile=os.environ["MODEL_CONTROL_TLS_CERT"],
             ssl_keyfile=os.environ["MODEL_CONTROL_TLS_KEY"],

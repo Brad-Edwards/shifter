@@ -8,7 +8,11 @@ from types import SimpleNamespace
 import pytest
 from shared.model_access import seal_catalog
 
-from installation.aws_model_broker import AwsModelBrokerSettings, project_aws_model_broker
+from installation.aws_model_broker import (
+    AwsModelBrokerSettings,
+    project_aws_model_broker,
+    validate_aws_broker_intent,
+)
 
 
 @pytest.fixture
@@ -174,3 +178,49 @@ def test_guest_listener_readback_requires_exact_private_addresses(deployment, ad
     output["guest_endpoint_cidrs"] = addresses
     with pytest.raises(ValueError):
         project_aws_model_broker(output, **args)
+
+
+@pytest.mark.parametrize("fault", [None, "model", "region"])
+def test_broker_intent_binds_runtime_before_cloud_mutation(deployment, fault):
+    _, args = deployment
+    config = args["config"]
+    config.settings["model_access"] = {"enabled": True, "catalog": json.loads(args["catalog_json"])}
+    if fault == "model":
+        config.settings["model_broker"]["invocation_models"]["primary"] = "anthropic.other-model-v1:0"
+    elif fault == "region":
+        config.settings["region"] = "us-west-2"
+    if fault is None:
+        intent = validate_aws_broker_intent(config)
+        assert intent.enabled
+        assert intent.invocation_models == config.settings["model_broker"]["invocation_models"]
+    else:
+        with pytest.raises(ValueError, match="configured regional models"):
+            validate_aws_broker_intent(config)
+
+
+def test_disabled_broker_intent_and_readback_need_no_runtime():
+    config = SimpleNamespace(settings={})
+    assert not validate_aws_broker_intent(config).enabled
+    assert project_aws_model_broker(
+        {"enabled": False}, config=config, catalog_json="", model_access_env="", account_id="123456789012"
+    ) == {"enabled": False}
+
+
+def test_transport_can_be_prepared_before_accounting_activation(deployment):
+    _, args = deployment
+    config = args["config"]
+    config.settings["model_access"] = {"enabled": False, "catalog": json.loads(args["catalog_json"])}
+    config.settings.pop("model_broker_runtime")
+    assert validate_aws_broker_intent(config).enabled
+
+
+@pytest.mark.parametrize("fault", ["disabled_authority", "shared_tls"])
+def test_broker_transport_rejects_retained_or_shared_authority(deployment, fault):
+    _, args = deployment
+    intent = args["config"].settings["model_broker"]
+    if fault == "disabled_authority":
+        intent["enabled"] = False
+    else:
+        intent["control_tls_secret_name"] = intent["tls_secret_name"]
+    with pytest.raises(ValueError, match=r"disabled broker|distinct TLS"):
+        AwsModelBrokerSettings.model_validate(intent)

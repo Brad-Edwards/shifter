@@ -40,7 +40,7 @@ class ProviderTarget(ClosedModel):
         elif (
             self.project
             or self.count_region
-            or not re.fullmatch(r"arn:aws:iam::(?a:\d){12}:role/[a-zA-Z0-9/+=,.@_-]+", self.principal)
+            or not re.fullmatch(r"arn:aws:iam::\d{12}:role/[a-zA-Z0-9/+=,.@_-]+", self.principal, flags=re.ASCII)
         ):
             raise ValueError("Bedrock requires an approved invocation role")
         return self

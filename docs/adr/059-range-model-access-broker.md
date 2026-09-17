@@ -46,7 +46,11 @@ some configured IDs coincide. The model broker does not replace #1586's
 dedicated dynamic-secret project design.
 
 The broker has a dedicated private TLS listener reachable through an exact
-range egress capability. It has no public portal routes or generic forward
+range egress capability. Broker and control listeners bind the explicit private
+pod IPv4 address injected by the Kubernetes Downward API, rejecting missing,
+wildcard, public, loopback and link-local addresses. TLS, workload authentication
+and default-deny NetworkPolicies still enforce the service boundary.
+It has no public portal routes or generic forward
 proxy. Its control API uses authenticated workload identity and narrow
 Engine service operations. Provider destinations, methods, model IDs,
 protocol versions, and approved billing features come from validated

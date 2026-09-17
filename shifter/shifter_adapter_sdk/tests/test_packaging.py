@@ -93,8 +93,28 @@ def test_installed_sdk_and_external_adapter_need_no_application(tmp_path):
     """)
     _run([str(python), "-I", "-c", script], tmp_path)
     # The runtime extra is installed into the same application-free environment.
-    # Dependencies are already cached by the locked SDK test environment setup.
-    _run([uv, "pip", "install", "--offline", "--python", str(python), f"{wheel}[runtime]"], tmp_path)
+    # Locked setup caches artifacts, but need not cache package-index metadata.
+    # Use the lock's exact artifact URLs and hashes for offline installation.
+    runtime_lock = tmp_path / "pylock.toml"
+    _run(
+        [
+            uv,
+            "export",
+            "--frozen",
+            "--offline",
+            "--no-dev",
+            "--extra",
+            "runtime",
+            "--no-emit-project",
+            "--format",
+            "pylock.toml",
+            "--output-file",
+            str(runtime_lock),
+        ],
+        source,
+    )
+    _run([uv, "pip", "install", "--offline", "--python", str(python), "-r", str(runtime_lock)], tmp_path)
+    _run([uv, "pip", "check", "--python", str(python)], tmp_path)
     runtime_script = textwrap.dedent("""\
         import importlib.util
         import subprocess

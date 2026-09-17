@@ -25,6 +25,8 @@ from shared.model_access.messages import JsonObject, strict_json
 
 from .schemas import AdvanceRequest, EnrollmentRequest, FinishRequest, ReservationRequest, TokenRequest
 
+_INVALID_ROUTE = "control.invalid_route"
+
 
 class IdentityVerifier(Protocol):
     """Verify broker identity or the provisioner audience for one enrollment."""
@@ -57,7 +59,7 @@ class ControlApplication:
         """Serve private health probes or pass a query-free control request onward."""
         path = scope.get("path", "")
         if scope.get("query_string"):
-            raise ContractError("control.invalid_route")
+            raise ContractError(_INVALID_ROUTE)
         if scope["method"] == "GET" and path in {"/health/live", "/health/ready"}:
             healthy = path.endswith("live") or await sync_to_async(self.ready)()
             await json_response(send, 200 if healthy else 503, {"ready": healthy})
@@ -69,7 +71,7 @@ class ControlApplication:
         path = scope.get("path", "")
         route = path.removeprefix("/control/v1/")
         if scope["method"] != "POST" or route not in _HANDLERS or path != f"/control/v1/{route}":
-            raise ContractError("control.invalid_route")
+            raise ContractError(_INVALID_ROUTE)
         request_headers = headers(scope)
         if request_headers.get("content-type", "").split(";")[0] != "application/json":
             raise ContractError("control.invalid_content_type")
@@ -87,7 +89,7 @@ class ControlApplication:
     def _dispatch(route: str, payload: JsonObject) -> JsonObject:
         handler = _HANDLERS.get(route)
         if handler is None:
-            raise ContractError("control.invalid_route")
+            raise ContractError(_INVALID_ROUTE)
         return handler(payload)
 
 

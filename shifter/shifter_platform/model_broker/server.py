@@ -15,6 +15,8 @@ from .control import ControlClient
 from .execution import BrokerInvocation, BrokerRequest
 from .providers import ProviderRegistry
 
+_CREDENTIAL_UNAVAILABLE = "credential.unavailable"
+
 
 class BrokerApplication:
     """No generic proxy, credential issuance or public control surface."""
@@ -61,7 +63,7 @@ class BrokerApplication:
             else:
                 await self._post(scope, receive, send)
         except ContractError as exc:
-            status = 401 if exc.code == "credential.unavailable" else 409
+            status = 401 if exc.code == _CREDENTIAL_UNAVAILABLE else 409
             await _error(send, status, "invalid_request_error", exc.code)
         except (ValueError, TimeoutError):
             await _error(send, 400, "invalid_request_error", "broker.invalid_request")
@@ -131,16 +133,16 @@ class BrokerApplication:
         api_key = request_headers.get("x-api-key", "")
         authorization = request_headers.get("authorization", "")
         if api_key and authorization:
-            raise ContractError("credential.unavailable")
+            raise ContractError(_CREDENTIAL_UNAVAILABLE)
         token = api_key or (authorization[7:] if authorization.startswith("Bearer ") else "")
         if len(token) != 80:
-            raise ContractError("credential.unavailable")
+            raise ContractError(_CREDENTIAL_UNAVAILABLE)
         return token
 
     async def _exchange(self, path: str, peer: str, raw: bytes, send: Send) -> None:
         payload = strict_json(raw, limit=4096)
         if set(payload) != {"token"} or not isinstance(payload["token"], str) or len(payload["token"]) != 80:
-            raise ContractError("credential.unavailable")
+            raise ContractError(_CREDENTIAL_UNAVAILABLE)
         result = await self.control.call(path.rsplit("/", 1)[1], {"token": payload["token"], "transport_peer": peer})
         await json_response(send, 200, result)
 
