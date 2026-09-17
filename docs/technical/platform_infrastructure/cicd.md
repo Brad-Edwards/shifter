@@ -78,7 +78,9 @@ no longer trigger deploys; `dev`/`main` are Quality-only integration branches (#
 The selected deployment Environment and the purpose-scoped
 `gcp-release-scan-<deployment suffix>` Environment provide their own exact WIF
 identity variables; the reusable workflow does not reuse the deploy identity for
-release scanning.
+release scanning. Its prepare preflight is scoped to deploy credentials, while
+the isolated scanner performs its own fail-closed identity check inside the
+release-scan Environment.
 
 The GCP CI path:
 
