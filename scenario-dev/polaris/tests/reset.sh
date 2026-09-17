@@ -18,6 +18,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_RANGE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RANGE_DIR="${RANGE_DIR:-$DEFAULT_RANGE_DIR}"
 COMPOSE_FILE="${COMPOSE_FILE:-$RANGE_DIR/build/docker-compose.yml}"
+# Canonical build-v1 layout keeps the polaris/build/ prefix (the GCE polaris-vm
+# image ships the stack this way); fall back to the legacy flat layouts.
+if [[ ! -f "$COMPOSE_FILE" ]] && [[ -f "$RANGE_DIR/build/polaris/build/docker-compose.yml" ]]; then
+    COMPOSE_FILE="$RANGE_DIR/build/polaris/build/docker-compose.yml"
+fi
 if [[ ! -f "$COMPOSE_FILE" ]] && [[ -f "$RANGE_DIR/docker-compose.yml" ]]; then
     COMPOSE_FILE="$RANGE_DIR/docker-compose.yml"
 fi
