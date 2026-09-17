@@ -27,12 +27,11 @@ from __future__ import annotations
 import base64
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_credentials import GCEVertexCredentialOps, _default_vertex_ops, mint_range_vertex_key
+from gcp_range_cell_credentials import _default_vertex_ops, mint_range_vertex_key
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
@@ -47,82 +46,38 @@ from gcp_range_cells import (
 )
 from raes_access import RealizedAccessBinding, join_participant_access
 from raes_account_credentials import (
-    RaesAccountCredentialOps,
     default_account_credential_ops,
-    install_instance_account_credentials,
 )
 from raes_active_directory import (
-    RaesDirectorySecretOps,
     default_directory_secret_ops,
-    realize_raes_active_directory,
 )
 from raes_composition_verification import (
     assert_composition_is_verifiable,
-    verify_bootstrap_composition,
 )
-from raes_content_delivery import assert_content_delivery_bindings_complete, realize_raes_content_delivery
+from raes_content_delivery import assert_content_delivery_bindings_complete
+from raes_gcp_apply_types import RaesGceApplyOptions, RaesGceApplyRuntime
 from raes_gcp_composition import node_bootstrap_script
 from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
 from raes_gcp_plan import RaesGcePlanError, RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_polaris import _run_polaris_post_provision
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
-from raes_operating_system import observe_operating_systems, validate_operating_systems
+from raes_operating_system import validate_operating_systems
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
 from raes_snapshot import snapshot_resources
-from raes_substrate_observation import observe_gce_substrates, verify_prepared_source
+from raes_substrate_observation import verify_prepared_source
 from utils.crypto import generate_ssh_host_keypair
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class RaesGceApplyOptions:
-    """Optional infrastructure and credential bindings for an RAES apply."""
-
-    config: GCERangeCellConfig | None = None
-    clients: GCEClients | None = None
-    secret_ops: RaesGceSecretOps | None = None
-    vertex_ops: GCEVertexCredentialOps | None = None
-    # Effective range egress posture pinned at create (PLAT-238), carried here so
-    # the apply seam stays within the parameter budget; a `none` range gets no
-    # public-web/allow-CIDR firewall lane and no range-owned Cloud NAT.
-    egress_mode: str = "status-quo"
-    # Tenant-allocated subnet selected by the GCE adapter for open portable
-    # network intent in shared-VPC mode.
-    allocated_network_cidr: str | None = None
-    account_secret_ops: RaesAccountCredentialOps | None = None
-    credential_installer: Callable[..., dict[str, str]] = install_instance_account_credentials
-    directory_secret_ops: RaesDirectorySecretOps | None = None
-    directory_realizer: Callable[..., None] = realize_raes_active_directory
-    content_delivery_realizer: Callable[..., None] = realize_raes_content_delivery
-    composition_verifier: Callable[..., frozenset[str]] = verify_bootstrap_composition
-    operating_system_observer: Callable[..., list[dict[str, str]]] = observe_operating_systems
-    substrate_observer: Callable[..., list[dict[str, str]]] = observe_gce_substrates
-
-
-@dataclass(frozen=True)
-class _RaesGceApplyRuntime:
-    """Resolved non-optional bindings shared by RAES resource realization."""
-
-    config: GCERangeCellConfig
-    clients: GCEClients
-    secret_ops: RaesGceSecretOps
-    vertex_ops: GCEVertexCredentialOps
-    account_secret_ops: RaesAccountCredentialOps
-    credential_installer: Callable[..., dict[str, str]]
-    directory_secret_ops: RaesDirectorySecretOps
-    directory_realizer: Callable[..., None]
-    content_delivery_realizer: Callable[..., None]
-    composition_verifier: Callable[..., frozenset[str]]
-    operating_system_observer: Callable[..., list[dict[str, str]]]
-    substrate_observer: Callable[..., list[dict[str, str]]]
-    allocated_network_cidr: str | None
-
-
-def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
+def _apply_runtime(
+    options: RaesGceApplyOptions,
+    *,
+    config: GCERangeCellConfig | None = None,
+) -> RaesGceApplyRuntime:
     """Resolve optional apply bindings exactly once."""
-    return _RaesGceApplyRuntime(
-        config=options.config or load_gce_range_cell_config(),
+    return RaesGceApplyRuntime(
+        config=config or options.config or load_gce_range_cell_config(),
         clients=options.clients or _build_clients(),
         secret_ops=options.secret_ops or _default_secret_ops(),
         vertex_ops=options.vertex_ops or _default_vertex_ops(),
@@ -134,7 +89,7 @@ def _apply_runtime(options: RaesGceApplyOptions) -> _RaesGceApplyRuntime:
         composition_verifier=options.composition_verifier,
         operating_system_observer=options.operating_system_observer,
         substrate_observer=options.substrate_observer,
-        allocated_network_cidr=options.allocated_network_cidr,
+        allocated_network_cidrs=options.allocated_network_cidrs,
     )
 
 
@@ -223,7 +178,7 @@ def _ensure_raes_instance(
 
 def _provision_raes_resources(
     plan: RangeCellPlan,
-    runtime: _RaesGceApplyRuntime,
+    runtime: RaesGceApplyRuntime,
     bootstrap_by_node: dict[str, str],
     accounts_by_node: dict[str, tuple[RaesPlanAccount, ...]],
     access_by_node: dict[str, tuple[RealizedAccessBinding, ...]],
@@ -342,7 +297,7 @@ def _realize_directory(
     plan: RangeCellPlan,
     raes_plan: RaesPlan,
     instance_outputs: list[ResourceDict],
-    runtime: _RaesGceApplyRuntime,
+    runtime: RaesGceApplyRuntime,
 ) -> frozenset[str]:
     """Realize admitted directory topology when the plan carries a domain."""
     if raes_plan.domains:
@@ -364,7 +319,7 @@ def _realize_content_delivery(
     raes_plan: RaesPlan,
     instance_outputs: list[ResourceDict],
     delivery_bindings: list[dict[str, Any]] | None,
-    runtime: _RaesGceApplyRuntime,
+    runtime: RaesGceApplyRuntime,
 ) -> frozenset[str]:
     """Deliver every source-backed content item when the plan carries one (#1564)."""
     if any(item.source_name for item in raes_plan.content) or bool(raes_plan.features):
@@ -384,7 +339,7 @@ def _cleanup_failed_apply(
     request_uuid: str,
     range_id: int,
     raes_plan: RaesPlan,
-    runtime: _RaesGceApplyRuntime,
+    runtime: RaesGceApplyRuntime,
 ) -> None:
     """Run reconstructive cleanup using the apply pass's resolved clients."""
     destroy_raes_range_cell(
@@ -398,7 +353,7 @@ def _cleanup_failed_apply(
             vertex_ops=runtime.vertex_ops,
             account_secret_ops=runtime.account_secret_ops,
             directory_secret_ops=runtime.directory_secret_ops,
-            allocated_network_cidr=runtime.allocated_network_cidr,
+            allocated_network_cidrs=runtime.allocated_network_cidrs,
         ),
     )
 
@@ -425,32 +380,35 @@ def apply_raes_range_cell(
     The effective egress posture (PLAT-238) rides on ``options.egress_mode``.
     """
     resolved_options = options or RaesGceApplyOptions()
-    egress_mode = resolved_options.egress_mode
-    runtime = _apply_runtime(resolved_options)
-    realized_access = join_participant_access(access_bindings or (), raes_plan)
-    _assert_composition_targets_resolve(raes_plan)
-    _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
-    assert_composition_is_verifiable(raes_plan)
-    expected_composition = {
-        *[item.address for item in raes_plan.content],
-        *[account.address for account in raes_plan.accounts],
-        *[feature.address for feature in raes_plan.features],
-    }
-    # Build and size-check the complete sanitized evidence shape before cloud mutation.
-    snapshot_resources(raes_plan, expected_composition)
-    plan = build_raes_range_cell_plan(
-        request_uuid,
-        range_id,
-        raes_plan,
-        resolve_image,
-        RaesGcePlanOptions(
-            config=runtime.config,
-            access_bindings=realized_access,
-            egress_policy=GceEgressPolicy(mode=egress_mode),
-            allocated_network_cidr=runtime.allocated_network_cidr,
-        ),
-    )
+    resolved_config = resolved_options.config or load_gce_range_cell_config()
+    runtime: RaesGceApplyRuntime | None = None
+    mutation_started = False
     try:
+        realized_access = join_participant_access(access_bindings or (), raes_plan)
+        _assert_composition_targets_resolve(raes_plan)
+        _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
+        assert_composition_is_verifiable(raes_plan)
+        expected_composition = {
+            *[item.address for item in raes_plan.content],
+            *[account.address for account in raes_plan.accounts],
+            *[feature.address for feature in raes_plan.features],
+        }
+        # Build and size-check the complete sanitized evidence shape before cloud mutation.
+        snapshot_resources(raes_plan, expected_composition)
+        plan = build_raes_range_cell_plan(
+            request_uuid,
+            range_id,
+            raes_plan,
+            resolve_image,
+            RaesGcePlanOptions(
+                config=resolved_config,
+                access_bindings=realized_access,
+                egress_policy=GceEgressPolicy(mode=resolved_options.egress_mode),
+                allocated_network_cidrs=resolved_options.allocated_network_cidrs,
+            ),
+        )
+        runtime = _apply_runtime(resolved_options, config=resolved_config)
+        mutation_started = True
         instance_outputs = _provision_raes_resources(
             plan,
             runtime,
@@ -470,8 +428,13 @@ def apply_raes_range_cell(
         compute_substrates = runtime.substrate_observer(plan, runtime.clients)
         snapshot_resources(raes_plan, verified)
     except Exception:
-        logger.exception("RAES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
-        _cleanup_failed_apply(request_uuid, range_id, raes_plan, runtime)
+        if mutation_started and runtime is not None:
+            logger.exception("RAES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
+            _cleanup_failed_apply(request_uuid, range_id, raes_plan, runtime)
+        else:
+            logger.exception("RAES GCE range-cell apply failed before provider mutation request_id=%s", request_uuid)
+            if resolved_options.on_pre_mutation_failure is not None:
+                resolved_options.on_pre_mutation_failure()
         raise
     return {
         "subnets": subnet_outputs(plan),

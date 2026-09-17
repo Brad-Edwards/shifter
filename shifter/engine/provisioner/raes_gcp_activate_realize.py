@@ -23,6 +23,7 @@ hand it over.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from uuid import UUID
 
 from shared.raes.completion_evidence import build_completion_evidence
@@ -48,7 +49,7 @@ def realize_claimant_access_on_cell(
     activate_generation: UUID,
     *,
     config: GCERangeCellConfig | None = None,
-    allocated_network_cidr: str | None = None,
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None,
 ) -> ActivationResult:
     """Rotate credentials and realize the claimant's participant access; return members.
 
@@ -70,7 +71,7 @@ def realize_claimant_access_on_cell(
             options=RaesGceApplyOptions(
                 config=resolved_config,
                 egress_mode=operation_input.egress_mode,
-                allocated_network_cidr=allocated_network_cidr,
+                allocated_network_cidrs=allocated_network_cidrs,
             ),
             access_bindings=operation_input.access_binding_transport(),
             delivery_bindings=operation_input.binding_transport(),

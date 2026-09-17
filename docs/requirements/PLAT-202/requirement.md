@@ -158,7 +158,7 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_model_budget.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_request_accounting.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_request_lifecycle.py`
-- IMPLEMENTS → CODE `shifter/shifter_platform/engine/migrations/0072_model_request_accounting.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/migrations/0073_model_request_accounting.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/shared/audit/vocabulary.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/shared/migrations/0021_alter_auditlog_action_alter_auditlog_entity_type.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/scripts/generate_model_access_schema.py`

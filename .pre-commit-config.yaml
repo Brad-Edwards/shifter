@@ -1,17 +1,8 @@
 fail_fast: true
 
-# Pre-commit is deliberately scoped to FAST hygiene + secret scanning only.
-# Everything heavier — mypy, the full test suites, bandit/checkov SAST, the
-# terraform/k8s validators, the check_tf_* IAM guards, and the adr_guard /
-# import-linter architecture gates — runs in CI (`.github/workflows/`), which is
-# the authoritative enforcer. Keep this file to formatters, syntax/file checks,
-# and secret detection so local commits stay quick; do not re-add slow or
-# duplicative gates here.
-
+# Keep the local commit boundary intentionally fast. Repository-wide type,
+# architecture, policy, IaC security, migration, and test suites run in CI.
 repos:
-  # =============================================================================
-  # STAGE 0: Commit message policy (commit-msg hook)
-  # =============================================================================
   - repo: local
     hooks:
       - id: block-agent-attribution-commit-msg
@@ -21,11 +12,7 @@ repos:
         stages: [commit-msg]
         pass_filenames: true
 
-  # =============================================================================
-  # STAGE 1: Fast checks (file hygiene, secret scanning, linting, formatting)
-  # =============================================================================
-
-  # General file checks
+  # File hygiene and secret detection are the always-on local baseline.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -33,24 +20,14 @@ repos:
       - id: end-of-file-fixer
         exclude: ^assets/styles/
       - id: check-yaml
-        args: [--unsafe] # Allow custom YAML constructors (mkdocs plugins)
+        args: [--unsafe]
         exclude: ^platform/charts/.*/templates/.*\.ya?ml$
       - id: check-json
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: check-merge-conflict
       - id: detect-private-key
-        # Exclude: tests (check key format strings) + crypto.py (key generation module, not leaked secrets)
-        # Plus POLARIS CTF range lab material (intentional training-range
-        # keypairs that live inside the disposable docker-compose range
-        # — not real credentials, useless outside the range):
         exclude: ^(shifter/engine/provisioner/tests/|shifter/shifter_platform/tests/engine/ssh/|scripts/bootstrap/tests/|shifter/engine/provisioner/utils/crypto\.py|scenario-dev/polaris/build/_shared/)
-
-  - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.12
-    hooks:
-      - id: actionlint
-        files: ^\.github/workflows/.*\.yml$
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
@@ -58,8 +35,13 @@ repos:
       - id: gitleaks
         args: [--config, .gitleaks.toml]
 
-  # Python - Ruff (linting + formatting)
-  # Note: Ruff handles import sorting via "I" rules - no separate isort needed
+  # Lightweight syntax, lint, and formatting hooks remain local.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/.*\.yml$
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.18
     hooks:
@@ -141,7 +123,6 @@ repos:
         name: ruff-format (event-load-harness)
         files: ^uat/event-load-harness/
 
-  # JavaScript/CSS linting
   - repo: local
     hooks:
       - id: eslint-shifter-platform
@@ -150,28 +131,24 @@ repos:
         language: system
         files: ^shifter/shifter_platform/static/js/.*\.js$
         types: [javascript]
-
       - id: eslint-mcp-shifter-db
         name: eslint (mcp/shifter-db)
         entry: bash -c 'cd mcp/shifter-db && npx eslint .'
         language: system
         files: ^mcp/shifter-db/.*\.js$
         types: [javascript]
-
       - id: eslint-mcp-ngfw
         name: eslint (mcp/ngfw)
         entry: bash -c 'cd mcp/ngfw && npx eslint .'
         language: system
         files: ^mcp/ngfw/.*\.js$
         types: [javascript]
-
       - id: eslint-mcp-aws
         name: eslint (mcp/aws)
         entry: bash -c 'cd mcp/aws && npx eslint .'
         language: system
         files: ^mcp/aws/.*\.js$
         types: [javascript]
-
       - id: stylelint-shifter-platform
         name: stylelint (shifter_platform)
         entry: bash -c 'cd shifter/shifter_platform && npx stylelint --fix static/css/'
@@ -179,15 +156,12 @@ repos:
         files: ^shifter/shifter_platform/static/css/.*\.css$
         types: [css]
 
-  # Shell scripts
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
         files: ^scripts/
 
-  # Terraform formatting (fast, hygiene only). tflint/validate, checkov, and the
-  # check_tf_* IAM guards run in CI, not here.
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.105.0
     hooks:
