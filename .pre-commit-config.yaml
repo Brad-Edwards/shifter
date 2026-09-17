@@ -1,8 +1,16 @@
 fail_fast: true
 
-# Keep the local commit boundary intentionally fast. Repository-wide type,
-# architecture, policy, IaC security, migration, and test suites run in CI.
+# Pre-commit is scoped to FAST hygiene + secrets checks only. Expensive gates
+# (mypy, checkov/bandit/kube-linter/kubeconform/helm, terraform validate/tflint,
+# import-linter, Django model/migration checks) and ALL test suites
+# (pytest/jest/mcp) are deferred to CI (.github/workflows/_quality.yml), which
+# remains the authoritative blocking gate. Keep local commits fast; let CI do
+# the heavy, comprehensive verification.
+
 repos:
+  # =============================================================================
+  # STAGE 0: Commit message policy (commit-msg hook)
+  # =============================================================================
   - repo: local
     hooks:
       - id: block-agent-attribution-commit-msg
@@ -12,7 +20,11 @@ repos:
         stages: [commit-msg]
         pass_filenames: true
 
-  # File hygiene and secret detection are the always-on local baseline.
+  # =============================================================================
+  # STAGE 1: Fast checks (linting, formatting, syntax) + secrets
+  # =============================================================================
+
+  # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -20,14 +32,24 @@ repos:
       - id: end-of-file-fixer
         exclude: ^assets/styles/
       - id: check-yaml
-        args: [--unsafe]
+        args: [--unsafe] # Allow custom YAML constructors (mkdocs plugins)
         exclude: ^platform/charts/.*/templates/.*\.ya?ml$
       - id: check-json
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: check-merge-conflict
       - id: detect-private-key
+        # Exclude: tests (check key format strings) + crypto.py (key generation module, not leaked secrets)
+        # Plus POLARIS CTF range lab material (intentional training-range
+        # keypairs that live inside the disposable docker-compose range
+        # — not real credentials, useless outside the range):
         exclude: ^(shifter/engine/provisioner/tests/|shifter/shifter_platform/tests/engine/ssh/|scripts/bootstrap/tests/|shifter/engine/provisioner/utils/crypto\.py|scenario-dev/polaris/build/_shared/)
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/.*\.yml$
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
@@ -35,13 +57,8 @@ repos:
       - id: gitleaks
         args: [--config, .gitleaks.toml]
 
-  # Lightweight syntax, lint, and formatting hooks remain local.
-  - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.12
-    hooks:
-      - id: actionlint
-        files: ^\.github/workflows/.*\.yml$
-
+  # Python - Ruff (linting + formatting)
+  # Note: Ruff handles import sorting via "I" rules - no separate isort needed
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.18
     hooks:
@@ -123,6 +140,7 @@ repos:
         name: ruff-format (event-load-harness)
         files: ^uat/event-load-harness/
 
+  # JavaScript/CSS linting (fast, auto-fixing hygiene)
   - repo: local
     hooks:
       - id: eslint-shifter-platform
@@ -131,24 +149,28 @@ repos:
         language: system
         files: ^shifter/shifter_platform/static/js/.*\.js$
         types: [javascript]
+
       - id: eslint-mcp-shifter-db
         name: eslint (mcp/shifter-db)
         entry: bash -c 'cd mcp/shifter-db && npx eslint .'
         language: system
         files: ^mcp/shifter-db/.*\.js$
         types: [javascript]
+
       - id: eslint-mcp-ngfw
         name: eslint (mcp/ngfw)
         entry: bash -c 'cd mcp/ngfw && npx eslint .'
         language: system
         files: ^mcp/ngfw/.*\.js$
         types: [javascript]
+
       - id: eslint-mcp-aws
         name: eslint (mcp/aws)
         entry: bash -c 'cd mcp/aws && npx eslint .'
         language: system
         files: ^mcp/aws/.*\.js$
         types: [javascript]
+
       - id: stylelint-shifter-platform
         name: stylelint (shifter_platform)
         entry: bash -c 'cd shifter/shifter_platform && npx stylelint --fix static/css/'
@@ -156,14 +178,186 @@ repos:
         files: ^shifter/shifter_platform/static/css/.*\.css$
         types: [css]
 
+  # Shell scripts
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
         files: ^scripts/
 
+  # Terraform formatting (fast). Validation/tflint/checkov are deferred to CI.
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.105.0
     hooks:
       - id: terraform_fmt
         files: ^platform/terraform/
+
+  # Custom fast Terraform IAM/security/network scoping checks (pure-Python HCL
+  # parsers, no terraform init) — security hygiene that stays local. The checker
+  # test suites and the checkov-parity check are deferred to CI.
+  - repo: local
+    hooks:
+      - id: check-tf-sg-cidrs
+        name: AWS SG ingress CIDR scoping (polaris + provisioner range modules)
+        entry: python3 scripts/check_tf_sg_cidrs/check_tf_sg_cidrs.py
+        language: system
+        files: ^(scripts/polaris-aws-range/|shifter/engine/provisioner/terraform/modules/range/).*\.tf$
+
+      - id: check-portal-target-sg-sources
+        name: Portal target-service SG ingress source scoping (#933)
+        entry: python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py
+        language: system
+        files: ^platform/terraform/environments/(dev|proof|prod)/portal/main\.tf$
+
+      - id: check-tf-iam-ec2-scope
+        name: AWS EC2 lifecycle IAM scoping (shared provisioner IAM)
+        entry: python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py
+        language: system
+        files: ^platform/terraform/modules/(engine-provisioner/iam|provisioner-iam/main)\.tf$
+
+      - id: check-tf-iam-elb-scope
+        name: AWS ELBv2 (GWLB/VPN NLB/EKS ALB controller) IAM scoping
+        entry: python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py
+        language: system
+        files: ^(platform/terraform/modules/provisioner-iam/main|platform/terraform/modules/portal/eks/load_balancer_controller_iam|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
+
+      - id: check-tf-iam-ssm-scope
+        name: AWS SSM Run Command IAM scoping (shared provisioner IAM)
+        entry: python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py
+        language: system
+        files: ^platform/terraform/modules/(engine-provisioner/iam|provisioner-iam/main)\.tf$
+
+      - id: check-tf-iam-role-naming
+        name: AWS IAM role naming seam (shifter-* prefix)
+        entry: python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
+        language: system
+        files: ^platform/terraform/(modules/.+|global/iam/github-oidc\.tf|environments/.+/main\.tf)$
+
+      - id: check-tf-runner-network
+        name: GitHub runner default-VPC isolation (ADR-004-R20)
+        entry: python3 scripts/check_tf_runner_network/check_tf_runner_network.py
+        language: system
+        files: ^platform/terraform/global/github-runner/main\.tf$
+
+      - id: check-tf-gcp-runner-network
+        name: GCP runner network isolation (ADR-008)
+        entry: python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
+        language: system
+        files: ^platform/terraform/gcp/modules/github-runner-network/main\.tf$
+
+      - id: check-tf-gcp-wif-trust
+        name: GCP WIF exact-subject trust (ADR-004-R23)
+        entry: python3 scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py
+        language: system
+        pass_filenames: false
+        files: ^platform/terraform/gcp/modules/cicd-oidc-identity/.*\.tf$
+
+      - id: check-tf-iam-ssm-range-scope
+        name: AWS range-instance SSM parameter IAM scoping (#1178)
+        entry: python3 scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py
+        language: system
+        files: ^platform/terraform/modules/range/vpc/iam\.tf$
+
+      - id: check-tf-iam-bedrock-agent-scope
+        name: AWS Polaris Bedrock agent IAM scoping (#1377)
+        entry: python3 scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py
+        language: system
+        files: ^shifter/engine/provisioner/terraform/modules/range/iam\.tf$
+
+      - id: check-tf-kms-secrets-grant
+        name: Secrets Manager kms:Decrypt grant (portal CMK readers)
+        entry: >-
+          bash -c '
+          python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py
+          platform/terraform/modules/engine-provisioner/*.tf
+          platform/terraform/modules/provisioner-iam/*.tf
+          platform/terraform/modules/portal/ec2/*.tf
+          platform/terraform/modules/guacamole/*.tf
+          '
+        language: system
+        files: ^platform/terraform/modules/(engine-provisioner|provisioner-iam|portal/ec2|guacamole)/.+\.tf$
+        pass_filenames: false
+
+      - id: check-tf-gcp-iam-resource-scope
+        name: GCP workload IAM resource scoping (ADR-008-R7)
+        entry: >-
+          bash -c '
+          python3 scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py
+          platform/terraform/gcp/modules/portal/iam/*.tf
+          '
+        language: system
+        files: ^platform/terraform/gcp/modules/portal/iam/.*\.tf$
+        pass_filenames: false
+
+      - id: check-tf-rds-security
+        name: RDS IAM auth and CA certificate (portal + Guacamole)
+        entry: >-
+          python3 scripts/check_tf_rds_security/check_tf_rds_security.py
+          platform/terraform/modules/portal/rds/main.tf
+          platform/terraform/modules/guacamole/rds.tf
+        language: system
+        files: ^(platform/terraform/modules/portal/rds/main\.tf|platform/terraform/modules/guacamole/rds\.tf)$
+        pass_filenames: false
+
+  # k8s image-registry + PSS-label grep guards (fast, no schema downloads).
+  # kube-linter / kubeconform / helm lint are deferred to CI.
+  - repo: local
+    hooks:
+      - id: k8s-image-registry
+        name: k8s image registry check
+        entry: >-
+          bash -c 'for f in platform/k8s/gcp/overlays/*/kustomization.yaml; do
+          if grep -E "newName:" "$f" | grep -qv "pkg\.dev/"; then
+          echo "ERROR: Images must use Artifact Registry (pkg.dev) in $f" && exit 1; fi; done'
+        language: system
+        files: ^platform/k8s/gcp/overlays/.*/kustomization\.yaml$
+        pass_filenames: false
+
+      - id: k8s-pss-labels
+        name: architecture (k8s PSS labels)
+        entry: >-
+          bash -c 'for f in platform/k8s/gcp/base/namespaces.yaml; do if ! grep
+          -q "pod-security.kubernetes.io/enforce" "$f"; then echo "ERROR: $f
+          must include Pod Security Standards labels" && exit 1; fi; done'
+        language: system
+        files: ^platform/k8s/gcp/base/namespaces\.yaml$
+        pass_filenames: false
+
+  # =============================================================================
+  # STAGE 2: Architecture (fast adr-guard passes only)
+  #
+  # The fast adr-guard checks + the live-cloud-identifier scan (a secrets-class
+  # hygiene check) stay local. import-linter, check-layer-imports,
+  # check-model-fks, and the missing-migrations check boot uv/Django and are
+  # deferred to the CI Architecture jobs.
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: adr-guard-fast
+        name: architecture (adr guard fast)
+        entry: python3 scripts/adr_guard/adr_guard.py --changed --level fast
+        language: system
+        files: ^(docs/adr/|scripts/adr_guard/|\.github/workflows/|\.github/(CODEOWNERS|pull_request_template\.md|copilot-instructions\.md)$|\.claude/|shifter/shifter_platform/.*\.py$|shifter/engine/provisioner/cloud/.*\.py$|platform/terraform/environments/.*\.tfvars$|\.pre-commit-config\.yaml$|AGENTS\.md$|\.importlinter$|\.tflint\.hcl$|\.gitleaks\.toml$|\.kube-linter\.yaml$|\.shifter\.yaml$|mcp/.*\.(js|mjs|cjs)$)
+        pass_filenames: false
+        verbose: true
+
+      # ADR-004-R13 identifier hygiene runs on every commit against the
+      # changed set: live cloud identifiers can be reintroduced in ANY tracked
+      # file, so this hook deliberately has no narrowing `files:` filter. The
+      # check itself skips binary / lock files, so the scan stays cheap.
+      - id: adr-guard-identifiers
+        name: architecture (adr guard live cloud identifiers)
+        entry: python3 scripts/adr_guard/adr_guard.py --checks no-live-cloud-identifiers --changed
+        language: system
+        pass_filenames: false
+        verbose: true
+
+      - id: adr-guard-k8s
+        name: architecture (adr guard k8s deployments)
+        entry: python3 scripts/adr_guard/adr_guard.py --checks k8s-deployment-security-context --files
+        language: python
+        additional_dependencies:
+          - pyyaml>=6.0
+        files: ^(platform/k8s/gcp/base/.*\.ya?ml$|platform/charts/shifter/.*)
+        pass_filenames: true
+        verbose: true
