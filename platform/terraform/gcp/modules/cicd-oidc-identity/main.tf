@@ -39,6 +39,11 @@ locals {
     lower("${var.project_id}-${replace(var.environment, "_", "-")}-assets"),
     lower("${var.project_id}-${replace(var.environment, "_", "-")}-audit-logs"),
     lower("${var.project_id}-${var.name_prefix}-gdc-vm-images"),
+    # daisy export scratch bucket created by packer-build-infra
+    # (google_storage_bucket.daisy_export_scratch, name fixed by daisy as
+    # <project>-daisy-bkt-<region>); the platform-core deploy/destroy create and
+    # tear it down, so it must be in the conditioned platform-storage allow-list.
+    lower("${var.project_id}-daisy-bkt-${var.region}"),
   ])
   platform_storage_condition = join(" || ", concat(
     [for bucket in local.platform_storage_bucket_names : "resource.name == 'projects/_/buckets/${bucket}'"],
