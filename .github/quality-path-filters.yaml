@@ -370,9 +370,10 @@ exclusions:
 
   - type: config
     reason: >-
-      Repository build / release / lint tool configuration governed by its own
-      tooling (mkdocs, release-please, sonar, make, npm lockfile). Not product
-      or infrastructure source subject to the production three-owner rule.
+      Repository build / release / lint / scanner tool configuration governed by
+      its own tooling (mkdocs, release-please, sonar, trivy, make, npm lockfile).
+      Not product or infrastructure source subject to the production three-owner
+      rule.
     paths:
       - Makefile
       - mkdocs.yml
@@ -380,6 +381,9 @@ exclusions:
       - .release-please-manifest.json
       - version.txt
       - sonar-project.properties
+      # Exact-release Trivy exposure-management policy consumed by the
+      # release-scan gate in .github/workflows/_gcp-dev.yml (--ignorefile).
+      - .trivyignore.yaml
       - tools/install-vale.sh
 
   - type: config

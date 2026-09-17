@@ -99,9 +99,20 @@ WORKDIR /app
 # resolve HOME to /home/appuser in production containers) and install runtime
 # dependencies in the same layer. gettext provides msgfmt, required by
 # `manage.py compilemessages` in entrypoint.sh (added in #1260, Django i18n adoption).
+# `apt-get upgrade` applies the current Debian security updates (the deb13uN
+# point releases for perl-base, openssl/libssl3, the util-linux family,
+# libsqlite3-0, libpcre2-8-0, gzip, etc.) to the pinned base image's OS packages,
+# so the exact-release Trivy gate sees no fixable HIGH/CRITICAL base-OS CVEs. The
+# base image stays digest-pinned for build provenance (ADR-037-R2) and is
+# refreshed only via the reviewed process in
+# docs/architecture/rev1-build-deployment-provenance.md; this in-layer upgrade is
+# the deterministic path to the security-suite versions regardless of the base
+# image's rebuild cadence.
 RUN groupadd --gid 1000 appgroup && \
     useradd --uid 1000 --gid appgroup --create-home --home-dir /home/appuser --shell /bin/bash appuser && \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
+    apt-get install -y --no-install-recommends \
     libpq5 \
     gettext \
     && rm -rf /var/lib/apt/lists/*

@@ -116,12 +116,21 @@ class TestGcpGeneratedOutputs:
         # The GeneratedOutput RUNTIME_ENV projection is the single, drift-proof mirror of
         # runtime_inventory's authoritative GCP key set (required + optional).
         names = {o.name for o in _gcp().generated_outputs if o.kind is OutputKind.RUNTIME_ENV}
-        expected = set(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS) | set(
-            runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
+        expected = (
+            set(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS)
+            | set(runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
+            | set(runtime_inventory_gcp.GCP_CAPACITY_RUNTIME_ENV_KEYS)
         )
         from installation.gcp_model_broker import BROKER_RUNTIME_ENV_KEYS
 
         assert names == expected | BROKER_RUNTIME_ENV_KEYS
+
+    def test_capacity_outputs_publish_their_actual_projection_owner(self):
+        outputs = self._by_name()
+        for name in runtime_inventory_gcp.GCP_CAPACITY_RUNTIME_ENV_KEYS:
+            output = outputs[name]
+            assert output.owner == "canonical GCP shared-service capacity profile Helm projection"
+            assert "capacity profile" in output.source
 
     def test_secret_id_outputs_are_classified_as_secret_references(self):
         outputs = self._by_name()

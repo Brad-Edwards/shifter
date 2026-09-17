@@ -13,12 +13,15 @@ paths, labels, and numbers that are safe to pass on argv and echo in a report.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
-METRIC_SOURCES = ("client-only", "aws")
+METRIC_SOURCES = ("client-only", "aws", "gcp")
 ACTOR_SOURCES = ("dev-login", "manifest", "ctfd-csv")
 _LOCALHOST_HOSTS = ("localhost", "127.0.0.1", "::1")
+_GCP_GATE_TARGETS = ("project_id", "cluster", "namespace", "sql_instance", "redis_instance", "backend_name")
+_GCP_RESOURCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
 class ConfigError(ValueError):
@@ -36,6 +39,7 @@ class RunConfig:
     actor_source: str
     metric_source: str
     report_path: str
+    capacity_profile_id: str | None = None
     actor_manifest_path: str | None = None
     region: str | None = None
     confirm_host: str | None = None
@@ -122,3 +126,21 @@ class RunConfig:
             raise ConfigError("actor_source 'manifest' requires actor_manifest_path")
         if self.actor_source == "ctfd-csv" and not self.actor_manifest_path:
             raise ConfigError("actor_source 'ctfd-csv' requires actor_manifest_path (the CSV path)")
+        if self.profile == "guacamole-event-gate":
+            if self.actor_source != "manifest":
+                raise ConfigError("guacamole-event-gate requires distinct real actors from a 0600 manifest")
+            if self.metric_source != "gcp":
+                raise ConfigError("guacamole-event-gate requires metric_source 'gcp'")
+            if self.capacity_profile_id != "gcp-shared-v1-p30":
+                raise ConfigError("the qualified strict gate currently requires capacity_profile_id gcp-shared-v1-p30")
+            if self.concurrency != 30 or self.duration_seconds < 120:
+                raise ConfigError("the p30 strict gate requires concurrency=30 and duration_seconds>=120")
+            targets = self.extra.get("gcp_targets")
+            if not isinstance(targets, dict):
+                raise ConfigError("guacamole-event-gate requires explicit GCP metric and health targets")
+            missing = [name for name in _GCP_GATE_TARGETS if not targets.get(name)]
+            if missing:
+                raise ConfigError(f"guacamole-event-gate is missing GCP targets: {', '.join(missing)}")
+            invalid = [name for name in _GCP_GATE_TARGETS if not _GCP_RESOURCE_ID.fullmatch(str(targets[name]))]
+            if invalid:
+                raise ConfigError(f"guacamole-event-gate has invalid GCP target identifiers: {', '.join(invalid)}")

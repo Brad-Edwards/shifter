@@ -144,28 +144,17 @@ Current mechanisms:
   notification and event lifecycle suites to behavioral coverage (real ORM
   plus SMTP/template boundary patches only) and dropped their
   `ctf.services.notification.*` / `ctf.services.event.*` allowances.
-- `.pre-commit-config.yaml`: local fast checks
+- `.pre-commit-config.yaml`: intentionally fast local boundary
   - The `Deploy` workflow's always-present `Pre-commit` job runs the
     file-hygiene and secret-scan subset (`trailing-whitespace`,
     `end-of-file-fixer`, YAML/JSON checks, large-file and merge-conflict
     checks, private-key detection, and gitleaks) and feeds `PR Gate`, so
     protected-branch PRs cannot bypass that baseline through path filters.
-  - `check-tf-iam-ec2-scope`: local Terraform IAM hardening check that
-    keeps engine-provisioner EC2 instance lifecycle actions scoped to
-    Shifter-owned, Terraform-managed instances.
-  - `check-tf-iam-ssm-range-scope`: local Terraform IAM hardening check
-    (ADR-004-R17) that stops the shared range guest instance role from
-    being granted SSM Parameter Store access wildcarded across the
-    environment or range segment (`parameter/shifter/*/range/*`); guards
-    the #1178 cross-tenant credential-access fix.
-  - `check-tf-iam-ssm-scope`: local Terraform IAM hardening check that
-    keeps engine-provisioner SSM Run Command (`ssm:SendCommand`) and
-    `ec2:RebootInstances` scoped to Shifter range guest instances via
-    resource-tag conditions, so the task role cannot command portal or
-    runner instances.
-  - `check-tf-rds-security`: local Terraform RDS hardening check that
-    keeps the portal and Guacamole RDS instances on IAM DB auth and an
-    explicit CA certificate identifier.
+  - Local execution retains commit-message policy, file hygiene,
+    private-key and gitleaks secret detection, and lightweight language
+    formatting/linting. Type checks, architecture and policy guards, IaC
+    validation/security scanners, migration checks, and test suites are
+    CI-only so a commit does not reproduce the repository-wide pipeline.
 - `.github/workflows/_quality.yml`: CI architecture gate. Every quality unit
   it routes is declared in the `.github/quality-path-filters.yaml` contract
   (ADR-004-R24), which the `quality-path-ownership` check reconciles against
@@ -174,6 +163,9 @@ Current mechanisms:
   harness's deterministic layers only: the harness itself drives a deployed
   tenant and a live range, so it is operator-invoked and deliberately has no CI
   execution job and gates no deploy (issue #987).
+  Guard implementation modules remain below the CI file-length threshold;
+  formatting-only maintenance must preserve that bound without changing the
+  guard's exported behavior.
   Its SonarCloud
   job restores coverage artifacts, sets up Temurin Java 21, and disables
   SonarScanner JRE auto-provisioning so the quality gate does not depend
@@ -219,6 +211,14 @@ Current mechanisms:
   AWS/GCP reusable deploy jobs. Reusable deploy jobs receive a
   `github_environment` input distinct from Terraform environment names so
   prod applies can be protected by the `aws-prod` GitHub Environment.
+  GCP manual dispatches use the same allowlisted name for the Terraform root
+  and protected GitHub Environment (`gcp-dev` or `nazgul`), preserving the
+  environment-bound deploy identity. The router separately selects the
+  purpose-scoped `gcp-release-scan-*` Environment, and the reusable workflow
+  accepts inventory-published `GCP_WIF_PROVIDER` / `GCP_SERVICE_ACCOUNT`
+  variables while retaining the legacy secret names as a compatibility path.
+  Deploy preflight checks stop at the deploy Environment boundary; the scanner
+  job validates its own identity only after entering its purpose Environment.
   The deploy router passes `skip_tests: false` literally into
   `_quality.yml`; commit-message flags such as `[skip tests]` are not
   accepted on protected branches. Inside `_quality.yml`, `skip_tests` may
@@ -277,8 +277,8 @@ Current mechanisms:
 - `.kube-linter.yaml`: Kubernetes security and best-practice linting
   configuration (enforces ADR-006 checks)
 - `Checkov`: Terraform and Kubernetes IaC security scanning. ADR-004-R11
-  makes the Terraform path a blocking gate (pre-commit and CI share
-  `platform/terraform/.checkov.yaml`); the Kubernetes path remains
+  makes the Terraform CI path a blocking gate using
+  `platform/terraform/.checkov.yaml`; the Kubernetes path remains
   soft-fail while manifest hardening proceeds as a separate workstream.
   Accepted-risk waivers MUST have an entry in `docs/adr/exceptions.yaml`
   with owner, reason, expiry, affected paths, and the Checkov policy ID.

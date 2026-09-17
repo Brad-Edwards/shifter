@@ -3,6 +3,10 @@ kind: Deployment
 metadata:
   name: portal-web
   namespace: {{ .Values.namespaces.platform }}
+  {{- if .Values.capacityProfile.id }}
+  annotations:
+    shifter.dev/capacity-profile: {{ .Values.capacityProfile.id | quote }}
+  {{- end }}
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
     app.kubernetes.io/component: portal
@@ -17,12 +21,19 @@ spec:
       labels:
         {{- include "shifter.partOfLabels" . | nindent 8 }}
         app.kubernetes.io/component: portal
+        {{- if .Values.capacityProfile.id }}
+        shifter.dev/capacity-profile: {{ .Values.capacityProfile.id | quote }}
+        {{- end }}
       annotations:
         checksum/runtime-config: {{ include "shifter.runtimeConfigChecksum" . }}
+        {{- if .Values.capacityProfile.id }}
+        shifter.dev/capacity-profile: {{ .Values.capacityProfile.id | quote }}
+        {{- end }}
     spec:
       {{- include "shifter.podSecurityContext" . | nindent 6 }}
       serviceAccountName: {{ .Values.serviceAccounts.portal.name }} # NOSONAR - bound by rbac-job-launcher.yaml.
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.portal.terminationGracePeriodSeconds }}
       {{- include "shifter.accessNodePlacement" . | nindent 6 }}
       affinity:
         podAntiAffinity:

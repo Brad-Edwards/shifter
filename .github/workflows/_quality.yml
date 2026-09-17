@@ -238,15 +238,28 @@ jobs:
         working-directory: platform/terraform
         run: tflint --recursive --config "${GITHUB_WORKSPACE}/.tflint.hcl"
 
+      # ADR-020-R1: each range security group may admit only its own subnet,
+      # explicit connected peers, and the audited management/VPN sources. This
+      # is intentionally a blocking CI guard rather than a local pre-commit
+      # hook, and scans every tracked Terraform file in the provisioner range
+      # module so a newly added file cannot bypass the isolation invariant.
+      - name: Run check-tf-sg-cidrs
+        run: |
+          mapfile -t range_tf_files < <(
+            find shifter/engine/provisioner/terraform/modules/range \
+              -type f -name '*.tf' -print | sort
+          )
+          python3 scripts/check_tf_sg_cidrs/check_tf_sg_cidrs.py \
+            "${range_tf_files[@]}"
+
       # Issue #1377: the per-range Polaris Bedrock agent role's inline
       # policy must stay scoped to exactly bedrock:InvokeModel /
       # bedrock:InvokeModelWithResponseStream on the two approved inference
       # profiles and their backing models (conditioned on
       # bedrock:InferenceProfileArn), and its trust policy must stay scoped
       # to the shared range-instance role AND the exact Polaris EC2 source
-      # instance (ec2:SourceInstanceARN). Mirrors the
-      # check-tf-iam-bedrock-agent-scope pre-commit hook so a commit that
-      # skipped pre-commit cannot land the regression.
+      # instance (ec2:SourceInstanceARN). CI is the authoritative execution
+      # boundary for this policy guard.
       - name: Run check-tf-iam-bedrock-agent-scope
         run: |
           python3 scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py \
@@ -256,12 +269,10 @@ jobs:
       # Secrets Manager CMK on roles that read Secrets Manager. Wired
       # alongside terraform-lint because the inputs are .tf files and
       # this is the natural "terraform architecture" gate; runs in the
-      # same job to avoid an extra runner pool slot. Pre-commit also
-      # enforces it locally, but CI must enforce it independently so a
-      # commit that didn't run pre-commit cannot land the regression.
-      # Scope must mirror the pre-commit hook's `files:` regex —
-      # every module that defines an IAM role whose attached policies
-      # grant secretsmanager:GetSecretValue on a portal-CMK secret.
+      # same job to avoid an extra runner pool slot. CI enforces the invariant
+      # for every module that defines an IAM role
+      # whose attached policies grant secretsmanager:GetSecretValue on a
+      # portal-CMK secret.
       - name: Run check-tf-kms-secrets-grant
         run: |
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py \
@@ -272,7 +283,7 @@ jobs:
 
       # Issues #46/#1755: action/resource-aware ELBv2 scoping for GWLB and
       # request-owned VPN NLB resources, including creation-time listener tags.
-      # Pre-commit enforces the same policy/runtime inputs locally.
+      # CI enforces the same policy/runtime inputs authoritatively.
       - name: Run check-tf-iam-elb-scope
         run: |
           python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
@@ -284,16 +295,16 @@ jobs:
       # ECS task role. Mirrors check-tf-iam-ec2-scope: rejects account-wide
       # ssm:SendCommand / ec2:RebootInstances and requires the range-instance
       # tag conditions so a provisioner compromise cannot command portal or
-      # runner instances. Pre-commit also enforces it locally.
+      # runner instances. CI enforces it authoritatively.
       - name: Run check-tf-iam-ssm-scope
         run: |
           python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
             platform/terraform/modules/engine-provisioner/iam.tf \
             platform/terraform/modules/provisioner-iam/main.tf
 
-      # Issue #1846: this checker previously ran only in pre-commit and as a
-      # unit test in CI, unlike its elb/ssm siblings above, so a commit that
-      # bypassed pre-commit could land an EC2 lifecycle IAM regression.
+      # Issue #1846: this checker previously lacked a live CI invocation, so a
+      # commit that bypassed local hooks could land an EC2 lifecycle IAM
+      # regression.
       - name: Run check-tf-iam-ec2-scope
         run: |
           python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py \
@@ -306,18 +317,16 @@ jobs:
 
       # ADR-004-R20 / issue #1222: the self-hosted deploy runner must not be
       # placed in the account default VPC (a range's private-DNS VPC endpoints
-      # can hijack its AWS API resolution). Mirrors the check-tf-runner-network
-      # pre-commit hook so a commit that skipped pre-commit cannot drop the
-      # fail-closed default-VPC precondition from the runner stack.
+      # can hijack its AWS API resolution). CI is the authoritative execution
+      # boundary for the fail-closed default-VPC precondition.
       - name: Run check-tf-runner-network
         run: |
           python3 scripts/check_tf_runner_network/check_tf_runner_network.py
 
       # ADR-008 / issue #1546: the GCP-native self-hosted runner must live in a
       # dedicated custom-mode VPC (never the project default network) and admit
-      # SSH only from Google's IAP range. Mirrors the check-tf-gcp-runner-network
-      # pre-commit hook so a commit that skipped pre-commit cannot weaken the
-      # runner network isolation.
+      # SSH only from Google's IAP range. CI is the authoritative execution
+      # boundary for the runner network-isolation guard.
       - name: Run check-tf-gcp-runner-network
         run: |
           python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
@@ -326,17 +335,15 @@ jobs:
       # exact protected assertion.ref + literal assertion.sub allow-list (no
       # repository-only condition, no repository-wide principalSet, no CKV_GCP_125
       # waiver), with purpose subjects and permissions disjoint and least privilege.
-      # Mirrors the check-tf-gcp-wif-trust pre-commit hook so a commit that skipped
-      # pre-commit cannot re-widen the credentialed-CI federation.
+      # CI is the authoritative execution boundary for the exact-subject WIF guard.
       - name: Run check-tf-gcp-wif-trust
         run: |
           python3 scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py
 
       # Issue #1178: the shared range guest instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
-      # range segment (parameter/shifter/*/range/*). Mirrors the
-      # check-tf-iam-ssm-range-scope pre-commit hook so a commit that skipped
-      # pre-commit cannot land the cross-range regression.
+      # range segment (parameter/shifter/*/range/*). CI is the authoritative
+      # execution boundary for the cross-range isolation guard.
       - name: Run check-tf-iam-ssm-range-scope
         run: |
           python3 scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py \
@@ -356,15 +363,14 @@ jobs:
       # receive project-level Secret Manager payload/admin or Cloud Storage
       # object-admin roles; static access is bound per named secret / bucket, and
       # only the two dynamic-secret residuals tracked in #1586 are allowlisted.
-      # Mirrors the check-tf-gcp-iam-resource-scope pre-commit hook so a commit
-      # that skipped pre-commit cannot land a broad project-level grant.
+      # CI is the authoritative execution boundary for the resource-scope guard.
       - name: Run check-tf-gcp-iam-resource-scope
         run: |
           python3 scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py \
             platform/terraform/gcp/modules/portal/iam/*.tf
 
-      # ADR-004-R11 / issue #147: Checkov pre-commit hook args must match
-      # the security-iac job (config, directory, download_external_modules,
+      # ADR-004-R11 / issue #147: validate the authoritative security-iac
+      # invocation (config, directory, download_external_modules,
       # soft_fail=false).
       - name: Run check-checkov-invocation-parity
         run: python3 scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py
@@ -1225,8 +1231,7 @@ jobs:
         working-directory: shifter/shifter_platform
         # The django-stubs mypy plugin imports `config.settings` to construct
         # itself, so the run needs synthetic, non-production Django env
-        # (matching the `mypy-shifter-platform` pre-commit hook) or the plugin
-        # raises and mypy exits with an INTERNAL ERROR.
+        # or the plugin raises and mypy exits with an INTERNAL ERROR.
         env:
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: dummy-for-testing
@@ -2203,8 +2208,8 @@ jobs:
 
       - name: Checkov IaC Security
         # Blocking gate per ADR-004-R11. Skip-check entries live in
-        # platform/terraform/.checkov.yaml so this job and the local
-        # pre-commit hook consume the same policy boundary. Accepted-risk
+        # platform/terraform/.checkov.yaml so this job consumes the canonical
+        # policy boundary. Accepted-risk
         # waivers are documented in docs/adr/exceptions.yaml with owner,
         # reason, expires_on, and affected paths.
         uses: bridgecrewio/checkov-action@02a4c5d6a02367e5ea493c34c26b094302fd3f61 # v12
