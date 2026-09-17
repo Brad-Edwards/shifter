@@ -9,6 +9,10 @@ on:
       github_environment:
         required: true
         type: string
+      release_scan_github_environment:
+        description: Protected GitHub Environment for the purpose-scoped release scanner.
+        required: true
+        type: string
       deploy_changes:
         required: true
         type: boolean
@@ -133,9 +137,9 @@ jobs:
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
       GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
       GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
-      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
       GCP_RELEASE_SCAN_SERVICE_ACCOUNT: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
-      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
       TF_VAR_range_host_identity_pool_size: ${{ vars.GCP_RANGE_HOST_IDENTITY_POOL_SIZE || '0' }}
       # Explicit, audited opt-out for the first Identity Platform operator bootstrap.
       # Set the repo variable to "true" to deliberately skip operator creation; the
@@ -182,7 +186,10 @@ jobs:
           GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
           GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
           GCP_MASTER_AUTHORIZED_CIDRS: ${{ secrets.GCP_MASTER_AUTHORIZED_CIDRS }}
-        run: uv run python -m preflight --cloud gcp --env "${GCP_ENVIRONMENT}" --headless
+        # The exact-release scanner validates its own identity inside the
+        # separately protected release-scan Environment. This deploy-boundary
+        # preflight must not require that identity to cross into the deploy job.
+        run: uv run python -m preflight --cloud gcp --env "${GCP_ENVIRONMENT}" --component deploy --headless
       - name: Render ephemeral Terraform variables from secrets
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -517,7 +524,7 @@ jobs:
   release_scan:
     name: Scan exact release digests (${{ inputs.environment }})
     runs-on: ubuntu-latest
-    environment: gcp-release-scan-dev
+    environment: ${{ inputs.release_scan_github_environment }}
     needs: [validate, prepare]
     if: inputs.deploy_changes && github.event_name != 'pull_request'
     permissions:
@@ -526,6 +533,8 @@ jobs:
     env:
       GCP_ENVIRONMENT: ${{ inputs.environment }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_RELEASE_SCAN_SERVICE_ACCOUNT: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
       GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
       TRIVY_VERSION: 0.71.2
       # Reviewed from the upstream v0.71.2 release checksum manifest. Keeping
@@ -537,9 +546,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Ensure release-scan auth is configured
-        env:
-          GCP_RELEASE_SCAN_SERVICE_ACCOUNT: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
-          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
         run: |
           if [ -z "${GCP_RELEASE_SCAN_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ] || [ -z "${GCP_PROJECT_ID}" ]; then
             echo "::error::GCP_RELEASE_SCAN_SERVICE_ACCOUNT, GCP_WORKLOAD_IDENTITY_PROVIDER, and GCP_PROJECT_ID must be configured for exact-release scanning"
@@ -548,8 +554,8 @@ jobs:
       - id: scan_auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
           token_format: access_token
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
@@ -726,8 +732,8 @@ jobs:
       EDGE_CERT_NAME: platform-managed-cert
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
-      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
-      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -1329,6 +1335,8 @@ jobs:
       USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
       TF_DIR: platform/terraform/gcp/environments/${{ inputs.environment }}
       TF_BACKEND_PREFIX: shifter/${{ inputs.environment }}/platform-core
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
       SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -1336,15 +1344,15 @@ jobs:
           persist-credentials: false
       - name: Ensure GCP deploy auth is configured
         run: |
-          if [ -z "${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}" ] || [ -z "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ]; then
+          if [ -z "${GCP_DEPLOY_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ]; then
             echo "::error::GCP_DEPLOY_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured for gcp-dev deploys"
             exit 1
           fi
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
           token_format: access_token
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
