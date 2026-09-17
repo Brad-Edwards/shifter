@@ -189,6 +189,20 @@ def _validate_preconfigured_machine_profile(prefix: str, profile: GCERangeImageP
         profile.participant_readiness_manifest_sha256,
     )
     machine_fields = identity_fields + readiness_fields
+    if profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST:
+        # A polaris docker-host may name the participant container so OS-integrity
+        # observation probes that container (the authored participant OS, e.g.
+        # kali) rather than the host substrate. It carries no other machine-host
+        # field: participant_username/host_ssh_username come from the docker-host
+        # access model, and it has no machine image or readiness contract.
+        if profile.participant_container_name and not _GCE_CONTAINER_NAME_RE.fullmatch(
+            profile.participant_container_name
+        ):
+            raise RuntimeError(f"{prefix}.participant_container_name is not a valid container name")
+        _reject_machine_host_fields(
+            prefix, profile, (profile.participant_username, profile.host_ssh_username) + readiness_fields
+        )
+        return
     if profile.bootstrap_capability != GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
         _reject_machine_host_fields(prefix, profile, machine_fields)
         return

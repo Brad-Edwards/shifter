@@ -9,10 +9,32 @@ import shlex
 from collections.abc import Callable
 from typing import Any
 
+from config import GCE_BOOTSTRAP_POLARIS_HOST
 from executors.factory import build_guest_execution_context
 from raes_plan import RaesPlan
 
 logger = logging.getLogger(__name__)
+
+# A container name is validated at profile load (config._gce_profile); re-check
+# here before interpolating it into a shell probe as defense in depth.
+_CONTAINER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+
+
+def _linux_probe(output: dict[str, Any]) -> str:
+    """Select the Linux OS-release probe for a guest.
+
+    A polaris docker-host's authored OS (e.g. kali) belongs to the participant
+    container the compose stack runs, not the debian/ubuntu host substrate. When
+    the profile names that container, probe inside it (`docker exec`) so the
+    integrity gate validates the OS the node actually authors instead of the host.
+    """
+    if output.get("gcp_bootstrap_capability") == GCE_BOOTSTRAP_POLARIS_HOST:
+        container = str(output.get("gcp_participant_container_name") or "")
+        if container:
+            if not _CONTAINER_NAME_RE.fullmatch(container):
+                raise _fail()
+            return f"docker exec {shlex.quote(container)} head -c {_MAX_OBSERVATION_BYTES + 1} /etc/os-release"
+    return _LINUX_PROBE
 
 _MAX_OBSERVATION_BYTES = 4096
 _LINUX_PROBE = "head -c 4097 /etc/os-release"
@@ -123,9 +145,10 @@ def _observe(output: dict[str, Any], family: str, execution_builder: Callable[..
         if execution.wait_for_ready(timeout_seconds=600) is False:
             logger.warning("OS observation: %s guest %s never became SSH-ready", family, execution.target)
             raise _fail()
+        probe = _WINDOWS_PROBE if family == "windows" else _linux_probe(output)
         result = execution.executor.run_command(
             execution.target,
-            _WINDOWS_PROBE if family == "windows" else _LINUX_PROBE,
+            probe,
             timeout_seconds=30,
             document_name=execution.document_name,
         )
