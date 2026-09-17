@@ -723,14 +723,22 @@ class TestGcpPurposeIdentityWorkflows:
         caller = (WORKFLOWS_DIR / "deploy.yml").read_text()
         for workflow in (reusable, caller):
             assert "GCP_DEPLOY_SERVICE_ACCOUNT" in workflow
-            assert "GCP_SERVICE_ACCOUNT" not in workflow
+            assert "secrets.GCP_SERVICE_ACCOUNT" not in workflow
+        assert "vars.GCP_SERVICE_ACCOUNT" in reusable
+        assert "vars.GCP_WIF_PROVIDER" in reusable
 
     def test_reusable_release_scan_uses_its_narrow_identity(self):
         reusable = (WORKFLOWS_DIR / "_gcp-dev.yml").read_text()
         caller = (WORKFLOWS_DIR / "deploy.yml").read_text()
         for workflow in (reusable, caller):
             assert "GCP_RELEASE_SCAN_SERVICE_ACCOUNT" in workflow
-        assert "environment: gcp-release-scan-dev" in reusable
+        assert "environment: ${{ inputs.release_scan_github_environment }}" in reusable
+        assert (
+            "release_scan_github_environment: "
+            "${{ needs.changes.outputs.gcp_release_scan_github_environment }}" in caller
+        )
+        assert "vars.GCP_SERVICE_ACCOUNT" in reusable
+        assert "vars.GCP_WIF_PROVIDER" in reusable
         assert "needs: [validate, prepare, release_scan]" in reusable
         assert "TRIVY_ARCHIVE_SHA256" in reusable
 
