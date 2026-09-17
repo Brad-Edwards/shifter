@@ -69,8 +69,10 @@ AWS ranges using the retired role issuer must be drained with the previous relea
 before the IAM cutover.
 
 The SDK and external worker have been built and exercised independently with
-synthetic local conformance tests. SDK and adapter publication and live cloud
-qualification remain outstanding. An installation's `ready` status means its
+synthetic local conformance tests using a locally built SDK wheel. Worker image
+delivery and live cloud qualification remain outstanding. SDK distribution is
+tracked separately in [#2241](https://github.com/Brad-Edwards/shifter/issues/2241)
+and does not block this qualification. An installation's `ready` status means its
 compatibility probe succeeded; it does not mean a pack is runnable or a range is
 ready. This branch is not a completed cutover.
 

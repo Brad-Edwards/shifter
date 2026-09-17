@@ -4,8 +4,10 @@ This directory holds the machine-readable part of ADR enforcement.
 
 SDK candidate distributions from pull-request CI include their SHA-256 checksums
 and are retained under a revision-specific artifact name for independent adapter
-builds. Candidate retention grants no publishing authority: SDK publication still
-requires the protected `main` workflow and the `adapter-sdk-pypi` environment.
+builds. Candidate retention grants no publishing authority. The provisional SDK
+publishing scaffold remains restricted to `main` and `adapter-sdk-pypi`, dormant
+pending the release-model decision in #2241. Local wheel qualification requires
+no SDK publication.
 
 ## Files
 
