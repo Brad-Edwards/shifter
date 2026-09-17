@@ -55,6 +55,7 @@ def _node(
     acls: tuple[RaesPlanAcl, ...] = (),
     services: tuple[RaesPlanServicePort, ...] = (),
     network_selection_open: bool = False,
+    network_ip_assignments: tuple[tuple[str, str], ...] = (),
 ) -> RaesPlanNode:
     return RaesPlanNode(
         address=address,
@@ -63,6 +64,7 @@ def _node(
         count=count,
         network_addresses=networks,
         network_selection_open=network_selection_open,
+        network_ip_assignments=network_ip_assignments,
         image=RaesPlanImage(name="kali"),
         acls=acls,
         services=services,
@@ -86,9 +88,17 @@ class TestNetworkMode:
 
     def test_shared_vpc_reuses_platform_network(self):
         config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
-        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            config,
+            allocated_network_cidrs=(("net.a", "10.90.1.0/24"),),
+        )
         assert plan["manage_network"] is False
         assert plan["network"]["name"] == "shared"
+        assert plan["subnets"][0]["cidr"] == "10.90.1.0/24"
 
     def test_open_network_selection_is_materialized_by_gce_adapter(self):
         portable = _plan((_node(networks=(), network_selection_open=True),), ())
@@ -128,7 +138,7 @@ class TestNetworkMode:
             portable,
             _resolver(),
             config,
-            allocated_network_cidr="10.90.0.0/28",
+            allocated_network_cidrs=(("backend.gce.network.default", "10.90.0.0/28"),),
         )
 
         assert plan["subnets"][0]["cidr"] == "10.90.0.0/28"
@@ -139,6 +149,62 @@ class TestNetworkMode:
 
         with pytest.raises(RaesGcePlanError, match="tenant-allocated"):
             build_raes_range_cell_plan("req-1", 7, portable, _resolver(), config)
+
+    def test_shared_vpc_rejects_projection_shape_mismatch(self):
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+
+        with pytest.raises(RaesGcePlanError, match="projection does not match"):
+            build_raes_range_cell_plan(
+                "req-1",
+                7,
+                _plan((_node(),), (_network(),)),
+                _resolver(),
+                config,
+                allocated_network_cidrs=(("net.other", "10.90.1.0/24"),),
+            )
+
+    def test_shared_vpc_rejects_allocated_prefix_mismatch(self):
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+
+        with pytest.raises(RaesGcePlanError, match="prefix does not match"):
+            build_raes_range_cell_plan(
+                "req-1",
+                7,
+                _plan((_node(),), (_network(cidr="10.50.0.0/24"),)),
+                _resolver(),
+                config,
+                allocated_network_cidrs=(("net.a", "10.90.1.0/28"),),
+            )
+
+    def test_shared_vpc_rejects_overlapping_allocated_subnets(self):
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+        networks = (
+            _network("net.a", name="lan", cidr="10.50.0.0/24"),
+            _network("net.b", name="dmz", cidr="10.51.0.0/24"),
+        )
+        nodes = (
+            _node("node.a", networks=("net.a",)),
+            _node("node.b", name="peer", networks=("net.b",)),
+        )
+
+        with pytest.raises(RaesGcePlanError, match="overlapping subnets"):
+            build_raes_range_cell_plan(
+                "req-1",
+                7,
+                _plan(nodes, networks),
+                _resolver(),
+                config,
+                allocated_network_cidrs=(("net.a", "10.90.1.0/24"), ("net.b", "10.90.1.0/24")),
+            )
+
+    def test_open_network_rejects_reserved_adapter_network_identity(self):
+        portable = _plan(
+            (_node(networks=(), network_selection_open=True),),
+            (_network(address="backend.gce.network.default"),),
+        )
+
+        with pytest.raises(RaesGcePlanError, match="reserved GCE adapter network identity"):
+            build_raes_range_cell_plan("req-1", 7, portable, _resolver(), _config())
 
     def test_shared_vpc_teardown_reconstructs_names_when_reservation_never_existed(self):
         config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
@@ -202,6 +268,110 @@ class TestSubnets:
         lowered = message.lower()
         for literal in ("fd00", "dead", "beef"):
             assert literal not in lowered
+
+    def test_reserved_cidr_rebases_static_host_offset_and_firewall_sources(self):
+        node = _node(
+            network_ip_assignments=(("net.a", "10.50.0.10"),),
+            acls=(
+                RaesPlanAcl(
+                    name="from-lan",
+                    action="accept",
+                    direction="in",
+                    protocol="tcp",
+                    ports=(22,),
+                    from_net="net.a",
+                ),
+            ),
+        )
+        authored = _plan((node,), (_network(cidr="10.50.0.0/24"),))
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            authored,
+            _resolver(),
+            config,
+            allocated_network_cidrs=(("net.a", "10.90.4.0/24"),),
+        )
+
+        assert authored.networks[0].cidr == "10.50.0.0/24"
+        assert plan["subnets"][0]["cidr"] == "10.90.4.0/24"
+        assert plan["instances"][0]["private_ip"] == "10.90.4.10"
+        acl = next(
+            firewall
+            for firewall in plan["firewalls"]
+            if firewall.get("target_tags") == [node_tag(7, "node.a")] and firewall.get("priority") == 1000
+        )
+        assert acl["source_ranges"] == ["10.90.4.0/24"]
+
+    def test_dynamic_assignment_skips_rebased_static_address(self):
+        static = _node(
+            address="node.static",
+            name="static",
+            network_ip_assignments=(("net.a", "10.50.0.3"),),
+        )
+        dynamic = _node(address="node.dynamic", name="dynamic")
+
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((static, dynamic), (_network(cidr="10.50.0.0/24"),)),
+            _resolver(),
+            _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared"),
+            allocated_network_cidrs=(("net.a", "10.90.4.0/24"),),
+        )
+
+        by_uuid = {instance["uuid"]: instance["private_ip"] for instance in plan["instances"]}
+        assert by_uuid == {"node.static#0": "10.90.4.3", "node.dynamic#0": "10.90.4.4"}
+
+    def test_duplicate_rebased_static_addresses_fail_closed(self):
+        nodes = (
+            _node(
+                address="node.first",
+                name="first",
+                network_ip_assignments=(("net.a", "10.50.0.10"),),
+            ),
+            _node(
+                address="node.second",
+                name="second",
+                network_ip_assignments=(("net.a", "10.50.0.10"),),
+            ),
+        )
+
+        with pytest.raises(RaesGcePlanError, match="duplicated"):
+            build_raes_range_cell_plan(
+                "req-1",
+                7,
+                _plan(nodes, (_network(cidr="10.50.0.0/24"),)),
+                _resolver(),
+                _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared"),
+                allocated_network_cidrs=(("net.a", "10.90.4.0/24"),),
+            )
+
+    def test_static_address_outside_authored_network_fails_closed(self):
+        node = _node(network_ip_assignments=(("net.a", "10.51.0.10"),))
+
+        with pytest.raises(RaesGcePlanError, match="outside its authored network"):
+            build_raes_range_cell_plan(
+                "req-1",
+                7,
+                _plan((node,), (_network(cidr="10.50.0.0/24"),)),
+                _resolver(),
+                _config(),
+            )
+
+    def test_static_address_on_multi_instance_node_is_ambiguous(self):
+        node = _node(count=2, network_ip_assignments=(("net.a", "10.50.0.10"),))
+
+        with pytest.raises(RaesGcePlanError, match="no unambiguous authored network"):
+            build_raes_range_cell_plan(
+                "req-1",
+                7,
+                _plan((node,), (_network(cidr="10.50.0.0/24"),)),
+                _resolver(),
+                _config(),
+            )
 
 
 class TestInstances:
@@ -315,6 +485,14 @@ class TestPlacementErrors:
 
         with pytest.raises(RaesGcePlanError, match="no network"):
             build_raes_range_cell_plan("req-1", 7, plan_2, _resolver(), _config())
+
+    def test_empty_shared_vpc_plan_does_not_require_an_allocation(self):
+        node = _node(networks=(), network_selection_open=False)
+        plan_2 = _plan((node,), ())
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+
+        with pytest.raises(RaesGcePlanError, match="no network"):
+            build_raes_range_cell_plan("req-1", 7, plan_2, _resolver(), config)
 
     def test_node_referencing_undeclared_network_fails_loud(self):
         node = _node(networks=("net.missing",))
@@ -444,6 +622,28 @@ class TestServiceFirewalls:
         svc = _service_firewalls(plan, "node.a")[0]
         assert svc["source_ranges"] == ["10.9.0.0/24", "10.9.1.0/24"]
         assert "10.99.0.0/24" not in svc["source_ranges"]  # not another range
+
+    def test_shared_vpc_service_sources_use_every_realized_range_subnet(self):
+        networks = (
+            _network("net.a", name="lan", cidr="10.9.0.0/24"),
+            _network("net.b", name="dmz", cidr="10.9.1.0/24"),
+        )
+        node = _node("node.a", networks=("net.a",), services=(RaesPlanServicePort(port=80, protocol="tcp"),))
+        peer = _node("node.b", name="peer", networks=("net.b",))
+        authored = _plan((node, peer), networks)
+
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            authored,
+            _resolver(),
+            _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared"),
+            allocated_network_cidrs=(("net.a", "10.90.2.0/24"), ("net.b", "10.90.3.0/24")),
+        )
+
+        assert [subnet["cidr"] for subnet in plan["subnets"]] == ["10.90.2.0/24", "10.90.3.0/24"]
+        assert _service_firewalls(plan, "node.a")[0]["source_ranges"] == ["10.90.2.0/24", "10.90.3.0/24"]
+        assert [network.cidr for network in authored.networks] == ["10.9.0.0/24", "10.9.1.0/24"]
 
     def test_authored_acl_outranks_service_allow(self):
         acl = RaesPlanAcl(

@@ -26,6 +26,7 @@ live efficacy is proven on a real range.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
@@ -100,9 +101,11 @@ def activate_raes_range_cell(
 
 
 def default_activation_ops(
-    *, config: GCERangeCellConfig | None = None, allocated_network_cidr: str | None = None
+    *,
+    config: GCERangeCellConfig | None = None,
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None,
 ) -> ActivationOps:
     """Return the production :class:`ActivationOps` wired to real GCE primitives."""
     from raes_gcp_activate_gce import GceActivationOps
 
-    return GceActivationOps(config=config, allocated_network_cidr=allocated_network_cidr)
+    return GceActivationOps(config=config, allocated_network_cidrs=allocated_network_cidrs)
