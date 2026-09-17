@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from django.contrib.auth.models import User
@@ -45,8 +45,16 @@ from shared.warm_pool.policy import (
 if TYPE_CHECKING:
     from cms.models import RangeInstance
     from cms.services._range_lease import RangeLease
+    from shared.model_access.reservation import ModelLaunchScope
 
 logger = logging.getLogger(__name__)
+
+
+class _WarmGeneration(Protocol):
+    """Narrow structural view received from the Engine claim service."""
+
+    request_id: UUID
+
 
 # Reconciler assumptions the warm-prepare side stamps its generations with; the
 # launch side must derive the same values for a claim to match. Warm v1 serves
@@ -92,6 +100,7 @@ class WarmClaimRequest:
     #: Trusted event deadline for a CTF-owned generation. Mission Control policy is
     #: resolved only after a warm generation is claimed inside this transaction.
     enforced_deadline: datetime | None = None
+    model_launch_scope: ModelLaunchScope | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +110,7 @@ class _ClaimOutcome:
     request_id: UUID
     bucket_id: str
     generation_uuid: UUID
+    activation_enqueued: bool = False
 
 
 def _eligible_buckets(policy: WarmPoolRuntimePolicy, *, backend: str, scenario: str) -> list[WarmPoolBucketPolicy]:
@@ -198,6 +208,7 @@ def _run_atomic_claim(request: WarmClaimRequest, candidates: list[tuple[str, str
                 else build_range_lease(request.range_source, enforced_deadline=request.enforced_deadline)
             )
             _assign_initial_user_lease(range_instance, lease)
+            activation_enqueued = _admit_claim_models(request, generation, range_instance)
             audit_log(
                 AuditEvent(
                     entity_type=AuditEntityType.RANGE.value,
@@ -218,6 +229,7 @@ def _run_atomic_claim(request: WarmClaimRequest, candidates: list[tuple[str, str
                 request_id=generation.request_id,
                 bucket_id=generation.bucket_id,
                 generation_uuid=generation.uuid,
+                activation_enqueued=activation_enqueued,
             )
     except _WarmClaimRollback:
         return None
@@ -240,7 +252,8 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     outcome = _run_atomic_claim(request, candidates)
     if outcome is None:
         return None
-    enqueue_range_activation(outcome.request_id)
+    if not outcome.activation_enqueued:
+        enqueue_range_activation(outcome.request_id)
     emit_claim_outcome(bucket_id=outcome.bucket_id, backend=request.backend, outcome=CLAIM_HIT)
     logger.info(
         "warm claim: hit bucket=%s generation=%s user_id=%s",
@@ -249,6 +262,28 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
         request.user.id,
     )
     return outcome.request_id
+
+
+def _admit_claim_models(
+    request: WarmClaimRequest,
+    generation: _WarmGeneration,
+    instance: RangeInstance,
+) -> bool:
+    """Commit model grant/allocation and activation with the claim, or roll it all back."""
+    from cms.services._model_allocation import needs_model_preparation, prepare_model_access_for_dispatch
+    from engine.services import enqueue_range_activation, resolve_model_access_range_views
+
+    if not needs_model_preparation(generation.request_id):
+        return False
+    instance.refresh_from_db()
+    instance.model_launch_scope = (
+        request.model_launch_scope.model_dump(mode="json") if request.model_launch_scope else None
+    )
+    instance.save(update_fields=["model_launch_scope"])
+    (view,) = resolve_model_access_range_views(request_uuids=(generation.request_id,))
+    prepare_model_access_for_dispatch(generation.request_id, range_id=view.range_uuid, renew=True)
+    enqueue_range_activation(generation.request_id)
+    return True
 
 
 class _WarmClaimRollback(Exception):

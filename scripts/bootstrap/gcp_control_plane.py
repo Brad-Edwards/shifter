@@ -62,6 +62,9 @@ from gdc_cluster import (
 )
 
 _GUACAMOLE_RUNTIME_RESOURCE_NAME = "guacamole-runtime"
+_GCP_MIGRATION_JOB_REF = "job/platform-migrate"
+_GCP_MIGRATION_TMP_DIR = "/var/run/shifter-migrate"
+_K8S_COMPONENT_LABEL = "app.kubernetes.io/component"
 _K8S_PART_OF_LABEL = "app.kubernetes.io/part-of"
 
 
@@ -550,6 +553,10 @@ def _helm_service_account_values(service_accounts: dict[str, str]) -> dict[str, 
         "portal": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["portal"]}},
         "workers": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["workers"]}},
         "ctfScheduler": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["ctf-scheduler"]}},
+        "migrator": {
+            "name": "migrator",
+            "annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["migrator"]},
+        },
         "provisionerLauncher": {
             "name": "provisioner-launcher",
             "annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["provisioner-launcher"]},
@@ -1877,6 +1884,213 @@ def ensure_gcp_control_plane_namespaces(dry_run: bool = False) -> None:
         _wait_for_namespace_active(namespace_name)
 
 
+def _gcp_migration_prerequisites(
+    service_account: str,
+    runtime_data: dict[str, str],
+) -> dict[str, object]:
+    """Build the Helm-owned service account and runtime configuration."""
+    helm_labels = {
+        _K8S_PART_OF_LABEL: "shifter",
+        "app.kubernetes.io/managed-by": "Helm",
+    }
+    helm_annotations = {
+        "meta.helm.sh/release-name": "shifter",
+        "meta.helm.sh/release-namespace": "shifter-system",
+    }
+    return {
+        "apiVersion": "v1",
+        "kind": "List",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "ServiceAccount",
+                "metadata": {
+                    "name": "migrator",
+                    "namespace": "shifter-platform",
+                    "labels": {**helm_labels, _K8S_COMPONENT_LABEL: "migrator"},
+                    "annotations": {
+                        **helm_annotations,
+                        _GKE_WORKLOAD_IDENTITY_ANNOTATION: service_account,
+                    },
+                },
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                    "name": "platform-runtime",
+                    "namespace": "shifter-platform",
+                    "labels": helm_labels,
+                    "annotations": helm_annotations,
+                },
+                "data": runtime_data,
+            },
+        ],
+    }
+
+
+def _gcp_migration_job(platform_image: str) -> dict[str, object]:
+    """Build the hardened one-off schema migration Job."""
+    labels = {_K8S_PART_OF_LABEL: "shifter", _K8S_COMPONENT_LABEL: "migrator"}
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {
+            "name": "platform-migrate",
+            "namespace": "shifter-platform",
+            "labels": labels,
+        },
+        "spec": {
+            "backoffLimit": 0,
+            "activeDeadlineSeconds": 900,
+            "template": {
+                "metadata": {"labels": labels},
+                "spec": {
+                    "serviceAccountName": "migrator",
+                    "automountServiceAccountToken": True,
+                    "restartPolicy": "Never",
+                    "securityContext": {"seccompProfile": {"type": "RuntimeDefault"}},
+                    "containers": [
+                        {
+                            "name": "migrate",
+                            "image": platform_image,
+                            "imagePullPolicy": "IfNotPresent",
+                            "args": ["/bin/true"],
+                            "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
+                            "env": [
+                                {
+                                    "name": "DB_SECRET_ID",
+                                    "valueFrom": {
+                                        "configMapKeyRef": {
+                                            "name": "platform-runtime",
+                                            "key": "DB_MIGRATION_SECRET_ID",
+                                        }
+                                    },
+                                },
+                                {"name": "TMPDIR", "value": _GCP_MIGRATION_TMP_DIR},
+                                {"name": "SKIP_MIGRATIONS", "value": ""},
+                                {"name": "GUACAMOLE_SECRET_ID", "value": ""},
+                                {"name": "DC_DOMAIN_PASSWORD_SECRET_ID", "value": ""},
+                                {"name": "REDIS_SECRET_ID", "value": ""},
+                                {"name": "EMAIL_API_KEY_SECRET_ID", "value": ""},
+                            ],
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "capabilities": {"drop": ["ALL"]},
+                                "readOnlyRootFilesystem": True,
+                                "runAsNonRoot": True,
+                            },
+                            "volumeMounts": [{"name": "tmp", "mountPath": _GCP_MIGRATION_TMP_DIR}],
+                        }
+                    ],
+                    "volumes": [{"name": "tmp", "emptyDir": {}}],
+                },
+            },
+        },
+    }
+
+
+def render_gcp_migration_manifests(
+    outputs: dict[str, dict[str, object]], values: Mapping[str, object]
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Render Helm-owned prerequisites and the one-off schema migration Job."""
+    runtime_env = values.get("runtimeEnv")
+    images = values.get("images")
+    if not isinstance(runtime_env, Mapping) or not isinstance(images, Mapping):
+        raise ValueError("GCP migration requires rendered runtimeEnv and images mappings")
+    platform_image = str(images.get("platform", ""))
+    if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", platform_image):
+        raise ValueError("GCP migration platform image must be repository@sha256:<64 lowercase hex>")
+    if not str(runtime_env.get("DB_MIGRATION_SECRET_ID", "")).strip():
+        raise ValueError("GCP migration requires DB_MIGRATION_SECRET_ID")
+
+    service_accounts = _get_string_mapping_output(outputs, "workload_service_accounts")
+    runtime_data = {str(key): str(value) for key, value in runtime_env.items()}
+    capabilities = values.get("capabilities")
+    if isinstance(capabilities, Mapping) and capabilities.get("kubernetesJobLauncher"):
+        runtime_data["ENGINE_TASK_NAMESPACE"] = "shifter-jobs"
+        runtime_data["ENGINE_TASK_SERVICE_ACCOUNT_NAME"] = "provisioner"
+    return _gcp_migration_prerequisites(service_accounts["migrator"], runtime_data), _gcp_migration_job(platform_image)
+
+
+def run_gcp_database_migrations(
+    outputs: dict[str, dict[str, object]], values_path: Path, *, dry_run: bool = False
+) -> None:
+    """Run migrations under the dedicated GCP Workload Identity and DB owner."""
+    values = json.loads(values_path.read_text(encoding="utf-8"))
+    prerequisites, job = render_gcp_migration_manifests(outputs, values)
+    if dry_run:
+        info("[DRY-RUN] Would run the dedicated GCP database migration Job")
+        return
+
+    subprocess.run(  # nosec B603 B607
+        [
+            "kubectl",
+            "delete",
+            _GCP_MIGRATION_JOB_REF,
+            "--namespace",
+            "shifter-platform",
+            "--ignore-not-found",
+            "--wait=true",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    for manifest in (prerequisites, job):
+        result = subprocess.run(  # nosec B603 B607
+            ["kubectl", "apply", "-f", "-"],
+            input=json.dumps(manifest),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to apply GCP migration resource: {result.stderr.strip() or _UNKNOWN_ERROR}")
+
+    try:
+        wait = subprocess.run(  # nosec B603 B607
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=complete",
+                _GCP_MIGRATION_JOB_REF,
+                "--namespace",
+                "shifter-platform",
+                "--timeout=15m",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        logs = subprocess.run(  # nosec B603 B607
+            ["kubectl", "logs", _GCP_MIGRATION_JOB_REF, "--namespace", "shifter-platform", "--all-containers=true"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if logs.stdout:
+            print(logs.stdout, end="")
+        if wait.returncode != 0:
+            raise RuntimeError(f"GCP database migration Job failed: {wait.stderr.strip() or _UNKNOWN_ERROR}")
+    finally:
+        subprocess.run(  # nosec B603 B607
+            [
+                "kubectl",
+                "delete",
+                _GCP_MIGRATION_JOB_REF,
+                "--namespace",
+                "shifter-platform",
+                "--ignore-not-found",
+                "--wait=false",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
 def deploy_gcp_control_plane_with_helm(
     config: GDCBootstrapConfig,
     outputs: dict[str, dict[str, object]],
@@ -1916,6 +2130,7 @@ def deploy_gcp_control_plane_with_helm(
     )
     prepare_gcp_helm_cutover(dry_run=dry_run)
     ensure_gcp_control_plane_namespaces(dry_run=dry_run)
+    run_gcp_database_migrations(outputs, values_path, dry_run=dry_run)
     guacamole_runtime_changed = sync_gcp_guacamole_runtime_secret(config, outputs, dry_run=dry_run)
     run_cmd(
         [

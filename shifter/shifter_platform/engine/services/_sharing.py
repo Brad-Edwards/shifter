@@ -155,6 +155,9 @@ def publish_sharing_binding(
     is_snapshot = sealed.membership_mode is MembershipMode.SNAPSHOT
 
     with transaction.atomic():
+        from ._model_allocation_authority import lock_policy_publication
+
+        lock_policy_publication(deployment_id, writing=True)
         pool_record = _upsert_pool(deployment_id, pool)
         record = (
             SharingBindingRecord.objects.select_for_update()
@@ -236,6 +239,9 @@ def drain_sharing_binding(
 
     publisher = _as_ref(publisher_identity)
     with transaction.atomic():
+        from ._model_allocation_authority import lock_policy_publication
+
+        lock_policy_publication(deployment_id, writing=True)
         record = (
             SharingBindingRecord.objects.select_for_update()
             .filter(deployment_id=deployment_id, sharing_binding_id=sharing_binding_id)

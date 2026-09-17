@@ -754,6 +754,7 @@ resource "aws_launch_template" "this" {
 
   user_data = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
+    audit_deployment_scope     = "aws:${data.aws_caller_identity.current.account_id}:${data.aws_region.current.name}:${var.environment}"
     django_environment         = local.django_environment
     cloud_provider             = var.cloud_provider
     ecr_repository_url         = var.ecr_repository_url
@@ -922,6 +923,7 @@ resource "aws_instance" "this" {
 
   user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
+    audit_deployment_scope     = "aws:${data.aws_caller_identity.current.account_id}:${data.aws_region.current.name}:${var.environment}"
     django_environment         = local.django_environment
     cloud_provider             = var.cloud_provider
     ecr_repository_url         = var.ecr_repository_url

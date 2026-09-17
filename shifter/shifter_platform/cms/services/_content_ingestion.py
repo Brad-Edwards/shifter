@@ -258,6 +258,7 @@ def _replace_existing(
                 AuditEvent(
                     entity_type=AuditEntityType.SCENARIO,
                     entity_id=0,
+                    entity_ref=row.scenario_id,
                     action=AuditAction.UPDATE,
                     actor_type=AuditActorType.USER,
                     actor_id=user.id,
@@ -357,9 +358,8 @@ def _audit_registration(row: RaesPackageSource, user: User, request_id: str) -> 
         audit_log(
             AuditEvent(
                 entity_type=AuditEntityType.SCENARIO,
-                # RaesPackageSource PKs are UUIDs; existing scenario audit records
-                # use 0 and carry the scenario_id in the state payload.
                 entity_id=0,
+                entity_ref=row.scenario_id,
                 action=AuditAction.CREATE,
                 actor_type=AuditActorType.USER,
                 actor_id=getattr(user, "id", None),

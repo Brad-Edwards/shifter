@@ -159,6 +159,7 @@
         "portal",
         "workers",
         "ctfScheduler",
+        "migrator",
         "provisionerLauncher",
         "provisioner"
       ],
@@ -166,6 +167,7 @@
         "portal": { "$ref": "#/$defs/serviceAccount" },
         "workers": { "$ref": "#/$defs/serviceAccount" },
         "ctfScheduler": { "$ref": "#/$defs/serviceAccount" },
+        "migrator": { "$ref": "#/$defs/serviceAccount" },
         "provisionerLauncher": { "$ref": "#/$defs/serviceAccount" },
         "provisioner": { "$ref": "#/$defs/serviceAccount" }
       }
