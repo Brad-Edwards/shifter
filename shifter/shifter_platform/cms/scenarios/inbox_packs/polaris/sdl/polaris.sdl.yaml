@@ -1,0 +1,83 @@
+name: polaris
+description: >
+  Polaris / NORTHSTORM GCE launch topology: a Kali participant docker-host and a
+  pre-promoted Windows AD domain controller on one range LAN. Authored against
+  raes 3.5.0. The a0-a16 Boreas services run as containers baked into the
+  polaris-vm image and are materialized per-range at provision time; the DC is a
+  pre-promoted BOREAS/boreas.local forest baked into the polaris-dc image.
+
+nodes:
+  lan:
+    type: switch
+  a14-kali:
+    type: compute
+    os: linux
+    os_distribution: x-shifter:kali
+    os_version: "rolling"
+    # Names the tenant keyed image profile polaris-vm (polaris-docker-host): the
+    # baked Kali docker-host that runs the Boreas compose stack.
+    source: {name: polaris-vm}
+    resources: {ram: 8 gib, cpu: 2}
+    services:
+      - {port: 22, name: ssh}
+      - {port: 3389, name: rdp}
+  dc01:
+    type: compute
+    os: windows
+    os_distribution: windows-server
+    os_version: "2022"
+    # Names the tenant keyed image profile polaris-dc
+    # (prepromoted-domain-controller): the baked BOREAS/boreas.local DC.
+    source: {name: polaris-dc}
+    resources: {ram: 4 gib, cpu: 2}
+    services:
+      - {port: 389, name: ldap}
+      - {port: 445, name: smb}
+
+infrastructure:
+  lan:
+    count: 1
+    properties: {cidr: 10.50.0.0/24, gateway: 10.50.0.1}
+  a14-kali:
+    count: 1
+    links: [lan]
+    properties:
+      - lan: 10.50.0.10
+  dc01:
+    count: 1
+    links: [lan]
+    properties:
+      - lan: 10.50.0.11
+
+entities:
+  participant:
+    description: Polaris participant
+    role: red
+
+accounts:
+  kali_login:
+    username: kali
+    node: a14-kali
+    auth_method: key
+
+agents:
+  participant:
+    entity: participant
+    description: Participant with SSH access to the Kali docker-host
+    starting_accounts: [kali_login]
+    interactive_access:
+      kali_ssh:
+        target_ref: a14-kali
+        channel: ssh
+        account_ref: kali_login
+
+realization:
+  constraints:
+    - field_pointer: /nodes/a14-kali
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/dc01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

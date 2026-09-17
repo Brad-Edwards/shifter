@@ -66,9 +66,9 @@ class TestShippedManifest:
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
         assert isinstance(packs, list)
 
-    def test_shipped_manifest_contains_the_smoke_linux_pack(self):
+    def test_shipped_manifest_contains_the_in_box_packs(self):
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
-        assert [pack.scenario_id for pack in packs] == ["smoke-linux"]
+        assert [pack.scenario_id for pack in packs] == ["smoke-linux", "polaris"]
 
 
 class TestRegisterInboxPacks:

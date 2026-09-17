@@ -1,0 +1,15 @@
+name: polaris
+title: Polaris / NORTHSTORM
+version: 0.1.0
+status: built
+description: >-
+  CMS launch binding for the Polaris / NORTHSTORM range on the RAES-native GCE
+  path: a Kali docker-host (the a0-a16 Boreas compose stack is baked into the
+  polaris-vm image) and a pre-promoted Windows AD domain controller (BOREAS /
+  boreas.local). The two guests realize the tenant keyed image profiles
+  polaris-vm (polaris-docker-host) and polaris-dc (prepromoted-domain-controller);
+  scenario content ships in the baked images, not this pack.
+authors:
+  - Palo Alto Networks, Inc.
+provenance_ledger: docs/provenance-ledger.yaml
+associated_artifact_manifest: associated-artifacts.json
