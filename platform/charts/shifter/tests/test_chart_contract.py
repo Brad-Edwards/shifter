@@ -44,9 +44,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
 # Regenerated for ADR-041 tenant plugin installation: dedicated restricted
 # namespace, network denial, quotas, controller RBAC and worker admission policy.
+# Regenerated for mandatory gVisor placement and guest-enrollment admission keys.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "815be9cc5c0482795eb49e13d105799c2f86afe47df3a9e7b1083586d383711a",
-    "gcp-prod": "b685d2c1cb70b1e07ac30f4c3dbe4ea92fc19f64484573af3fdf1f396dcd3e8d",
+    "gcp-dev": "57cf31f7eece98b8de5309a06ad94606bccf5dc889cfe7464b59dab25a539b1c",
+    "gcp-prod": "1a697ef9dbfa85ca9bcee66bf730c0ab334f7fd2ebc550e264b8c5490c147f5c",
 }
 
 
@@ -80,6 +81,19 @@ def _identity(document: dict[str, object]) -> tuple[str, str]:
 
 
 class BackendNeutralChartContractTests(unittest.TestCase):
+    def test_aws_supplies_gvisor_runtime_class_for_only_the_isolated_pool(self) -> None:
+        _, documents = _render(VALUES_FILES["aws-dev"])
+        runtime = next(doc for doc in documents if _identity(doc) == ("RuntimeClass", "gvisor"))
+        self.assertEqual(runtime["handler"], "runsc")
+        self.assertEqual(runtime["scheduling"]["nodeSelector"],
+                         {"node-restriction.kubernetes.io/shifter-pool": "runtime-plugin"})
+        self.assertEqual(runtime["scheduling"]["tolerations"], [{
+            "key": "shifter.dev/runtime-plugin", "operator": "Equal", "value": "true", "effect": "NoSchedule",
+        }])
+        # GKE owns its managed RuntimeClass; the chart must not replace it.
+        _, gcp = _render(VALUES_FILES["gcp-dev"])
+        self.assertFalse(any(doc["kind"] == "RuntimeClass" for doc in gcp))
+
     def test_chart_has_schema_and_all_backend_profiles(self) -> None:
         schema = json.loads((CHART_DIR / "values.schema.json").read_text())
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")

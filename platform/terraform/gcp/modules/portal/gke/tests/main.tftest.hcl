@@ -60,7 +60,7 @@ run "untrusted_plugin_sandbox_pool" {
     condition = (
       google_container_node_pool.runtime_plugins.node_config[0].sandbox_config[0].type == "GVISOR" &&
       google_container_node_pool.runtime_plugins.node_config[0].image_type == "COS_CONTAINERD" &&
-      google_container_node_pool.runtime_plugins.node_config[0].labels["shifter.dev/workload"] == "runtime-plugin" &&
+      google_container_node_pool.runtime_plugins.node_config[0].labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
       anytrue([for taint in google_container_node_pool.runtime_plugins.node_config[0].taint :
         taint.key == "shifter.dev/runtime-plugin" && taint.value == "true" && taint.effect == "NO_SCHEDULE"
       ])

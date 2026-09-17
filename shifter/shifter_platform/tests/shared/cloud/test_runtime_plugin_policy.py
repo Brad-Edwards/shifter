@@ -122,5 +122,5 @@ def test_default_or_unapproved_runtime_is_denied(policy, job, runtime):
 
 def test_platform_nodes_cannot_receive_plugin_jobs(policy, job):
     pod = job["spec"]["template"]["spec"]
-    pod["nodeSelector"] = {"shifter.dev/workload": "provisioner"}
+    pod["nodeSelector"] = {"node-restriction.kubernetes.io/shifter-pool": "provisioner"}
     assert not accepted(policy, job)

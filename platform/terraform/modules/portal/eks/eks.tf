@@ -19,6 +19,10 @@ resource "aws_eks_cluster" "this" {
     "scheduler",
   ]
 
+  kubernetes_network_config {
+    ip_family = "ipv4"
+  }
+
   access_config {
     authentication_mode                         = "API"
     bootstrap_cluster_creator_admin_permissions = false

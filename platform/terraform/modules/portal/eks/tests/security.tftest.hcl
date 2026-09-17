@@ -112,8 +112,9 @@ override_resource {
 override_resource {
   target = aws_eks_cluster.this
   values = {
-    arn      = "arn:aws:eks:us-east-2:123456789012:cluster/shifter-test"
-    endpoint = "https://example.test"
+    arn                       = "arn:aws:eks:us-east-2:123456789012:cluster/shifter-test"
+    endpoint                  = "https://example.test"
+    kubernetes_network_config = { service_ipv4_cidr = "172.20.0.0/16" }
     certificate_authority = [{
       data = "dGVzdA=="
     }]
@@ -129,6 +130,21 @@ override_resource {
   target = aws_launch_template.node
   values = {
     id             = "lt-11111111111111111"
+    latest_version = 1
+  }
+}
+
+override_resource {
+  target = aws_eks_node_group.runtime_plugins
+  values = {
+    resources = [{ autoscaling_groups = [{ name = "eks-shifter-test-plugins-asg" }] }]
+  }
+}
+
+override_resource {
+  target = aws_launch_template.runtime_plugins
+  values = {
+    id             = "lt-22222222222222222"
     latest_version = 1
   }
 }
@@ -203,6 +219,37 @@ variables {
 
 run "security_contract" {
   command = apply
+
+  assert {
+    condition = (
+      aws_eks_node_group.runtime_plugins.ami_type == "AL2023_x86_64_STANDARD" &&
+      aws_eks_node_group.runtime_plugins.labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins.taint).key == "shifter.dev/runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins.taint).effect == "NO_SCHEDULE" &&
+      aws_eks_node_group.runtime_plugins.scaling_config[0].min_size == 1
+    )
+    error_message = "Tenant runtime plugins require a warm, exclusive AL2023 sandbox pool."
+  }
+
+  assert {
+    condition = (
+      aws_launch_template.runtime_plugins.metadata_options[0].http_tokens == "required" &&
+      aws_launch_template.runtime_plugins.metadata_options[0].http_put_response_hop_limit == 1 &&
+      aws_launch_template.runtime_plugins.block_device_mappings[0].ebs[0].encrypted
+    )
+    error_message = "Sandbox node storage and metadata must preserve the hardened node boundary."
+  }
+
+  assert {
+    condition = (
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "sha512sum --check --status") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "release/20260914.0/") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "io.containerd.runsc.v1") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "node.eks.aws/v1alpha1")
+    )
+    error_message = "Node bootstrap must verify the pinned gVisor archive and configure the runtime through nodeadm."
+  }
+
 
   assert {
     condition     = aws_eks_cluster.this.vpc_config[0].endpoint_private_access && !aws_eks_cluster.this.vpc_config[0].endpoint_public_access

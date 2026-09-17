@@ -102,7 +102,7 @@ spec:
     - expression: >-
         variables.pod.serviceAccountName == 'plugin-worker' &&
         has(variables.pod.runtimeClassName) && variables.pod.runtimeClassName == 'gvisor' &&
-        has(variables.pod.nodeSelector) && variables.pod.nodeSelector['shifter.dev/workload'] == 'runtime-plugin' &&
+        has(variables.pod.nodeSelector) && variables.pod.nodeSelector['node-restriction.kubernetes.io/shifter-pool'] == 'runtime-plugin' &&
         has(variables.pod.automountServiceAccountToken) && !variables.pod.automountServiceAccountToken &&
         variables.pod.containers.size() == 1 &&
         (!has(variables.pod.initContainers) || variables.pod.initContainers.size() == 0) &&

@@ -37,7 +37,7 @@ def plugin_task_profile(*, image_pull_secret: str = "") -> KubernetesTaskProfile
         resource_limits={"cpu": "1", "memory": "256Mi", "ephemeral-storage": "64Mi"},
         active_deadline_seconds=120,
         runtime_class_name="gvisor",
-        node_selector={"shifter.dev/workload": "runtime-plugin"},
+        node_selector={"node-restriction.kubernetes.io/shifter-pool": "runtime-plugin"},
         tolerations=(("shifter.dev/runtime-plugin", "Equal", "true", "NoSchedule"),),
     )
 

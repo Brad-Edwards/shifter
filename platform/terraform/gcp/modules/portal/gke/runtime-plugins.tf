@@ -22,7 +22,7 @@ resource "google_container_node_pool" "runtime_plugins" {
     image_type      = "COS_CONTAINERD"
     service_account = var.node_service_account_email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
-    labels          = merge(var.common_labels, { "shifter.dev/workload" = "runtime-plugin" })
+    labels          = merge(var.common_labels, { "node-restriction.kubernetes.io/shifter-pool" = "runtime-plugin" })
     tags            = ["shifter", "gke", "runtime-plugin"]
 
     sandbox_config {

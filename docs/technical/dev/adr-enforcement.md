@@ -1072,14 +1072,21 @@ software release surface and does not publish or curate external packs.
 ### Tenant executable isolation (ADR-041)
 
 Runtime plugin jobs require `runtimeClassName: gvisor` and nodes labeled
-`shifter.dev/workload=runtime-plugin`. Both the host task profile and the static
-and Helm admission policies enforce this boundary. CEL tests exercise rejection
+`node-restriction.kubernetes.io/shifter-pool=runtime-plugin`. The protected label
+prefix prevents kubelets from attracting work by assigning themselves this label.
+Both the host task profile and static/Helm admission enforce this boundary. CEL tests exercise rejection
 of absent/default runtimes and platform-node placement using real rendered jobs.
 The GCP node pool enables Sandbox on `COS_CONTAINERD`, with an exclusive taint
 and bounded autoscaling. This follows the [GKE Sandbox deployment contract](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods).
-Other backends must supply the same sandbox boundary before tenant executable
-installation can qualify; absence is a failed prerequisite, never an ordinary
-container fallback. Live tests must establish actual sandbox execution and deny-all
+The AWS pool uses AL2023 and a checksum-pinned gVisor point release, including its
+sidecar binaries. Its MIME bootstrap installs the verified archive and configures
+the runtime through [nodeadm's merge interface](https://awslabs.github.io/amazon-eks-ami/nodeadm/doc/api/).
+The chart owns the EKS RuntimeClass; GKE owns its managed class. Both pools retain
+one warm node and cap autoscaling at three. An absent runtime or failed bootstrap
+blocks plugin startup, with no ordinary-container fallback. Release maintenance
+must follow the [gVisor installation layout](https://gvisor.dev/docs/user_guide/install/)
+and [containerd configuration](https://gvisor.dev/docs/user_guide/containerd/configuration/).
+The checked-in SHA-512 was verified against the complete release archive locally. Live tests must establish actual sandbox execution and deny-all
 network enforcement independently of anything the plugin reports.
 
 ### Broker process and guest authority (ADR-059, ADR-060)

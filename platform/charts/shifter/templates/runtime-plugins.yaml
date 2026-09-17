@@ -1,4 +1,20 @@
 {{- if .Values.capabilities.kubernetesJobLauncher }}
+{{- if eq .Values.provider.name "aws" }}
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+scheduling:
+  nodeSelector:
+    node-restriction.kubernetes.io/shifter-pool: runtime-plugin
+  tolerations:
+    - key: shifter.dev/runtime-plugin
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+---
+{{- end }}
 # Tenant plugin workers never share the platform/provisioner service identity.
 apiVersion: v1
 kind: Namespace
@@ -103,7 +119,7 @@ spec:
     - expression: >-
         variables.pod.serviceAccountName == 'plugin-worker' &&
         has(variables.pod.runtimeClassName) && variables.pod.runtimeClassName == 'gvisor' &&
-        has(variables.pod.nodeSelector) && variables.pod.nodeSelector['shifter.dev/workload'] == 'runtime-plugin' &&
+        has(variables.pod.nodeSelector) && variables.pod.nodeSelector['node-restriction.kubernetes.io/shifter-pool'] == 'runtime-plugin' &&
         has(variables.pod.automountServiceAccountToken) && !variables.pod.automountServiceAccountToken &&
         variables.pod.containers.size() == 1 &&
         (!has(variables.pod.initContainers) || variables.pod.initContainers.size() == 0) &&
