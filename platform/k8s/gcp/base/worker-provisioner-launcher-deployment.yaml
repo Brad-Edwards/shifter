@@ -39,6 +39,9 @@ spec:
             - name: tmp
               mountPath: /tmp
           args: ["python", "manage.py", "drain_provisioner_launch_outbox", "--loop", "--interval", "10"]
+          env:
+            - name: SHIFTER_PROVISIONER_LAUNCHER
+              value: "true"
           envFrom:
             - configMapRef:
                 name: platform-runtime

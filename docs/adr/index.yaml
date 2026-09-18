@@ -550,6 +550,11 @@
         "id": "ADR-008-R9",
         "description": "A service account attached to a participant-controllable GCE guest or range host must not have project-wide Cloud Storage access. OAuth cloud-platform scope and container metadata blocking are not authorization boundaries for a root-on-host attacker. Exact host bootstrap artifacts use the existing provisioner signed-delivery boundary; Terraform guards and effective-permission tests reject project storage grants for attachable range-host identities. Recorded by the architecture preflight for #1644.",
         "checks": []
+      },
+      {
+        "id": "ADR-008-R10",
+        "description": "Ephemeral GCP provisioner Jobs must authenticate to PostgreSQL as the dedicated provisioner_runtime login, inheriting only the reviewed provisioner_lambda capability role. The credential bundle is a named Secret Manager resource readable only by the provisioner-launcher workload identity; portal runtime credentials must not be projected into provisioner Jobs. The launcher must fail closed when the dedicated bundle is missing, and admission must bind the Job's DB_USER to the generated PROVISIONER_DB_USER runtime parameter.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -562,6 +567,9 @@
       "scripts/bootstrap/deploy.py",
       "scripts/gcp/render_runtime_env.py",
       "platform/terraform/gcp/modules/platform-core/main.tf",
+      "platform/terraform/gcp/modules/portal/cloud-sql/main.tf",
+      "platform/terraform/gcp/modules/portal/iam/main.tf",
+      "platform/k8s/gcp/base/validatingadmissionpolicy-provisioner-jobs.yaml",
       "platform/terraform/gcp/modules/platform-core/variables.tf",
       "platform/terraform/gcp/environments/gcp-dev/terraform.tfvars",
       "platform/charts/shifter/templates/portal-backendconfig.yaml",

@@ -29,6 +29,11 @@ GCP_ENV = {
     "DB_NAME": "shifter",
     "DB_USER": "shifter",
     "DB_PASSWORD": "secret",
+    "PROVISIONER_DB_HOST": "10.0.0.10",
+    "PROVISIONER_DB_PORT": "5432",
+    "PROVISIONER_DB_NAME": "shifter",
+    "PROVISIONER_DB_USER": "provisioner_runtime",
+    "PROVISIONER_DB_PASSWORD": "provisioner-secret",
     "RANGE_NETWORK_ID": "projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range",
     "RANGE_NETWORK_CIDR": "10.50.0.0/16",
     "PORTAL_NETWORK_CIDRS": "10.40.0.0/20,10.44.0.0/16",
@@ -175,7 +180,24 @@ class TestGcpProvisionerEnvOverrides:
         # as the default) must reach the provision Job for RangePodSSHExecutor.
         assert overrides["GDC_SETUP_RUNNER_IMAGE"] == GCP_ENV["GDC_SETUP_RUNNER_IMAGE"]
         assert overrides["ENGINE_TASK_IMAGE"] == GCP_ENV["ENGINE_TASK_IMAGE"]
-        assert overrides["DB_HOST"] == GCP_ENV["DB_HOST"]
+        assert overrides["DB_HOST"] == GCP_ENV["PROVISIONER_DB_HOST"]
+        assert overrides["DB_USER"] == GCP_ENV["PROVISIONER_DB_USER"]
+        assert overrides["DB_PASSWORD"] == GCP_ENV["PROVISIONER_DB_PASSWORD"]
+        assert overrides["DB_USER"] != GCP_ENV["DB_USER"]
+        assert overrides["DB_PASSWORD"] != GCP_ENV["DB_PASSWORD"]
+
+    def test_fails_closed_without_dedicated_database_identity(self, settings):
+        from django.core.exceptions import ImproperlyConfigured
+
+        from engine.ecs import _get_gcp_provisioner_env_overrides
+
+        settings.CLOUD_PROVIDER = "gcp"
+        incomplete = {key: value for key, value in GCP_ENV.items() if key != "PROVISIONER_DB_PASSWORD"}
+        with (
+            patch.dict(os.environ, incomplete, clear=True),
+            pytest.raises(ImproperlyConfigured, match="PROVISIONER_DB_PASSWORD"),
+        ):
+            _get_gcp_provisioner_env_overrides()
 
     def test_forwards_gce_range_cell_runtime_contract(self, settings):
         from engine.ecs import _get_gcp_provisioner_env_overrides

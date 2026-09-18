@@ -26,6 +26,11 @@ def reconcile_subnet_coordination_grants(apps, schema_editor) -> None:
     if schema_editor.connection.vendor != "postgresql":
         return
     schema_editor.execute(_RECONCILE_GRANTS)
+    with schema_editor.connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", ["provisioner_runtime"])
+        provisioner_runtime_exists = cursor.fetchone() is not None
+    if provisioner_runtime_exists:
+        schema_editor.execute("GRANT provisioner_lambda TO provisioner_runtime;")
 
 
 class Migration(migrations.Migration):
