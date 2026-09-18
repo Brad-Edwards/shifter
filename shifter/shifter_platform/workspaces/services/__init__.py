@@ -65,9 +65,16 @@ from ._memberships import (
 from ._model_access import (
     ModelAccessOrganizationScope,
     ModelAccessWorkspaceScope,
+    list_model_source_users,
     resolve_model_access_organization,
     resolve_model_access_workspace,
 )
+
+# ``WorkspaceOperation`` is re-exported here on purpose: callers name the
+# operation they want authorized, and the facade is the only module they may
+# import (ADR-001-R1). The role vocabulary is NOT re-exported -- no other layer
+# has business reading or comparing a role code.
+from ._model_access import authorize_model_source_workspace as authorize_model_source_workspace
 from ._organization import (
     OrganizationAuditContext,
     OrganizationAuthorizationError,
@@ -98,10 +105,6 @@ from ._quota_admin import (
 )
 from ._range_scope_admin import RangeRebindAuthorization, authorize_range_rebind
 
-# ``WorkspaceOperation`` is re-exported here on purpose: callers name the
-# operation they want authorized, and the facade is the only module they may
-# import (ADR-001-R1). The role vocabulary is NOT re-exported -- no other layer
-# has business reading or comparing a role code.
 __all__ = [
     "WORKSPACE_INVITATION_SIGNING_SALT",
     "WORKSPACE_INVITATION_TOKEN_MAX_AGE_SECONDS",
@@ -141,6 +144,7 @@ __all__ = [
     "archive_workspace",
     "authorize_bound_workspace",
     "authorize_launch_workspace_locked",
+    "authorize_model_source_workspace",
     "authorize_range_rebind",
     "authorize_workspace",
     "authorized_workspace_ids",
@@ -154,6 +158,7 @@ __all__ = [
     "leave_workspace",
     "list_actor_workspace_contexts",
     "list_administrable_organizations",
+    "list_model_source_users",
     "list_workspace_invitations",
     "list_workspace_memberships",
     "list_workspaces",

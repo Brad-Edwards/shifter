@@ -195,6 +195,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     enforced_deadline: datetime | None = None,
     model_admission_subject: OwnedReference | None = None,
     model_launch_scope: ModelLaunchScope | None = None,
+    model_sources: dict | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -236,6 +237,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
             range_source=range_source.value,
             range_spec=None,
             model_launch_scope=model_launch_scope.model_dump(mode="json") if model_launch_scope else None,
+            model_sources=model_sources or {},
             model_package_digest=source.package_digest,
             expires_at=lease.expires_at,
             maximum_expires_at=lease.maximum_expires_at,
@@ -277,6 +279,24 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     except ValueError as exc:
         raise CMSError(str(exc)) from exc
 
+    from django.conf import settings
+
+    from cms.services._model_source_selection import resolve_launch_sources
+    from shared.model_access import ContractError
+    from shared.model_access.sources import ModelSourceSelection
+    from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthorizationError
+
+    try:
+        model_sources = ModelSourceSelection.model_validate(model_sources or {}).model_dump(mode="json")
+        resolve_launch_sources(
+            user, workspace_id, model_sources, catalog=getattr(settings, "MODEL_ACCESS_CATALOG", None)
+        )
+    except (ValueError, ContractError, WorkspaceAuthorizationError, OrganizationAuthorizationError):
+        raise CMSError(
+            "Selected model sources are unavailable. Refresh the selection and try again.",
+            details={"code": "model-source-unavailable"},
+        ) from None
+
     # PLAT-202: required model access is a fail-closed admission decision enforced
     # here, before any dispatch (cold, warm-claim, or non-user), so every launch
     # family is gated once. Distinct from the best-effort capacity path: a required
@@ -314,6 +334,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
             request_id=request_id,
             enforced_deadline=enforced_deadline,
             model_launch_scope=model_launch_scope,
+            model_sources=model_sources,
         )
     )
     if claimed_request_id is not None:
@@ -365,6 +386,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
     workspace_uuid: str | UUID | None = None,
     model_admission_subject: OwnedReference | None = None,
     model_launch_scope: ModelLaunchScope | None = None,
+    model_sources: dict | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
@@ -387,6 +409,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
             workspace_uuid=workspace_uuid,
             model_admission_subject=model_admission_subject,
             model_launch_scope=model_launch_scope,
+            model_sources=model_sources,
         ),
     )
 
@@ -419,4 +442,5 @@ def dispatch_range_launch(
         enforced_deadline=options.remote_access_teardown_at,
         model_admission_subject=options.model_admission_subject,
         model_launch_scope=options.model_launch_scope,
+        model_sources=options.model_sources,
     )

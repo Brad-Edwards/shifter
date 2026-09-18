@@ -194,6 +194,10 @@ variables {
       service_account = "shifter-portal"
       policy_arns     = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
     }
+    workers = {
+      namespace       = "shifter-platform"
+      service_account = "shifter-workers"
+    }
     provisionerLauncher = {
       namespace       = "shifter-platform"
       service_account = "provisioner-launcher"

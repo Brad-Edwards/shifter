@@ -23,6 +23,8 @@ BROKER_RESOURCE_NAMES = frozenset(
     {
         "model-broker",
         "model-access-control",
+        "model-provider-egress",
+        "model-provider-egress-boundary",
         "model-broker-catalog",
         "model-broker-boundary",
         "model-access-control-ingress",
@@ -57,7 +59,11 @@ def combine_resources(base: str, broker: str) -> str:
             policy = document["spec"]
             if "Egress" in policy.get("policyTypes", []) or "egress" in policy:
                 expressions = policy.setdefault("podSelector", {}).setdefault("matchExpressions", [])
-                exclusion = {"key": "app.kubernetes.io/component", "operator": "NotIn", "values": ["model-broker"]}
+                exclusion = {
+                    "key": "app.kubernetes.io/component",
+                    "operator": "NotIn",
+                    "values": ["model-broker", "model-provider-egress"],
+                }
                 if exclusion not in expressions:
                     expressions.append(exclusion)
         controls = [

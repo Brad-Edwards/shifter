@@ -43,10 +43,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated after adding the GKE metadata-server egress NetworkPolicy
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
 # Regenerated for isolated runtime plugins, broker enrollment and retirement of
-# direct-provider configuration, composed with the #1816 capacity contracts.
+# direct-provider configuration, capacity contracts, and isolated provider egress.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "913d3c387abd5b7c6ebc96766be04b3f9b6fdd6da557a8041b9d7659ba6205ca",
-    "gcp-prod": "a433849b93280dc63a484b51694e800bd81f36062b0f44c51cb27f6c7cf3d463",
+    "gcp-dev": "5419644ccf78ce480e8349f75d875269ab957bafe54f70f15cca01aaf025683e",
+    "gcp-prod": "eb49a92f65d579781de0ec90d42cf0bf42e42e300c2806766ab97c4f0322958d",
 }
 
 

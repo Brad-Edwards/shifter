@@ -78,6 +78,8 @@ class TestEventApi:
 
         now = timezone.now()
         body = create_event_data()
+        # The model factory includes lifecycle state; the write API owns it.
+        body.pop("status")
         # The service parses ISO datetime strings; the model builders use objects.
         body["event_start"] = (now + timedelta(days=7)).isoformat()
         body["event_end"] = (now + timedelta(days=7, hours=8)).isoformat()

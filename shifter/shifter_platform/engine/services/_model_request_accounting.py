@@ -119,7 +119,9 @@ def reserve_request(
         catalog, effective = _load_snapshot(allocation)
         if logical_alias not in allocation.alias_shards:
             raise ContractError("request.alias_unavailable")
-        spend_currency, upper_charge = _conservative_charge(catalog, logical_alias, billing_bound, moment, effective)
+        spend_currency, upper_charge = _conservative_charge(
+            catalog, logical_alias, billing_bound, moment, effective, allocation.alias_shards[logical_alias]
+        )
 
         existing = _replay(allocation, grant_epoch, idem)
         if existing is not None:
@@ -231,30 +233,25 @@ def _conservative_charge(
     billing_bound: BillingBound,
     moment: datetime,
     effective: EffectivePolicy,
+    shard_id: str,
 ) -> tuple[str, int]:
     """Sum ceil(units * price / denominator) from the immutable price snapshot.
 
     Returns the schedule currency alongside the integer micro-unit charge so the
     caller can prove every spend account shares that currency before any hold.
     """
-    schedule = _priced_schedule(catalog, logical_alias, moment)
+    schedule = _priced_schedule(catalog, logical_alias, moment, shard_id)
     prices: dict[BillingComponent, Price] = {price.component: price for price in schedule.prices}
     total = _sum_billing_components(billing_bound, prices)
     _assert_within_grant_bound(total, schedule.currency.value, effective)
     return schedule.currency.value, total
 
 
-def _priced_schedule(catalog: ModelAccessCatalogV3, logical_alias: str, moment: datetime) -> PriceSchedule:
-    """Resolve the alias's immutable, unexpired price schedule from the snapshot."""
-    alias = next((item for item in catalog.aliases if item.logical_alias == logical_alias), None)
-    if alias is None:
-        raise ContractError("request.alias_unavailable")
-    schedule = next(
-        (item for item in catalog.price_schedules if item.price_schedule_id == alias.price_schedule_id),
-        None,
-    )
-    if schedule is None:
-        raise ContractError("request.price_unavailable")
+def _priced_schedule(
+    catalog: ModelAccessCatalogV3, logical_alias: str, moment: datetime, shard_id: str
+) -> PriceSchedule:
+    """Resolve the selected source's immutable, unexpired price snapshot."""
+    schedule = catalog.price_for_alias(logical_alias, shard_id)
     if schedule.valid_until <= moment:
         raise ContractError("request.price_expired")
     return schedule

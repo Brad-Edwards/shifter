@@ -40,7 +40,11 @@ const EVENT = {
 };
 
 function routeApi(handlers: (path: string, options?: { method?: string }) => unknown) {
-  mockApi.mockImplementation((path: string, options?: { method?: string }) => Promise.resolve(handlers(path, options)));
+  mockApi.mockImplementation((path: string, options?: { method?: string }) => Promise.resolve(
+    path === "/cms/model-source-options/"
+      ? { available: false, workspace: null, workspaces: [], aliases: [] }
+      : handlers(path, options),
+  ));
 }
 
 beforeEach(() => {

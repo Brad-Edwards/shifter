@@ -8,6 +8,9 @@ class ModelAccessCredential(models.Model):
 
     grant = models.OneToOneField("engine.ModelPendingGrant", on_delete=models.PROTECT)
     grant_epoch = models.PositiveBigIntegerField()
+    replacement_grant = models.ForeignKey(
+        "engine.ModelPendingGrant", on_delete=models.PROTECT, null=True, related_name="predecessor_credentials"
+    )
     admitted_subnets = models.JSONField()
     enrollment_hash = models.CharField(max_length=64, blank=True, default="")
     enrollment_expires_at = models.DateTimeField()

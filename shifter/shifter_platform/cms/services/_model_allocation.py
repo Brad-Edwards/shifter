@@ -158,6 +158,41 @@ def _authorize_preparation(
         raise ContractError("allocation.authority_unavailable") from None
 
 
+def _source_policy_scope(instance: RangeInstance, scope: ModelLaunchScope) -> ModelLaunchScope:
+    """Apply the range's current source-policy revision and optional sponsorship."""
+    from shared.model_access.sources import ModelSourceSponsorship
+
+    scope_updates: dict[str, object] = {"source_policy_revision": instance.model_source_policy_revision}
+    if instance.model_source_sponsorship is not None:
+        scope_updates["source_sponsorship"] = ModelSourceSponsorship.model_validate(instance.model_source_sponsorship)
+    return scope.model_copy(update=scope_updates)
+
+
+def _source_authority_refs(
+    instance: RangeInstance, scope: ModelLaunchScope, refs: tuple[OwnedReference, ...], has_sources: bool
+) -> tuple[OwnedReference, ...]:
+    """Include sponsor or launch-tenant authority in the admission fence vector."""
+    if scope.source_sponsorship:
+        sponsor = OwnedReference(owner="management", reference=f"user:{scope.source_sponsorship.actor_id}")
+        sponsor_workspace = OwnedReference(
+            owner="workspaces", reference=f"workspace-id:{scope.source_sponsorship.workspace_id}"
+        )
+        sponsor_organization = OwnedReference(
+            owner="workspaces", reference=f"organization:{scope.source_sponsorship.organization_uuid}"
+        )
+        refs = tuple(dict.fromkeys((*refs, sponsor, sponsor_workspace, sponsor_organization)))
+    elif has_sources:
+        if instance.request is None:
+            raise ContractError("allocation.authority_unavailable")
+        from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+        membership = authorize_bound_workspace(
+            instance.request.user, instance.workspace_id, WorkspaceOperation.LAUNCH_RANGE
+        )
+        refs += (OwnedReference(owner="workspaces", reference=f"organization:{membership.organization_uuid}"),)
+    return refs
+
+
 def prepare_model_access_for_dispatch(request_id: UUID, *, range_id: UUID, renew: bool = False) -> None:
     """Authenticate current persisted ownership, then hand closed facts downward.
 
@@ -185,17 +220,31 @@ def prepare_model_access_for_dispatch(request_id: UUID, *, range_id: UUID, renew
             if instance.model_launch_scope
             else _standalone_scope(instance, range_id, needs, catalog.deployment_id)
         )
+
+        scope = _source_policy_scope(instance, scope)
         system = scope.system_preparation
         _authorize_preparation(instance, owner, system)
+        from cms.services._model_source_selection import resolve_launch_sources, resolve_sponsored_sources
+
+        if scope.source_sponsorship:
+            catalog, source_revisions = resolve_sponsored_sources(scope.source_sponsorship, catalog=catalog)
+        else:
+            catalog, source_revisions = resolve_launch_sources(
+                instance.request.user,
+                instance.workspace_id,
+                instance.model_sources,
+                catalog=catalog,
+            )
         refs = (() if system else (owner,)) + (
             OwnedReference(owner="workspaces", reference=f"workspace-id:{instance.workspace_id}"),
             OwnedReference(owner="engine", reference=f"model-launch:{range_id}"),
         )
+        refs = _source_authority_refs(instance, scope, refs, bool(source_revisions))
         from shared.model_access.projection_port import refresh_launch_projections
 
         refresh_launch_projections(catalog.deployment_id)
         revisions = project_model_launch_authority(deployment_id=catalog.deployment_id, authority_refs=refs)
-        revisions += scope.authority_revisions
+        revisions += scope.authority_revisions + source_revisions
         prepare_model_launch(
             request_id=request_id,
             owner_ref=owner,

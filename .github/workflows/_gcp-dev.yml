@@ -1028,13 +1028,13 @@ jobs:
           enabled="$(cat "${manifest}.enabled")"
           echo "MODEL_BROKER_ENABLED=${enabled}" >> "${GITHUB_ENV}"
           if [ "${enabled}" = false ]; then
-            kubectl delete deployment model-broker model-access-control \
+            kubectl delete deployment model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found --cascade=foreground --wait=true --timeout=180s
-            kubectl delete service,poddisruptionbudget model-broker model-access-control \
+            kubectl delete service,poddisruptionbudget model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found
             kubectl delete serviceaccount model-broker -n shifter-platform --ignore-not-found
             kubectl delete configmap model-broker-catalog -n shifter-platform --ignore-not-found
-            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress \
+            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress model-provider-egress-boundary \
               -n shifter-platform --ignore-not-found
             kubectl delete networkpolicy model-enrollment-control-egress \
               -n shifter-jobs --ignore-not-found
