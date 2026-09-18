@@ -16,7 +16,9 @@ class ProviderTarget(ClosedModel):
 
     shard_id: Identifier
     provider: ProviderKind
-    authentication: AuthenticationKind = "workload-identity"
+    authentication: AuthenticationKind = Field(
+        default="workload-identity", exclude_if=lambda value: value == "workload-identity"
+    )
     region: Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{1,62}[a-z0-9]$")]
     model: Annotated[str, Field(pattern=r"^[a-zA-Z0-9@.:/-]{1,256}$")]
     credential_reference: Annotated[str, Field(max_length=256)]

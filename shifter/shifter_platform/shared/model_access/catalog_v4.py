@@ -53,7 +53,7 @@ class ModelAccessCatalogV4(ModelAccessCatalogV3):
                 or shards[binding.shard_id].credential_ref.owner != "broker"
             ):
                 raise ValueError("source credential must match its immutable binding")
-            price = prices.get(binding.price_schedule_id)
+            price = prices.get(binding.price_schedule_id) if binding.price_schedule_id is not None else None
             if price is None or not set(shards[binding.shard_id].billing_components).issubset(
                 item.component for item in price.prices
             ):
@@ -109,12 +109,15 @@ class ModelAccessCatalogV4(ModelAccessCatalogV3):
         aliases = {item.logical_alias: item for item in self.aliases}
         if set(aliases) != {item.logical_alias for item in base.aliases}:
             raise ValueError("source selection cannot add logical aliases")
-        for old in base.aliases:
-            current = aliases[old.logical_alias]
-            restored = current.model_copy(
-                update={field: getattr(old, field) for field in ("eligible_shard_ids", "strategy", "price_schedule_id")}
+        for old_alias in base.aliases:
+            current_alias = aliases[old_alias.logical_alias]
+            restored = current_alias.model_copy(
+                update={
+                    field: getattr(old_alias, field)
+                    for field in ("eligible_shard_ids", "strategy", "price_schedule_id")
+                }
             )
-            if restored != old:
+            if restored != old_alias:
                 raise ValueError("source selection cannot change alias authority")
 
     def price_for_alias(self, logical_alias: str, shard_id: str) -> PriceSchedule:

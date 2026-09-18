@@ -14,7 +14,7 @@ def responses_request(payload: JsonObject, *, model: str, count_only: bool) -> J
     if payload.get("top_k") is not None or payload.get("stop_sequences"):
         raise ContractError("messages.unsupported_request")
     inputs = _response_inputs(payload["messages"])
-    result = {"model": model, "input": inputs}
+    result: JsonObject = {"model": model, "input": inputs}
     if payload.get("system") is not None:
         system = payload["system"]
         result["instructions"] = system if isinstance(system, str) else "\n".join(item["text"] for item in system)
@@ -149,8 +149,8 @@ def response_message(value: JsonObject, *, model: str) -> JsonObject:
 
 async def responses_events(chunks: AsyncIterable[bytes], *, model: str) -> AsyncIterator[JsonObject]:
     """Translate incremental text/tools and require the final complete usage record."""
-    blocks = {}
-    closed = set()
+    blocks: dict[tuple[int, int], tuple[int, str]] = {}
+    closed: set[tuple[int, int]] = set()
     started = stopped = False
     ignored = {
         "response.in_progress",
@@ -229,7 +229,7 @@ def _start_block(event: JsonObject, blocks: dict) -> JsonObject | None:
         not isinstance(item.get("call_id"), str) or not isinstance(item.get("name"), str)
     ):
         raise ContractError("provider.invalid_stream")
-    block = (
+    block: JsonObject = (
         {"type": "text", "text": ""}
         if item["type"] in {"output_text", "refusal"}
         else {"type": "tool_use", "id": item.get("call_id"), "name": item.get("name"), "input": {}}

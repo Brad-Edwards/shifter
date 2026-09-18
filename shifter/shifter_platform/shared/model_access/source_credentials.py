@@ -69,13 +69,14 @@ class GoogleKeyCredential(ClosedModel):
 
 
 def parse_source_credential(provider: str, value: object) -> APIKeyCredential | AWSKeyCredential | GoogleKeyCredential:
-    model = {
+    models: dict[str, type[APIKeyCredential] | type[AWSKeyCredential] | type[GoogleKeyCredential]] = {
         "vertex-v1": GoogleKeyCredential,
         "bedrock-v1": AWSKeyCredential,
         "anthropic-v1": APIKeyCredential,
         "openai-v1": APIKeyCredential,
         "openrouter-v1": APIKeyCredential,
-    }.get(provider)
+    }
+    model = models.get(provider)
     try:
         if model is None:
             raise ValueError

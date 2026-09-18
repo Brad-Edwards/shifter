@@ -99,7 +99,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: int | 
 
             from ._workspace import resolve_event_workspace_id
 
-            actor = User.objects.filter(pk=actor_id, is_active=True).first()
+            actor = User.objects.filter(pk=actor_id, is_active=True).first() if actor_id is not None else None
             if actor is None or resolve_event_workspace_id(actor, event_data) != event.workspace_id:
                 raise CTFStateError("An existing event cannot change its workspace.")
         _validate_event_update(event, event_data)
@@ -115,7 +115,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: int | 
 
             from .model_sources import set_event_model_sources
 
-            actor = User.objects.filter(pk=actor_id, is_active=True).first()
+            actor = User.objects.filter(pk=actor_id, is_active=True).first() if actor_id is not None else None
             set_event_model_sources(
                 event,
                 actor,

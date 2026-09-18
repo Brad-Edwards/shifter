@@ -8,6 +8,7 @@ from uuid import UUID
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -160,7 +161,7 @@ class ExtendRangeLeaseView(MissionControlAPIView):
 class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
     """Launch a new cyber range."""
 
-    parser_classes = [ModelSelectionJSONParser]
+    parser_classes = [ModelSelectionJSONParser, FormParser, MultiPartParser]
 
     permission_classes = [
         IsAuthenticatedSessionOrApiToken,
@@ -266,12 +267,13 @@ class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
             return self._create_range_first_use(
                 request, user, scenario, agents_by_os, workspace_uuid, caller_key, agents_selection or {}, model_sources
             )
+        source_kwargs: dict[str, Any] = {"model_sources": model_sources} if model_sources else {}
         try:
             range_ctx = cms_create_range(
                 user,
                 scenario,
                 workspace_uuid=workspace_uuid,
-                **({"model_sources": model_sources} if model_sources else {}),
+                **source_kwargs,
             )
         except CMSError as exc:
             return self._launch_failure_response(exc, user, scenario)

@@ -117,6 +117,8 @@ def _store_credential(
         from shared.cloud import get_secrets_store
         from shared.cloud.exceptions import CloudSecretsError
 
+        if revision.credential_version is None:
+            raise ContractError("source.credential_unavailable")
         try:
             reference = get_secrets_store().create_owned_secret(source.id, revision.credential_version, payload)
         except CloudSecretsError:
@@ -124,7 +126,7 @@ def _store_credential(
             raise ContractError("source.credential_unavailable") from None
         revision.credential_reference = reference
     with transaction.atomic():
-        failure = None
+        failure: OrganizationAuthorizationError | ContractError | None = None
         try:
             _authorize(actor, source.organization_uuid)
         except OrganizationAuthorizationError as exc:
@@ -374,6 +376,8 @@ def retire_unused_model_source_credentials(actor: User, organization_uuid: UUID,
             _audit(actor, source, "update")
     retired = 0
     for version in versions:
+        if version is None:
+            raise ContractError("source.credential_cleanup_pending")
         try:
             get_secrets_store().retire_owned_secret(source.id, version)
         except CloudSecretsError:

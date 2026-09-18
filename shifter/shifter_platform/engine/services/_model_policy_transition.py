@@ -47,6 +47,8 @@ def admit_range_model_policy_change(*, request_id: UUID, expected_revision: int)
         row = Range.objects.select_for_update().get(request__request_id=request_id)
         if row.status != Range.Status.READY or row.model_source_policy_revision != expected_revision:
             raise ContractError("source.revision_conflict")
+        if row.provisioner_operation_id is None:
+            raise ContractError("source.range_unavailable")
         previous = list(
             ModelAllocation.objects.filter(
                 request_id=request_id,
@@ -75,7 +77,7 @@ def get_range_model_policy_status(*, request_id: UUID) -> dict:
     from engine.models import ModelAllocation, Range
 
     row = Range.objects.filter(request__request_id=request_id).first()
-    if row is None:
+    if row is None or row.provisioner_operation_id is None:
         return {"state": "unavailable", "assignments": []}
     allocations = list(
         ModelAllocation.objects.filter(

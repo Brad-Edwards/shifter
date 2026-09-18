@@ -8982,6 +8982,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EventWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventWrite"];
+                "multipart/form-data": components["schemas"]["EventWrite"];
             };
         };
         responses: {
@@ -9064,6 +9066,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EventWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventWrite"];
+                "multipart/form-data": components["schemas"]["EventWrite"];
             };
         };
         responses: {
@@ -13875,6 +13879,8 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["LaunchRange"];
+                "application/x-www-form-urlencoded": components["schemas"]["LaunchRange"];
+                "multipart/form-data": components["schemas"]["LaunchRange"];
             };
         };
         responses: {

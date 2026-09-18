@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -93,7 +94,7 @@ def _event_projection_context(
 class EventListView(APIView):
     """List the organizer's events (GET) or create one (POST)."""
 
-    parser_classes = [ModelSelectionJSONParser]
+    parser_classes = [ModelSelectionJSONParser, FormParser, MultiPartParser]
 
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_read_scopes = _EVENT_READ
@@ -183,7 +184,7 @@ class EventListView(APIView):
 class EventDetailView(APIView):
     """Get, update, or delete a single owned event."""
 
-    parser_classes = [ModelSelectionJSONParser]
+    parser_classes = [ModelSelectionJSONParser, FormParser, MultiPartParser]
 
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_read_scopes = _EVENT_READ

@@ -172,11 +172,11 @@ def bind_first_use_launch(
     # from the service seam. Matches ctf.bridges.cms_launch_range.
     del agents_by_os
 
+    source_kwargs: dict[str, Any] = {"model_sources": model_sources} if model_sources else {}
+
     def mint() -> MintedOperation:
         """Dispatch the RAES create and return the minted request/operation identity."""
-        ctx = create_range_dispatch(
-            user, scenario, workspace_uuid=workspace_uuid, **({"model_sources": model_sources} if model_sources else {})
-        )
+        ctx = create_range_dispatch(user, scenario, workspace_uuid=workspace_uuid, **source_kwargs)
         return MintedOperation(request_id=str(ctx.request_id), operation_id=operation_id_for_request(ctx.request_id))
 
     result = bind_public_operation(

@@ -126,9 +126,10 @@ def authorize_model_source_workspace(
 
     from workspaces.services._authorization import WorkspaceAuthorization
 
-    actor = User.objects.filter(pk=actor.pk, is_active=True).first()
-    if actor is None:
+    current_actor = User.objects.filter(pk=actor.pk, is_active=True).first()
+    if current_actor is None:
         raise WorkspaceAuthorizationError("Workspace access denied")
+    actor = current_actor
     query = Workspace.objects.select_related("organization").filter(archived_at__isnull=True)
     if workspace_uuid is not None:
         query = query.filter(uuid=_parse_uuid(workspace_uuid, WorkspaceAuthorizationError))
@@ -159,9 +160,10 @@ def list_model_source_users(actor: User, organization_uuid: uuid.UUID, *, search
 
     from workspaces.models import OrganizationMembership, WorkspaceMembership
 
-    actor = User.objects.filter(pk=actor.pk, is_active=True).first()
-    if actor is None:
+    current_actor = User.objects.filter(pk=actor.pk, is_active=True).first()
+    if current_actor is None:
         raise OrganizationAuthorizationError("Organization access denied")
+    actor = current_actor
     organization, _override = resolve_administrable_organization(actor, organization_uuid)
     members = WorkspaceMembership.objects.filter(
         workspace__organization=organization, workspace__archived_at__isnull=True
