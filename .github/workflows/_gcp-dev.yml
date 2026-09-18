@@ -1107,6 +1107,7 @@ jobs:
                         drop: ["ALL"]
                       readOnlyRootFilesystem: true
                       runAsNonRoot: true
+                      runAsUser: 1000
                     volumeMounts:
                       - name: tmp
                         mountPath: /tmp
