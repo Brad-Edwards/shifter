@@ -1996,6 +1996,15 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                                 {"name": "GUACAMOLE_SECRET_ID", "value": ""},
                                 {"name": "DC_DOMAIN_PASSWORD_SECRET_ID", "value": ""},
                                 {"name": "REDIS_SECRET_ID", "value": ""},
+                                # This Job blanks REDIS_SECRET_ID (above), so entrypoint.sh
+                                # never hydrates REDIS_PASSWORD. The runtime ConfigMap still
+                                # carries REDIS_HOST/REDIS_TLS=true for the app pods, which
+                                # would make Django settings demand the (absent) AUTH token at
+                                # import (config/_redis.py resolve_redis_connection, ADR-008-R6).
+                                # Migrations touch only the database, so blank REDIS_HOST here
+                                # too: with no host, config/_redis.py and config/_channels.py
+                                # both select the LocMem cache and in-memory channel layer.
+                                {"name": "REDIS_HOST", "value": ""},
                                 {"name": "EMAIL_API_KEY_SECRET_ID", "value": ""},
                             ],
                             "securityContext": {
@@ -2003,6 +2012,11 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                                 "capabilities": {"drop": ["ALL"]},
                                 "readOnlyRootFilesystem": True,
                                 "runAsNonRoot": True,
+                                # The portal image declares USER as the name appuser (uid 1000);
+                                # the kubelet cannot verify a non-numeric user as non-root, so
+                                # pair runAsNonRoot with the numeric uid (matches every other
+                                # workload and the CI _gcp-dev.yml migrate Job).
+                                "runAsUser": 1000,
                             },
                             "volumeMounts": [{"name": "tmp", "mountPath": _GCP_MIGRATION_TMP_DIR}],
                         }

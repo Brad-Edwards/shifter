@@ -138,6 +138,15 @@ roots:
       - registry.terraform.io/hashicorp/google
       - registry.terraform.io/hashicorp/google-beta
       - registry.terraform.io/hashicorp/random
+  - id: orthanc
+    path: platform/terraform/gcp/environments/orthanc
+    owner: "@Brad-Edwards"
+    toolchain: gcp-1.16.1
+    providers:
+      - registry.terraform.io/hashicorp/archive
+      - registry.terraform.io/hashicorp/google
+      - registry.terraform.io/hashicorp/google-beta
+      - registry.terraform.io/hashicorp/random
   - id: sauron
     path: platform/terraform/gcp/environments/sauron
     owner: "@Brad-Edwards"

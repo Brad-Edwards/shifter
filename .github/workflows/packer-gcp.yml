@@ -32,6 +32,7 @@ on:
           - dev
           - proof
           - nazgul
+          - orthanc
           - sauron
         default: dev
       dc_profile:
