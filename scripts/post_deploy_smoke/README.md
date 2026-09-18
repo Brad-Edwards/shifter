@@ -27,6 +27,12 @@ service account, access-pool placement and runtime configuration. The Job and
 its temporary identity Secret are deleted on exit. This avoids relying on the
 streaming `kubectl exec` transport through GKE Connect Gateway.
 
+The GCP migration Job idempotently registers the immutable shipped smoke pack
+through `bootstrap_inbox_catalog` before the release rolls out. It uses a
+bounded, non-login system actor so first deployment does not depend on a human
+administrator having signed in already. Pack registration and conformance still
+use the normal ingestion services and fail closed on identity drift.
+
 ## Local usage
 
 ```bash
