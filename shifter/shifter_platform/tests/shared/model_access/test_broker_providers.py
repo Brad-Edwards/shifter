@@ -457,7 +457,7 @@ async def test_openrouter_pins_upstream_without_inventing_a_count_endpoint():
         assert len(calls) == 1
 
 
-@pytest.mark.parametrize("mutation", ["output_item", "content", "part", "incomplete"])
+@pytest.mark.parametrize("mutation", ["output_item", "content", "part", "part_type", "incomplete"])
 async def test_malformed_openai_reply_fails_with_bounded_contract_error(mutation):
     from model_broker.openai_messages import response_message
 
@@ -468,6 +468,8 @@ async def test_malformed_openai_reply_fails_with_bounded_contract_error(mutation
         reply["output"] = [{"type": "message", "content": "unexpected-private-provider-text"}]
     elif mutation == "part":
         reply["output"] = [{"type": "message", "content": [None]}]
+    elif mutation == "part_type":
+        reply["output"] = [{"type": "message", "content": [{"type": ["unexpected-private-provider-text"]}]}]
     else:
         reply.update(status="incomplete", incomplete_details="unexpected-private-provider-text")
     with pytest.raises(ContractError) as error:

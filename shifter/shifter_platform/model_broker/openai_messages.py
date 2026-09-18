@@ -173,7 +173,10 @@ def _output_item(item: JsonObject) -> list[JsonObject]:
 
 def _output_text(part: JsonObject) -> JsonObject:
     """Preserve both provider text and explicit refusal text."""
-    field_name = {"output_text": "text", "refusal": "refusal"}.get(part.get("type", ""))
+    kind = part.get("type")
+    if not isinstance(kind, str):
+        raise ContractError(INVALID_RESPONSE)
+    field_name = {"output_text": "text", "refusal": "refusal"}.get(kind)
     if field_name is None or not isinstance(part.get(field_name), str):
         raise ContractError(INVALID_RESPONSE)
     return {"type": "text", "text": part[field_name]}
