@@ -10,6 +10,8 @@ from shared.model_access import ContractError
 from shared.model_access.sources import ModelSourceSelection, ModelSourceSponsorship
 from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthorizationError
 
+SPONSOR_UNAVAILABLE = "source.sponsor_unavailable"
+
 
 def set_event_model_sources(
     event: CTFEvent, actor: User | None, selection: object, *, expected_revision: int | None
@@ -32,7 +34,7 @@ def set_event_model_sources(
             return
         if selected.aliases:
             if event.workspace_id is None:
-                raise ContractError("source.sponsor_unavailable")
+                raise ContractError(SPONSOR_UNAVAILABLE)
             cms_resolve_model_source_sponsorship(actor, event.workspace_id, selected)
     except (ValueError, ContractError, WorkspaceAuthorizationError, OrganizationAuthorizationError):
         raise CTFValidationError("Selected model sources are unavailable.", code="source_unavailable") from None
@@ -65,9 +67,9 @@ def project_event_model_sources(event: CTFEvent) -> ModelSourceSponsorship | Non
     if not selection.aliases:
         return None
     if event.model_source_actor_id is None or event.workspace_id is None:
-        raise ContractError("source.sponsor_unavailable")
+        raise ContractError(SPONSOR_UNAVAILABLE)
     actor = User.objects.filter(pk=event.model_source_actor_id, is_active=True).first()
     if actor is None:
-        raise ContractError("source.sponsor_unavailable")
+        raise ContractError(SPONSOR_UNAVAILABLE)
     assert_event_capability(actor.pk, event, EventCapability.CONFIG)
     return cms_resolve_model_source_sponsorship(actor, event.workspace_id, selection)

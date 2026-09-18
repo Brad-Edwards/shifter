@@ -22,17 +22,23 @@ from shared.model_access import ContractError
 from shared.model_access.sources import ModelSourceSelection, ModelSourceUseScope
 from workspaces.services import WorkspaceOperation, authorize_bound_workspace
 
+SPONSOR_UNAVAILABLE = "source.sponsor_unavailable"
+
 
 @overload
 def resolve_launch_sources(
     actor: User, workspace_id: int, selection: object, *, catalog: ModelAccessCatalog
-) -> tuple[ModelAccessCatalog, tuple[AuthorityRevision, ...]]: ...
+) -> tuple[ModelAccessCatalog, tuple[AuthorityRevision, ...]]:
+    """Preserve the non-null catalog type when a deployment catalog is supplied."""
+    ...
 
 
 @overload
 def resolve_launch_sources(
     actor: User, workspace_id: int, selection: object, *, catalog: None
-) -> tuple[ModelAccessCatalog | None, tuple[AuthorityRevision, ...]]: ...
+) -> tuple[ModelAccessCatalog | None, tuple[AuthorityRevision, ...]]:
+    """Preserve the optional catalog type when no deployment catalog is supplied."""
+    ...
 
 
 def resolve_launch_sources(
@@ -66,7 +72,7 @@ def resolve_model_source_sponsorship(
     if not getattr(settings, "MODEL_ACCESS_ENABLED", False) or catalog is None:
         raise ContractError("source.policy_unavailable")
     if authorization.organization_uuid is None:
-        raise ContractError("source.sponsor_unavailable")
+        raise ContractError(SPONSOR_UNAVAILABLE)
     selected = ModelSourceSelection.model_validate(selection)
     resolve_model_source_selection(actor, authorization.organization_uuid, selected, catalog=catalog)
     return ModelSourceSponsorship(
@@ -86,12 +92,12 @@ def resolve_sponsored_sources(
 
     actor = User.objects.filter(pk=sponsorship.actor_id, is_active=True).first()
     if actor is None:
-        raise ContractError("source.sponsor_unavailable")
+        raise ContractError(SPONSOR_UNAVAILABLE)
     current = resolve_model_source_sponsorship(
         actor, sponsorship.workspace_id, sponsorship.selection, administrative=sponsorship.administrative
     )
     if current != sponsorship:
-        raise ContractError("source.sponsor_unavailable")
+        raise ContractError(SPONSOR_UNAVAILABLE)
     return resolve_model_source_selection(actor, sponsorship.organization_uuid, sponsorship.selection, catalog=catalog)
 
 

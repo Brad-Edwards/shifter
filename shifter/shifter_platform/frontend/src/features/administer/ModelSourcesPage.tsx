@@ -72,7 +72,7 @@ function SourceList({ organization }: Readonly<{ organization: string }>) {
     {query.isSuccess ? <>
       <Button onClick={() => setEditing("new")}>Add model source</Button>
       {editing ? <ModelSourceForm key={editing === "new" ? "new" : `${editing.id}-${editing.revision}`} organization={organization}
-        source={editing === "new" ? undefined : editing} onSaved={() => setEditing(null)} /> : null}
+        source={editedSource(editing)} onSaved={() => setEditing(null)} /> : null}
       {query.data.results.length === 0 ? <p>No model sources are configured.</p> : null}
       {query.data.results.map((source) => <SourceCard key={source.id} source={source}
         onEdit={() => setEditing(source)} onToggle={() => { setError(null); setChanging(source); }}
@@ -89,6 +89,10 @@ function SourceList({ organization }: Readonly<{ organization: string }>) {
       Deletes obsolete stored credentials after their grace period. Current credentials and versions needed by active ranges or outstanding usage are retained. A failed cleanup can be retried here.
     </ConfirmDialog>
   </div>;
+}
+
+function editedSource(editing: ModelSource | "new"): ModelSource | undefined {
+  return editing === "new" ? undefined : editing;
 }
 
 
