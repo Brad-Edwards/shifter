@@ -31,10 +31,12 @@ uv venv --python 3.12 --seed .venv
 # Caldera from the baked image (the venv symlinks into UV_PYTHON_INSTALL_DIR).
 chmod -R a+rX /opt/uv/python
 source .venv/bin/activate
-# aiohttp-apispec pins 3.0.0b2, which PyPI publishes as an sdist only (no wheel),
-# so allow source for just that package while everything else stays wheels-only
-# (on Python 3.12 the other pins — pyyaml==6.0.1 etc. — all have wheels).
-uv pip install --only-binary :all: --no-binary aiohttp-apispec -r requirements.txt
+# Caldera pins exactly two sdist-only dependencies with no PyPI wheels —
+# aiohttp-apispec==3.0.0b2 and svglib==1.5.1 (verified against PyPI; both
+# pure-Python). Keep wheels-only for everything else and carve out just those
+# two so setup scripts are not executed for the rest of the tree (SonarCloud
+# shell:S8541). On Python 3.12 every other pin resolves as a wheel.
+uv pip install --only-binary :all: --no-binary aiohttp-apispec,svglib -r requirements.txt
 
 echo "=== Starting server with --build to compile VueJS UI and download content ==="
 # Start server in background, let it initialize and build UI
