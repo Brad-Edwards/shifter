@@ -43,5 +43,10 @@ RUN chmod +x /opt/guacamole/bin/custom-entrypoint.sh
 
 USER guacamole
 
+# custom-entrypoint.sh runs idempotent schema init then `exec "$@"` to hand off
+# to the base image's start command. Guacamole 1.6.0's image starts via
+# /opt/guacamole/bin/entrypoint.sh (the base image's own CMD); older images used
+# start.sh, which the pinned 1.6.0 rebuild no longer ships. Keep this in sync
+# with the base image's CMD (`docker inspect ... .Config.Cmd`).
 ENTRYPOINT ["/opt/guacamole/bin/custom-entrypoint.sh"]
-CMD ["/opt/guacamole/bin/start.sh"]
+CMD ["/opt/guacamole/bin/entrypoint.sh"]
