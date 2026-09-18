@@ -53,8 +53,11 @@ def render_smoke_job(
 
     for field in ("ports", "readinessProbe", "livenessProbe", "startupProbe"):
         portal.pop(field, None)
-    portal["command"] = ["python", "manage.py", "run_post_deploy_smoke", "--variant", variant]
-    portal.pop("args", None)
+    # Preserve the image ENTRYPOINT: it hydrates the database, application and
+    # Redis secrets before executing these arguments. A Kubernetes ``command``
+    # override would bypass that fail-closed startup path.
+    portal.pop("command", None)
+    portal["args"] = ["python", "manage.py", "run_post_deploy_smoke", "--variant", variant]
     environment = portal.setdefault("env", [])
     if not isinstance(environment, list):
         raise ValueError("portal container environment is malformed")

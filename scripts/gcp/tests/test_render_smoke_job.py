@@ -67,7 +67,8 @@ def test_job_keeps_portal_runtime_without_entering_the_service_selector() -> Non
     assert pod_spec["nodeSelector"] == {"node-restriction.kubernetes.io/shifter-pool": "access"}
     assert pod_spec["restartPolicy"] == "Never"
     assert portal["image"].endswith("1" * 64)
-    assert portal["command"] == ["python", "manage.py", "run_post_deploy_smoke", "--variant", "linux"]
+    assert "command" not in portal
+    assert portal["args"] == ["python", "manage.py", "run_post_deploy_smoke", "--variant", "linux"]
     assert "ports" not in portal and "readinessProbe" not in portal and "livenessProbe" not in portal
     assert portal["env"] == [
         {
