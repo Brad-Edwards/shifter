@@ -10,7 +10,7 @@ intent and secret references; AWS bootstrap remains a separate consumer.
 Use one GCP project for the application, runner and automation identities. There
 is no project-topology choice to configure. The bootstrap creates the required
 buckets and service accounts within that project. Optional two-project support is
-tracked in [#2189](https://github.com/Brad-Edwards/shifter/issues/2189).
+deferred.
 
 Deploy and destroy workflows administer the project and can change its access
 permissions. Their separate service accounts and exact login rules protect entry

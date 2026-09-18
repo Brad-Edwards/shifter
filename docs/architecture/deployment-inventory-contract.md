@@ -1,6 +1,6 @@
 # External deployment inventory contract v1
 
-Issue #2182 establishes the common contract requested by #2178 and supplies its
+This document establishes the common contract and supplies its
 GCP identity/bootstrap consumer. The canonical types live beside the existing
 installation contract in `shifter/installation/deployment_inventory_types.py`;
 `deployment_inventory.py` reuses the canonical YAML and installation validators.
@@ -50,8 +50,7 @@ Cloud roles remain product-owned. One GCP project hosts the application, runner,
 automation identities, state and evidence. The project ID is supplied once in
 `installation.settings.project_id`; the contract has no topology selector or
 additional identity/runner project fields. The example also keeps secrets in that
-project. Optional two-project support is deferred to
-[#2189](https://github.com/Brad-Edwards/shifter/issues/2189).
+project. Optional two-project support is deferred.
 
 Deploy and destroy retain the existing project IAM and service-account
 administration permissions required by platform Terraform. These are trusted

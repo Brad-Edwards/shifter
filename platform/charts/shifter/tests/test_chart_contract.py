@@ -40,7 +40,7 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #2098 after adding the CTF communication delivery-worker Deployment.
 # Regenerated for #2083 after admitting the deployment-scoped dynamic-secret project id.
 # Regenerated for #1583 after qualifying portal memory headroom and maintenance-worker startup capacity.
-# Regenerated for #2179 after adding the GKE metadata-server egress NetworkPolicy
+# Regenerated after adding the GKE metadata-server egress NetworkPolicy
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
 # Regenerated for isolated runtime plugins, broker enrollment and retirement of
 # direct-provider configuration, capacity contracts, and isolated provider egress.

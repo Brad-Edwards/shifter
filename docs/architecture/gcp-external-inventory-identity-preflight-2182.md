@@ -1,10 +1,10 @@
-# GCP identity and bootstrap from external inventory (#2182)
+# GCP identity and bootstrap from external inventory
 
 ## Approved scope amendment: one project
 
-The operator explicitly selected one project per deployment during #2182 to keep
+The operator explicitly selected one project per deployment to keep
 setup practical for nonprofits, academics and university IT teams. Optional
-two-project isolation is deferred to [#2189](https://github.com/Brad-Edwards/shifter/issues/2189).
+two-project isolation is deferred.
 This amendment supersedes the stronger administrator-isolation requirements in
 the original preflight below. It does not relax exact repository, purpose,
 Environment, workflow, numeric-identity, provenance or Checkov checks.
@@ -22,8 +22,8 @@ project split. See the updated [contract](deployment-inventory-contract.md) and
 ## Original preflight assessment
 
 
-Status: pre-implementation guidance. Issue #2182 is the shipping contract;
-#2178 owns the common external deployment contract. Requirement: PLAT-005,
+Status: pre-implementation guidance. The common external deployment contract
+is owned separately. Requirement: PLAT-005,
 Per-Deployment Configuration. This note refines ADR-011 and ADR-004-R23, without implementing a
 schema, renderer, workflow, identity, or live cutover.
 
@@ -31,10 +31,10 @@ schema, renderer, workflow, identity, or live cutover.
 
 At this preflight, the working tree contains uncommitted `deployment_inventory*`,
 `deployment_identity_gcp.py`, `scripts/bootstrap/inventory_*.py` and Terraform/WIF
-changes. These are draft consumers/contracts, not evidence that #2178's common
+changes. These are draft consumers/contracts, not evidence that the common
 contract has been adopted or the acceptance criteria met. The existing
 `shifter/installation` contract remains the incumbent for installation intent.
-Settle common contract/version ownership with #2178 before shipping its GCP consumer;
+Settle common contract/version ownership before shipping its GCP consumer;
 do not ship a provisional GCP-only inventory schema or secret-reference syntax.
 This note specifies semantic obligations, not new field names or a work plan.
 
@@ -51,7 +51,7 @@ review and explicit operator authority must authorize those bindings.
 | Cloud placement | Bind project, region/zone, resource names and state locations explicitly. Platform, identity, image-source/target, secret-store and runner projects may differ only through authorized resource-owner grants. |
 | Purpose bindings | A closed set of supported capabilities (`build`, `validate`, `promote`, `release_scan`, `deploy`, `destroy`) maps enabled purposes to distinct accounts and exact execution contexts. Enabling deploy must not implicitly enable an image lane. Promotion has explicit source and destination ownership. |
 | Execution provenance | Inventory repository/revision, product source revision, executing repository, protected full ref, caller workflow and reusable workflow revision are distinct identities. Exact purpose Environment subjects and workflow claim expectations derive from this context. No source/runner/repository fallback from the current directory or Git remote. |
-| Bootstrap and secret inputs | Reuse #2178's common references and resolver with explicit store/repository/environment scope. Installation secret references still pass backend grammar checks. Identity provider paths and account emails are non-secret bindings, not authentication credentials. |
+| Bootstrap and secret inputs | Reuse the common references and resolver with explicit store/repository/environment scope. Installation secret references still pass backend grammar checks. Identity provider paths and account emails are non-secret bindings, not authentication credentials. |
 | Ownership and reconciliation | Separate state addresses for foundation identity, runner and platform; explicit ownership for GitHub Environments and policies. Outputs identify the applied revision and verified bindings without embedding credentials or a second desired-state store. |
 
 An unseen ID is configuration, not a new profile, branch, module, workflow,
@@ -143,7 +143,7 @@ remains `Brad-Edwards/shifter` for issue/PR/traceability operations.
 | Pre-mutation checks: `scripts/bootstrap/preflight.py`, `bootstrap_core.py`, `gcp_control_plane.py` | Reuse tool/secret checks, `PreflightReport`, security-input validation and dry-run behavior. `_gcp_secret_checks` still requires `SHIFTER_CONFIG_GCP_DEV`; `cloud_env_from_root_config` returns the profile. Generalization must pass deployment context separately rather than using either as tenant selection. Required values fail before authentication/apply; bootstrap checks must not circularly require a working deployment. |
 | Terraform input/naming: existing GCP roots/modules and `validation-inventory.yaml` | Validate actual provider name/length constraints after derivation, uniqueness and ownership. Root deployment names allow 40 characters; service-account names derived by stripping hyphens have tighter limits and can collide. Preserve legacy names explicitly; never silently truncate or rename them. Safely serialize data; reject HCL/CEL/control-character injection and backend/path selection outside approved roots. Keep defense-in-depth module invariants without another inventory schema. |
 | Federation and IAM: `check_tf_gcp_wif_trust`, `cicd-oidc-identity`, `portal/iam`, `packer-build-infra` | Check issuer/audience, exact repository/ref/subject/workflow tuples, disjoint account bindings, resource ownership and effective permissions. Preserve explicit deploy/build account outputs, node-SA `actAs`, scoped buckets, source-image reads and private evidence exclusions. Repository identity must resist unintended reassignment; establish immutable repository/owner claims where supported and verify the configured claim policy. |
-| Workflows: `deploy.yml`, `_gcp-dev.yml`, `gcp-dev-destroy.yml`, `packer-gcp*.yml`; ADR guard `_workflow_model*`, `_deploy_workflow_*` | Keep PR validation GitHub-hosted, job-local permissions, protected environment binding, pinned actions/product code, explicit secret forwarding and fail-loud routing. Today paths, runner labels, secret names and dispatch choices are tenant-specific. #2178's common workflow seam must replace them once; no #2182 workflow fork. Extend semantic runner-exposure/routing checks so a new label or dynamic input is not misclassified as safe. |
+| Workflows: `deploy.yml`, `_gcp-dev.yml`, `gcp-dev-destroy.yml`, `packer-gcp*.yml`; ADR guard `_workflow_model*`, `_deploy_workflow_*` | Keep PR validation GitHub-hosted, job-local permissions, protected environment binding, pinned actions/product code, explicit secret forwarding and fail-loud routing. Today paths, runner labels, secret names and dispatch choices are tenant-specific. The common workflow seam must replace them once; no per-deployment workflow fork. Extend semantic runner-exposure/routing checks so a new label or dynamic input is not misclassified as safe. |
 | Runner host: `gcp_runner.py`, `runner.py::mint_registration_token`, `global/github-runner`, `check_tf_gcp_runner_network` | Reuse target DTOs, IAP transport, bounded readiness/registration checks and failure aggregation. Preserve dedicated private VPC, no public NIC, least-privilege host identity and no default runner labels. Labels route jobs; repository/group/workflow restrictions authorize access. Do not share a credential-bearing host across untrusted deployments. Registration has a known brief remote `config.sh --token` argv exposure on the isolated host; do not expand it to shared hosts or claim stdin removes this residual. |
 | Secrets and OS process boundary: `bootstrap_core.run_cmd_secret_stdin`, `gcp_terraform_bootstrap_credentials`, `docs/dev/deploy-secrets.md` | Resolve values only at their consumer; use stdin or protected temporary credential files, restrictive permissions from creation, cleanup on failure and no shell tracing. Never put tokens in local argv, Terraform vars/state, metadata, workflow outputs, plans or logs. `_validate_argv` checks types/NUL only; log redaction does not prevent OS argv exposure. Inherited `TF_*`/cloud credentials also require intentional handling. Never source inventory as shell. |
 | Errors and observability: installation errors, `PreflightReport`, bootstrap `info/error`, workflow annotations, cloud/GitHub audit | Reuse existing error/reporting surfaces; emit bounded stage/status, safe deployment identifier and revision correlation. Do not dump private inventory, rejected Pydantic values, secret references, provider responses or raw subprocess exceptions. `run_cmd` prints `CalledProcessError`/stderr and is unsuitable for secret-bearing operations; use the secret-safe path and sanitize retrieval failures. Do not introduce a Django error envelope, exception tree or logging service for operator CLI work. |
@@ -257,7 +257,7 @@ approval of the uncommitted implementation:
 
 - **One common contract.** Reuse `loader.validate_root_config_data` for embedded
   installation intent. The draft `DeploymentRecord` and `SecretReference` must
-  become #2178-owned contracts, not an independently versioned GCP dialect.
+  become common contracts, not an independently versioned GCP dialect.
   Installation secret keys, logical bindings and provider resource references
   are different shapes; define their conversion once. GitHub secret consumption
   must match an enabled purpose's exact repository/Environment, not merely a
@@ -317,8 +317,8 @@ The payload's missing-provider-selector observation is stale: `_runtime_env.py`
 already validates `CLOUD_PROVIDER` through the installation registry. Reuse it
 and Django's existing `ImproperlyConfigured` startup boundary, with no new cloud
 selector or CI trust settings in application code.
-No AWS implementation here: #2178 owns provider-neutral contract and
-workflow integration. No per-tenant Terraform/module/workflow copies, profile
+No AWS implementation here: the common design owns the provider-neutral contract
+and workflow integration. No per-tenant Terraform/module/workflow copies, profile
 allowlist growth, branch-derived provider selection, raw policy escape hatch,
 shared purpose credential, static service-account key, or second validator/error
 hierarchy. This preflight does not bootstrap resources, alter live GitHub policy,
