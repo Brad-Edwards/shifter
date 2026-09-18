@@ -171,6 +171,15 @@ exact-release scanner validates `GCP_RELEASE_SCAN_SERVICE_ACCOUNT` and its WIF
 provider inside the separate `gcp-release-scan-<deployment>` Environment, so
 the scanner identity never has to be copied into the deploy Environment.
 
+`gcp-dev-destroy.yml` runs in its own `gcp-dev-destroy` Environment and renders
+the same ephemeral tfvars the deploy does, so that Environment needs the **full
+render-input set**, not just the destroy identity: `GCP_DESTROY_SERVICE_ACCOUNT`,
+`GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_PROJECT_ID`, `GCP_PUBLIC_HOSTNAME`,
+`GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`, `GCP_MASTER_AUTHORIZED_CIDRS`, and
+`SHIFTER_CONFIG_GCP_DEV` (secrets) plus `GCP_REGION` (variable). Provision these
+when standing up the tenant; an empty `gcp-dev-destroy` Environment fails teardown
+at `Ensure GCP auth is configured` (#2258).
+
 `SHIFTER_CONFIG_GCP_DEV` is also required by both deploy and destroy. Its GCP
 settings must include `dynamic_secret_project_id`; no separate GitHub variable
 or tfvars override owns that value. The project is a pre-existing,
