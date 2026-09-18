@@ -92,6 +92,12 @@ class TestProtocolStructuralTyping:
             def get_secret(self, secret_id):
                 return ""
 
+            def create_owned_secret(self, source_id, version_id, value):
+                return "synthetic-owned-secret"
+
+            def retire_owned_secret(self, source_id, version_id):
+                return None
+
         assert isinstance(FakeSecrets(), SecretsStore)
 
     def test_non_conforming_class_does_not_satisfy_protocol(self):
