@@ -987,6 +987,12 @@ jobs:
           # just pinned to (and ENGINE_TASK_IMAGE), so the verified bytes are the
           # deployed bytes. No bypass mode.
           set -euo pipefail
+          # `gh attestation verify oci://…` fetches the image from the private
+          # Artifact Registry to read its provenance attestation, so the registry
+          # credential helper must be configured first. The job is already
+          # authenticated as the deploy SA (Artifact Registry reader); without
+          # this, the pull is unauthenticated and the registry denies it.
+          gcloud auth configure-docker "${PORTAL_IMAGE_ROOT%%/*}" --quiet
           verify() {
             local root="$1" digest="$2" label="$3"
             if [[ -z "$digest" || ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
