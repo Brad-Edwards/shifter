@@ -42,11 +42,11 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #1583 after qualifying portal memory headroom and maintenance-worker startup capacity.
 # Regenerated for #2179 after adding the GKE metadata-server egress NetworkPolicy
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
-# Regenerated for #1816 after adding capacity identity, termination, Guacamole
-# connection, and GCP BackendConfig drain/timeout contracts.
+# Regenerated for isolated runtime plugins, broker enrollment and retirement of
+# direct-provider configuration, composed with the #1816 capacity contracts.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "75fd50a19dcc6141ed7ca692d19f7b3d60d88e773b4ff1b048523aa29b0d20ad",
-    "gcp-prod": "f21a3173844647359084317fa1eb2446197a92c830622f9818d66b0a5ad77bae",
+    "gcp-dev": "913d3c387abd5b7c6ebc96766be04b3f9b6fdd6da557a8041b9d7659ba6205ca",
+    "gcp-prod": "a433849b93280dc63a484b51694e800bd81f36062b0f44c51cb27f6c7cf3d463",
 }
 
 
@@ -80,6 +80,19 @@ def _identity(document: dict[str, object]) -> tuple[str, str]:
 
 
 class BackendNeutralChartContractTests(unittest.TestCase):
+    def test_aws_supplies_gvisor_runtime_class_for_only_the_isolated_pool(self) -> None:
+        _, documents = _render(VALUES_FILES["aws-dev"])
+        runtime = next(doc for doc in documents if _identity(doc) == ("RuntimeClass", "gvisor"))
+        self.assertEqual(runtime["handler"], "runsc")
+        self.assertEqual(runtime["scheduling"]["nodeSelector"],
+                         {"node-restriction.kubernetes.io/shifter-pool": "runtime-plugin"})
+        self.assertEqual(runtime["scheduling"]["tolerations"], [{
+            "key": "shifter.dev/runtime-plugin", "operator": "Equal", "value": "true", "effect": "NoSchedule",
+        }])
+        # GKE owns its managed RuntimeClass; the chart must not replace it.
+        _, gcp = _render(VALUES_FILES["gcp-dev"])
+        self.assertFalse(any(doc["kind"] == "RuntimeClass" for doc in gcp))
+
     def test_chart_has_schema_and_all_backend_profiles(self) -> None:
         schema = json.loads((CHART_DIR / "values.schema.json").read_text())
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
@@ -403,13 +416,45 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                     f"{profile} render drifted from the frozen GCP byte contract",
                 )
 
+    def test_enrollment_schema_accepts_both_cloud_endpoint_contracts(self) -> None:
+        common = {
+            "MODEL_BROKER_GUEST_URL": "https://models.example.test",
+            "MODEL_ENROLLMENT_CONTROL_URL": "https://model-access-control.shifter-platform.svc:8444",
+            "MODEL_ENROLLMENT_CA_PEM_B64": "ZXhhbXBsZQ==",
+        }
+        endpoints = {
+            "gcp-dev": {"MODEL_BROKER_GUEST_VIP": "10.40.0.25"},
+            "aws-dev": {"MODEL_BROKER_GUEST_CIDRS": "10.40.1.0/24,10.40.2.0/24"},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            overlay = Path(temporary) / "enrollment.json"
+            for profile, endpoint in endpoints.items():
+                with self.subTest(profile=profile):
+                    overlay.write_text(json.dumps({"modelBroker": {"enrollment_env": {**common, **endpoint}}}))
+                    # Real Helm schema validation must accept the exact projection
+                    # emitted by each cloud adapter before deployment can proceed.
+                    _render(VALUES_FILES[profile], overlay)
+                    overlay.write_text(json.dumps({"modelBroker": {"enrollment_env": {
+                        **common, **endpoint, "UNDECLARED_SETTING": "unexpected",
+                    }}}))
+                    rejected = _helm("template", "contract-test", str(CHART_DIR),
+                                     "-f", str(VALUES_FILES[profile]), "-f", str(overlay), check=False)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn("UNDECLARED_SETTING", rejected.stderr)
+
     def test_security_and_default_deny_are_preserved_for_every_profile(self) -> None:
         for profile, values_file in VALUES_FILES.items():
             with self.subTest(profile=profile):
                 _, documents = _render(values_file)
                 identities = {_identity(document) for document in documents}
-                self.assertIn(("NetworkPolicy", "default-deny-platform"), identities)
-                self.assertIn(("NetworkPolicy", "default-deny-jobs"), identities)
+                by_identity = {_identity(document): document for document in documents}
+                for name in ("default-deny-platform", "default-deny-jobs", "plugin-deny-all"):
+                    self.assertIn(("NetworkPolicy", name), identities)
+                    policy = by_identity[("NetworkPolicy", name)]["spec"]
+                    self.assertEqual(policy["podSelector"], {})
+                    self.assertEqual(set(policy["policyTypes"]), {"Ingress", "Egress"})
+                    self.assertEqual(policy.get("ingress", []), [])
+                    self.assertEqual(policy.get("egress", []), [])
                 deployments = [
                     doc for doc in documents if doc.get("kind") == "Deployment"
                 ]

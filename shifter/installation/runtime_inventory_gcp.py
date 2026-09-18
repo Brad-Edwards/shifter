@@ -12,6 +12,10 @@ from __future__ import annotations
 # Keep this set scoped to that renderer: its contract test asserts exact equality.
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_BROKER_GUEST_VIP",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "ACCESS_NETWORK_CIDRS",
         "APP_SECRET_ID",
         "AUDIT_DEPLOYMENT_SCOPE",
@@ -121,8 +125,6 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_HOST_IDENTITY_POOL_SIZE",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
-        "GCP_RANGE_KALI_ANTHROPIC_MODEL",
-        "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
         "GCP_RANGE_KALI_DISK_SIZE_GB",
         "GCP_RANGE_KALI_DISK_TYPE",
         "GCP_RANGE_KALI_IMAGE",
@@ -134,10 +136,6 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_LINUX_MACHINE_TYPE",
         "GCP_RANGE_PLANE",
         "GCP_RANGE_PRIVATE_GOOGLE_ACCESS",
-        "GCP_RANGE_VERTEX_PROJECT_ID",
-        "GCP_RANGE_VERTEX_REGION",
-        "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
-        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
         "GCP_RANGE_WINDOWS_DISK_SIZE_GB",
         "GCP_RANGE_WINDOWS_DISK_TYPE",
         "GCP_RANGE_WINDOWS_IMAGE",
@@ -150,8 +148,6 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # Mission Control lease policy (#27): emitted only when the operator sets
         # settings.mission_control_leases; absent -> Django applies canonical defaults.
         "MISSION_CONTROL_LEASE_POLICY_JSON",
-        "POLARIS_TESTS_BUCKET",
-        "POLARIS_TESTS_KEY",
         "RANGE_NETWORK_ZONE",
         "RANGE_NETWORK_ZONES",
         "SHIFTER_CTF_CONTENT_BUCKET",
@@ -174,6 +170,10 @@ GCP_SECRET_RUNTIME_ENV_KEYS: frozenset[str] = frozenset()
 # range-task for the ``GCP_RANGE_*`` guest-configuration keys among them).
 GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_BROKER_GUEST_VIP",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "ACCESS_NETWORK_CIDRS",
         "AGENT_STORAGE_BUCKET",
         "CLOUD_PROJECT_ID",
@@ -197,8 +197,6 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_HOST_IDENTITY_POOL_SIZE",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
-        "GCP_RANGE_KALI_ANTHROPIC_MODEL",
-        "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
         "GCP_RANGE_KALI_DISK_SIZE_GB",
         "GCP_RANGE_KALI_DISK_TYPE",
         "GCP_RANGE_KALI_IMAGE",
@@ -210,10 +208,6 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_LINUX_MACHINE_TYPE",
         "GCP_RANGE_PLANE",
         "GCP_RANGE_PRIVATE_GOOGLE_ACCESS",
-        "GCP_RANGE_VERTEX_PROJECT_ID",
-        "GCP_RANGE_VERTEX_REGION",
-        "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
-        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
         "GCP_RANGE_WINDOWS_DISK_SIZE_GB",
         "GCP_RANGE_WINDOWS_DISK_TYPE",
         "GCP_RANGE_WINDOWS_IMAGE",
@@ -227,8 +221,6 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
         "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
         "GOOGLE_CLOUD_PROJECT",
-        "POLARIS_TESTS_BUCKET",
-        "POLARIS_TESTS_KEY",
         "PORTAL_NETWORK_CIDRS",
         "RANGE_NETWORK_CIDR",
         "RANGE_NETWORK_ID",

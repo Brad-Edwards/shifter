@@ -1,3 +1,11 @@
+override_data {
+  target = data.aws_ssm_parameters_by_path.range_network
+  values = {
+    names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
+    values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
+  }
+}
+
 mock_provider "aws" {}
 
 override_resource {
@@ -112,8 +120,9 @@ override_resource {
 override_resource {
   target = aws_eks_cluster.this
   values = {
-    arn      = "arn:aws:eks:us-east-2:123456789012:cluster/shifter-test"
-    endpoint = "https://example.test"
+    arn                       = "arn:aws:eks:us-east-2:123456789012:cluster/shifter-test"
+    endpoint                  = "https://example.test"
+    kubernetes_network_config = { service_ipv4_cidr = "172.20.0.0/16" }
     certificate_authority = [{
       data = "dGVzdA=="
     }]
@@ -129,6 +138,21 @@ override_resource {
   target = aws_launch_template.node
   values = {
     id             = "lt-11111111111111111"
+    latest_version = 1
+  }
+}
+
+override_resource {
+  target = aws_eks_node_group.runtime_plugins
+  values = {
+    resources = [{ autoscaling_groups = [{ name = "eks-shifter-test-plugins-asg" }] }]
+  }
+}
+
+override_resource {
+  target = aws_launch_template.runtime_plugins
+  values = {
+    id             = "lt-22222222222222222"
     latest_version = 1
   }
 }
@@ -203,6 +227,37 @@ variables {
 
 run "security_contract" {
   command = apply
+
+  assert {
+    condition = (
+      aws_eks_node_group.runtime_plugins.ami_type == "AL2023_x86_64_STANDARD" &&
+      aws_eks_node_group.runtime_plugins.labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins.taint).key == "shifter.dev/runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins.taint).effect == "NO_SCHEDULE" &&
+      aws_eks_node_group.runtime_plugins.scaling_config[0].min_size == 1
+    )
+    error_message = "Tenant runtime plugins require a warm, exclusive AL2023 sandbox pool."
+  }
+
+  assert {
+    condition = (
+      aws_launch_template.runtime_plugins.metadata_options[0].http_tokens == "required" &&
+      aws_launch_template.runtime_plugins.metadata_options[0].http_put_response_hop_limit == 1 &&
+      aws_launch_template.runtime_plugins.block_device_mappings[0].ebs[0].encrypted
+    )
+    error_message = "Sandbox node storage and metadata must preserve the hardened node boundary."
+  }
+
+  assert {
+    condition = (
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "sha512sum --check --status") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "release/20260914.0/") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "io.containerd.runsc.v1") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "node.eks.aws/v1alpha1")
+    )
+    error_message = "Node bootstrap must verify the pinned gVisor archive and configure the runtime through nodeadm."
+  }
+
 
   assert {
     condition     = aws_eks_cluster.this.vpc_config[0].endpoint_private_access && !aws_eks_cluster.this.vpc_config[0].endpoint_public_access
@@ -390,5 +445,58 @@ run "security_contract" {
   assert {
     condition     = aws_wafv2_web_acl_logging_configuration.ingress.resource_arn == aws_wafv2_web_acl.ingress.arn
     error_message = "The ingress WAF must publish request logs."
+  }
+}
+
+
+run "enabled_broker_routes" {
+  command = apply
+  variables {
+    model_broker = {
+      enabled                 = true
+      hostname                = "models.example.test"
+      admitted_subnets        = ["10.50.1.0/24"]
+      tls_secret_name         = "broker-tls"
+      control_tls_secret_name = "control-tls"
+      trust_configmap_name    = "model-ca"
+      invocation_models       = { primary = "anthropic.example-model-v1:0" }
+    }
+  }
+  override_module {
+    target = module.model_broker[0]
+    outputs = {
+      peering_id                 = "pcx-mock-broker"
+      listener_security_group_id = "sg-mock-broker"
+      deployment                 = null
+    }
+  }
+  assert {
+    condition = alltrue([for table in aws_route_table.private :
+      length([for route in table.route : route if route.cidr_block == "10.50.0.0/16" && route.vpc_peering_connection_id == aws_vpc_peering_connection.range.id]) == 1
+    ])
+    error_message = "Every private EKS route table must return admitted guest traffic over the owned direct peering."
+  }
+  assert {
+    condition = alltrue(flatten([for table in aws_route_table.private : [
+      for route in table.route :
+      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16"
+    ]]))
+    error_message = "Peering routes must stay bounded to the range CIDR; the default route uses NAT."
+  }
+  assert {
+    condition = (
+      aws_vpc_security_group_ingress_rule.model_broker[0].referenced_security_group_id == "sg-mock-broker" &&
+      aws_vpc_security_group_ingress_rule.model_broker[0].from_port == 8443 &&
+      aws_vpc_security_group_ingress_rule.model_broker[0].to_port == 8443
+    )
+    error_message = "Only the model NLB security group may reach the broker's TLS target port."
+  }
+}
+
+run "range_management_independent_of_optional_broker" {
+  command = apply
+  assert {
+    condition     = !var.model_broker.enabled && length(aws_route.range_to_management) == 2 && aws_vpc_peering_connection.range.peer_vpc_id == "vpc-mock-range"
+    error_message = "Native guest management must exist without a model broker."
   }
 }

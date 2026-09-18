@@ -145,7 +145,7 @@ Deployment section of
    cd platform/terraform/gcp/global/cicd-oidc
    terraform init -backend-config="bucket=<project-id>-terraform-state" -backend-config="prefix=cicd-oidc"
    terraform apply -var="project_id=<dev-project-id>" -var="environment=gcp-dev" \
-     -var='build_read_bucket_names=["<polaris-stack-bucket>"]' \
+     -var='build_read_bucket_names=["<platform-image-input-bucket>"]' \
      -var='platform_external_bucket_names=["<raes-package-bucket>","<ctf-content-bucket>"]'
    terraform output -raw workload_identity_provider          # GCP_WORKLOAD_IDENTITY_PROVIDER
    terraform output -raw packer_build_service_account_email     # GCP_PACKER_BUILD_SERVICE_ACCOUNT

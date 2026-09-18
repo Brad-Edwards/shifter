@@ -131,8 +131,6 @@ locals {
     NGFW_INSTANCE_PROFILE_NAME  = lookup(local.range, "ngfw_instance_profile_name", "")
   }
 
-  # runtime_env (mgmt) first, then the assembled provisioner env, then any
-  # deployment extras (e.g. AWS_POLARIS_AGENT_*). Later maps win on conflict.
   merged_runtime_env = merge(var.runtime_env, local.provisioner_env, var.extra_env)
 }
 

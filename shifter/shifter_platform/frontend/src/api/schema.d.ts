@@ -440,6 +440,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/organizations/{organization_uuid}/packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate and install an organization-owned scenario pack. */
+        post: operations["cms_organizations_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List packs that the organization administrator can bind. */
+        get: operations["cms_organizations_plugin_packs_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/{pack_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Inspect verified guests and update the organization's binding. */
+        get: operations["cms_organizations_plugin_packs_retrieve"];
+        put?: never;
+        /** @description Inspect verified guests and update the organization's binding. */
+        post: operations["cms_organizations_plugin_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Organization administrators install their own plugins without staff status. */
+        get: operations["cms_organizations_plugins_retrieve"];
+        put?: never;
+        /** @description Organization administrators install their own plugins without staff status. */
+        post: operations["cms_organizations_plugins_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/{plugin_id}/actions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Apply authorized lifecycle actions to an organization's adapter. */
+        post: operations["cms_organizations_plugins_actions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/preparation-adapter-grants/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Grant selection is read-only; cloud authority is installed separately. */
+        get: operations["cms_preparation_adapter_grants_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/preparation-adapters/": {
         parameters: {
             query?: never;
@@ -3057,6 +3161,14 @@ export interface components {
          * @enum {string}
          */
         ActorTypeEnum: "user" | "apikey" | "system" | "cognito";
+        /** @description Select existing authority without returning its private cloud configuration. */
+        AdapterGrantView: {
+            /** Format: uuid */
+            id: string;
+            active: boolean;
+            /** Format: date-time */
+            verified_at: string | null;
+        };
         /** @description Only an existing grant and the closed versioned manifest enter installation. */
         AdapterInstall: {
             /** Format: uuid */
@@ -3065,8 +3177,15 @@ export interface components {
         };
         /** @description Lifecycle changes retain immutable registration and cleanup references. */
         AdapterState: {
-            state: components["schemas"]["StateEnum"];
+            state: components["schemas"]["AdapterStateStateEnum"];
         };
+        /**
+         * @description * `enabled` - enabled
+         *     * `disabled` - disabled
+         *     * `retired` - retired
+         * @enum {string}
+         */
+        AdapterStateStateEnum: "enabled" | "disabled" | "retired";
         /** @description Private administrative detail, never a public discovery/catalog response. */
         AdapterView: {
             /** Format: uuid */
@@ -3262,6 +3381,7 @@ export interface components {
             can_view_users: boolean;
             can_change_users: boolean;
             can_delete_users: boolean;
+            can_manage_adapters?: boolean;
         };
         /** @description Authenticated principal summary for the SPA shell. */
         BootstrapPrincipal: {
@@ -4285,6 +4405,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["RangeScopeBinding"][];
         };
+        PaginatedRuntimePluginPackList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["RuntimePluginPack"][];
+        };
         /**
          * @description Request body for inviting a single participant.
          *
@@ -4753,6 +4888,10 @@ export interface components {
             disk_size_gb?: number | null;
             /** @default  */
             disk_type: string;
+            /** @default  */
+            management_ssh_username: string;
+            /** @default 22 */
+            management_ssh_port: number;
             /** @default true */
             enabled: boolean;
             /** @default  */
@@ -4785,6 +4924,8 @@ export interface components {
             readonly machine_type: string;
             readonly disk_size_gb: number | null;
             readonly disk_type: string;
+            readonly management_ssh_username: string;
+            readonly management_ssh_port: number;
             readonly enabled: boolean;
             readonly notes: string;
             readonly artifact_id: string;
@@ -5101,6 +5242,11 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
+        /** @description Write-only credentials for the isolated image pull. */
+        RegistryCredentials: {
+            username: string;
+            password: string;
+        };
         /** @description Strict full replacement plus expected revision. */
         ReplaceLeasePolicy: {
             expected_revision: number;
@@ -5143,6 +5289,107 @@ export interface components {
          * @enum {string}
          */
         ResourceStatusEnum: "pending" | "provisioning" | "ready" | "pausing" | "paused" | "resuming" | "destroying" | "destroyed" | "failed";
+        /** @description An administrator lifecycle action for an installed adapter. */
+        RuntimePluginAction: {
+            action: components["schemas"]["RuntimePluginActionActionEnum"];
+            registry_credentials?: components["schemas"]["RegistryCredentials"];
+        };
+        /**
+         * @description * `disable` - disable
+         *     * `enable` - enable
+         *     * `retry` - retry
+         *     * `retire` - retire
+         * @enum {string}
+         */
+        RuntimePluginActionActionEnum: "disable" | "enable" | "retry" | "retire";
+        /** @description Guest target mappings and bounded adapter parameters. */
+        RuntimePluginBindings: {
+            targets: {
+                [key: string]: string;
+            };
+            parameters?: {
+                [key: string]: string;
+            };
+        };
+        /** @description A conforming adapter manifest and optional registry credentials. */
+        RuntimePluginInstall: {
+            manifest: unknown;
+            registry_credentials?: components["schemas"]["RegistryCredentials"];
+        };
+        /** @description Catalog pack identity with its current administrator binding. */
+        RuntimePluginPack: {
+            id: string;
+            name: string;
+            pack_digest: string;
+            binding: components["schemas"]["RuntimePluginPackBinding"] | null;
+            /** @default false */
+            can_update: boolean;
+        };
+        /** @description An organization's explicit pack-to-installation selection. */
+        RuntimePluginPackBinding: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_uuid: string;
+            pack_id: string;
+            pack_digest: string;
+            /** Format: uuid */
+            installation_id: string;
+            bindings: components["schemas"]["RuntimePluginBindings"];
+            enabled: boolean;
+            installation_state: string;
+        };
+        /** @description Verified pack revision and the guests available for binding. */
+        RuntimePluginPackDetail: {
+            id: string;
+            name: string;
+            pack_digest: string;
+            binding: components["schemas"]["RuntimePluginPackBinding"] | null;
+            /** @default false */
+            can_update: boolean;
+            targets: components["schemas"]["RuntimePluginTarget"][];
+        };
+        /** @description An optimistic update pinned to the verified pack digest. */
+        RuntimePluginPackUpdate: {
+            /** Format: uuid */
+            installation_id: string;
+            pack_digest: string;
+            bindings: components["schemas"]["RuntimePluginBindings"];
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description A bounded installation page with an opaque continuation cursor. */
+        RuntimePluginPage: {
+            results: components["schemas"]["RuntimePluginView"][];
+            /** Format: uuid */
+            next_cursor: string | null;
+        };
+        /** @description A selectable compiled guest address and operating system. */
+        RuntimePluginTarget: {
+            address: string;
+            os_family: string;
+        };
+        /** @description Installation status without stored registry credentials. */
+        RuntimePluginView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_uuid: string;
+            manifest: unknown;
+            manifest_digest: string;
+            state: components["schemas"]["RuntimePluginViewStateEnum"];
+            failure_code: string;
+            has_registry_credentials: boolean;
+        };
+        /**
+         * @description * `checking` - checking
+         *     * `ready` - ready
+         *     * `failed` - failed
+         *     * `disabled` - disabled
+         *     * `retired` - retired
+         * @enum {string}
+         */
+        RuntimePluginViewStateEnum: "checking" | "ready" | "failed" | "disabled" | "retired";
         /** @description Read-only RAES package identity and availability for the SPA. */
         ScenarioDetail: {
             readonly id: string;
@@ -5264,13 +5511,6 @@ export interface components {
             readonly existing: number;
             readonly created: number;
         };
-        /**
-         * @description * `enabled` - enabled
-         *     * `disabled` - disabled
-         *     * `retired` - retired
-         * @enum {string}
-         */
-        StateEnum: "enabled" | "disabled" | "retired";
         /** @description One of the requesting participant's own submissions. */
         SubmissionListItem: {
             readonly id: string;
@@ -5328,6 +5568,26 @@ export interface components {
         TeamMemberRequest: {
             /** Format: uuid */
             participant_id: string;
+        };
+        /** @description The immutable registered pack identity and conformance result. */
+        TenantPackInstalled: {
+            scenario_id: string;
+            name: string;
+            source_kind: string;
+            contract_kind: string;
+            contract_profile: string;
+            package_version: string;
+            package_digest: string;
+            conformance_status: string;
+            created: boolean;
+        };
+        /** @description Named pack archive with an optional expected revision digest. */
+        TenantPackUpload: {
+            name: string;
+            /** Format: uri */
+            archive: string;
+            /** @default  */
+            expected_digest: string;
         };
         /**
          * @description Explicit request body for an offboarding ownership transfer.
@@ -6496,6 +6756,346 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackRegistrationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TenantPackUpload"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantPackInstalled"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugin_packs_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedRuntimePluginPackList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugin_packs_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginPackDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugin_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePluginPackUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["RuntimePluginPackUpdate"];
+                "multipart/form-data": components["schemas"]["RuntimePluginPackUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginPackBinding"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugins_retrieve: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugins_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePluginInstall"];
+                "application/x-www-form-urlencoded": components["schemas"]["RuntimePluginInstall"];
+                "multipart/form-data": components["schemas"]["RuntimePluginInstall"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugins_actions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePluginAction"];
+                "application/x-www-form-urlencoded": components["schemas"]["RuntimePluginAction"];
+                "multipart/form-data": components["schemas"]["RuntimePluginAction"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapter_grants_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterGrantView"][];
                 };
             };
             /** @description Authentication failed. */

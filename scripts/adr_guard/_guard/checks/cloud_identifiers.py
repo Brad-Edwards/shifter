@@ -303,13 +303,13 @@ def check_no_live_cloud_identifiers(repo_root: Path, files: list[str] | None) ->
 # ADR-004-R16: no hardcoded CTF flag literals in Mission Control runtime code.
 #
 # The Mission Control walkthrough page is a thin handoff to the CTFd platform;
-# challenge answers and flag content belong to the CTF/Polaris content domain
+# challenge answers and flag content belong to the CTF content domain
 # (the native `ctf` app or the standalone CTFd sync path), never to Mission
 # Control Python or templates. This check is the regression backstop for #560:
 # it fails closed on answer-shaped `FLAG{...}` literals in MC runtime surfaces.
 # CTF flags are low-entropy and are not caught by gitleaks; this is the
 # complementary repo-specific rule, scoped by path so intentional flag content
-# in tests, docs, the `ctf` app, and Polaris scenario sources is not touched.
+# in tests, docs, the `ctf` app, and external scenario scenario sources is not touched.
 #
 # Detection is by pattern, never by a denylist of real values, and violation
 # messages redact the matched value. Format-hint placeholders (`FLAG{...}`,
@@ -414,7 +414,7 @@ def check_mission_control_no_flag_literals(repo_root: Path, files: list[str] | N
     Scans the mission_control package and the mission_control template tree for
     answer-shaped ``FLAG{...}`` literals, skipping format-hint placeholders. The
     path scope intentionally excludes tests, docs, the native ``ctf`` app, and
-    Polaris scenario sources, where flag content is legitimate. Detection is by
+    external scenario scenario sources, where flag content is legitimate. Detection is by
     pattern and messages redact the matched value. Backstops gitleaks for
     low-entropy CTF flags it ignores.
     """

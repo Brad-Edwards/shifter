@@ -4,9 +4,11 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 
+@pytest.mark.integration
 def test_disabled_and_enabled_projection_use_real_chart(tmp_path):
     path = Path(__file__).resolve().parents[1] / "render_model_broker.py"
     spec = importlib.util.spec_from_file_location("render_model_broker", path)
@@ -91,6 +93,7 @@ def test_deploy_job_installs_renderer_dependencies_before_use():
     assert "GITHUB_PATH" in helm[0]["run"]
 
 
+@pytest.mark.integration
 def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     import subprocess
 
@@ -136,12 +139,20 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
             }
         },
     }
+    catalog = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": "model-broker-catalog", "namespace": "shifter-platform"},
+        "data": {"enrollment.json": json.dumps({"MODEL_BROKER_GUEST_VIP": "10.40.0.25"})},
+    }
     versions = []
     for value in ("old", "new", "new"):
         runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] = value
         combined = list(
             yaml.safe_load_all(
-                module.combine_resources(base + "\n---\n" + yaml.safe_dump(runtime), yaml.safe_dump(control))
+                module.combine_resources(
+                    base + "\n---\n" + yaml.safe_dump(runtime), yaml.safe_dump_all([control, catalog])
+                )
             )
         )
         policies = {
@@ -175,6 +186,10 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
         applied_control["spec"]["template"]["spec"]["containers"][0]["envFrom"]
         == worker_patch["spec"]["template"]["spec"]["containers"][0]["envFrom"]
     )
+    applied_runtime = next(
+        doc for doc in combined if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "platform-runtime"
+    )
+    assert applied_runtime["data"]["MODEL_BROKER_GUEST_VIP"] == "10.40.0.25"
     assert versions[0] != versions[1]
     assert versions[1] == versions[2]
 

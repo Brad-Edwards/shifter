@@ -93,6 +93,7 @@ class ModelRequestReservation(models.Model):
     # authoritative usage for every one of them before releasing the hold.
     billed_components = models.JSONField(default=list)
     canonical_request_cost = models.PositiveBigIntegerField()
+    billing_bound = models.JSONField(default=dict)
     state = models.CharField(max_length=16, default="reserved")
     settlement_state = models.CharField(max_length=16, default="open")
     uncertainty_reason = models.CharField(max_length=64, blank=True, default="")

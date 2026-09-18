@@ -21,12 +21,14 @@ from .test_model_allocation_dispatch import setup_launch
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def paused_launch(django_user_model, settings):
+def paused_launch(django_user_model, settings, *, native=False):
     owner, request, instance = setup_launch(django_user_model, settings)
     _, _, observations = allocation_inputs(django_user_model)
     record_model_observations(settings.MODEL_ACCESS_CATALOG, lambda _: observations)
     prepare_model_access_for_dispatch(request.request_id, range_id=request.range_id)
-    Range.objects.filter(uuid=request.range_id).update(status="paused", range_config=_plan(), range_backend="gce")
+    Range.objects.filter(uuid=request.range_id).update(
+        status="paused", range_config=_plan() if native else {}, range_backend="gce"
+    )
     instance.status = "paused"
     instance.save(update_fields=["status"])
     settings.CLOUD_PROVIDER = "aws"
@@ -49,7 +51,7 @@ def test_removed_overlay_does_not_erase_durable_preparation(django_user_model, s
     assert ModelAllocation.objects.get().snapshot["need"] == original[0]
 
 
-def test_model_resume_uses_native_range_operation(django_user_model, settings):
+def test_model_resume_uses_legacy_power_operation(django_user_model, settings):
     from cms.services._model_allocation import resume_model_range
 
     _, request, _ = paused_launch(django_user_model, settings)
@@ -100,4 +102,14 @@ def test_optional_policy_removal_cannot_reuse_old_catalog(django_user_model, set
     settings.MODEL_ACCESS_CATALOG = catalog
     prepare_model_access_for_dispatch(request.request_id, range_id=request.range_id)
     assert enqueue_provisioner_launch(command) == first
+    assert not ModelAllocation.objects.exists()
+
+
+def test_native_model_resume_cannot_allocate_or_dispatch(django_user_model, settings):
+    from cms.services._model_allocation import resume_model_range
+
+    _, request, _ = paused_launch(django_user_model, settings, native=True)
+    assert resume_model_range(request.request_id) is False
+    assert Range.objects.get(uuid=request.range_id).status == "paused"
+    assert not ProvisionerLaunchIntent.objects.exists()
     assert not ModelAllocation.objects.exists()

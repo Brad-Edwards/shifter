@@ -163,7 +163,7 @@ spec:
         - protocol: TCP
           port: 22
         - protocol: TCP
-          # Docker-host management sshd (polaris polaris-docker-host): the
+          # Container-host management sshd: the
           # published container owns :22, so the host mgmt channel the
           # provisioner drives is on config.host_mgmt_ssh_port (default 2222).
           port: 2222

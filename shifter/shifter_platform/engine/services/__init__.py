@@ -51,6 +51,12 @@ from ._cleanup_verification import (
 from ._common import EngineError
 from ._lifecycle import dispatch_prepared_range_resume, pause_range, resume_range
 from ._model_admission import admit_range_model_access
+from ._model_credentials import (
+    authenticate_model_access,
+    exchange_model_enrollment,
+    issue_model_enrollment,
+    refresh_model_access,
+)
 from ._model_launch_api import (
     disable_optional_model_preparation,
     fence_model_policy_publication,
@@ -83,6 +89,7 @@ from ._operation_apply import apply_pending_operation_results, evaluate_operatio
 from ._preparation_adapters import (
     PreparationAdapterView,
     install_preparation_adapter,
+    list_preparation_adapter_grants,
     list_preparation_adapters,
     set_preparation_adapter_state,
 )
@@ -145,6 +152,15 @@ from ._receipt import (
     register_receipt_verifier,
     revoke_receipt_verifier,
 )
+from ._runtime_plugin_bindings import (
+    RuntimePluginPackView,
+    bind_runtime_plugin,
+    has_runtime_plugin_binding,
+    list_runtime_plugin_bindings,
+)
+from ._runtime_plugin_controller import reconcile_runtime_plugins
+from ._runtime_plugin_operations import reconcile_runtime_plugin_operations
+from ._runtime_plugins import change_runtime_plugin, install_runtime_plugin, list_runtime_plugins
 from ._sharing import (
     MembershipEvidence,
     ModelAccessRangeView,
@@ -235,6 +251,7 @@ __all__ = (
     "ReservationOutcome",
     "RetryBindingResult",
     "RetryKeyConflict",
+    "RuntimePluginPackView",
     "SSHConnection",
     "SecretsError",
     "SharingError",
@@ -251,11 +268,14 @@ __all__ = (
     "apply_pending_operation_results",
     "assess_declared_event_capacity",
     "assess_event_capacity",
+    "authenticate_model_access",
     "bind_public_operation",
+    "bind_runtime_plugin",
     "bucket_state_counts",
     "cancel_artifact_preparation",
     "cancel_range",
     "cancel_range_by_request",
+    "change_runtime_plugin",
     "charge_unknown",
     "check_dispatch_lease",
     "claim_ready_generation",
@@ -276,6 +296,7 @@ __all__ = (
     "drain_sharing_binding",
     "enqueue_range_activation",
     "evaluate_operation_result",
+    "exchange_model_enrollment",
     "fence_model_policy_publication",
     "fence_revoked_requests",
     "finalize_retiring_generations",
@@ -298,15 +319,21 @@ __all__ = (
     "get_ssh_key",
     "get_user_ready_range_instances",
     "has_openvpn_profile",
+    "has_runtime_plugin_binding",
     "install_preparation_adapter",
+    "install_runtime_plugin",
     "invalidate_sharing_authority",
     "is_cleanup_verified_absent",
+    "issue_model_enrollment",
     "latest_capacity_declaration",
     "latest_cleanup_verification",
     "list_backend_artifacts",
     "list_model_launch_refreshes",
+    "list_preparation_adapter_grants",
     "list_preparation_adapters",
     "list_raes_image_mappings",
+    "list_runtime_plugin_bindings",
+    "list_runtime_plugins",
     "lookup_public_operation",
     "open_dispatch",
     "operation_id_for_request",
@@ -332,6 +359,8 @@ __all__ = (
     "reconcile_expired_dispatches",
     "reconcile_model_requests",
     "reconcile_preparations",
+    "reconcile_runtime_plugin_operations",
+    "reconcile_runtime_plugins",
     "record_capacity_declaration",
     "record_cleanup_verification",
     "record_model_observations",
@@ -339,6 +368,7 @@ __all__ = (
     "record_raes_operation_status",
     "record_raes_runtime_snapshot",
     "recover_stalled_generations",
+    "refresh_model_access",
     "register_receipt_verifier",
     "release_before_dispatch",
     "release_capacity_reservations",

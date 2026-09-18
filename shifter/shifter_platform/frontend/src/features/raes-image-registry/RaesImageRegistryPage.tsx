@@ -1,8 +1,16 @@
 import { useId, useState, type FormEvent } from "react";
 
-import { useRaesImageMappings, useDisableRaesImageMapping, useRegisterRaesImageMapping } from "@/api/raes-image-registry";
+import {
+  useRaesImageMappings,
+  useDisableRaesImageMapping,
+  useRegisterRaesImageMapping,
+} from "@/api/raes-image-registry";
 import { describeMutationError } from "@/api/errors";
-import { RAES_IMAGE_PROVIDERS, type RaesImageMapping, type RaesImageProvider } from "@/api/types";
+import {
+  RAES_IMAGE_PROVIDERS,
+  type RaesImageMapping,
+  type RaesImageProvider,
+} from "@/api/types";
 import { useBootstrapContext } from "@/app/bootstrap-context";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -11,9 +19,22 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
 /**
@@ -53,6 +74,8 @@ function RegisterForm() {
     machineType: useId(),
     diskSizeGb: useId(),
     diskType: useId(),
+    managementPort: useId(),
+    managementUser: useId(),
     notes: useId(),
   };
   const register = useRegisterRaesImageMapping();
@@ -64,9 +87,14 @@ function RegisterForm() {
   const [machineType, setMachineType] = useState("");
   const [diskSizeGb, setDiskSizeGb] = useState("");
   const [diskType, setDiskType] = useState("");
+  const [managementUser, setManagementUser] = useState("");
+  const [managementPort, setManagementPort] = useState("22");
   const [notes, setNotes] = useState("");
 
-  const serverError = describeMutationError(register.error, "The mapping could not be registered.");
+  const serverError = describeMutationError(
+    register.error,
+    "The mapping could not be registered.",
+  );
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -80,6 +108,8 @@ function RegisterForm() {
         machine_type: machineType,
         disk_size_gb: parsedDisk,
         disk_type: diskType,
+        management_ssh_port: Number(managementPort),
+        management_ssh_username: managementUser,
         enabled: true,
         notes,
         // This form registers a legacy alias-only mapping; portable RAES artifact
@@ -100,6 +130,8 @@ function RegisterForm() {
           setMachineType("");
           setDiskSizeGb("");
           setDiskType("");
+          setManagementPort("22");
+          setManagementUser("");
           setNotes("");
         },
       },
@@ -119,7 +151,10 @@ function RegisterForm() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor={ids.provider}>Provider</Label>
-            <Select value={provider} onValueChange={(value) => setProvider(value as RaesImageProvider)}>
+            <Select
+              value={provider}
+              onValueChange={(value) => setProvider(value as RaesImageProvider)}
+            >
               <SelectTrigger id={ids.provider} className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -190,6 +225,36 @@ function RegisterForm() {
               placeholder="Optional (backend default when blank)"
             />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={ids.managementPort}>Management SSH port</Label>
+            <Input
+              id={ids.managementPort}
+              type="number"
+              min={1}
+              max={65535}
+              value={managementPort}
+              onChange={(event) => setManagementPort(event.target.value)}
+              required
+            />
+            <p className="text-muted-foreground text-xs">
+              SSH port baked into the host image for provisioning. Participant
+              access is configured separately.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={ids.managementUser}>Management SSH username</Label>
+            <Input
+              id={ids.managementUser}
+              value={managementUser}
+              maxLength={32}
+              onChange={(event) => setManagementUser(event.target.value)}
+              placeholder="Backend default"
+            />
+            <p className="text-muted-foreground text-xs">
+              Existing local administrator account required by the image, if
+              any.
+            </p>
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor={ids.notes}>Notes</Label>
             <Textarea
@@ -212,7 +277,10 @@ function RegisterForm() {
 function MappingsTable({
   query,
   canAuthor,
-}: Readonly<{ query: ReturnType<typeof useRaesImageMappings>; canAuthor: boolean }>) {
+}: Readonly<{
+  query: ReturnType<typeof useRaesImageMappings>;
+  canAuthor: boolean;
+}>) {
   const disableMutation = useDisableRaesImageMapping();
 
   if (query.isLoading) {
@@ -242,7 +310,8 @@ function MappingsTable({
       <div className="grid place-items-center px-6 py-16 text-center">
         <p className="text-sm font-medium">No image mappings yet</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Register the first mapping so authored RAES sources can realize to provider images.
+          Register the first mapping so authored RAES sources can realize to
+          provider images.
         </p>
       </div>
     );
@@ -254,13 +323,21 @@ function MappingsTable({
         <TableRow className="hover:bg-transparent">
           <TableHead>Mapping</TableHead>
           <TableHead>Image ref</TableHead>
+          <TableHead>Management SSH port</TableHead>
           <TableHead className="w-[120px]">Status</TableHead>
-          {canAuthor ? <TableHead className="w-[100px]">Actions</TableHead> : null}
+          {canAuthor ? (
+            <TableHead className="w-[100px]">Actions</TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
-          <MappingRow key={row.id} row={row} canAuthor={canAuthor} disableMutation={disableMutation} />
+          <MappingRow
+            key={row.id}
+            row={row}
+            canAuthor={canAuthor}
+            disableMutation={disableMutation}
+          />
         ))}
       </TableBody>
     </Table>
@@ -277,15 +354,24 @@ function MappingRow({
   disableMutation: ReturnType<typeof useDisableRaesImageMapping>;
 }>) {
   const version = row.source_version || "*";
-  const pending = disableMutation.isPending && disableMutation.variables?.source_name === row.source_name;
+  const pending =
+    disableMutation.isPending &&
+    disableMutation.variables?.source_name === row.source_name;
   return (
     <TableRow>
       <TableCell className="font-mono text-xs">
         {row.provider}:{row.source_name}@{version}
       </TableCell>
-      <TableCell className="font-mono text-xs break-all">{row.image_ref}</TableCell>
+      <TableCell className="font-mono text-xs break-all">
+        {row.image_ref}
+      </TableCell>
       <TableCell>
-        <Badge variant={row.enabled ? "default" : "secondary"}>{row.enabled ? "Enabled" : "Disabled"}</Badge>
+        {row.management_ssh_username || "Default"}:{row.management_ssh_port}
+      </TableCell>
+      <TableCell>
+        <Badge variant={row.enabled ? "default" : "secondary"}>
+          {row.enabled ? "Enabled" : "Disabled"}
+        </Badge>
       </TableCell>
       {canAuthor ? (
         <TableCell>

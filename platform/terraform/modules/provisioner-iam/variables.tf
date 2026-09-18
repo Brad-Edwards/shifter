@@ -19,7 +19,7 @@ variable "role_id" {
 }
 
 variable "permissions_boundary_arn" {
-  description = "Installation permissions boundary the provisioner must set on every per-range role it creates (Polaris agent, VPN gateway)."
+  description = "Installation permissions boundary required on every provisioner-created role."
   type        = string
 }
 

@@ -34,7 +34,13 @@ def _realized_member(instance: dict[str, object]) -> dict[str, object]:
         "participant_access_channels": channels,
         "participant_access_usernames": usernames,
     }
-    _copy_optional_text(member, instance, "gcp_host_public_key", "host_public_key")
+    host_key = str(
+        instance.get("participant_ssh_host_public_key")
+        or instance.get("host_public_key")
+        or instance.get("gcp_host_public_key", "")
+    )
+    if host_key:
+        member["host_public_key"] = host_key
     _copy_optional_text(member, instance, "sftp_root_directory", "sftp_root_directory")
     for channel, key in (("ssh", "ssh_key_secret_arn"), ("rdp", "rdp_password_secret_arn")):
         if channel in channels:

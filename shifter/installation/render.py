@@ -99,7 +99,9 @@ def render_tfvars(config: RootConfig) -> str:
         dynamic_project = gcp_settings.range_resource_project_id
         rendered += f'dynamic_secret_project_id = "{dynamic_project}"\n'
         static_refs = gcp_settings.provisioner_static_resource_refs
-        rendered += _hcl_string_map("provisioner_static_secret_refs", dict(static_refs))
+        rendered += _hcl_string_map(
+            "provisioner_static_secret_refs", {str(key): value for key, value in static_refs.items()}
+        )
         broker = gcp_settings.model_broker.model_dump(mode="json")
         rendered += "model_broker = " + json.dumps(broker, separators=(",", ":"), sort_keys=True) + "\n"
         capacity = resolve_capacity_profile(gcp_settings.shared_service_capacity_profile)

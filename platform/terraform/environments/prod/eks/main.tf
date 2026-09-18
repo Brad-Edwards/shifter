@@ -28,6 +28,8 @@ locals {
 module "eks" {
   source = "../../../modules/portal/eks"
 
+  model_broker = var.model_broker
+
   environment              = local.environment
   aws_region               = var.aws_region
   cluster_name             = local.cluster_name

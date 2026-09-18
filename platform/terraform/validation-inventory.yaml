@@ -37,7 +37,7 @@ profiles:
 
 # Execution roots: the provisioner stages/executes the two `modules/{range,ngfw}`
 # directories, so despite the name they are runtime roots (each declares a
-# backend and owns a lockfile). Polaris is a real root without a remote backend.
+# backend and owns a lockfile).
 # A root may declare an optional `test` (relative to `path`): a credential-free
 # `terraform test` suite run with the root's own toolchain against its committed
 # lockfile, for behavior that lives in the root rather than a reusable module.
@@ -127,6 +127,7 @@ roots:
     providers:
       - registry.terraform.io/hashicorp/archive
       - registry.terraform.io/hashicorp/google
+      - registry.terraform.io/hashicorp/google-beta
       - registry.terraform.io/hashicorp/random
   - id: nazgul
     path: platform/terraform/gcp/environments/nazgul
@@ -135,6 +136,7 @@ roots:
     providers:
       - registry.terraform.io/hashicorp/archive
       - registry.terraform.io/hashicorp/google
+      - registry.terraform.io/hashicorp/google-beta
       - registry.terraform.io/hashicorp/random
   # GCP-native self-hosted runner (issue #1546). A dedicated execution root and
   # state prefix, separate from the gcp-dev platform root, so a platform destroy
@@ -273,6 +275,11 @@ modules:
     owner: "@Brad-Edwards"
     contract: terraform_test
     test: tests/security.tftest.hcl
+    test_profile: aws-1.13.3
+  - path: platform/terraform/modules/portal/eks-model-broker
+    owner: "@Brad-Edwards"
+    contract: terraform_test
+    test: tests/boundary.tftest.hcl
     test_profile: aws-1.13.3
   - path: platform/terraform/modules/portal/eks-provisioner-env
     owner: "@Brad-Edwards"

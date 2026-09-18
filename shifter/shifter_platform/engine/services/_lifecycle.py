@@ -16,6 +16,7 @@ from uuid import UUID
 # depends on the model).
 from engine._range_state import is_range_terminal, is_range_usable
 from shared.enums import ResourceStatus
+from shared.raes.runtime_target import is_raes_provisioning_plan
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
@@ -67,6 +68,10 @@ def _run_range_lifecycle_op(
         decision: bool | None
         if not range_obj:
             logger.warning("%s_range: no range for request_id=%s", op_name, request_id)
+            decision = False
+        elif is_raes_provisioning_plan(range_obj.range_config):
+            # Native realization owns its member inventory outside engine_instance;
+            # the legacy power worker cannot consume it. Refuse before state changes.
             decision = False
         else:
             decision = _classify_lifecycle_decision(

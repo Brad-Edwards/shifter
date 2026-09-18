@@ -169,11 +169,10 @@ locals {
     var.vmseries_bootstrap_bucket_name == "" ? {} : {
       "provisioner:vmseries" = { workload = "provisioner", bucket = var.vmseries_bootstrap_bucket_name, role = "roles/storage.objectAdmin" }
     },
-    # Object-storage-backed RAES packages (#1567, ADR-034-R5): the portal reads
-    # (never writes) the single immutable pack archive at launch. Least-privilege
-    # objectViewer, bound per named bucket (ADR-008-R7); empty disables it.
+    # Tenant installation stores validated immutable pack archives and removes
+    # failed uploads. Authority is bound to this explicit content bucket only.
     var.raes_package_bucket_name == "" ? {} : {
-      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectViewer" }
+      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectUser" }
     },
     # Native CTF content bundles are a distinct deployment concern from RAES
     # packages. The portal needs read-only access to the explicitly configured
@@ -446,35 +445,14 @@ resource "google_service_account_iam_member" "provisioner_sign_blob" {
   member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
 
-# GCE range-cell service accounts (#1509). Distinct from the workload SAs: these
-# are NOT Workload-Identity-bound to a KSA. The host SA is attached only to
-# range hosts that need host-side GCS/Secret Manager access; participant/native
-# guests receive no service account. The vertex SA backs the short-lived
-# per-range key the a14-kali agent uses for Vertex AI. Created in the platform
-# project for the default same-project range cell; a cross-project range cell
-# overrides the emails and provisions the SAs in that project.
+# Legacy cloud-enabled host identity. Native guests do not receive cloud
+# service accounts; all participant model access crosses the dedicated broker.
 resource "google_service_account" "range_host" {
   project      = var.project_id
   account_id   = "${replace(var.name_prefix, "-", "")}-range-host"
   display_name = "Shifter ${var.environment} range host"
 }
 
-resource "google_service_account" "range_vertex" {
-  project      = var.project_id
-  account_id   = "${replace(var.name_prefix, "-", "")}-range-vertex"
-  display_name = "Shifter ${var.environment} range Vertex"
-}
-
-# The range host SA is attached to participant-controllable POLARIS GCE guests
-# with cloud-platform scope, so a participant with root on the guest can mint its
-# token from the metadata server. It therefore holds NO project-level Cloud
-# Storage role: a project (or shared-assets-bucket) objectViewer would let a
-# compromised guest read across tenants (#1644). Its only host-side GCS need --
-# the POLARIS smoketest tarball -- is delivered as a short-lived, provisioner-
-# minted V4 signed download URL (agent_assets.get_polaris_tests_presigned_url),
-# so the guest needs no GCS identity at all. logging/monitoring writes stay; the
-# per-range Vertex-secret grant is bound elsewhere. check_tf_gcp_iam_resource_scope
-# fails closed on any project-level roles/storage.* re-added to this SA.
 resource "google_project_iam_member" "range_host_roles" {
   for_each = toset([
     "roles/logging.logWriter",
@@ -486,29 +464,10 @@ resource "google_project_iam_member" "range_host_roles" {
   member  = "serviceAccount:${google_service_account.range_host.email}"
 }
 
-resource "google_project_iam_member" "range_vertex_aiplatform" {
-  project = var.project_id
-  role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.range_vertex.email}"
-}
-
-# The provisioner attaches the host SA only to range hosts that need cloud APIs
-# (actAs -> serviceAccountUser) and mints per-range Vertex keys on the vertex SA
-# (serviceAccountKeyAdmin).
+# The provisioner may attach the legacy host identity only when required by
+# the explicitly selected host capability. It cannot mint provider keys.
 resource "google_service_account_iam_member" "provisioner_range_host_user" {
   service_account_id = google_service_account.range_host.name
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
-}
-
-resource "google_service_account_iam_member" "provisioner_range_vertex_user" {
-  service_account_id = google_service_account.range_vertex.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
-}
-
-resource "google_service_account_iam_member" "provisioner_range_vertex_key_admin" {
-  service_account_id = google_service_account.range_vertex.name
-  role               = "roles/iam.serviceAccountKeyAdmin"
   member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }

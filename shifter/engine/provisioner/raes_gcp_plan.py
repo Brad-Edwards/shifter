@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from typing import cast
 
 from config import (
-    GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCERangeCellConfig,
@@ -71,17 +70,6 @@ from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 #: Default guest login user the provisioner injects (management reachability). The
 #: participant-facing user is a later participant-runtime concern (not provisioning).
 _DEFAULT_SSH_USERNAME = "raes"
-_DEFAULT_SSH_PORT = 22
-
-#: A polaris-docker-host guest is a pre-baked Docker host: its compose stack owns
-#: :22 and the host management sshd is moved to ``config.host_mgmt_ssh_port`` (the
-#: bake's ``Port 2222``), reachable as the image's default OS user "ubuntu" (the
-#: GCE guest agent creates it from the injected ssh-keys). Provisioner guest setup
-#: must drive that host channel, not the standard raes@22 native-node default, or
-#: it lands on the container's sshd / a closed port. Mirrors the legacy
-#: gcp_range_cell_scenario docker-host access model on the RAES-native path.
-_DOCKER_HOST_SSH_USERNAME = "ubuntu"
-
 #: A prepromoted-domain-controller guest is a pre-baked Windows DC. Its accounts
 #: are domain accounts (a promoted DC has no local SAM), so the GCE guest agent
 #: cannot create the "raes" local user the standard RAES node setup connects as,
@@ -164,9 +152,7 @@ def build_raes_range_cell_plan(
         subnet = subnet_by_address[network.address]
         for node in nodes_by_network.get(network.address, ()):
             instance_plans.extend(
-                _instance_plans_for_node(
-                    node, subnet, range_id, resolve_image, resolved_config, access_by_node.get(node.address, ())
-                )
+                _instance_plans_for_node(node, subnet, range_id, resolve_image, access_by_node.get(node.address, ()))
             )
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
@@ -400,7 +386,6 @@ def _instance_plans_for_node(
     subnet: SubnetPlan,
     range_id: int,
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
-    config: GCERangeCellConfig,
     access_bindings: Sequence[RealizedAccessBinding] = (),
 ) -> list[InstancePlan]:
     """Render one InstancePlan per ``count`` for a node placed on ``subnet``.
@@ -412,32 +397,13 @@ def _instance_plans_for_node(
     profile = resolve_image(node)
     if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
         raise RaesGcePlanError("RAES GCE does not support preconfigured-machine-host participant readiness")
-    # A pre-baked Docker host (Polaris) exposes its management sshd on the bake's
-    # mgmt port as "ubuntu"; :22 belongs to the published container. Every other
-    # RAES-native guest is driven as raes@22. The whole guest-setup SSH path
-    # (host-key install/verify, polaris post-provision, composition verify, OS
-    # observation) reads these host_ssh fields via instance_output ->
-    # build_guest_execution_context, so setting them here is the single point that
-    # routes the docker-host management channel correctly.
-    is_polaris_host = profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST
-    if is_polaris_host:
-        host_ssh_username = _DOCKER_HOST_SSH_USERNAME
-        host_ssh_port = config.host_mgmt_ssh_port
-    elif profile.bootstrap_capability == GCE_BOOTSTRAP_PREPROMOTED_DC:
-        host_ssh_username = _WINDOWS_DC_ADMIN_USERNAME
-        host_ssh_port = _DEFAULT_SSH_PORT
-    else:
-        host_ssh_username = _DEFAULT_SSH_USERNAME
-        host_ssh_port = _DEFAULT_SSH_PORT
-    # The polaris docker-host runs the in-container Vertex agent: the host reads
-    # the per-range Vertex key from Secret Manager and injects it into a14-kali.
-    # That read is authenticated by the attached range-cell service account
-    # (config.service_account_email, granted secretAccessor per range by
-    # gcp_range_vertex_creds.ensure_range_vertex_key). instance_resource falls back
-    # to config.service_account_email when attach_service_account is set with no
-    # explicit email -- matching the legacy scenario path (gcp_range_cell_scenario).
-    # Standard RAES nodes hold no cloud identity (participant-controllable).
-    attach_service_account = is_polaris_host
+    # A promoted domain controller has no local SAM. Its existing domain
+    # administrator receives the key through administrators_authorized_keys.
+    host_ssh_username = profile.host_ssh_username or (
+        _WINDOWS_DC_ADMIN_USERNAME
+        if profile.bootstrap_capability == GCE_BOOTSTRAP_PREPROMOTED_DC
+        else _DEFAULT_SSH_USERNAME
+    )
     os_type = node.os_family or "linux"
     plans: list[InstancePlan] = []
     for index in range(node.count):
@@ -465,14 +431,14 @@ def _instance_plans_for_node(
                 "source": {},
                 "ssh_username": _DEFAULT_SSH_USERNAME,
                 "host_ssh_username": host_ssh_username,
-                "ssh_port": host_ssh_port,
+                "ssh_port": profile.host_ssh_port,
                 # The closed realized access binding the portal authorizes
                 # against (#1349), sourced only from the authored RAES
                 # interactive_access declarations joined to this plan (#1710).
                 # Empty when the scenario authored none.
                 "participant_access_channels": [binding.channel for binding in access_bindings],
                 "participant_access_usernames": {binding.channel: binding.username for binding in access_bindings},
-                "attach_service_account": attach_service_account,
+                "attach_service_account": False,
             }
         )
     return plans

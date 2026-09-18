@@ -175,3 +175,13 @@ that the entire umbrella requirement is operational.
 | Source-preserving private transport and trusted binding | Helm internal Service, existing GKE Dataplane V2, `gcp_range_cell_resources.py`, `peer_matches_binding` | Rendered Service/source ranges, foreign/header-shaped source tests, operator LB/CNI probe procedure. Live qualification is the M10 release gate. |
 | Broker egress, private Engine TLS and rotation | Helm `model-broker-network.yaml`, `model-access-control.yaml`, versioned TLS references | Additive policy selection tests, Kubernetes schema/security checks, documented rotation and stream probes. |
 | Guard and quality integration | Existing IAM guard, GCP quality job, chart-derived Actions lane, ADR-059/061 | Escalation tests, full repository policy/completion gates, configured reviews and CI; existing provisioner admission retained. |
+
+### Guest egress projection
+
+The applied broker VIP is forwarded as `MODEL_BROKER_GUEST_VIP` with public TLS
+coordinates. Only an admitted guest enrollment projects it into the RAES
+firewall capability; enabling the installation alone opens no range egress.
+The realizer rejects missing or non-private VIPs, creates only TCP 443 to that
+exact /32, and retains the fixed firewall name for teardown and residual
+inventory even after broker configuration is disabled. The provisioner Job
+environment allowlists carry this non-secret value through both GCP renderers.

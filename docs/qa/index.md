@@ -23,5 +23,5 @@ login (Cognito MFA cannot be driven headlessly).
   workload health budgets.
 
 !!! note "Scope"
-    These protocols validate the **native** Shifter platform. The standalone
-    Polaris CTFd and its sync are validated separately and are out of scope here.
+    These protocols validate the **native** Shifter platform. External packs
+    keep their scenario acceptance protocols in the owner repository.

@@ -43,7 +43,9 @@ function routeApi(handlers: (path: string, options?: { method?: string }) => unk
   mockApi.mockImplementation((path: string, options?: { method?: string }) => Promise.resolve(handlers(path, options)));
 }
 
-beforeEach(() => mockApi.mockReset());
+beforeEach(() => {
+  mockApi.mockReset();
+});
 
 describe("EventFormPage (create)", () => {
   it("submits a create request via POST /ctf/events/", async () => {

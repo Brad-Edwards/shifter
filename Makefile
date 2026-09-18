@@ -52,7 +52,11 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}'
 
-test: test-platform test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-charts test-js test-adr-guard ## Run every no-service (SQLite/pure-Python/JS) lane
+test: test-platform test-adapter-sdk test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-charts test-js test-adr-guard ## Run every no-service (SQLite/pure-Python/JS) lane
+
+.PHONY: test-adapter-sdk
+test-adapter-sdk: ## Independent adapter contract and packaging checks
+	cd shifter/shifter_adapter_sdk && uv sync --frozen --all-extras && uv run --all-extras pytest tests/ && uv build
 
 test-platform: ## Platform fast lane (SQLite; sole coverage publisher)
 	cd shifter/shifter_platform && uv sync --group dev && \

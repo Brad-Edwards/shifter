@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from shared.raes.artifact_inventory import BackendArtifact
+from shared.raes.image_policy import validate_management_ssh_port, validate_management_ssh_username
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -32,7 +33,11 @@ __all__ = [
 
 
 class RaesImageMappingError(ValueError):
-    """Raised when an RAES image mapping fails validation."""
+    """Validation failure with an explicit user-facing message, separate from diagnostics."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 @dataclass(frozen=True)
@@ -50,6 +55,8 @@ class RaesImageMappingOptions:
     machine_type: str = ""
     disk_size_gb: int | None = None
     disk_type: str = ""
+    management_ssh_port: int = 22
+    management_ssh_username: str = ""
     enabled: bool = True
     notes: str = ""
     artifact_id: str = ""
@@ -78,6 +85,8 @@ class RaesImageMappingView:
     machine_type: str
     disk_size_gb: int | None
     disk_type: str
+    management_ssh_port: int
+    management_ssh_username: str
     enabled: bool
     notes: str
     artifact_id: str
@@ -112,6 +121,11 @@ def upsert_raes_image_mapping(
     ref = _require(image_ref, field="image_ref")
     if opts.disk_size_gb is not None and opts.disk_size_gb <= 0:
         raise RaesImageMappingError("disk_size_gb must be a positive integer when set")
+    try:
+        management_port = validate_management_ssh_port(opts.management_ssh_port)
+        management_user = validate_management_ssh_username(opts.management_ssh_username)
+    except ValueError as exc:
+        raise RaesImageMappingError(str(exc)) from None
     portable = _validate_portable_identity(opts)
 
     mapping, _created = RaesImageMapping.objects.update_or_create(
@@ -122,6 +136,8 @@ def upsert_raes_image_mapping(
             "image_ref": ref,
             "machine_type": (opts.machine_type or "").strip(),
             "disk_size_gb": opts.disk_size_gb,
+            "management_ssh_port": management_port,
+            "management_ssh_username": management_user,
             "disk_type": (opts.disk_type or "").strip(),
             "enabled": opts.enabled,
             "notes": opts.notes or "",
@@ -185,6 +201,8 @@ def list_backend_artifacts(*, provider: str) -> list[BackendArtifact]:
                 machine_type=row.machine_type,
                 disk_size_gb=row.disk_size_gb,
                 disk_type=row.disk_type,
+                management_ssh_port=row.management_ssh_port,
+                management_ssh_username=row.management_ssh_username,
                 materialization=facts,
                 image_id=facts.image_id if facts is not None else "",
             )
@@ -235,6 +253,8 @@ def _to_view(mapping: RaesImageMapping) -> RaesImageMappingView:
         machine_type=mapping.machine_type,
         disk_size_gb=mapping.disk_size_gb,
         disk_type=mapping.disk_type,
+        management_ssh_port=mapping.management_ssh_port,
+        management_ssh_username=mapping.management_ssh_username,
         enabled=mapping.enabled,
         notes=mapping.notes,
         artifact_id=mapping.artifact_id,

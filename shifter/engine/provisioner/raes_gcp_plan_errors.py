@@ -1,5 +1,5 @@
-"""Errors raised while projecting portable RAES intent into a GCE plan."""
+"""GCE projection uses the shared guest-plan validation error contract."""
 
+from raes_guest_plan import RaesGuestPlanError as RaesGcePlanError
 
-class RaesGcePlanError(RuntimeError):
-    """Raised when an RAES plan cannot be realized as a GCE range-cell plan."""
+__all__ = ["RaesGcePlanError"]

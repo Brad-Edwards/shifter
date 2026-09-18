@@ -141,17 +141,17 @@ class TestCreateRangeValidation:
 
         agent = make_agent(user)
         RaesPackageSource.objects.create(
-            scenario_id="polaris-pending",
+            scenario_id="example-pending",
             contract_kind="raes",
             contract_profile="shifter",
-            package_ref="scenario-dev/polaris/content-packages/polaris",
+            package_ref="scenario-dev/example/content-packages/example",
             package_version="1.0.0",
             package_digest="sha256:" + "a" * 64,
             conformance_status="pending",
             registered_by=user,
         )
         with pytest.raises(CMSError, match="not available for launch"):
-            services.create_range(user, "polaris-pending", {"windows": agent.id})
+            services.create_range(user, "example-pending", {"windows": agent.id})
 
 
 class TestCreateRangeBehavior:

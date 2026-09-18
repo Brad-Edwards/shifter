@@ -78,7 +78,8 @@ resource "google_service_account_iam_member" "model_target_token" {
 output "model_broker_identity" {
   description = "Broker-only GSA and exact invocation targets, never credentials."
   value = {
-    gsa              = try(google_service_account.model_broker[0].email, "")
-    model_identities = { for project, account in google_service_account.model_invocation : project => account.email }
+    gsa                 = try(google_service_account.model_broker[0].email, "")
+    provisioner_subject = var.model_broker.enabled ? google_service_account.workload["provisioner"].email : ""
+    model_identities    = { for project, account in google_service_account.model_invocation : project => account.email }
   }
 }

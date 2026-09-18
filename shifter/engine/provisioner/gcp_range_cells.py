@@ -309,7 +309,6 @@ def _provision_range_resources(
     clients: GCEClients,
     config: GCERangeCellConfig,
     secret_ops: GCEGuestSecretOps,
-    vertex_ops: GCEVertexCredentialOps,
 ) -> list[ResourceDict]:
     """Create the network, subnets, firewalls, instances, and per-range creds.
 
@@ -317,14 +316,6 @@ def _provision_range_resources(
     shared-vpc mode the pre-existing platform-peered VPC is reused and only the
     per-range subnets/firewalls/instances are created here.
     """
-    vertex_secret_ref: str | None = None
-    if config.vertex_service_account_email:
-        vertex_secret_ref = vertex_ops.ensure(
-            plan["range_id"],
-            config.vertex_service_account_email,
-            plan["project_id"],
-            config.service_account_email,
-        )
     if plan["manage_network"]:
         _ensure_network(plan, clients)
     for subnet in plan["subnets"]:
@@ -354,7 +345,6 @@ def _provision_range_resources(
                     host_public_key=host_public_key,
                 ),
                 config,
-                vertex_secret_ref=vertex_secret_ref,
             )
         )
     return instance_outputs
@@ -458,9 +448,7 @@ def apply_range_cell(
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     try:
-        instance_outputs = _provision_range_resources(
-            plan, resolved_clients, resolved_config, resolved_secret_ops, resolved_vertex_ops
-        )
+        instance_outputs = _provision_range_resources(plan, resolved_clients, resolved_config, resolved_secret_ops)
         vpn_gateway = _ensure_openvpn_gateway(plan, resolved_clients, resolved_config)
         closed_result = range_cell_result(variables, plan, instance_outputs)
     except Exception:

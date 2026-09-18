@@ -149,11 +149,11 @@ def _assert_raes_adapter_supports(backend_admission: BackendAdmission | None) ->
     closed here -- before reservation and dispatch -- rather than binding ``gdc``
     and then running the hard-coded GCE adapter.
     """
-    if backend_admission is None or backend_admission.backend == _RAES_REALIZED_BACKEND:
+    if backend_admission is None or backend_admission.backend in {_RAES_REALIZED_BACKEND, "ec2"}:
         return
     raise CMSError(
         f"RAES-native provisioning has no realization adapter for range backend "
-        f"'{backend_admission.backend}'; only the GCE VM range-cell backend is implemented.",
+        f"'{backend_admission.backend}'; the GCE and EC2 VM range-cell backends are implemented.",
         details={"code": "unsupported-capability"},
     )
 
@@ -212,6 +212,10 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
     source = _load_raes_source_or_raise(scenario)
+    if source.organization_uuid is not None:
+        from cms.scenarios.registry import check_scenario_access
+
+        check_scenario_access(scenario, user)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
@@ -249,6 +253,12 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
 
     request_id = uuid4()
     workspace_id = resolve_launch_workspace(user, workspace_uuid)
+    if source.organization_uuid is not None:
+        from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+        authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+        if authorization.organization_uuid != source.organization_uuid:
+            raise CMSError("The pack is unavailable in this workspace")
     admit_workspace_launch(
         workspace_id=workspace_id,
         user=user,
@@ -260,6 +270,12 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     from cms.services._range_workspace import resolve_effective_egress_mode
 
     egress_mode = resolve_effective_egress_mode(workspace_id)
+    from shared.range_instantiation_policy import assert_range_backend_egress_supported
+
+    try:
+        assert_range_backend_egress_supported(backend_admission.backend if backend_admission else None, egress_mode)
+    except ValueError as exc:
+        raise CMSError(str(exc)) from exc
 
     # PLAT-202: required model access is a fail-closed admission decision enforced
     # here, before any dispatch (cold, warm-claim, or non-user), so every launch

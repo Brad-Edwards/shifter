@@ -648,6 +648,7 @@ class GcpRenderArtifacts:
     model_access_catalog_json: str = ""
     model_access_env: str = ""
     mission_control_lease_env: str = ""
+    model_broker_runtime: dict | None = None
     capacity_profile_id: str = "gcp-shared-v1-p10"
 
 
@@ -703,13 +704,16 @@ def render_gcp_helm_values(
     # the range-access egress policy unrendered.
     range_access_cidrs = _unique_nonempty_strings([str(_get_output_value(outputs, "range_network_cidr")).strip()])
 
+    broker = project_model_broker(
+        outputs.get("model_broker", {}).get("value"),
+        catalog_json=artifacts.model_access_catalog_json,
+        model_access_env=artifacts.model_access_env,
+        runtime_settings=artifacts.model_broker_runtime,
+    )
+    runtime_env.update(broker.get("enrollment_env", {}))
     values: dict[str, object] = {
         "releaseNamespace": "shifter-system",
-        "modelBroker": project_model_broker(
-            outputs.get("model_broker", {}).get("value"),
-            catalog_json=artifacts.model_access_catalog_json,
-            model_access_env=artifacts.model_access_env,
-        ),
+        "modelBroker": broker,
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
         # Reference only: the guacamole-runtime Kubernetes Secret is synced out
@@ -1484,6 +1488,7 @@ def stage_gcp_control_plane_values(
             model_access_catalog_json=catalog_json,
             model_access_env=render_model_access_env(root_config),
             mission_control_lease_env=render_mission_control_lease_env(root_config),
+            model_broker_runtime=root_config.settings.get("model_broker_runtime"),
             capacity_profile_id=gcp_settings.shared_service_capacity_profile,
         ),
     )

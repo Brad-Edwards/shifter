@@ -707,46 +707,6 @@ resource "aws_iam_role_policy" "kms" {
   })
 }
 
-resource "aws_iam_role_policy" "polaris_agent_role_management" {
-  name = "polaris-agent-role-management"
-  role = var.role_id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid      = "CreatePolarisAgentRoleWithBoundary"
-        Effect   = "Allow"
-        Action   = "iam:CreateRole"
-        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
-        Condition = {
-          StringEquals = {
-            "iam:PermissionsBoundary" = var.permissions_boundary_arn
-          }
-        }
-      },
-      {
-        Sid    = "ManagePolarisAgentRole"
-        Effect = "Allow"
-        Action = [
-          "iam:DeleteRole",
-          "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:TagRole",
-          "iam:UntagRole",
-          "iam:GetRole",
-          "iam:GetRolePolicy",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:ListInstanceProfilesForRole",
-          "iam:ListRoleTags"
-        ]
-        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
-      }
-    ]
-  })
-}
-
 resource "aws_iam_role_policy" "vpn_gateway_role_management" {
   name = "vpn-gateway-role-management"
   role = var.role_id

@@ -61,12 +61,10 @@ storage, retention and export policy outside this broker audit boundary.
 
 ## Baseline findings that affect implementation
 
-- `shifter/engine/provisioner/gcp_range_vertex_creds.py` creates keys on a
-  preconfigured service account and supports copying a shared source key.
-  Separate secret/key objects are not separate principals.
-- `plans/polaris_range_bootstrap.py` and `plans/_polaris_scripts_gcp.py`
-  implement scenario-specific Vertex setup; the AWS sibling uses the
-  per-range role path from #1377. Neither is a general allocation service.
+- The former guest provider-key issuance and embedded scenario bootstrap paths
+  have been removed from core. Legacy GCP key teardown remains for draining old
+  ranges. New enrollment must use broker capabilities, with no fallback to
+  provider credentials on participant-controlled machines.
 - `ctf/services/range/capacity.py` already declares roster/spare demand and
   organizer hints, but catches declaration/assessment/admission failures.
   #668/#621 are not blank-slate implementation tasks despite remaining open.

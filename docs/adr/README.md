@@ -2,6 +2,13 @@
 
 This directory holds the machine-readable part of ADR enforcement.
 
+SDK candidate distributions from pull-request CI include their SHA-256 checksums
+and are retained under a revision-specific artifact name for independent adapter
+builds. Candidate retention grants no publishing authority. The provisional SDK
+publishing scaffold remains restricted to `main` and `adapter-sdk-pypi`, dormant
+pending the release-model decision in #2241. Local wheel qualification requires
+no SDK publication.
+
 ## Files
 
 - `index.yaml`: accepted ADRs and their enforceable rules
@@ -187,6 +194,8 @@ Current mechanisms:
   protected branch, and on a
   weekly schedule. Least-privilege permissions (`contents: read`,
   `security-events: write`, `actions: read`); no `pull_request_target`.
+  `.github/codeql/codeql-config.yml` includes synthetic scenario fixtures;
+  private training targets are maintained and scanned in their owning repositories.
 - `.github/workflows/pr-title-lint.yml`: pull-request title validation
   against the conventional-commit shape Release Please consumes. It runs
   on PRs targeting `dev` and `main`, the two branches whose protection
@@ -293,15 +302,8 @@ Current mechanisms:
   unbounded `parameter/shifter/<env>/range/*`). The provisioner
   orchestrator role's env-scoped grant is not inspected. Guards the #1178
   cross-tenant credential-access fix.
-- `scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py`:
-  ADR-004-R21 IAM hardening check for the per-range Polaris Bedrock agent
-  role. Rejects any inline policy action other than
-  `bedrock:InvokeModel`/`InvokeModelWithResponseStream`, any policy
-  Resource other than the four approved inference-profile/backing-model
-  variables, a backing-model statement missing its
-  `bedrock:InferenceProfileArn` condition, and a trust policy whose
-  Principal is not `var.range_instance_role_arn` or that is missing the
-  `ec2:SourceInstanceARN` condition. Guards the #1377 narrow-scope role.
+- ADR-004-R21's legacy guest-role issuer and dedicated checker have been removed.
+  ADR-059 requires broker-mediated model access; the general IAM checks remain.
 - `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` and
   `scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py`: ADR-004-R25
   request-owned VPN gateway hardening. The checks pin the exact gateway role
@@ -648,3 +650,62 @@ findings resurface on their own. An entry whose `expires_on` is missing or
 unparseable never suppresses anything, so a malformed date cannot buy
 open-ended cover. `expires_on` is inclusive: the exception is live through that
 date and dead the day after.
+
+Broker activation now requires an enabled v3 accounting catalog, an exact provider
+inventory, separate broker/provisioner workload identities and a versioned HMAC
+Secret reference. Installer projection and real Helm-render tests enforce these
+bindings. GCP deployment cleanup also removes the narrowly scoped provisioner-to-
+control enrollment egress policy. Standby infrastructure renders zero broker and
+control replicas until model access is enabled; no executable deployment or cloud
+qualification is implied by rendering. See [model access operations](../ops/model-access.md).
+
+Guest model enrollment is projected as allocation/role/target identities alongside
+an immutable operation input. The tenant-approved adapter manifest declares role
+bindings; only Engine's admitted allocations can populate them. A trusted SSH
+stdin channel delivers a one-use token after realization, and Linux tmpfs holds
+the guest's rotating broker tokens. GCP provisioner admission now permits three
+non-secret enrollment coordinate/trust values only when they exactly match the
+runtime ConfigMap. The broker renderer supplies those values for both Helm and
+Actions. Real TLS helper tests cover trust failure, redirect refusal, state-file
+permissions and serialized refresh. AWS SSM does not qualify as secret delivery.
+
+The external-runtime test-quality repair makes toolchain-dependent checks
+selectable with the `integration` marker while retaining them in default CI runs.
+The bootstrap/GCP script jobs explicitly provision their rendering tools. Chart
+security checks assert the default-deny policy bodies for every provider profile,
+including the isolated plugin namespace. See [testing guidance](../dev/testing.md).
+
+The chart enrollment schema admits the generic cloud endpoint projection: a
+GCP guest VIP or AWS guest endpoint CIDRs alongside the shared TLS enrollment
+settings. Its closed property list continues to reject undeclared settings.
+Real Helm schema tests cover both cloud contracts.
+
+Development-branch integration preserves address-keyed subnet reservations and
+pre-mutation cleanup across the external runtime seam. Model enrollment now
+activates pending grants only on one-use token exchange, and re-enrollment
+revokes old request authority. Accounting retains complete billing evidence,
+hard request deadlines and owner-first locks alongside request reconciliation.
+
+The latest hook cleanup retains fast syntax/format checks, pure-Python IAM and
+network scoping guards, and secret/identifier hygiene. Full tests, type checks
+and external infrastructure scanners remain in CI. Retired scenario-role checks
+and private-content exclusions are not restored by development-branch merges.
+
+The AWS model-broker module is included in the Terraform validation inventory
+with active contract tests. Broker and control listeners bind the explicit
+private pod IPv4 address supplied by the Downward API, with TLS, workload identity
+and NetworkPolicy enforcing the service boundary. EC2 secret categories derive
+from a closed authentication-method set. Secret scanning remains enabled without
+a suppression for these category identifiers.
+
+The isolated GKE plugin pool uses the version-6 Google beta provider required
+for sandbox configuration. Module contract tests pin the same provider family
+as both deployment roots, so a newer module-only schema cannot mask an invalid
+deployment configuration. Native range power capabilities are refused before
+legacy worker dispatch because native realization has a separate member inventory.
+
+The runtime security annotations also cover Sonar's wildcard-listener and shared
+temporary-directory findings: broker/control sockets are private Kubernetes
+Services with mandatory TLS, workload authentication and enforced NetworkPolicy;
+the plugin `/tmp` is a per-pod, size-bounded memory volume, with host mounts denied.
+These scoped annotations retain those deployment controls and their contract tests.
