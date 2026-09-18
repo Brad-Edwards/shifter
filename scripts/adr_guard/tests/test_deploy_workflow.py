@@ -212,7 +212,7 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc"}
 
     @classmethod
     def setUpClass(cls):
@@ -268,7 +268,7 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
 
     def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
-        for environment in ("gcp-dev", "nazgul"):
+        for environment in ("gcp-dev", "nazgul", "orthanc"):
             with self.subTest(environment=environment):
                 out = self.env(
                     "workflow_dispatch",
