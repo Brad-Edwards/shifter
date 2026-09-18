@@ -135,6 +135,17 @@ def test_runtime_repository_must_match_even_when_declared_image_and_digest_match
         module.build_evidence(pods, _EXPECTED, source_sha=_SHA)
 
 
+def test_runtime_specific_status_image_is_allowed_when_image_id_matches() -> None:
+    module = _load_module()
+    pods = _valid_pods(module)
+    portal = _pod_for(pods, "portal")
+    portal["status"]["containerStatuses"][0]["image"] = f"sha256:{'4' * 64}"
+
+    evidence = module.build_evidence(pods, _EXPECTED, source_sha=_SHA)
+
+    assert evidence["expected_images"]["portal"].endswith(f"@{_PORTAL_DIGEST}")
+
+
 def test_declared_image_must_match_even_when_runtime_status_is_correct() -> None:
     module = _load_module()
     pods = _valid_pods(module)
