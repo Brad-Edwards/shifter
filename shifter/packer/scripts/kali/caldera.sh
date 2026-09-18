@@ -20,7 +20,7 @@ echo "=== Installing uv to manage a Caldera-supported Python ==="
 # (Follow-up hardening: pin the uv installer + the Caldera clone to exact refs.)
 export UV_INSTALL_DIR=/usr/local/bin
 export UV_PYTHON_INSTALL_DIR=/opt/uv/python
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -sSfL https://astral.sh/uv/install.sh | sh
 export PATH="/usr/local/bin:${PATH}"
 uv python install 3.12
 
