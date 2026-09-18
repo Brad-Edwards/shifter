@@ -160,3 +160,88 @@ def test_event_fact_mutation_fences_admission_and_pending_grant(
         allocation.grant.refresh_from_db()
         assert allocation.grant.state == "revoked"
         assert allocation.grant.grant_epoch == 2
+
+
+def test_event_source_selection_requires_an_identified_current_organizer(ctf_event, settings):
+    settings.MODEL_ACCESS_CATALOG = _catalog()
+    ctf_event.model_demand = [_demand()]
+    ctf_event.model_sources = {
+        "aliases": [
+            {"logical_alias": "coding-main", "sources": [{"source_id": str(uuid4()), "revision": 1, "weight": 1}]}
+        ]
+    }
+    ctf_event.save(update_fields=["model_demand", "model_sources"])
+    with pytest.raises(ContractError, match=r"source\.sponsor_unavailable"):
+        project_event_model_scope(ctf_event, uuid4(), OwnedReference(owner="ctf", reference="draw:test"))
+
+
+def test_event_uses_authored_scenario_envelope_when_no_manual_demand_is_set(ctf_event, django_user_model, settings):
+    from tests.cms.test_model_allocation_dispatch import setup_launch
+
+    _, request, instance = setup_launch(django_user_model, settings)
+    ctf_event.scenario_id = instance.scenario_id
+    ctf_event.model_demand = []
+    ctf_event.max_participants = 12
+    ctf_event.save(update_fields=["scenario_id", "model_demand", "max_participants"])
+    scope = project_event_model_scope(ctf_event, request.draw_key, request.subject_ref)
+    assert scope is not None
+    assert scope.demands[0].expected_concurrency == 12
+    assert scope.demands[0].workload_role == "participant"
+    assert scope.scope_id == ctf_event.pk
+
+
+def test_event_sponsor_funds_source_for_participant_without_source_membership(
+    ctf_event, django_user_model, settings, monkeypatch
+):
+    from unittest.mock import Mock
+
+    from django.db import transaction
+
+    from cms.models import ScenarioModelNeeds
+    from cms.services._model_allocation import prepare_model_access_for_dispatch
+    from ctf.services.event.model_sources import set_event_model_sources
+    from engine.services import create_model_source
+    from engine.services._model_allocation_launch import allocate_launch_models
+    from tests.cms.test_model_allocation_dispatch import setup_launch
+    from tests.engine.services.test_model_sources import configuration, direct_source_catalog
+    from workspaces.models import Workspace, WorkspaceMembership
+
+    participant, request, instance = setup_launch(django_user_model, settings)
+    sponsor = ctf_event.created_by
+    org = Workspace.objects.get(pk=ctf_event.workspace_id).organization
+    assert not WorkspaceMembership.objects.filter(user=participant, workspace__organization=org).exists()
+    authored = ScenarioModelNeeds.objects.get(scenario_id=instance.scenario_id)
+    authored.needs["participant"]["data_regions"].append("provider-managed")
+    authored.save()
+    settings.MODEL_ACCESS_CATALOG = direct_source_catalog(request.deployment_id)
+    store = Mock()
+    store.create_owned_secret.return_value = "synthetic-owned-reference"
+    monkeypatch.setattr("shared.cloud.get_secrets_store", lambda: store)
+    source = create_model_source(
+        sponsor, org.uuid, configuration(allowed_user_ids=[sponsor.pk]), credential={"api_key": "synthetic-secret"}
+    )
+    ctf_event.model_demand = [_demand()]
+    ctf_event.scenario_id = instance.scenario_id
+    with transaction.atomic():
+        set_event_model_sources(
+            ctf_event,
+            sponsor,
+            {"aliases": [{"logical_alias": "coding-main", "sources": [{"source_id": str(source.id), "revision": 1}]}]},
+            expected_revision=0,
+        )
+        ctf_event.save()
+    scope = project_event_model_scope(
+        ctf_event, request.draw_key, OwnedReference(owner="ctf", reference=f"draw:{request.draw_key}")
+    )
+    instance.range_source = "ctf"
+    instance.model_launch_scope = scope.model_dump(mode="json")
+    instance.save(update_fields=["range_source", "model_launch_scope"])
+    with transaction.atomic():
+        prepare_model_access_for_dispatch(request.request_id, range_id=request.range_id)
+        (allocation,) = allocate_launch_models(
+            {"resource": "raes-range", "operation": "provision", "request_id": str(request.request_id)},
+            request.operation_id,
+        )
+    assert next(iter(allocation.alias_shards.values())).startswith(f"source-{source.id.hex}")
+    assert "synthetic-secret" not in str(allocation.snapshot)
+    assert allocation.snapshot["request"]["scope_kind"] == "event"

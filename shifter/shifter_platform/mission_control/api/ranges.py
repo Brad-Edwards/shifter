@@ -60,6 +60,7 @@ from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api.schema import ApiErrorSerializer
+from shared.api.strict_json import ModelSelectionJSONParser
 from shared.audit import AuditAction
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -159,6 +160,8 @@ class ExtendRangeLeaseView(MissionControlAPIView):
 class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
     """Launch a new cyber range."""
 
+    parser_classes = [ModelSelectionJSONParser]
+
     permission_classes = [
         IsAuthenticatedSessionOrApiToken,
         HasMissionControlActor,
@@ -219,7 +222,14 @@ class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
             return agents_error
 
         return self._create_range(
-            request, user, scenario, agents_by_os, data.get("workspace_uuid"), caller_key, self._agents_selection(data)
+            request,
+            user,
+            scenario,
+            agents_by_os,
+            data.get("workspace_uuid"),
+            caller_key,
+            self._agents_selection(data),
+            data.get("model_sources"),
         )
 
     def _resolve_agents_by_os(self, user: User, data: dict[str, Any]) -> tuple[dict[str, int] | None, Response | None]:
@@ -249,14 +259,20 @@ class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
         workspace_uuid: UUID | None = None,
         caller_key: str | None = None,
         agents_selection: dict[str, Any] | None = None,
+        model_sources: dict | None = None,
     ) -> Response:
         """Create a range and record the launch audit event."""
         if caller_key is not None:
             return self._create_range_first_use(
-                request, user, scenario, agents_by_os, workspace_uuid, caller_key, agents_selection or {}
+                request, user, scenario, agents_by_os, workspace_uuid, caller_key, agents_selection or {}, model_sources
             )
         try:
-            range_ctx = cms_create_range(user, scenario, workspace_uuid=workspace_uuid)
+            range_ctx = cms_create_range(
+                user,
+                scenario,
+                workspace_uuid=workspace_uuid,
+                **({"model_sources": model_sources} if model_sources else {}),
+            )
         except CMSError as exc:
             return self._launch_failure_response(exc, user, scenario)
 

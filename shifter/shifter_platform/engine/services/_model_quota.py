@@ -81,7 +81,12 @@ def capacity_scope(request: ModelAllocationRequest, effective: EffectivePolicy) 
     # A replacement has a distinct dedicated commitment. A released original
     # remains a tombstone; it must never be revived for the successor.
     generation = f":{request.operation_id}" if request.scope_kind in {"standalone", "warm"} else ""
-    return (f"{request.scope_kind}:{request.scope_id}{generation}",)
+    policy = (
+        f":policy:{request.source_policy_revision}"
+        if request.source_policy_revision and request.scope_kind in {"standalone", "warm"}
+        else ""
+    )
+    return (f"{request.scope_kind}:{request.scope_id}{generation}{policy}",)
 
 
 def _parent(quota: ModelQuotaIdentity, scope: str, request: ModelAllocationRequest) -> ModelCapacityReservation | None:
@@ -114,21 +119,24 @@ def _additional_commitment(
     scopes: tuple[str, ...],
     request: ModelAllocationRequest,
     amount: int,
-    factor: int,
+    commitment: int,
+    exact: bool,
 ) -> int | None:
     """Compute new parent capacity, or deny a released/exhausted parent."""
     added = 0
     for scope in scopes:
         parent = _parent(quota, scope, request)
         if parent is None:
-            added += amount * factor
+            added += commitment
             continue
         budget = parent.workload_budgets.get(request.need.workload_role)
         if parent.released_at is not None:
             return None
         if budget is None:
-            added += amount * factor
-        elif budget["consumed"] + amount > budget["amount"]:
+            added += commitment
+        elif budget["consumed"] + amount > (min(budget["amount"], commitment) if exact else budget["amount"]) or (
+            exact and budget["amount"] < commitment
+        ):
             return None
     return added
 
@@ -143,6 +151,7 @@ class _FitContext:
     observations: dict[str, ModelQuotaObservation]
     scopes: tuple[str, ...]
     factor: int
+    commitments: dict[str, int] | None
     now: datetime
 
 
@@ -160,7 +169,8 @@ def _pool_fits(pool_id: str, amount: int, context: _FitContext) -> bool:
         scopes=context.scopes,
         request=context.request,
         amount=amount,
-        factor=context.factor,
+        commitment=context.commitments[pool_id] if context.commitments is not None else amount * context.factor,
+        exact=context.commitments is not None,
     )
     if added is None:
         return False
@@ -184,6 +194,7 @@ def vector_fits(
     catalog: ModelAccessCatalog,
     locked: dict[str, ModelQuotaIdentity],
     observations: dict[str, ModelQuotaObservation],
+    commitments: dict[str, int] | None = None,
 ) -> bool:
     """Recheck freshness after waiting for locks, then every parent and real pool."""
     now = timezone.now()
@@ -202,9 +213,15 @@ def vector_fits(
         observations=observations,
         scopes=scopes,
         factor=factor,
+        commitments=commitments,
         now=now,
     )
-    return all(_pool_fits(pool_id, amount, context) for pool_id, amount in vector.items())
+    if commitments is not None and any(amount > commitments.get(pool_id, 0) for pool_id, amount in vector.items()):
+        return False
+    return all(
+        _pool_fits(pool_id, vector.get(pool_id, 0), context)
+        for pool_id in (commitments if commitments is not None else vector)
+    )
 
 
 def add_shard_demand(
@@ -230,6 +247,7 @@ def persist_draws(
     catalog: ModelAccessCatalog,
     locked: dict[str, ModelQuotaIdentity],
     observations: dict[str, ModelQuotaObservation],
+    commitments: dict[str, int] | None = None,
 ) -> None:
     """Write the whole effect vector in the allocation caller's transaction."""
     scopes = capacity_scope(request, effective)
@@ -238,6 +256,7 @@ def persist_draws(
         if request.scope_kind == "standalone" and not effective.capacity_account_refs
         else request.demand.expected_concurrency
     )
+    planned = commitments if commitments is not None else {key: amount * factor for key, amount in vector.items()}
     assessment = CapacityAssessment.objects.create(
         # ADR-047's opaque upstream scope reference also accepts an explicitly
         # typed non-event UUID. The typed scope is retained on each commitment.
@@ -245,13 +264,14 @@ def persist_draws(
         partition_name="model-access",
         policy_version=catalog.digest.removeprefix("sha256:"),
         outcome="admitted",
-        observed_at=min(observations[key].observed_at for key in vector),
+        observed_at=min(observations[key].observed_at for key in planned),
         verdicts=[
             {"metric": key, "outcome": "admitted", "reason_code": "available", "enforcement": "enforcing"}
-            for key in sorted(vector)
+            for key in sorted(planned)
         ],
     )
-    for pool_id, amount in sorted(vector.items(), key=lambda item: locked[item[0]].pk):
+    for pool_id, commitment in sorted(planned.items(), key=lambda item: locked[item[0]].pk):
+        amount = vector.get(pool_id, 0)
         for scope in scopes:
             parent = _parent(locked[pool_id], scope, request)
             if parent is None:
@@ -261,14 +281,15 @@ def persist_draws(
                     scope_key=scope,
                     window_start=request.window_start,
                     window_end=request.window_end,
-                    amount=amount * factor,
+                    amount=commitment,
                     observation=observations[pool_id].model_dump(mode="json"),
-                    workload_budgets={request.need.workload_role: {"amount": amount * factor, "consumed": 0}},
+                    workload_budgets={request.need.workload_role: {"amount": commitment, "consumed": 0}},
                 )
             elif request.need.workload_role not in parent.workload_budgets:
-                parent.amount += amount * factor
-                parent.workload_budgets[request.need.workload_role] = {"amount": amount * factor, "consumed": 0}
+                parent.amount += commitment
+                parent.workload_budgets[request.need.workload_role] = {"amount": commitment, "consumed": 0}
             parent.workload_budgets[request.need.workload_role]["consumed"] += amount
             parent.consumed += amount
             parent.save(update_fields=["amount", "consumed", "workload_budgets"])
-            ModelCapacityDraw.objects.create(allocation=allocation, reservation=parent, amount=amount)
+            if amount:
+                ModelCapacityDraw.objects.create(allocation=allocation, reservation=parent, amount=amount)

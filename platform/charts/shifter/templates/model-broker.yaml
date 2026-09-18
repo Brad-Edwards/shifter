@@ -117,6 +117,8 @@ spec:
             - name: https
               containerPort: 8443
           env:
+            - name: MODEL_PROVIDER_PROXY
+              value: {{ printf "http://model-provider-egress.%s.svc:3128" .Values.namespaces.platform | quote }}
             - name: MODEL_BROKER_PROVIDER
               value: {{ .Values.provider.name | quote }}
             {{- if eq .Values.provider.name "aws" }}

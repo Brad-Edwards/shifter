@@ -45,6 +45,24 @@ compute targets, dynamic-secret storage, and the platform project even where
 some configured IDs coincide. The model broker does not replace #1586's
 dedicated dynamic-secret project design.
 
+For #2243, the platform GCP project is an explicitly valid Vertex source;
+another project/account is optional. Broker and invocation principals remain
+distinct with exact-target permissions even when their project IDs coincide.
+Authorized tenant administrators manage source and write-only credential
+references within the deployment envelope. CMS composes live tenancy authority
+through the Workspaces facade; Engine owns immutable source storage, revision
+fences, allocation, and accounting. Tenant organization administrators may
+administer range model policy without a workspace seat through the narrowly
+scoped model-source authorization service; this confers no guest access or
+other workspace operation. Organization and workspace authority revisions are
+retained in sponsored grants. Source registration does not itself confer source-use or spending
+authority. Provider/authentication selection is independent of compute hosting;
+live edits require revision checks, grant fencing and retained accounting under
+ADR-060. The [source-management preflight](../architecture/model-access/source-management-preflight-2243.md)
+records the incumbent validators and integration gaps. This clarifies intended
+architecture; current packaging restrictions remain until implementation and
+qualification, and no provider parity is asserted.
+
 The broker has a dedicated private TLS listener reachable through an exact
 range egress capability. Broker and control listeners bind the explicit private
 pod IPv4 address injected by the Kubernetes Downward API, rejecting missing,
@@ -119,3 +137,23 @@ through the provisioner environment allowlist into the RAES firewall capability.
 A missing destination fails before guest mutation. Teardown and residual
 inventory retain the optional firewall identity independently of current
 enablement; disabling broker configuration cannot hide an existing rule.
+
+## Tenant source publication and provider egress (#2243)
+
+Tenant source management uses an immutable v4 allocation overlay over the verified
+v3 deployment catalog, preserving incumbent sharing, budgets and provider-pool
+authority. Credentials stay in owned cloud secret versions and ephemeral private
+control replies. Source publication and retirement recheck tenant authority;
+range policy changes retain execution identity, hard expiry and old liabilities.
+
+The provider egress proxy has no workload identity or platform configuration.
+It admits fixed HTTPS provider/identity origins, pins public DNS answers, and
+permits only exact configured AWS private endpoint CIDRs as exceptions. Broker
+and proxy remain excluded from additive generic private-service policies.
+See [source management](../architecture/model-access/source-management.md) for
+implementation and qualification limits.
+
+The workload IAM guard accepts model-source credential reads only for the control
+worker, in the platform project, under the exact `shifter-model-source-` secret
+namespace condition. Changed principals, projects, roles or conditions remain
+rejected; tenant source registration does not grant general secret access.

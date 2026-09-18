@@ -41,6 +41,7 @@ export type PermissionPolicy =
   | "ctf_admin"
   | "ctf_participant"
   | "adapter_admin"
+  | "model_source_admin"
   | "staff";
 
 export type NavIconKey =
@@ -283,6 +284,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         iconKey: "boxes",
         external: false,
       },
+      {
+        surface: "Model Sources", routeName: "administer:model-sources",
+        purpose: "Manage model accounts and their spending permissions.", routePath: "/administer/model-sources",
+        permissionPolicy: "model_source_admin", iconKey: "boxes", external: false,
+      },
       // Django admin escape hatch: always available, linked as a full-page legacy
       // handoff and never wrapped or described as a SPA-native workflow.
       {
@@ -316,6 +322,8 @@ export function permissionAllows(policy: PermissionPolicy, bootstrap: Bootstrap)
       return bootstrap.principal.is_staff;
     case "adapter_admin":
       return bootstrap.permissions.can_manage_adapters === true;
+    case "model_source_admin":
+      return bootstrap.permissions.can_manage_model_sources === true;
     default:
       return false;
   }

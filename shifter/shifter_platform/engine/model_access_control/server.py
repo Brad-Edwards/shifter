@@ -23,7 +23,14 @@ from shared.model_access import ContractError
 from shared.model_access.http import ASGIScope, Receive, Send, body, headers, json_response
 from shared.model_access.messages import JsonObject, strict_json
 
-from .schemas import AdvanceRequest, EnrollmentRequest, FinishRequest, ReservationRequest, TokenRequest
+from .schemas import (
+    AdvanceRequest,
+    EnrollmentRequest,
+    FinishRequest,
+    ReservationRequest,
+    SourceExecutionRequest,
+    TokenRequest,
+)
 
 _INVALID_ROUTE = "control.invalid_route"
 
@@ -157,7 +164,19 @@ def _finish(payload: JsonObject) -> JsonObject:
     return finish_model_call(request_uuid=request.request_uuid, action=request.action, usage=request.usage)
 
 
+def _source(payload: JsonObject) -> JsonObject:
+    from engine.services._model_source_control import model_source_execution
+
+    request = SourceExecutionRequest.model_validate(payload)
+    return model_source_execution(
+        token=request.token.get_secret_value(),
+        transport_peer=request.transport_peer,
+        logical_alias=request.logical_alias,
+    )
+
+
 _HANDLERS: dict[str, Callable[[JsonObject], JsonObject]] = {
+    "source": _source,
     "enroll": _enroll,
     "exchange": partial(_token_operation, route="exchange"),
     "refresh": partial(_token_operation, route="refresh"),

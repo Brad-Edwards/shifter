@@ -87,7 +87,19 @@ class BrokerApplication:
             await self._exchange(path, peer, raw, send)
         else:
             request = await self._authorize_message(path, peer, raw, request_headers)
-            provider = self.providers.build(request.authority.aliases[request.message.model], request.authority.limits)
+            shard = request.authority.aliases[request.message.model]
+            if shard.credential_ref.reference.startswith("source:"):
+                projection = await self.control.call(
+                    "source",
+                    {
+                        "token": request.token,
+                        "transport_peer": request.peer,
+                        "logical_alias": request.message.model,
+                    },
+                )
+                provider = self.providers.build_projected(shard, request.authority.limits, projection)
+            else:
+                provider = self.providers.build(shard, request.authority.limits)
             await BrokerInvocation(self.control, provider, request, receive, send).run()
 
     async def _authorize_message(

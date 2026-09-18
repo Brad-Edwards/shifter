@@ -1622,6 +1622,566 @@
         ]
       }
     },
+    "/api/v1/cms/model-source-options/": {
+      "get": {
+        "operationId": "cms_model_source_options_retrieve",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "purpose",
+            "schema": {
+              "enum": [
+                "range",
+                "ctf",
+                "admin"
+              ],
+              "type": "string",
+              "default": "range",
+              "minLength": 1
+            },
+            "description": "* `range` - range\n* `ctf` - ctf\n* `admin` - admin"
+          },
+          {
+            "in": "query",
+            "name": "scenario",
+            "schema": {
+              "type": "string",
+              "default": "",
+              "maxLength": 255
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-ranges/": {
+      "get": {
+        "operationId": "cms_organizations_model_ranges_retrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "maximum": 1000000,
+              "minimum": 1,
+              "default": 1
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRangePage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-source-users/": {
+      "get": {
+        "operationId": "cms_organizations_model_source_users_retrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "maximum": 1000000,
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "default": "",
+              "maxLength": 100
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourceUserPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/": {
+      "get": {
+        "operationId": "cms_organizations_model_sources_retrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourcePage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "cms_organizations_model_sources_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSourceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourceView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/": {
+      "put": {
+        "operationId": "cms_organizations_model_sources_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSourceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourceView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/retire-credentials/": {
+      "post": {
+        "operationId": "cms_organizations_model_sources_retire_credentials_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialRetirement"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/available/": {
+      "get": {
+        "operationId": "cms_organizations_model_sources_available_retrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourcePage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/cms/organizations/{organization_uuid}/packs/": {
       "post": {
         "operationId": "cms_organizations_packs_create",
@@ -2627,6 +3187,142 @@
         "x-required-scopes": [
           "cms:authoring:write"
         ]
+      }
+    },
+    "/api/v1/cms/ranges/{request_id}/model-sources/": {
+      "get": {
+        "operationId": "cms_ranges_model_sources_retrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeModelSources"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "put": {
+        "operationId": "cms_ranges_model_sources_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeModelSourcesWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeModelSources"
+                }
+              }
+            },
+            "description": ""
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeModelSources"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
       }
     },
     "/api/v1/cms/ranges/{request_id}/workspace/": {
@@ -4096,16 +4792,6 @@
               "schema": {
                 "$ref": "#/components/schemas/EventWrite"
               }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/EventWrite"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/EventWrite"
-              }
             }
           },
           "required": true
@@ -4231,16 +4917,6 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EventWrite"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/EventWrite"
-              }
-            },
-            "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/EventWrite"
               }
@@ -11766,16 +12442,6 @@
               "schema": {
                 "$ref": "#/components/schemas/LaunchRange"
               }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/LaunchRange"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/LaunchRange"
-              }
             }
           }
         },
@@ -14622,6 +15288,46 @@
         "type": "string",
         "description": "* `xdr` - xdr\n* `xdr_collector` - xdr_collector\n* `cloud_identity_engine` - cloud_identity_engine"
       },
+      "AliasSourceOptions": {
+        "type": "object",
+        "properties": {
+          "logical_alias": {
+            "type": "string"
+          },
+          "multiple_allowed": {
+            "type": "boolean"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSourceView"
+            }
+          }
+        },
+        "required": [
+          "logical_alias",
+          "multiple_allowed",
+          "sources"
+        ]
+      },
+      "AliasSourceSelection": {
+        "type": "object",
+        "properties": {
+          "logical_alias": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceChoice"
+            }
+          }
+        },
+        "required": [
+          "logical_alias",
+          "sources"
+        ]
+      },
       "ApiError": {
         "type": "object",
         "description": "Schema-only component for the canonical platform API error envelope.\n\nMirrors :func:`shared.api.errors.api_exception_handler` /\n:func:`shared.api.errors.api_error_response` output. It describes the wire\ncontract; it never runs at request time.",
@@ -14773,6 +15479,14 @@
           "user_agent"
         ]
       },
+      "AuthenticationEnum": {
+        "enum": [
+          "workload-identity",
+          "stored-credential"
+        ],
+        "type": "string",
+        "description": "* `workload-identity` - workload-identity\n* `stored-credential` - stored-credential"
+      },
       "Award": {
         "type": "object",
         "description": "One organizer-granted award row (CTF-204).",
@@ -14909,6 +15623,9 @@
             "type": "boolean"
           },
           "can_manage_adapters": {
+            "type": "boolean"
+          },
+          "can_manage_model_sources": {
             "type": "boolean"
           }
         },
@@ -15611,6 +16328,18 @@
           "name"
         ]
       },
+      "CredentialRetirement": {
+        "type": "object",
+        "properties": {
+          "retired": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "retired"
+        ]
+      },
       "CtfScenarioListResponse": {
         "type": "object",
         "description": "Envelope returned by the scenario list.",
@@ -15644,6 +16373,19 @@
           "id",
           "name"
         ]
+      },
+      "CurrencyEnum": {
+        "enum": [
+          "AUD",
+          "CAD",
+          "CHF",
+          "EUR",
+          "GBP",
+          "JPY",
+          "USD"
+        ],
+        "type": "string",
+        "description": "* `AUD` - AUD\n* `CAD` - CAD\n* `CHF` - CHF\n* `EUR` - EUR\n* `GBP` - GBP\n* `JPY` - JPY\n* `USD` - USD"
       },
       "CurrentRangeResponse": {
         "type": "object",
@@ -16060,6 +16802,23 @@
             },
             "readOnly": true
           },
+          "model_sources": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelSourceSelection"
+              }
+            ],
+            "readOnly": true
+          },
+          "workspace": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "model_source_revision": {
+            "type": "integer",
+            "readOnly": true
+          },
           "logo_url": {
             "type": "string",
             "readOnly": true
@@ -16102,6 +16861,8 @@
           "managed_content",
           "max_participants",
           "model_demand",
+          "model_source_revision",
+          "model_sources",
           "name",
           "owner",
           "public_registration_enabled",
@@ -16122,7 +16883,8 @@
           "team_mode",
           "team_size_limit",
           "theme_color",
-          "visible_os_types"
+          "visible_os_types",
+          "workspace"
         ]
       },
       "EventLifecycleRequest": {
@@ -16510,6 +17272,17 @@
             },
             "maxItems": 64
           },
+          "model_sources": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expected_model_source_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
           "logo_url": {
             "type": "string",
             "format": "uri",
@@ -16829,6 +17602,9 @@
         "type": "object",
         "description": "Validate range launch requests.",
         "properties": {
+          "model_sources": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          },
           "agents": {
             "type": "object",
             "additionalProperties": {
@@ -17058,6 +17834,370 @@
         ],
         "type": "string",
         "description": "* `advisory` - Advisory (soft cap)\n* `enforcing` - Enforcing (hard cap)"
+      },
+      "ModelAssignment": {
+        "type": "object",
+        "properties": {
+          "workload": {
+            "type": "string"
+          },
+          "logical_alias": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "logical_alias",
+          "model",
+          "provider",
+          "region",
+          "workload"
+        ]
+      },
+      "ModelPolicyRuntime": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/ModelPolicyRuntimeStateEnum"
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelAssignment"
+            }
+          }
+        },
+        "required": [
+          "assignments",
+          "state"
+        ]
+      },
+      "ModelPolicyRuntimeStateEnum": {
+        "enum": [
+          "active",
+          "refresh_pending",
+          "unavailable"
+        ],
+        "type": "string",
+        "description": "* `active` - active\n* `refresh_pending` - refresh_pending\n* `unavailable` - unavailable"
+      },
+      "ModelRangePage": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "has_next": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelRangeSummary"
+            }
+          }
+        },
+        "required": [
+          "count",
+          "has_next",
+          "page",
+          "results"
+        ]
+      },
+      "ModelRangeSummary": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "request_id",
+          "revision",
+          "scenario",
+          "status"
+        ]
+      },
+      "ModelSourceConfiguration": {
+        "type": "object",
+        "description": "Editable metadata; the service validates provider-specific combinations.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderEnum"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/AuthenticationEnum"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "project": {
+            "type": "string",
+            "default": "",
+            "maxLength": 30
+          },
+          "principal": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "count_region": {
+            "type": "string",
+            "default": "",
+            "maxLength": 64
+          },
+          "quota_identity": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "context_window_tokens": {
+            "type": "integer",
+            "maximum": 2000000,
+            "minimum": 1
+          },
+          "tokens_per_minute": {
+            "type": "integer",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "format": "int64"
+          },
+          "input_price_per_million": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output_price_per_million": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "currency": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CurrencyEnum"
+              }
+            ],
+            "default": "USD"
+          },
+          "price_valid_until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "allow_organization_members": {
+            "type": "boolean",
+            "default": false
+          },
+          "allowed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxItems": 256
+          },
+          "upstream_provider": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "authentication",
+          "context_window_tokens",
+          "input_price_per_million",
+          "model",
+          "name",
+          "output_price_per_million",
+          "price_valid_until",
+          "provider",
+          "quota_identity",
+          "region",
+          "tokens_per_minute"
+        ]
+      },
+      "ModelSourcePage": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSourceView"
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "ModelSourceSelection": {
+        "type": "object",
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasSourceSelection"
+            }
+          }
+        },
+        "required": [
+          "aliases"
+        ]
+      },
+      "ModelSourceUpdate": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ModelSourceConfiguration"
+          },
+          "credential": {
+            "writeOnly": true
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "configuration",
+          "expected_revision"
+        ]
+      },
+      "ModelSourceUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "username"
+        ]
+      },
+      "ModelSourceUserPage": {
+        "type": "object",
+        "properties": {
+          "has_next": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSourceUser"
+            }
+          }
+        },
+        "required": [
+          "has_next",
+          "results"
+        ]
+      },
+      "ModelSourceView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ModelSourceViewStateEnum"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ModelSourceConfiguration"
+          },
+          "has_credential": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configuration",
+          "enabled",
+          "has_credential",
+          "id",
+          "organization_uuid",
+          "revision",
+          "state"
+        ]
+      },
+      "ModelSourceViewStateEnum": {
+        "enum": [
+          "pending",
+          "ready",
+          "failed",
+          "retired",
+          "disabled"
+        ],
+        "type": "string",
+        "description": "* `pending` - pending\n* `ready` - ready\n* `failed` - failed\n* `retired` - retired\n* `disabled` - disabled"
+      },
+      "ModelSourceWrite": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ModelSourceConfiguration"
+          },
+          "credential": {
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "configuration"
+        ]
       },
       "NGFWCreate": {
         "type": "object",
@@ -19297,6 +20437,17 @@
           "workspace_uuid"
         ]
       },
+      "ProviderEnum": {
+        "enum": [
+          "vertex-v1",
+          "bedrock-v1",
+          "anthropic-v1",
+          "openai-v1",
+          "openrouter-v1"
+        ],
+        "type": "string",
+        "description": "* `vertex-v1` - vertex-v1\n* `bedrock-v1` - bedrock-v1\n* `anthropic-v1` - anthropic-v1\n* `openai-v1` - openai-v1\n* `openrouter-v1` - openrouter-v1"
+      },
       "PublicRegistrationDisposition": {
         "type": "object",
         "description": "Closed organizer decision vocabulary.",
@@ -20216,6 +21367,60 @@
           "event_id",
           "progress",
           "ranges"
+        ]
+      },
+      "RangeModelSources": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          },
+          "error": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/ModelPolicyRuntime"
+          }
+        },
+        "required": [
+          "error",
+          "request_id",
+          "revision",
+          "runtime",
+          "scenario",
+          "selection",
+          "workspace"
+        ]
+      },
+      "RangeModelSourcesWrite": {
+        "type": "object",
+        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "selection"
         ]
       },
       "RangePresentation": {
@@ -21330,6 +22535,84 @@
         },
         "required": [
           "egress_policy"
+        ]
+      },
+      "SourceChoice": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "weight": {
+            "type": "integer",
+            "maximum": 64,
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "revision",
+          "source_id"
+        ]
+      },
+      "SourceOptions": {
+        "type": "object",
+        "properties": {
+          "workspaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceWorkspace"
+            }
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasSourceOptions"
+            }
+          },
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "aliases",
+          "available",
+          "workspace",
+          "workspaces"
+        ]
+      },
+      "SourceWorkspace": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "is_personal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_personal",
+          "name",
+          "organization_name",
+          "uuid"
         ]
       },
       "SparePoolRequest": {

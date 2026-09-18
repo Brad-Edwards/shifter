@@ -44,10 +44,12 @@ def test_disabled_and_enabled_projection_use_real_chart(tmp_path):
     identities = {(doc["kind"], doc["metadata"]["name"]) for doc in docs}
     assert ("Deployment", "model-broker") in identities
     assert ("Deployment", "model-access-control") in identities
+    assert ("Deployment", "model-provider-egress") in identities
+    assert ("NetworkPolicy", "model-provider-egress-boundary") in identities
     assert ("Deployment", "portal-web") not in identities
     assert ("ValidatingAdmissionPolicy", "restrict-provisioner-jobs") not in identities
     policy = next(doc for doc in docs if doc["metadata"]["name"] == "allow-platform-private-service-egress")
-    assert policy["spec"]["podSelector"]["matchExpressions"][0]["values"] == ["model-broker"]
+    assert policy["spec"]["podSelector"]["matchExpressions"][0]["values"] == ["model-broker", "model-provider-egress"]
 
 
 def test_combining_manifests_replaces_shared_policies_before_any_apply():
@@ -66,7 +68,11 @@ def test_combining_manifests_replaces_shared_policies_before_any_apply():
         "spec": {
             "podSelector": {
                 "matchExpressions": [
-                    {"key": "app.kubernetes.io/component", "operator": "NotIn", "values": ["model-broker"]}
+                    {
+                        "key": "app.kubernetes.io/component",
+                        "operator": "NotIn",
+                        "values": ["model-broker", "model-provider-egress"],
+                    }
                 ]
             }
         },
@@ -170,7 +176,7 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
             assert {
                 "key": "app.kubernetes.io/component",
                 "operator": "NotIn",
-                "values": ["model-broker"],
+                "values": ["model-broker", "model-provider-egress"],
             } in policy["podSelector"].get("matchExpressions", [])
         versions.append(
             next(

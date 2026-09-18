@@ -93,6 +93,7 @@ class RetrySafeLaunchMixin:
                 agents_selection=self._agents_selection(data),
                 workspace_uuid=data.get("workspace_uuid"),
                 caller_key=caller_key,
+                model_sources=data.get("model_sources"),
             )
         except RetryKeyConflict:
             logger.info("Retry key conflict: user=%s", user.pk)
@@ -114,6 +115,7 @@ class RetrySafeLaunchMixin:
         workspace_uuid: str | UUID | None,
         caller_key: str,
         agents_selection: dict[str, Any],
+        model_sources: dict | None = None,
     ) -> Response:
         """First use of a retry key: dispatch, bind, and audit exactly once (#2086, ADR-063).
 
@@ -129,6 +131,7 @@ class RetrySafeLaunchMixin:
                 agents_by_os=agents_by_os or {},
                 workspace_uuid=workspace_uuid,
                 caller_key=caller_key,
+                model_sources=model_sources,
             )
         except RetryKeyConflict:
             logger.info("Retry key conflict: user=%s scenario=%s", user.pk, safe_log_value(scenario))

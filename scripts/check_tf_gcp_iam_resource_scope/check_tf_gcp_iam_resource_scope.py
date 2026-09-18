@@ -350,11 +350,33 @@ def _literal_string_list_assignment(body: str, key: str) -> set[str] | None:
     return set(re.findall(r'"([^"]+)"', body[match.end() : cursor - 1]))
 
 
+def _model_source_read_is_scoped(name: str, body: str) -> bool:
+    """Accept only the owned credential namespace on the control worker."""
+    expected = {
+        "count": "var.model_broker.enabled ? 1 : 0",
+        "project": "var.project_id",
+        "role": '"roles/secretmanager.secretAccessor"',
+        "member": '"serviceAccount:${google_service_account.workload["workers"].email}"',
+        "expression": "\"resource.name.startsWith('projects/${data.google_project.platform.number}/secrets/shifter-model-source-')\"",
+    }
+    return (
+        name == "model_source_control_read"
+        and body.count("condition {") == 1
+        and "for_each" not in body
+        and not re.search(r"^\s*members\s*=", body, flags=re.MULTILINE)
+        and all(
+            _has_exact_assignment(body, key, value) for key, value in expected.items()
+        )
+    )
+
+
 def _check_literal_members(path: Path, lines: list[str]) -> list[Violation]:
     """Flag literal member/binding resources granting a forbidden role to a workload."""
     violations: list[Violation] = []
     for name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
-        if name in _ALLOWED_DYNAMIC_BINDINGS:
+        if name in _ALLOWED_DYNAMIC_BINDINGS or _model_source_read_is_scoped(
+            name, body
+        ):
             continue
         role_match = _LITERAL_ROLE_RE.search(body)
         if not role_match or role_match.group(1) not in FORBIDDEN_ROLES:
@@ -711,13 +733,13 @@ def _dynamic_boundary_errors(name: str, body: str) -> list[str]:
             "var.project_id",
             "provisioner",
             "google_project_iam_custom_role.legacy_dynamic_secret_lifecycle[0].id",
-            "\"(${local.legacy_secret_name_condition})\"",
+            '"(${local.legacy_secret_name_condition})"',
         ),
         "portal_legacy_dynamic_secret_accessor": (
             "var.project_id",
             "portal",
             '"roles/secretmanager.secretAccessor"',
-            "\"(${local.legacy_participant_secret_condition})\"",
+            '"(${local.legacy_participant_secret_condition})"',
         ),
     }
     project, workload, role, condition = specs[name]

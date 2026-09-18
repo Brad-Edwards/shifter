@@ -95,6 +95,10 @@ from ._model_access_sharing import (
     resolve_model_access_selected_ranges,
     resolve_model_access_selector,
 )
+from ._model_source_selection import list_usable_model_sources as list_usable_model_sources
+from ._model_source_selection import model_source_alias_options, resolve_model_source_sponsorship
+from ._model_source_selection import project_scenario_model_demands as project_scenario_model_demands
+from ._model_source_selection import resolve_model_source_selection as resolve_model_source_selection
 from ._ngfws import (
     create_ngfw,
     destroy_ngfw,
@@ -143,6 +147,8 @@ from ._range_lease_policy import (
     reset_tenant_lease_policy,
     resolve_mission_control_lease_policy,
 )
+from ._range_model_sources import change_range_model_sources, get_range_model_sources
+from ._range_model_sources import list_organization_model_ranges as list_organization_model_ranges
 from ._range_pause import pause_range, pause_range_by_request_id
 from ._range_queries import (
     get_active_range,
@@ -202,6 +208,8 @@ create_range = create_range_dispatch
 # (scripts/check_layer_imports/layer_imports.yaml) can continue to allow only
 # `cms.services` from mission_control / ctf rather than reaching into
 # cms.signals directly.
+
+
 __all__ = (
     "TRANSFERABLE_RESOURCE_KINDS",
     "AgentConfig",
@@ -246,6 +254,7 @@ __all__ = (
     "cancel_range",
     "cancel_range_by_request_id",
     "cancel_upload",
+    "change_range_model_sources",
     "complete_upload",
     "confirm_ctf_receipt_binding",
     "connect_range_terminal",
@@ -302,6 +311,7 @@ __all__ = (
     "get_ngfw",
     "get_range",
     "get_range_by_request_id",
+    "get_range_model_sources",
     "get_range_rdp_connection_info",
     "get_range_spec_by_id",
     "get_range_ssh_connection_info",
@@ -318,15 +328,19 @@ __all__ = (
     "list_launchable_scenarios",
     "list_mission_control_range_history",
     "list_ngfws",
+    "list_organization_model_ranges",
     "list_range_scope_bindings",
     "list_ranges",
     "list_scenarios",
+    "list_usable_model_sources",
     "max_agent_file_size_bytes",
+    "model_source_alias_options",
     "pause_range",
     "pause_range_by_request_id",
     "project_ctf_receipt_binding",
     "project_range_cleanup_outcome",
     "project_scenario_images",
+    "project_scenario_model_demands",
     "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",
@@ -343,6 +357,8 @@ __all__ = (
     "resolve_model_access_range_views",
     "resolve_model_access_selected_ranges",
     "resolve_model_access_selector",
+    "resolve_model_source_selection",
+    "resolve_model_source_sponsorship",
     "resolve_retry_recovery",
     "resume_range",
     "resume_range_by_request_id",

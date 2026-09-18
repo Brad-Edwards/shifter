@@ -3862,7 +3862,7 @@
       },
       {
         "id": "ADR-059-R3",
-        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and deployment-selected provider destinations. GCP preserves the no-service-account guest default and exact range network boundaries. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback. AWS packaging uses exact-subject broker IRSA, separate regional invocation roles, private STS/Bedrock endpoints and a private TLS-pass-through NLB preserving actual guest peers over direct VPC peering; offline packaging tests do not establish live AWS qualification.",
+        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and approved provider destinations. GCP preserves the no-service-account guest default and exact range network boundaries. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Under #2243, platform-project Vertex is valid with distinct broker/invocation principals and exact-target IAM; provider/authentication selection is independent of compute hosting. Tenant source and write-only credential management uses Engine publication with separate source-use authority, revision fencing and retained accounting. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback. AWS packaging uses exact-subject broker IRSA, separate regional invocation roles, private STS/Bedrock endpoints and a private TLS-pass-through NLB preserving actual guest peers over direct VPC peering; offline packaging tests do not establish live AWS qualification.",
         "checks": []
       }
     ],
@@ -3871,6 +3871,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/059-range-model-access-broker.md",
+      "docs/architecture/model-access/source-management-preflight-2243.md",
       "docs/architecture/model-access/gcp-packaging.md",
       "scripts/check_tf_gcp_iam_resource_scope/test_model_broker_scope.py",
       "platform/charts/shifter/tests/test_model_broker.py",

@@ -1,3 +1,4 @@
+import { ModelSourcePicker } from "@/components/ModelSourcePicker";
 import { Link } from "react-router";
 
 import { Loader2 } from "lucide-react";
@@ -121,7 +122,7 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               <Label htmlFor="e-scenario">Scenario</Label>
               <Select
                 value={state.scenario_id === "" ? NO_SCENARIO : state.scenario_id}
-                onValueChange={(v) => set("scenario_id", v === NO_SCENARIO ? "" : v)}
+                onValueChange={(v) => { set("scenario_id", v === NO_SCENARIO ? "" : v); set("model_sources", { aliases: [] }); }}
               >
                 <SelectTrigger
                   id="e-scenario"
@@ -141,6 +142,12 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               </Select>
               <FieldError id="e-scenario-e" error={firstError("scenario_id")} />
             </div>
+
+            <ModelSourcePicker scenario={state.scenario_id} purpose="ctf" workspace={state.workspace}
+              value={state.model_sources} onChange={(value) => set("model_sources", value)}
+              onWorkspaceChange={mode === "create" ? (value) => set("workspace", value) : undefined}
+              disabled={mutation.isPending} />
+            <p className="text-sm text-muted-foreground">These sources fund new event ranges. Existing ranges keep their allocation until an administrator changes their model sources.</p>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <TextField

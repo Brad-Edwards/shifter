@@ -28,6 +28,7 @@ from shared.model_access.reservation import ModelAllocationRequest, ModelQuotaOb
 from ._model_allocation_authority import lock_assignment_groups, locked_policy
 from ._model_allocation_contracts import normalize_observations, validated
 from ._model_allocation_selection import _eligible, _policy_digest, _provider_candidates, _rank
+from ._model_cohort_capacity import cohort_commitments
 from ._model_quota import add_shard_demand, lock_quotas, persist_draws, vector_fits
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,8 @@ def _lock_range(request: ModelAllocationRequest) -> Range:
     )
     if row is None or row.provisioner_operation_id != request.operation_id:
         raise ContractError("allocation.generation_mismatch")
+    if row.model_source_policy_revision != request.source_policy_revision:
+        raise ContractError("allocation.policy_revision_mismatch")
     if request.owner_ref.owner != "management" or request.owner_ref.reference != f"user:{row.user_id}":
         raise ContractError("allocation.owner_mismatch")
     if row.status not in (Range.Status.PENDING, Range.Status.PROVISIONING, Range.Status.READY, Range.Status.RESUMING):
@@ -57,6 +60,7 @@ def _replay(request: ModelAllocationRequest, intent_digest: str) -> ModelAllocat
         request_id=request.request_id,
         operation_id=request.operation_id,
         workload_role=request.need.workload_role,
+        source_policy_revision=request.source_policy_revision,
     ).first()
     if existing is None:
         return None
@@ -112,6 +116,7 @@ class _SelectionContext:
     policy_digest: str
     prices: dict[str, PriceSchedule]
     allowed_shards: set[str]
+    commitments: dict[str, int] | None
 
 
 def _alias_candidates(
@@ -146,6 +151,7 @@ def _candidate_vector(shard: ModelShard, vector: dict[str, int], context: _Selec
         catalog=context.catalog,
         locked=context.locked,
         observations=context.observations,
+        commitments=context.commitments,
     ):
         return None
     return candidate
@@ -173,14 +179,18 @@ def _select_alias(
     alias: ModelAlias, vector: dict[str, int], context: _SelectionContext
 ) -> tuple[ModelShard, dict[str, int]]:
     """Choose one alias without exposing a partial persisted assignment."""
-    price = context.prices[alias.price_schedule_id]
-    if price.valid_until < context.request.window_end or price.currency != context.profile.limits.currency:
-        raise ContractError("allocation.price_unavailable")
+    if alias.strategy not in context.profile.allowed_strategies:
+        raise ContractError("allocation.strategy_not_allowed")
     group = context.groups.get(alias.logical_alias)
     assignment = (
         ModelAliasAssignment.objects.filter(group=group, logical_alias=alias.logical_alias).first() if group else None
     )
+    priced_candidate = False
     for shard in _alias_candidates(alias, context, group, assignment):
+        price = context.catalog.price_for_alias(alias.logical_alias, shard.shard_id)
+        if price.valid_until < context.request.window_end or price.currency != context.profile.limits.currency:
+            continue
+        priced_candidate = True
         candidate = _candidate_vector(shard, vector, context)
         if candidate is None:
             continue
@@ -192,7 +202,7 @@ def _select_alias(
             policy_digest=context.policy_digest,
         )
         return shard, candidate
-    raise ContractError("allocation.capacity_unavailable")
+    raise ContractError("allocation.capacity_unavailable" if priced_candidate else "allocation.price_unavailable")
 
 
 def _select(
@@ -203,6 +213,7 @@ def _select(
     locked: dict[str, ModelQuotaIdentity],
     observations: dict[str, ModelQuotaObservation],
     groups: dict[str, AllocationGroup],
+    commitments: dict[str, int] | None,
 ) -> tuple[dict[str, ModelShard], dict[str, int]]:
     """Choose a complete feasible alias map without partial effects."""
     policy_digest = _policy_digest(request, catalog, profile)
@@ -224,6 +235,7 @@ def _select(
         policy_digest=policy_digest,
         prices=prices,
         allowed_shards=allowed_shards,
+        commitments=commitments,
     )
     for alias in aliases:
         selected[alias.logical_alias], vector = _select_alias(alias, vector, context)
@@ -269,7 +281,7 @@ def _previous_allocations(
     previous = (
         list(
             ModelAllocation.objects.filter(range_id=request.range_id, released_at__isnull=True).exclude(
-                operation_id=request.operation_id
+                operation_id=request.operation_id, source_policy_revision=request.source_policy_revision
             )
         )
         if retire_previous
@@ -296,6 +308,7 @@ class _CommitContext:
     revision_vector: dict[str, object]
     selected: dict[str, ModelShard]
     vector: dict[str, int]
+    commitments: dict[str, int] | None
     intent_digest: str
     policy_digest: str
 
@@ -315,6 +328,7 @@ def _assert_current(context: _CommitContext) -> None:
         catalog=context.catalog,
         locked=context.locked,
         observations=context.observed,
+        commitments=context.commitments,
     )
     if not shards_healthy or not capacity_available:
         raise ContractError("allocation.capacity_unavailable")
@@ -330,6 +344,7 @@ def _persist_allocation(context: _CommitContext) -> ModelAllocation:
         range_id=request.range_id,
         draw_key=request.draw_key,
         workload_role=request.need.workload_role,
+        source_policy_revision=request.source_policy_revision,
         intent_digest=context.intent_digest,
         policy_digest=context.policy_digest,
         deadline=min(request.window_end, datetime.fromisoformat(str(context.revision_vector["fresh_until"]))),
@@ -363,6 +378,7 @@ def _persist_allocation(context: _CommitContext) -> ModelAllocation:
         catalog=context.catalog,
         locked=context.locked,
         observations=context.observed,
+        commitments=context.commitments,
     )
     from shared.audit import AuditActorType, AuditEvent, audit_log
 
@@ -415,7 +431,8 @@ def _allocate_model_access(
 
         for prior in previous:
             release_model_allocation(prior.pk, operation_id=prior.operation_id)
-        selected, vector = _select(request, catalog, sharing, profile, locked, observed, groups)
+        commitments = cohort_commitments(request, catalog, sharing, profile, observed, groups)
+        selected, vector = _select(request, catalog, sharing, profile, locked, observed, groups, commitments)
         context = _CommitContext(
             request=request,
             range_obj=range_obj,
@@ -428,6 +445,7 @@ def _allocate_model_access(
             revision_vector=revision_vector,
             selected=selected,
             vector=vector,
+            commitments=commitments,
             intent_digest=intent_digest,
             policy_digest=policy_digest,
         )

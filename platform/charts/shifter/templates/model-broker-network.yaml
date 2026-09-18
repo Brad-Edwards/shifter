@@ -28,6 +28,10 @@ spec:
         - podSelector:
             matchLabels: {app.kubernetes.io/component: model-access-control}
       ports: [{protocol: TCP, port: 8444}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: model-provider-egress}
+      ports: [{protocol: TCP, port: 3128}]
     {{- if eq .Values.provider.name "gcp" }}
     - to:
         # Fixed Google private API VIP. Adapter origins remain separately closed.

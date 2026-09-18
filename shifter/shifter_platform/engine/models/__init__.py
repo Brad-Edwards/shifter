@@ -51,6 +51,7 @@ from ._model_budget import (
     ModelRequestReservation,
 )
 from ._model_credentials import ModelAccessCredential
+from ._model_sources import ModelSource, ModelSourceRegistry, ModelSourceRevision
 from ._operation_io import (
     OperationInput,
     OperationResultDisposition,
@@ -122,6 +123,9 @@ __all__ = [
     "ModelQuotaReading",
     "ModelReconciliationObligation",
     "ModelRequestReservation",
+    "ModelSource",
+    "ModelSourceRegistry",
+    "ModelSourceRevision",
     "OperationInput",
     "OperationResultDisposition",
     "OperationResultInbox",

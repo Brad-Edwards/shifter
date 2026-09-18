@@ -415,3 +415,17 @@ def cms_list_scenarios(user: User) -> list[tuple[str, str]]:
 
     scenarios = cms_services.list_launchable_scenarios(user, "ctf_event")
     return [(s["id"], s["name"]) for s in scenarios]
+
+
+def cms_resolve_model_source_sponsorship(actor, workspace_id, selection):
+    """Keep source authorization below the CTF ownership boundary."""
+    from cms.services import resolve_model_source_sponsorship
+
+    return resolve_model_source_sponsorship(actor, workspace_id, selection)
+
+
+def cms_project_scenario_model_demands(scenario_id, *, expected_concurrency):
+    """Resolve typed defaults from the scenario owner's verified envelope."""
+    from cms.services import project_scenario_model_demands
+
+    return project_scenario_model_demands(scenario_id, expected_concurrency=expected_concurrency)

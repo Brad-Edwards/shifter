@@ -7,6 +7,7 @@ import { AuditPage } from "@/features/administer/AuditPage";
 import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { AdaptersPage } from "@/features/administer/AdaptersPage";
+import { ModelSourcesPage } from "@/features/administer/ModelSourcesPage";
 import { platformSettingsPath } from "@/features/administer/routes";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
 import { UsersListPage } from "@/features/administer/UsersListPage";
@@ -225,6 +226,7 @@ export const router = createBrowserRouter(
             { path: "cost", element: <CostPage /> },
             { path: "settings", element: <PlatformSettingsPage /> },
             { path: "adapters", element: <AdaptersPage />, handle: { permissionPolicy: "adapter_admin" } },
+            { path: "model-sources", element: <ModelSourcesPage />, handle: { permissionPolicy: "model_source_admin" } },
             // Administrator audit / activity history (#1947, PLAT-240): a
             // deployment-global, staff-only surface. Top-level (not workspace
             // scoped) because the audit store carries no per-row tenant scope.

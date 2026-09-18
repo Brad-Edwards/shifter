@@ -112,3 +112,72 @@ def resolve_model_access_organization(actor: User, organization_uuid: str | uuid
             workspace_ids=workspace_ids,
             authority_reference=f"organization:{organization.uuid}",
         )
+
+
+def authorize_model_source_workspace(
+    actor: User, *, workspace_id: int | None = None, workspace_uuid: str | uuid.UUID | None = None
+):
+    """Authorize model-source administration through tenant or workspace authority.
+
+    This narrow operation grants no range access or other workspace capability.
+    Organization administrators need no synthetic workspace membership.
+    """
+    from django.contrib.auth.models import User
+
+    from workspaces.services._authorization import WorkspaceAuthorization
+
+    actor = User.objects.filter(pk=actor.pk, is_active=True).first()
+    if actor is None:
+        raise WorkspaceAuthorizationError("Workspace access denied")
+    query = Workspace.objects.select_related("organization").filter(archived_at__isnull=True)
+    if workspace_uuid is not None:
+        query = query.filter(uuid=_parse_uuid(workspace_uuid, WorkspaceAuthorizationError))
+    elif workspace_id is not None:
+        query = query.filter(pk=workspace_id)
+    else:
+        raise WorkspaceAuthorizationError("Workspace access denied")
+    workspace = query.first()
+    if workspace is None:
+        raise WorkspaceAuthorizationError("Workspace access denied")
+    try:
+        resolve_administrable_organization(actor, workspace.organization.uuid)
+    except OrganizationAuthorizationError:
+        return authorize_bound_workspace(actor, workspace.pk, WorkspaceOperation.PUBLISH_MODEL_ACCESS)
+    return WorkspaceAuthorization(
+        workspace_id=workspace.pk,
+        workspace_uuid=workspace.uuid,
+        organization_id=workspace.organization_id,
+        organization_uuid=workspace.organization.uuid,
+        role="admin",
+    )
+
+
+def list_model_source_users(actor: User, organization_uuid: uuid.UUID, *, search="", page=1):
+    """Tenant-admin directory for explicit source-use grants, with bounded paging."""
+    from django.contrib.auth.models import User
+    from django.db.models import Q
+
+    from workspaces.models import OrganizationMembership, WorkspaceMembership
+
+    actor = User.objects.filter(pk=actor.pk, is_active=True).first()
+    if actor is None:
+        raise OrganizationAuthorizationError("Organization access denied")
+    organization, _override = resolve_administrable_organization(actor, organization_uuid)
+    members = WorkspaceMembership.objects.filter(
+        workspace__organization=organization, workspace__archived_at__isnull=True
+    ).values_list("user_id", flat=True)
+    admins = OrganizationMembership.objects.filter(organization=organization).values_list("user_id", flat=True)
+    users = User.objects.filter(Q(pk__in=members) | Q(pk__in=admins), is_active=True)
+    if search:
+        users = users.filter(
+            Q(username__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search)
+        )
+    users = users.order_by("username", "pk")
+    count = users.count()
+    return {
+        "has_next": page * 25 < count,
+        "results": [
+            {"id": user.pk, "name": user.get_full_name() or user.username, "username": user.username}
+            for user in users[(page - 1) * 25 : page * 25]
+        ],
+    }

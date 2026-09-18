@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from shared.model_access.catalog_v2 import ModelAccessCatalogV2
 from shared.model_access.catalog_v3 import ModelAccessCatalogV3
+from shared.model_access.catalog_v4 import ModelAccessCatalogV4
 from shared.model_access.digest import compute_digest, digest_matches
 from shared.model_access.models import ModelAccessCatalog
 from shared.model_access.sharing_models import SharingBinding
@@ -26,6 +27,8 @@ def _catalog_model(version: object) -> type[ModelAccessCatalog]:
         return ModelAccessCatalogV2
     if version == "model-access-policy/v3":
         return ModelAccessCatalogV3
+    if version == "model-access-policy/v4":
+        return ModelAccessCatalogV4
     raise ContractError(_VALIDATION_ERROR, "contract_version")
 
 

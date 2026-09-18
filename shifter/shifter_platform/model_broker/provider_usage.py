@@ -60,7 +60,10 @@ class StreamUsage:
                 raise ContractError(_INVALID_STREAM)
             self.input_usage = event.get("message", {}).get("usage", {})
         elif kind == "message_delta":
-            self.output_tokens = event.get("usage", {}).get("output_tokens")
+            usage = event.get("usage", {})
+            self.output_tokens = usage.get("output_tokens")
+            if "input_tokens" in usage:
+                self.input_usage = {**(self.input_usage or {}), "input_tokens": usage["input_tokens"]}
         elif kind == "message_stop":
             self.stopped = True
         elif kind not in {"content_block_start", "content_block_delta", "content_block_stop", "ping"}:
