@@ -21,15 +21,16 @@ _VALIDATION_ERROR = "contract.validation"
 
 def _catalog_model(version: object) -> type[ModelAccessCatalog]:
     """Select a closed versioned schema, never interpret unknown versions as v1."""
-    if version == "model-access-policy/v1":
-        return ModelAccessCatalog
-    if version == "model-access-policy/v2":
-        return ModelAccessCatalogV2
-    if version == "model-access-policy/v3":
-        return ModelAccessCatalogV3
-    if version == "model-access-policy/v4":
-        return ModelAccessCatalogV4
-    raise ContractError(_VALIDATION_ERROR, "contract_version")
+    models: dict[str, type[ModelAccessCatalog]] = {
+        "model-access-policy/v1": ModelAccessCatalog,
+        "model-access-policy/v2": ModelAccessCatalogV2,
+        "model-access-policy/v3": ModelAccessCatalogV3,
+        "model-access-policy/v4": ModelAccessCatalogV4,
+    }
+    model = models.get(version) if isinstance(version, str) else None
+    if model is None:
+        raise ContractError(_VALIDATION_ERROR, "contract_version")
+    return model
 
 
 class ContractError(ValueError):

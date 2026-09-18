@@ -72,7 +72,7 @@ def admit_range_model_policy_change(*, request_id: UUID, expected_revision: int)
         return tuple(allocation.pk for allocation in allocations)
 
 
-def get_range_model_policy_status(*, request_id: UUID) -> dict:
+def get_range_model_policy_status(*, request_id: UUID) -> dict[str, object]:
     """Bounded metadata for the current policy; retained allocations stay internal."""
     from engine.models import ModelAllocation, Range
 
@@ -89,11 +89,11 @@ def get_range_model_policy_status(*, request_id: UUID) -> dict:
         .order_by("workload_role")[:64]
     )
     states = {allocation.grant.state for allocation in allocations}
-    state = (
-        "active"
-        if states == {"active"}
-        else ("refresh_pending" if states and states <= {"pending", "active"} else "unavailable")
-    )
+    state = "unavailable"
+    if states == {"active"}:
+        state = "active"
+    elif states and states <= {"pending", "active"}:
+        state = "refresh_pending"
     assignments = [
         {
             "workload": allocation.workload_role,

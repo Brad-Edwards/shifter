@@ -45,7 +45,8 @@ async def resolve_public_address(host: str) -> str:
         if value
     )
 
-    def allowed(value):
+    def allowed(value: str) -> bool:
+        """Allow public addresses or explicitly admitted AWS private endpoints."""
         address = ipaddress.ip_address(value)
         return address.is_global or (host.endswith(".amazonaws.com") and any(address in network for network in private))
 
@@ -56,6 +57,7 @@ async def resolve_public_address(host: str) -> str:
 
 
 async def _relay(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    """Relay bounded opaque TLS chunks with downstream backpressure."""
     while chunk := await reader.read(16384):
         writer.write(chunk)
         await writer.drain()
@@ -86,7 +88,7 @@ async def handle_connect(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-    except (ValueError, OSError, TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+    except (ValueError, OSError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
         if not established:
             writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             with suppress(OSError):
@@ -101,6 +103,7 @@ async def handle_connect(reader: asyncio.StreamReader, writer: asyncio.StreamWri
 
 
 async def main() -> None:
+    """Listen on the configured private address with bounded CONNECT headers."""
     from shared.model_access.network import private_listener_address
 
     address = private_listener_address(os.environ["MODEL_EGRESS_BIND_ADDRESS"])

@@ -184,7 +184,7 @@ class EventDetailSerializer(_EventAccessProjectionMixin, serializers.Serializer)
     model_sources = ModelSourceSelectionField(read_only=True)
     workspace = serializers.SerializerMethodField()
 
-    def get_workspace(self, event) -> str | None:
+    def get_workspace(self, event: CTFEvent) -> str | None:
         from workspaces.services import WorkspaceAuthorizationError, WorkspaceOperation, authorize_bound_workspace
 
         request = self.context.get("request")

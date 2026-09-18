@@ -13,6 +13,9 @@ from shared.log_sanitize import safe_log_fingerprint
 logger = logging.getLogger(__name__)
 
 
+SECRET_MANAGER_MODULE = "google.cloud.secretmanager"
+
+
 class GCPSecretsStore:
     """Secret Manager implementation of SecretsStore protocol."""
 
@@ -28,7 +31,7 @@ class GCPSecretsStore:
         parent = f"projects/{settings.GCP_PROJECT_ID}"
         resource = f"{parent}/secrets/{name}"
         try:
-            module = import_google_module("google.cloud.secretmanager")
+            module = import_google_module(SECRET_MANAGER_MODULE)
             client = module.SecretManagerServiceClient()
             client.create_secret(
                 request={
@@ -58,7 +61,7 @@ class GCPSecretsStore:
 
         name = model_source_secret_name(source_id, version_id)
         try:
-            module = import_google_module("google.cloud.secretmanager")
+            module = import_google_module(SECRET_MANAGER_MODULE)
             module.SecretManagerServiceClient().delete_secret(
                 request={"name": f"projects/{settings.GCP_PROJECT_ID}/secrets/{name}"},
                 timeout=secrets_request_timeout(),
@@ -79,7 +82,7 @@ class GCPSecretsStore:
         resource_fingerprint = safe_log_fingerprint(resource_name)
         logger.debug("get_secret: resource_fp=%s", resource_fingerprint)
         try:
-            secretmanager = import_google_module("google.cloud.secretmanager")
+            secretmanager = import_google_module(SECRET_MANAGER_MODULE)
             client = secretmanager.SecretManagerServiceClient()
             # Bounded deadline so a stalled Secret Manager fails fast instead of
             # blocking the calling thread (#929).

@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { useModelSourceOptions, type ModelSourceSelection } from "@/api/model-sources";
+import { useModelSourceOptions, type ModelSource, type ModelSourceSelection } from "@/api/model-sources";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,7 @@ export function ModelSourcePicker({ scenario, workspace = "", purpose = "range",
     onChange({ aliases: [...value.aliases.filter((item) => item.logical_alias !== alias),
       ...(sources.length ? [{ logical_alias: alias, sources }] : [])] });
   }
-  if (options.isPending) return <p role="status">Loading model source choices…</p>;
+  if (options.isPending) return <output>Loading model source choices…</output>;
   if (options.isError) return <div role="alert">Could not load model source choices. <Button type="button" variant="outline" onClick={() => options.refetch()}>Retry</Button></div>;
   return <fieldset disabled={disabled} className="space-y-4">
     <legend className="font-medium">Model sources</legend>
@@ -45,27 +45,41 @@ export function ModelSourcePicker({ scenario, workspace = "", purpose = "range",
         {stale && <p role="alert" className="text-sm text-destructive">A selected source changed or is unavailable. Clear it and select a current source before saving.</p>}
         {selected.length > 0 && <Button type="button" variant="outline" size="sm" onClick={() => setSources(alias.logical_alias, [])}>Use default</Button>}
         {alias.sources.length === 0 && <p className="text-sm">No compatible sources have been granted to you in this workspace.</p>}
-        {alias.sources.map((source) => {
-          const chosen = selected.find((item) => item.source_id === source.id);
-          const config = source.configuration;
-          const choiceId = `${id}-${alias.logical_alias}-${source.id}`;
-          return <div key={source.id} className="rounded border p-2">
-            <label htmlFor={choiceId} className="flex items-center gap-2 font-medium">
-              <input id={choiceId} type="checkbox" checked={Boolean(chosen)} onChange={(event) => {
-                const kept = alias.multiple_allowed ? selected.filter((item) => item.source_id !== source.id) : [];
-                setSources(alias.logical_alias, event.target.checked ? [...kept, { source_id: source.id, revision: source.revision, weight: 1 }] : kept);
-              }} />{config.name}
-            </label>
-            <p className="text-xs text-muted-foreground">{config.provider} · {config.model} · {config.region}</p>
-            <p className="text-xs text-muted-foreground">Per million tokens: {config.currency} {config.input_price_per_million / 1_000_000} input / {config.output_price_per_million / 1_000_000} output</p>
-            {chosen && alias.multiple_allowed && <div className="mt-2 flex items-center gap-2">
-              <Label htmlFor={`${choiceId}-weight`}>Weight for {config.name}</Label>
-              <Input id={`${choiceId}-weight`} type="number" min={1} max={64} className="w-20" value={chosen.weight ?? 1}
-                onChange={(event) => { const weight = Number(event.target.value); if (Number.isInteger(weight) && weight >= 1 && weight <= 64) setSources(alias.logical_alias, selected.map((item) => item.source_id === source.id ? { ...item, weight } : item)); }} />
-            </div>}
-          </div>;
-        })}
+        {alias.sources.map((source) => <SourceChoice key={source.id} source={source} selected={selected}
+          multiple={alias.multiple_allowed} id={`${id}-${alias.logical_alias}-${source.id}`}
+          onChange={(sources) => setSources(alias.logical_alias, sources)} />)}
       </fieldset>;
     })}
   </fieldset>;
+}
+
+
+type Choices = ModelSourceSelection["aliases"][number]["sources"];
+
+function SourceChoice({ source, selected, multiple, id, onChange }: Readonly<{
+  source: ModelSource; selected: Choices; multiple: boolean; id: string; onChange: (sources: Choices) => void;
+}>) {
+  const chosen = selected.find((item) => item.source_id === source.id);
+  const config = source.configuration;
+  function toggle(checked: boolean) {
+    const kept = multiple ? selected.filter((item) => item.source_id !== source.id) : [];
+    onChange(checked ? [...kept, { source_id: source.id, revision: source.revision, weight: 1 }] : kept);
+  }
+  function setWeight(weight: number) {
+    if (Number.isInteger(weight) && weight >= 1 && weight <= 64) {
+      onChange(selected.map((item) => item.source_id === source.id ? { ...item, weight } : item));
+    }
+  }
+  return <div className="rounded border p-2">
+    <label htmlFor={id} className="flex items-center gap-2 font-medium">
+      <input id={id} type="checkbox" checked={Boolean(chosen)} onChange={(event) => toggle(event.target.checked)} />{config.name}
+    </label>
+    <p className="text-xs text-muted-foreground">{config.provider} · {config.model} · {config.region}</p>
+    <p className="text-xs text-muted-foreground">Per million tokens: {config.currency} {config.input_price_per_million / 1_000_000} input / {config.output_price_per_million / 1_000_000} output</p>
+    {chosen && multiple && <div className="mt-2 flex items-center gap-2">
+      <Label htmlFor={`${id}-weight`}>Weight for {config.name}</Label>
+      <Input id={`${id}-weight`} type="number" min={1} max={64} className="w-20" value={chosen.weight ?? 1}
+        onChange={(event) => setWeight(Number(event.target.value))} />
+    </div>}
+  </div>;
 }

@@ -238,6 +238,14 @@ def add_shard_demand(
     return dict(updated)
 
 
+@dataclass(frozen=True)
+class QuotaAdmissionState:
+    """Locked physical quota identities and their validated observations."""
+
+    locked: dict[str, ModelQuotaIdentity]
+    observations: dict[str, ModelQuotaObservation]
+
+
 def persist_draws(
     allocation: ModelAllocation,
     vector: dict[str, int],
@@ -245,11 +253,11 @@ def persist_draws(
     request: ModelAllocationRequest,
     effective: EffectivePolicy,
     catalog: ModelAccessCatalog,
-    locked: dict[str, ModelQuotaIdentity],
-    observations: dict[str, ModelQuotaObservation],
+    quota: QuotaAdmissionState,
     commitments: dict[str, int] | None = None,
 ) -> None:
     """Write the whole effect vector in the allocation caller's transaction."""
+    locked, observations = quota.locked, quota.observations
     scopes = capacity_scope(request, effective)
     factor = (
         1

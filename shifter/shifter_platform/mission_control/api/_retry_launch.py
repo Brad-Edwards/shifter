@@ -11,6 +11,7 @@ the *bound* range on the response. It composes onto ``MissionControlAPIView`` vi
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
@@ -32,6 +33,15 @@ from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LaunchChoices:
+    """Validated workspace, agent selection, and model-source launch intent."""
+
+    workspace_uuid: str | UUID | None = None
+    agents_selection: dict[str, Any] = field(default_factory=dict)
+    model_sources: dict[str, Any] | None = None
 
 
 class RetrySafeLaunchMixin:
@@ -112,10 +122,8 @@ class RetrySafeLaunchMixin:
         user: User,
         scenario: str,
         agents_by_os: dict[str, int] | None,
-        workspace_uuid: str | UUID | None,
         caller_key: str,
-        agents_selection: dict[str, Any],
-        model_sources: dict | None = None,
+        choices: LaunchChoices,
     ) -> Response:
         """First use of a retry key: dispatch, bind, and audit exactly once (#2086, ADR-063).
 
@@ -127,11 +135,11 @@ class RetrySafeLaunchMixin:
             outcome = bind_first_use_launch(
                 user,
                 scenario=scenario,
-                agents_selection=agents_selection,
+                agents_selection=choices.agents_selection,
                 agents_by_os=agents_by_os or {},
-                workspace_uuid=workspace_uuid,
+                workspace_uuid=choices.workspace_uuid,
                 caller_key=caller_key,
-                model_sources=model_sources,
+                model_sources=choices.model_sources,
             )
         except RetryKeyConflict:
             logger.info("Retry key conflict: user=%s scenario=%s", user.pk, safe_log_value(scenario))

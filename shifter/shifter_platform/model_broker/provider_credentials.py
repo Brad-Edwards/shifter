@@ -16,6 +16,8 @@ from shared.model_access.source_credentials import (
 
 from .egress import provider_proxy
 
+JSON_MEDIA_TYPE = "application/json"
+
 
 class ProviderCredentials:
     """Short-lived impersonation/assumption, with no guest or request-selected role."""
@@ -41,7 +43,7 @@ class ProviderCredentials:
                 raise ContractError("provider.target_mismatch")
             key = credential.api_key.get_secret_value()
             return {
-                "content-type": "application/json",
+                "content-type": JSON_MEDIA_TYPE,
                 "accept-encoding": "identity",
                 **(
                     {"x-api-key": key, "anthropic-version": "2023-06-01"}
@@ -107,7 +109,7 @@ def _vertex_headers(target: ProviderTarget, *, stored: GoogleKeyCredential | Non
         credentials.refresh(bounded)
         return {
             "authorization": f"Bearer {credentials.token}",
-            "content-type": "application/json",
+            "content-type": JSON_MEDIA_TYPE,
             "accept-encoding": "identity",
         }
 
@@ -122,15 +124,13 @@ def _bedrock_headers(
 
     from shared.model_access.aws_session import bounded_aws_session
 
-    client_credentials = (
-        {}
-        if stored is None
-        else {
+    client_credentials = {}
+    if stored is not None:
+        client_credentials = {
             "aws_access_key_id": stored.access_key_id,
             "aws_secret_access_key": stored.secret_access_key.get_secret_value(),
             "aws_session_token": stored.session_token.get_secret_value() if stored.session_token else None,
         }
-    )
     with closing(
         bounded_aws_session(target.region, proxy=provider_proxy()).client("sts", **client_credentials)
     ) as client:
@@ -141,7 +141,7 @@ def _bedrock_headers(
         method="POST",
         url=url,
         data=body,
-        headers={"content-type": "application/json", "accept-encoding": "identity"},
+        headers={"content-type": JSON_MEDIA_TYPE, "accept-encoding": "identity"},
     )
     SigV4Auth(credentials, "bedrock", target.region).add_auth(request)
     return dict(request.headers.items())

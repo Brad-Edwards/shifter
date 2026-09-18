@@ -1,16 +1,23 @@
 """Admission from explicit tenant application caps, never fabricated cloud quota."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from engine.models import ModelSourceRevision
 
 from django.utils import timezone
 
-from shared.model_access import ContractError
+from shared.model_access import ContractError, ModelAccessCatalog
 from shared.model_access.catalog_v4 import ModelAccessCatalogV4
+from shared.model_access.core_models import ModelShard, QuotaPool
+from shared.model_access.messages import JsonObject
 from shared.model_access.reservation import ModelQuotaObservation
 from shared.model_access.sources import ModelSourceConfiguration
 
 
-def launch_model_observations(catalog):
+def launch_model_observations(catalog: ModelAccessCatalog) -> tuple[JsonObject, ...]:
     """Combine unchanged legacy readings with published source application caps.
 
     Tenant caps are deliberate local ceilings, not a provider-health probe or a
@@ -38,7 +45,6 @@ def launch_model_observations(catalog):
         )
     }
     shards = {shard.shard_id: shard for shard in catalog.shards}
-    caps = {}
     source_ids = {binding.source_id for binding in catalog.source_bindings if binding.source_id is not None}
     current = {
         row.source_id: row
@@ -47,38 +53,17 @@ def launch_model_observations(catalog):
         .order_by("source_id", "revision")
         if row.revision == row.source.revision
     }
-    for binding in catalog.source_bindings:
-        if binding.source_id is None:
-            continue
-        row = current.get(binding.source_id)
-        if row is None or row.revision != binding.source_revision:
-            raise ContractError("source.revision_conflict")
-        config = ModelSourceConfiguration.model_validate(row.configuration)
-        config.target(binding.source_id, binding.source_revision).model_copy(
-            update={"shard_id": binding.shard_id}
-        ).bind(shards[binding.shard_id])
-        if config.price_valid_until <= moment:
-            raise ContractError("allocation.price_unavailable")
-        for pool_id in shards[binding.shard_id].quota_pool_ids:
-            caps.setdefault(pool_id, []).append((binding.shard_id, config))
-    observations = []
-    incumbent_pools = (
-        {pool.quota_pool_id for pool in catalog.policy_catalog.quota_pools} if catalog.policy_catalog else set()
-    )
-    for pool in catalog.quota_pools:
-        sources = caps.get(pool.quota_pool_id)
-        if sources:
-            if pool.quota_pool_id in incumbent_pools and pool.quota_pool_id not in legacy:
-                raise ContractError("allocation.invalid_input")
-            observations.append(_source_observation(catalog, pool, sources, legacy.get(pool.quota_pool_id), moment))
-        elif pool.quota_pool_id in legacy:
-            observations.append(
-                legacy[pool.quota_pool_id].model_copy(update={"catalog_digest": catalog.digest}).model_dump(mode="json")
-            )
-    return tuple(observations)
+    caps = _source_caps(catalog, current, shards, moment)
+    return _combine_observations(catalog, caps, legacy, moment)
 
 
-def _source_observation(catalog, pool, sources, incumbent, moment):
+def _source_observation(
+    catalog: ModelAccessCatalog,
+    pool: QuotaPool,
+    sources: list[tuple[str, ModelSourceConfiguration]],
+    incumbent: ModelQuotaObservation | None,
+    moment: datetime,
+) -> JsonObject:
     """Do not erase incumbent usage when a tenant source shares its quota."""
     limits = [pool.limit, *(config.tokens_per_minute for _, config in sources)]
     expiries = [moment + timedelta(minutes=5), *(config.price_valid_until for _, config in sources)]
@@ -101,3 +86,52 @@ def _source_observation(catalog, pool, sources, incumbent, moment):
         usage=usage,
         healthy_shard_ids=tuple(sorted(healthy)),
     ).model_dump(mode="json")
+
+
+def _source_caps(
+    catalog: ModelAccessCatalogV4,
+    current: dict[UUID, "ModelSourceRevision"],
+    shards: dict[str, ModelShard],
+    moment: datetime,
+) -> dict[str, list[tuple[str, ModelSourceConfiguration]]]:
+    """Validate immutable source bindings before deriving application quota caps."""
+    caps: dict[str, list[tuple[str, ModelSourceConfiguration]]] = {}
+    for binding in catalog.source_bindings:
+        if binding.source_id is None:
+            continue
+        row = current.get(binding.source_id)
+        if row is None or row.revision != binding.source_revision:
+            raise ContractError("source.revision_conflict")
+        config = ModelSourceConfiguration.model_validate(row.configuration)
+        config.target(binding.source_id, binding.source_revision).model_copy(
+            update={"shard_id": binding.shard_id}
+        ).bind(shards[binding.shard_id])
+        if config.price_valid_until <= moment:
+            raise ContractError("allocation.price_unavailable")
+        for pool_id in shards[binding.shard_id].quota_pool_ids:
+            caps.setdefault(pool_id, []).append((binding.shard_id, config))
+    return caps
+
+
+def _combine_observations(
+    catalog: ModelAccessCatalogV4,
+    caps: dict[str, list[tuple[str, ModelSourceConfiguration]]],
+    legacy: dict[str, ModelQuotaObservation],
+    moment: datetime,
+) -> tuple[JsonObject, ...]:
+    """Preserve legacy usage and require observations for every incumbent source pool."""
+    observations = []
+    incumbent_pools = (
+        {pool.quota_pool_id for pool in catalog.policy_catalog.quota_pools} if catalog.policy_catalog else set()
+    )
+    for pool in catalog.quota_pools:
+        sources = caps.get(pool.quota_pool_id)
+        if sources:
+            if pool.quota_pool_id in incumbent_pools and pool.quota_pool_id not in legacy:
+                raise ContractError("allocation.invalid_input")
+            observations.append(_source_observation(catalog, pool, sources, legacy.get(pool.quota_pool_id), moment))
+        elif pool.quota_pool_id in legacy:
+            observations.append(
+                legacy[pool.quota_pool_id].model_copy(update={"catalog_digest": catalog.digest}).model_dump(mode="json")
+            )
+    return tuple(observations)

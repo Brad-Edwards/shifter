@@ -1,7 +1,10 @@
 """Tenant model-policy administration of existing ranges, with explicit CAS."""
 
+from uuid import UUID
+
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -16,11 +19,15 @@ from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthori
 
 
 class RangeModelSourcesWriteSerializer(PreparationSerializer):
+    """Revision-fenced source selection for an existing range."""
+
     expected_revision = ModelSourceRevisionField(min_value=0)
     selection = ModelSourceSelectionField()
 
 
 class ModelAssignmentSerializer(serializers.Serializer):
+    """Effective provider assignment for a workload alias."""
+
     workload = serializers.CharField()
     logical_alias = serializers.CharField()
     provider = serializers.CharField()
@@ -29,11 +36,15 @@ class ModelAssignmentSerializer(serializers.Serializer):
 
 
 class ModelPolicyRuntimeSerializer(serializers.Serializer):
+    """Runtime availability and effective model assignments."""
+
     state = serializers.ChoiceField(choices=["active", "refresh_pending", "unavailable"])
     assignments = ModelAssignmentSerializer(many=True)
 
 
 class RangeModelSourcesSerializer(serializers.Serializer):
+    """Range source policy and its current runtime status."""
+
     request_id = serializers.UUIDField()
     workspace = serializers.UUIDField()
     scenario = serializers.CharField()
@@ -43,7 +54,10 @@ class RangeModelSourcesSerializer(serializers.Serializer):
     runtime = ModelPolicyRuntimeSerializer()
 
 
-def source_policy_error(request, exc):
+def source_policy_error(
+    request: Request, exc: ContractError | OrganizationAuthorizationError | WorkspaceAuthorizationError
+) -> Response:
+    """Report stale revisions separately from unavailable range authority."""
     conflict = isinstance(exc, ContractError) and exc.code == "source.revision_conflict"
     return api_error_response(
         code="source_revision_conflict" if conflict else "range_model_sources_unavailable",
@@ -56,11 +70,13 @@ def source_policy_error(request, exc):
 
 
 class RangeModelSourcesView(APIView):
+    """Read or replace model sources under range administration authority."""
+
     permission_classes = [IsAuthenticatedSession]
     parser_classes = [ClosedJSONParser]
 
     @extend_schema(responses=RangeModelSourcesSerializer)
-    def get(self, request, request_id):
+    def get(self, request: Request, request_id: UUID) -> Response:
         try:
             return Response(get_range_model_sources(request.user, request_id=request_id))
         except (WorkspaceAuthorizationError, OrganizationAuthorizationError, ContractError) as exc:
@@ -70,7 +86,7 @@ class RangeModelSourcesView(APIView):
         request=RangeModelSourcesWriteSerializer,
         responses={200: RangeModelSourcesSerializer, 202: RangeModelSourcesSerializer},
     )
-    def put(self, request, request_id):
+    def put(self, request: Request, request_id: UUID) -> Response:
         serializer = RangeModelSourcesWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -81,6 +97,8 @@ class RangeModelSourcesView(APIView):
 
 
 class ModelRangeSummarySerializer(serializers.Serializer):
+    """Range identity and source policy status for tenant administration."""
+
     request_id = serializers.UUIDField()
     scenario = serializers.CharField()
     status = serializers.CharField()
@@ -89,6 +107,8 @@ class ModelRangeSummarySerializer(serializers.Serializer):
 
 
 class ModelRangePageSerializer(serializers.Serializer):
+    """Paged tenant ranges with source policy metadata."""
+
     count = serializers.IntegerField()
     page = serializers.IntegerField()
     has_next = serializers.BooleanField()
@@ -96,14 +116,18 @@ class ModelRangePageSerializer(serializers.Serializer):
 
 
 class ModelRangePageQuerySerializer(PreparationSerializer):
+    """Bounded page selector for tenant ranges."""
+
     page = serializers.IntegerField(min_value=1, max_value=1000000, default=1)
 
 
 class OrganizationModelRangesView(APIView):
+    """List model-enabled ranges in administrable tenant workspaces."""
+
     permission_classes = [IsAuthenticatedSession]
 
     @extend_schema(parameters=[ModelRangePageQuerySerializer], responses=ModelRangePageSerializer)
-    def get(self, request, organization_uuid):
+    def get(self, request: Request, organization_uuid: UUID) -> Response:
         from cms.services import list_organization_model_ranges
 
         query = ModelRangePageQuerySerializer(data=request.query_params)

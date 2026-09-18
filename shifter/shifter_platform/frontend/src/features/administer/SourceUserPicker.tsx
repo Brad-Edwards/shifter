@@ -15,7 +15,7 @@ export function SourceUserPicker({ organization, selected, onChange, disabled }:
     <p>{selected.length} users selected.</p>
     <Label htmlFor="source-user-search">Find organization users</Label>
     <Input id="source-user-search" value={search} maxLength={100} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
-    {query.isPending && <p role="status">Loading users…</p>}
+    {query.isPending && <output>Loading users…</output>}
     {query.isError && <p role="alert">Users could not be loaded. Your current selection is retained.</p>}
     {query.data?.results.map((user) => <label key={user.id} className="flex gap-2">
       <input type="checkbox" checked={selected.includes(user.id)} disabled={!selected.includes(user.id) && selected.length >= 256}

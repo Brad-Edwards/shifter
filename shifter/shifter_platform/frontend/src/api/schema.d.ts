@@ -447,6 +447,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Discover source choices under the current session authority. */
         get: operations["cms_model_source_options_retrieve"];
         put?: never;
         post?: never;
@@ -463,6 +464,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List model-enabled ranges in administrable tenant workspaces. */
         get: operations["cms_organizations_model_ranges_retrieve"];
         put?: never;
         post?: never;
@@ -479,6 +481,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Search tenant members eligible for explicit source-use grants. */
         get: operations["cms_organizations_model_source_users_retrieve"];
         put?: never;
         post?: never;
@@ -495,8 +498,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List and create sources for an administrable organization. */
         get: operations["cms_organizations_model_sources_retrieve"];
         put?: never;
+        /** @description List and create sources for an administrable organization. */
         post: operations["cms_organizations_model_sources_create"];
         delete?: never;
         options?: never;
@@ -512,6 +517,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** @description Replace a source only at its expected revision. */
         put: operations["cms_organizations_model_sources_update"];
         post?: never;
         delete?: never;
@@ -529,6 +535,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Retire obsolete credentials after checking live references. */
         post: operations["cms_organizations_model_sources_retire_credentials_create"];
         delete?: never;
         options?: never;
@@ -543,6 +550,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List sources explicitly available to the current actor. */
         get: operations["cms_organizations_model_sources_available_retrieve"];
         put?: never;
         post?: never;
@@ -733,7 +741,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Read or replace model sources under range administration authority. */
         get: operations["cms_ranges_model_sources_retrieve"];
+        /** @description Read or replace model sources under range administration authority. */
         put: operations["cms_ranges_model_sources_update"];
         post?: never;
         delete?: never;
@@ -3416,11 +3426,13 @@ export interface components {
          * @enum {string}
          */
         AgentTypeEnum: "xdr" | "xdr_collector" | "cloud_identity_engine";
+        /** @description Compatible sources and mixing policy for one logical alias. */
         AliasSourceOptions: {
             logical_alias: string;
             multiple_allowed: boolean;
             sources: components["schemas"]["ModelSourceView"][];
         };
+        /** @description Chosen source revisions for a logical model alias. */
         AliasSourceSelection: {
             logical_alias: string;
             sources: components["schemas"]["SourceChoice"][];
@@ -3735,6 +3747,7 @@ export interface components {
             name: string;
             credential_type: string;
         };
+        /** @description Number of obsolete credential versions retired. */
         CredentialRetirement: {
             retired: number;
         };
@@ -4267,6 +4280,7 @@ export interface components {
          * @enum {string}
          */
         ModeEnum: "advisory" | "enforcing";
+        /** @description Effective provider assignment for a workload alias. */
         ModelAssignment: {
             workload: string;
             logical_alias: string;
@@ -4274,6 +4288,7 @@ export interface components {
             model: string;
             region: string;
         };
+        /** @description Runtime availability and effective model assignments. */
         ModelPolicyRuntime: {
             state: components["schemas"]["ModelPolicyRuntimeStateEnum"];
             assignments: components["schemas"]["ModelAssignment"][];
@@ -4285,12 +4300,14 @@ export interface components {
          * @enum {string}
          */
         ModelPolicyRuntimeStateEnum: "active" | "refresh_pending" | "unavailable";
+        /** @description Paged tenant ranges with source policy metadata. */
         ModelRangePage: {
             count: number;
             page: number;
             has_next: boolean;
             results: components["schemas"]["ModelRangeSummary"][];
         };
+        /** @description Range identity and source policy status for tenant administration. */
         ModelRangeSummary: {
             /** Format: uuid */
             request_id: string;
@@ -4328,13 +4345,15 @@ export interface components {
             /** @default  */
             upstream_provider: string;
         };
+        /** @description Collection of authorized source metadata. */
         ModelSourcePage: {
             results: components["schemas"]["ModelSourceView"][];
         };
+        /** @description Explicit source choices grouped by logical alias. */
         ModelSourceSelection: {
             aliases: components["schemas"]["AliasSourceSelection"][];
         };
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description Revision-fenced replacement of source configuration and status. */
         ModelSourceUpdate: {
             configuration: components["schemas"]["ModelSourceConfiguration"];
             credential?: unknown;
@@ -4342,15 +4361,18 @@ export interface components {
             /** @default true */
             enabled: boolean;
         };
+        /** @description Tenant directory identity for an explicit source-use grant. */
         ModelSourceUser: {
             id: number;
             name: string;
             username: string;
         };
+        /** @description Bounded directory results and continuation indicator. */
         ModelSourceUserPage: {
             has_next: boolean;
             results: components["schemas"]["ModelSourceUser"][];
         };
+        /** @description Public source metadata with credential presence only. */
         ModelSourceView: {
             /** Format: uuid */
             id: string;
@@ -4371,7 +4393,7 @@ export interface components {
          * @enum {string}
          */
         ModelSourceViewStateEnum: "pending" | "ready" | "failed" | "retired" | "disabled";
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description Source configuration and an optional transient credential. */
         ModelSourceWrite: {
             configuration: components["schemas"]["ModelSourceConfiguration"];
             credential?: unknown;
@@ -5385,6 +5407,7 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description Range source policy and its current runtime status. */
         RangeModelSources: {
             /** Format: uuid */
             request_id: string;
@@ -5396,7 +5419,7 @@ export interface components {
             error: string;
             runtime: components["schemas"]["ModelPolicyRuntime"];
         };
-        /** @description Reject ignored fields that could disguise attempted authority overrides. */
+        /** @description Revision-fenced source selection for an existing range. */
         RangeModelSourcesWrite: {
             expected_revision: number;
             selection: components["schemas"]["ModelSourceSelection"];
@@ -5800,6 +5823,7 @@ export interface components {
         SetWorkspaceEgressPolicy: {
             egress_policy: components["schemas"]["EgressPolicyEnum"];
         };
+        /** @description Immutable source revision and its allocation weight. */
         SourceChoice: {
             /** Format: uuid */
             source_id: string;
@@ -5807,6 +5831,7 @@ export interface components {
             /** @default 1 */
             weight: number;
         };
+        /** @description Authorized workspaces and scenario-specific source choices. */
         SourceOptions: {
             workspaces: components["schemas"]["SourceWorkspace"][];
             /** Format: uuid */
@@ -5814,6 +5839,7 @@ export interface components {
             aliases: components["schemas"]["AliasSourceOptions"][];
             available: boolean;
         };
+        /** @description Workspace identity displayed alongside tenant source options. */
         SourceWorkspace: {
             /** Format: uuid */
             uuid: string;

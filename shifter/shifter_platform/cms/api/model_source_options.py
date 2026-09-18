@@ -2,6 +2,7 @@
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -21,12 +22,16 @@ from workspaces.services import (
 
 
 class SourceOptionsQuerySerializer(PreparationSerializer):
+    """Workspace, scenario, and purpose filters for available source choices."""
+
     scenario = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
     workspace = serializers.UUIDField(required=False)
     purpose = serializers.ChoiceField(choices=["range", "ctf", "admin"], default="range")
 
 
 class SourceWorkspaceSerializer(serializers.Serializer):
+    """Workspace identity displayed alongside tenant source options."""
+
     uuid = serializers.UUIDField()
     name = serializers.CharField()
     organization_name = serializers.CharField()
@@ -34,12 +39,16 @@ class SourceWorkspaceSerializer(serializers.Serializer):
 
 
 class AliasSourceOptionsSerializer(serializers.Serializer):
+    """Compatible sources and mixing policy for one logical alias."""
+
     logical_alias = serializers.CharField()
     multiple_allowed = serializers.BooleanField()
     sources = ModelSourceViewSerializer(many=True)
 
 
 class SourceOptionsSerializer(serializers.Serializer):
+    """Authorized workspaces and scenario-specific source choices."""
+
     workspaces = SourceWorkspaceSerializer(many=True)
     workspace = serializers.UUIDField(allow_null=True)
     aliases = AliasSourceOptionsSerializer(many=True)
@@ -47,10 +56,12 @@ class SourceOptionsSerializer(serializers.Serializer):
 
 
 class ModelSourceOptionsView(APIView):
+    """Discover source choices under the current session authority."""
+
     permission_classes = [IsAuthenticatedSession]
 
     @extend_schema(parameters=[SourceOptionsQuerySerializer], responses=SourceOptionsSerializer)
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         query = SourceOptionsQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         values = query.validated_data
@@ -59,7 +70,8 @@ class ModelSourceOptionsView(APIView):
         )
         contexts = [item for item in list_actor_workspace_contexts(request.user) if operation in item.capabilities]
         selected = values.get("workspace") or next((item.workspace_uuid for item in contexts if item.is_personal), None)
-        aliases, available = [], False
+        aliases: list[dict[str, object]] = []
+        available = False
         try:
             if selected:
                 if values["purpose"] == "admin":

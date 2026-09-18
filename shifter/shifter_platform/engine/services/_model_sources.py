@@ -10,13 +10,20 @@ from django.db import transaction
 from django.utils import timezone
 
 from shared.audit import AuditActorType, AuditEvent, audit_log
-from shared.model_access import ContractError
+from shared.model_access import ContractError, ModelAccessCatalog
+from shared.model_access.reservation import AuthorityRevision
 from shared.model_access.sources import ModelSourceConfiguration, ModelSourceUseScope
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from engine.models import ModelSource, ModelSourceRevision
+
+
+REVISION_CONFLICT = "source.revision_conflict"
+
+
+SOURCE_UNAVAILABLE = "source.unavailable"
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,7 @@ class ModelSourceView:
 
 
 def _authorize(actor: User, organization_uuid: UUID) -> None:
+    """Lock and recheck current tenant administration authority."""
     from django.contrib.auth.models import User
 
     from workspaces.services import OrganizationAuthorizationError, get_organization_profile
@@ -45,6 +53,7 @@ def _authorize(actor: User, organization_uuid: UUID) -> None:
 
 
 def _configuration(value: object, *, enabled: bool = True) -> ModelSourceConfiguration:
+    """Validate source policy and require live pricing for enabled revisions."""
     try:
         result = ModelSourceConfiguration.model_validate(value)
         if enabled and result.price_valid_until <= timezone.now():
@@ -80,6 +89,7 @@ def _credential(config: ModelSourceConfiguration, value: object) -> str | None:
 
 
 def _audit(actor: User, source: ModelSource, action: str) -> None:
+    """Record source metadata changes without credential material."""
     audit_log(
         AuditEvent(
             entity_type="config",
@@ -95,6 +105,7 @@ def _audit(actor: User, source: ModelSource, action: str) -> None:
 
 
 def _view(source: ModelSource, revision: ModelSourceRevision) -> ModelSourceView:
+    """Project only safe metadata from a source and its immutable revision."""
     return ModelSourceView(
         source.id,
         source.organization_uuid,
@@ -134,7 +145,7 @@ def _store_credential(
         current = ModelSource.objects.select_for_update().get(pk=source.pk)
         try:
             if current.revision != revision.revision:
-                raise ContractError("source.revision_conflict")
+                raise ContractError(REVISION_CONFLICT)
         except ContractError as exc:
             failure = exc
         if failure is not None:
@@ -160,6 +171,7 @@ def _store_credential(
 def create_model_source(
     actor: User, organization_uuid: UUID, configuration: object, *, credential: object = None
 ) -> ModelSourceView:
+    """Reserve tenant registry space, then publish a validated initial revision."""
     from engine.models import ModelSource, ModelSourceRevision
 
     _authorize(actor, organization_uuid)
@@ -196,6 +208,7 @@ def update_model_source(
     credential: object = None,
     enabled: bool = True,
 ) -> ModelSourceView:
+    """Fence old grants and publish a new immutable revision through explicit CAS."""
     from engine.models import ModelSource, ModelSourceRevision
 
     _authorize(actor, organization_uuid)
@@ -207,9 +220,9 @@ def update_model_source(
             ModelSource.objects.select_for_update().filter(pk=source_id, organization_uuid=organization_uuid).first()
         )
         if source is None:
-            raise ContractError("source.unavailable")
+            raise ContractError(SOURCE_UNAVAILABLE)
         if type(expected_revision) is not int or source.revision != expected_revision:
-            raise ContractError("source.revision_conflict")
+            raise ContractError(REVISION_CONFLICT)
         prior = ModelSourceRevision.objects.get(source=source, revision=source.revision)
         old_config = ModelSourceConfiguration.model_validate(prior.configuration)
         if (
@@ -252,11 +265,13 @@ def _invalidate_source_fences(source: ModelSource) -> None:
 
 
 def list_model_sources(actor: User, organization_uuid: UUID) -> tuple[ModelSourceView, ...]:
+    """List source metadata after checking tenant administration authority."""
     _authorize(actor, organization_uuid)
     return _list_sources(organization_uuid)
 
 
 def _list_sources(organization_uuid: UUID) -> tuple[ModelSourceView, ...]:
+    """Read the bounded registry at each source's published revision."""
     from django.db.models import F
 
     from engine.models import ModelSourceRevision
@@ -284,7 +299,22 @@ def project_authorized_model_sources(scope: ModelSourceUseScope) -> tuple[ModelS
     )
 
 
-def compile_authorized_model_sources(scope: ModelSourceUseScope, selection, *, catalog):
+def _assert_source_use(
+    scope: ModelSourceUseScope, source: ModelSource, revision: ModelSourceRevision, config: ModelSourceConfiguration
+) -> None:
+    """Require enabled, ready, unexpired policy with an explicit source-use grant."""
+    if (
+        not source.enabled
+        or revision.state != "ready"
+        or config.price_valid_until <= timezone.now()
+        or not (config.allow_organization_members or scope.actor_id in config.allowed_user_ids)
+    ):
+        raise ContractError("source.use_denied")
+
+
+def compile_authorized_model_sources(
+    scope: ModelSourceUseScope, selection: object, *, catalog: ModelAccessCatalog
+) -> tuple[ModelAccessCatalog, tuple[AuthorityRevision, ...]]:
     """Authorize exact source revisions and capture fences for atomic admission."""
     from engine.models import ModelSource, ModelSourceRevision, SharingAuthorityFence
     from shared.model_access import OwnedReference
@@ -303,18 +333,12 @@ def compile_authorized_model_sources(scope: ModelSourceUseScope, selection, *, c
             .order_by("pk")
         )
         if len(rows) != len(ids):
-            raise ContractError("source.unavailable")
+            raise ContractError(SOURCE_UNAVAILABLE)
         sources, fences = {}, []
         for row in rows:
             revision = ModelSourceRevision.objects.get(source=row, revision=row.revision)
             config = ModelSourceConfiguration.model_validate(revision.configuration)
-            if (
-                not row.enabled
-                or revision.state != "ready"
-                or config.price_valid_until <= timezone.now()
-                or not (config.allow_organization_members or scope.actor_id in config.allowed_user_ids)
-            ):
-                raise ContractError("source.use_denied")
+            _assert_source_use(scope, row, revision, config)
             source_ref = OwnedReference(owner="engine", reference=f"model-source:{row.id}")
             fence, _ = SharingAuthorityFence.objects.get_or_create(
                 deployment_id=catalog.deployment_id,
@@ -323,7 +347,7 @@ def compile_authorized_model_sources(scope: ModelSourceUseScope, selection, *, c
                 defaults={"authority_revision": row.revision, "state": "allowed"},
             )
             if fence.authority_revision != row.revision or fence.state != "allowed":
-                raise ContractError("source.revision_conflict")
+                raise ContractError(REVISION_CONFLICT)
             fences.append(AuthorityRevision(authority_ref=source_ref, authority_revision=row.revision))
             sources[row.id] = (row.revision, config)
         compiled = compile_source_catalog(catalog, selection, sources)
@@ -352,7 +376,7 @@ def retire_unused_model_source_credentials(actor: User, organization_uuid: UUID,
             ModelSource.objects.select_for_update().filter(pk=source_id, organization_uuid=organization_uuid).first()
         )
         if source is None:
-            raise ContractError("source.unavailable")
+            raise ContractError(SOURCE_UNAVAILABLE)
         current = ModelSourceRevision.objects.get(source=source, revision=source.revision)
         # Deliberately conservative across all aliases/revisions in a frozen
         # catalog: a source that still has live work never loses old key material.

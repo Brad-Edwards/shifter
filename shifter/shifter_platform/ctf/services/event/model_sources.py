@@ -1,14 +1,19 @@
 """Organizer-owned source policies, independent of participant credentials."""
 
+from __future__ import annotations
+
 from django.contrib.auth.models import User
 
 from ctf.exceptions import CTFValidationError
+from ctf.models import CTFEvent
 from shared.model_access import ContractError
-from shared.model_access.sources import ModelSourceSelection
+from shared.model_access.sources import ModelSourceSelection, ModelSourceSponsorship
 from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthorizationError
 
 
-def set_event_model_sources(event, actor, selection, *, expected_revision):
+def set_event_model_sources(
+    event: CTFEvent, actor: User | None, selection: object, *, expected_revision: int | None
+) -> None:
     """Caller holds the event mutex; source policy changes use explicit CAS."""
     from ctf.bridges import cms_resolve_model_source_sponsorship
     from ctf.enums import EventCapability
@@ -26,6 +31,8 @@ def set_event_model_sources(event, actor, selection, *, expected_revision):
         if selected == ModelSourceSelection.model_validate(event.model_sources):
             return
         if selected.aliases:
+            if event.workspace_id is None:
+                raise ContractError("source.sponsor_unavailable")
             cms_resolve_model_source_sponsorship(actor, event.workspace_id, selected)
     except (ValueError, ContractError, WorkspaceAuthorizationError, OrganizationAuthorizationError):
         raise CTFValidationError("Selected model sources are unavailable.", code="source_unavailable") from None
@@ -48,7 +55,7 @@ def set_event_model_sources(event, actor, selection, *, expected_revision):
     )
 
 
-def project_event_model_sources(event):
+def project_event_model_sources(event: CTFEvent) -> ModelSourceSponsorship | None:
     """Revalidate the source sponsor's current event and tenant authority."""
     from ctf.bridges import cms_resolve_model_source_sponsorship
     from ctf.enums import EventCapability
@@ -57,6 +64,8 @@ def project_event_model_sources(event):
     selection = ModelSourceSelection.model_validate(event.model_sources)
     if not selection.aliases:
         return None
+    if event.model_source_actor_id is None or event.workspace_id is None:
+        raise ContractError("source.sponsor_unavailable")
     actor = User.objects.filter(pk=event.model_source_actor_id, is_active=True).first()
     if actor is None:
         raise ContractError("source.sponsor_unavailable")

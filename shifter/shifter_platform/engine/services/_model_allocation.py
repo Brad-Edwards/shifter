@@ -29,7 +29,7 @@ from ._model_allocation_authority import lock_assignment_groups, locked_policy
 from ._model_allocation_contracts import normalize_observations, validated
 from ._model_allocation_selection import _eligible, _policy_digest, _provider_candidates, _rank
 from ._model_cohort_capacity import cohort_commitments
-from ._model_quota import add_shard_demand, lock_quotas, persist_draws, vector_fits
+from ._model_quota import QuotaAdmissionState, add_shard_demand, lock_quotas, persist_draws, vector_fits
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +210,7 @@ def _select(
     catalog: ModelAccessCatalog,
     sharing: EffectivePolicy,
     profile: EffectiveProfile,
-    locked: dict[str, ModelQuotaIdentity],
-    observations: dict[str, ModelQuotaObservation],
+    quota: QuotaAdmissionState,
     groups: dict[str, AllocationGroup],
     commitments: dict[str, int] | None,
 ) -> tuple[dict[str, ModelShard], dict[str, int]]:
@@ -229,8 +228,8 @@ def _select(
         catalog=catalog,
         sharing=sharing,
         profile=profile,
-        locked=locked,
-        observations=observations,
+        locked=quota.locked,
+        observations=quota.observations,
         groups=groups,
         policy_digest=policy_digest,
         prices=prices,
@@ -376,8 +375,7 @@ def _persist_allocation(context: _CommitContext) -> ModelAllocation:
         request=request,
         effective=context.sharing,
         catalog=context.catalog,
-        locked=context.locked,
-        observations=context.observed,
+        quota=QuotaAdmissionState(context.locked, context.observed),
         commitments=context.commitments,
     )
     from shared.audit import AuditActorType, AuditEvent, audit_log
@@ -432,7 +430,9 @@ def _allocate_model_access(
         for prior in previous:
             release_model_allocation(prior.pk, operation_id=prior.operation_id)
         commitments = cohort_commitments(request, catalog, sharing, profile, observed, groups)
-        selected, vector = _select(request, catalog, sharing, profile, locked, observed, groups, commitments)
+        selected, vector = _select(
+            request, catalog, sharing, profile, QuotaAdmissionState(locked, observed), groups, commitments
+        )
         context = _CommitContext(
             request=request,
             range_obj=range_obj,

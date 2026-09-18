@@ -80,7 +80,7 @@ const EMPTY: FormState = {
 function fromEvent(event: CtfEventDetail): FormState {
   return {
     workspace: event.workspace ?? "",
-    model_sources: (event.model_sources as ModelSourceSelection) ?? { aliases: [] },
+    model_sources: event.model_sources ?? { aliases: [] },
     model_source_revision: event.model_source_revision ?? 0,
     name: event.name ?? "",
     description: event.description ?? "",

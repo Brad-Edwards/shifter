@@ -18,6 +18,8 @@ class ModelSource(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Enforce publication revision and lifecycle invariants in storage."""
+
         constraints = [
             models.CheckConstraint(condition=models.Q(revision__gte=1), name="model_source_revision_positive")
         ]
@@ -40,6 +42,8 @@ class ModelSourceRevision(models.Model):
     retired_at = models.DateTimeField(null=True)
 
     class Meta:
+        """Enforce publication revision and lifecycle invariants in storage."""
+
         constraints = [
             models.UniqueConstraint(fields=["source", "revision"], name="model_source_unique_revision"),
             models.CheckConstraint(condition=models.Q(revision__gte=1), name="model_source_version_positive"),

@@ -11,6 +11,7 @@ def model_source_secret_name(source_id: UUID, version_id: UUID) -> str:
 
 
 def validate_owned_payload(value: str) -> bytes:
+    """Encode a nonempty credential within the owned-secret storage bound."""
     if not isinstance(value, str) or not 1 <= len(value.encode("utf-8")) <= 32768:
         raise ValueError("invalid credential size")
     return value.encode("utf-8")

@@ -5,6 +5,7 @@ import re
 
 
 def provider_proxy() -> str | None:
+    """Select the fixed internal CONNECT tunnel; provider TLS remains end-to-end."""
     value = os.environ.get("MODEL_PROVIDER_PROXY", "")
     if not value:
         return None

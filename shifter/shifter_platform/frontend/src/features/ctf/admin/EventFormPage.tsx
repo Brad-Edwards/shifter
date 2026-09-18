@@ -25,16 +25,7 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <nav className="mb-3 text-sm text-muted-foreground" aria-label="Breadcrumb">
-        <Link className="hover:text-foreground" to={ctfAdminEventsPath()}>
-          Events
-        </Link>
-        <span className="px-1.5">/</span>
-        <span className="text-foreground">{mode === "create" ? "New event" : "Edit"}</span>
-      </nav>
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight">
-        {mode === "create" ? "New event" : `Edit ${existing.data?.name ?? "event"}`}
-      </h1>
+      <EventHeading mode={mode} name={existing.data?.name} />
 
       {nonFieldError ? (
         <Alert variant="destructive" className="mb-4">
@@ -64,31 +55,8 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               onChange={(v) => set("rules", v)}
             />
 
-            <div className="rounded-lg border border-border/60 p-4">
-              <CheckboxField
-                id="e-public-registration"
-                label="Publish public registration page"
-                checked={state.public_registration_enabled}
-                onChange={(checked) => set("public_registration_enabled", checked)}
-              />
-              <p className="mt-2 text-sm text-muted-foreground">
-                Off by default. Enabling this publishes the event name, description, dates, and registration deadline
-                to anyone with the link. Submitted names and email addresses enter a private organizer review queue;
-                they do not create participants automatically. The linked privacy notice is operator-supplied; review
-                it for this deployment before sharing the page.
-              </p>
-              {state.public_registration_enabled ? (
-                <Alert className="mt-3">
-                  <AlertTitle>Public disclosure preview</AlertTitle>
-                  <AlertDescription>
-                    <span className="font-medium">{state.name || "Untitled event"}</span>
-                    {state.description ? ` — ${state.description}` : " — No description"}. Event dates and the
-                    effective registration deadline will also be visible. The event logo, scenario, workspace,
-                    participant count, rules, and custom pages remain private.
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-            </div>
+            <PublicRegistration enabled={state.public_registration_enabled} name={state.name} description={state.description}
+              onChange={(checked) => set("public_registration_enabled", checked)} />
 
             <div className="grid gap-5 sm:grid-cols-2">
               <TextField
@@ -336,4 +304,54 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
       </form>
     </div>
   );
+}
+
+
+function PublicRegistration({ enabled, name, description, onChange }: Readonly<{
+  enabled: boolean; name: string; description: string; onChange: (enabled: boolean) => void;
+}>) {
+  return (
+            <div className="rounded-lg border border-border/60 p-4">
+              <CheckboxField
+                id="e-public-registration"
+                label="Publish public registration page"
+                checked={enabled}
+                onChange={(checked) => onChange(checked)}
+              />
+              <p className="mt-2 text-sm text-muted-foreground">
+                Off by default. Enabling this publishes the event name, description, dates, and registration deadline
+                to anyone with the link. Submitted names and email addresses enter a private organizer review queue;
+                they do not create participants automatically. The linked privacy notice is operator-supplied; review
+                it for this deployment before sharing the page.
+              </p>
+              {enabled ? (
+                <Alert className="mt-3">
+                  <AlertTitle>Public disclosure preview</AlertTitle>
+                  <AlertDescription>
+                    <span className="font-medium">{name || "Untitled event"}</span>
+                    {description ? ` — ${description}` : " — No description"}. Event dates and the
+                    effective registration deadline will also be visible. The event logo, scenario, workspace,
+                    participant count, rules, and custom pages remain private.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
+
+  );
+}
+
+
+function EventHeading({ mode, name }: Readonly<{ mode: "create" | "edit"; name?: string }>) {
+  return <>
+      <nav className="mb-3 text-sm text-muted-foreground" aria-label="Breadcrumb">
+        <Link className="hover:text-foreground" to={ctfAdminEventsPath()}>
+          Events
+        </Link>
+        <span className="px-1.5">/</span>
+        <span className="text-foreground">{mode === "create" ? "New event" : "Edit"}</span>
+      </nav>
+      <h1 className="mb-6 text-2xl font-semibold tracking-tight">
+        {mode === "create" ? "New event" : `Edit ${name ?? "event"}`}
+      </h1>
+  </>;
 }

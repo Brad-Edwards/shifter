@@ -27,7 +27,7 @@ def project_event_model_scope(
 
     with transaction.atomic():
         current = CTFEvent.objects.select_for_update().get(pk=event.pk)
-        default_demands = ()
+        default_demands: tuple[EventModelDemand, ...] = ()
         if not current.model_demand:
             if not getattr(settings, "MODEL_ACCESS_ENABLED", False):
                 return None

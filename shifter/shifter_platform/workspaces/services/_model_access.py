@@ -21,6 +21,11 @@ from workspaces.services._organization import (
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from workspaces.services._authorization import WorkspaceAuthorization
+
+
+WORKSPACE_ACCESS_DENIED = "Workspace access denied"
+
 
 @dataclass(frozen=True, slots=True)
 class ModelAccessWorkspaceScope:
@@ -75,7 +80,7 @@ def _parse_uuid(value: str | uuid.UUID, error: type[Exception]) -> uuid.UUID:
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
     except (AttributeError, TypeError, ValueError) as exc:
-        raise error("Workspace access denied") from exc
+        raise error(WORKSPACE_ACCESS_DENIED) from exc
 
 
 def resolve_model_access_workspace(actor: User, workspace_uuid: str | uuid.UUID) -> ModelAccessWorkspaceScope:
@@ -84,7 +89,7 @@ def resolve_model_access_workspace(actor: User, workspace_uuid: str | uuid.UUID)
     with transaction.atomic():
         workspace = Workspace.objects.select_for_update().filter(uuid=parsed).first()
         if workspace is None or workspace.archived_at is not None:
-            raise WorkspaceAuthorizationError("Workspace access denied")
+            raise WorkspaceAuthorizationError(WORKSPACE_ACCESS_DENIED)
         authorize_bound_workspace(actor, workspace.pk, WorkspaceOperation.PUBLISH_MODEL_ACCESS)
         return ModelAccessWorkspaceScope(
             workspace_id=workspace.pk,
@@ -116,7 +121,7 @@ def resolve_model_access_organization(actor: User, organization_uuid: str | uuid
 
 def authorize_model_source_workspace(
     actor: User, *, workspace_id: int | None = None, workspace_uuid: str | uuid.UUID | None = None
-):
+) -> WorkspaceAuthorization:
     """Authorize model-source administration through tenant or workspace authority.
 
     This narrow operation grants no range access or other workspace capability.
@@ -128,7 +133,7 @@ def authorize_model_source_workspace(
 
     current_actor = User.objects.filter(pk=actor.pk, is_active=True).first()
     if current_actor is None:
-        raise WorkspaceAuthorizationError("Workspace access denied")
+        raise WorkspaceAuthorizationError(WORKSPACE_ACCESS_DENIED)
     actor = current_actor
     query = Workspace.objects.select_related("organization").filter(archived_at__isnull=True)
     if workspace_uuid is not None:
@@ -136,10 +141,10 @@ def authorize_model_source_workspace(
     elif workspace_id is not None:
         query = query.filter(pk=workspace_id)
     else:
-        raise WorkspaceAuthorizationError("Workspace access denied")
+        raise WorkspaceAuthorizationError(WORKSPACE_ACCESS_DENIED)
     workspace = query.first()
     if workspace is None:
-        raise WorkspaceAuthorizationError("Workspace access denied")
+        raise WorkspaceAuthorizationError(WORKSPACE_ACCESS_DENIED)
     try:
         resolve_administrable_organization(actor, workspace.organization.uuid)
     except OrganizationAuthorizationError:
@@ -153,7 +158,9 @@ def authorize_model_source_workspace(
     )
 
 
-def list_model_source_users(actor: User, organization_uuid: uuid.UUID, *, search="", page=1):
+def list_model_source_users(
+    actor: User, organization_uuid: uuid.UUID, *, search: str = "", page: int = 1
+) -> dict[str, object]:
     """Tenant-admin directory for explicit source-use grants, with bounded paging."""
     from django.contrib.auth.models import User
     from django.db.models import Q

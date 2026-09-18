@@ -6,7 +6,15 @@ from uuid import UUID
 from pydantic import Field, field_validator, model_validator
 
 from shared.model_access.catalog_v3 import ModelAccessCatalogV3
-from shared.model_access.core_models import ClosedModel, Digest, Identifier, PositiveInt, PriceSchedule, _require_unique
+from shared.model_access.core_models import (
+    ClosedModel,
+    Digest,
+    Identifier,
+    ModelShard,
+    PositiveInt,
+    PriceSchedule,
+    _require_unique,
+)
 
 
 class SourceBinding(ClosedModel):
@@ -40,31 +48,37 @@ class ModelAccessCatalogV4(ModelAccessCatalogV3):
         if set(shards) != {item.shard_id for item in self.source_bindings}:
             raise ValueError("every shard requires exactly one source binding")
         for binding in self.source_bindings:
-            if binding.source_id is None:
-                if binding.price_schedule_id is not None or shards[
-                    binding.shard_id
-                ].credential_ref.reference.startswith("source:"):
-                    raise ValueError("legacy source bindings must retain alias pricing")
-                continue
-            expected = f"source:{binding.source_id}:{binding.source_revision}"
-            if (
-                binding.credential_revision != binding.source_revision
-                or shards[binding.shard_id].credential_ref.reference != expected
-                or shards[binding.shard_id].credential_ref.owner != "broker"
-            ):
-                raise ValueError("source credential must match its immutable binding")
-            price = prices.get(binding.price_schedule_id) if binding.price_schedule_id is not None else None
-            if price is None or not set(shards[binding.shard_id].billing_components).issubset(
-                item.component for item in price.prices
-            ):
-                raise ValueError("source binding requires complete provider pricing")
-            for alias in self.aliases:
-                if (
-                    binding.shard_id in alias.eligible_shard_ids
-                    and price.currency != prices[alias.price_schedule_id].currency
-                ):
-                    raise ValueError("source pricing must use the alias currency")
+            self._validate_binding(binding, shards[binding.shard_id], prices)
         return self
+
+    def _validate_binding(self, binding: SourceBinding, shard: ModelShard, prices: dict[str, PriceSchedule]) -> None:
+        """Bind one source revision to its credential, complete prices, and currency."""
+        if binding.source_id is None:
+            if binding.price_schedule_id is not None or shard.credential_ref.reference.startswith("source:"):
+                raise ValueError("legacy source bindings must retain alias pricing")
+            return
+        expected = f"source:{binding.source_id}:{binding.source_revision}"
+        if (
+            binding.credential_revision != binding.source_revision
+            or shard.credential_ref.reference != expected
+            or shard.credential_ref.owner != "broker"
+        ):
+            raise ValueError("source credential must match its immutable binding")
+        self._validate_binding_price(binding, shard, prices)
+
+    def _validate_binding_price(
+        self, binding: SourceBinding, shard: ModelShard, prices: dict[str, PriceSchedule]
+    ) -> None:
+        """Require complete source billing and the inherited alias currency."""
+        price = prices.get(binding.price_schedule_id) if binding.price_schedule_id is not None else None
+        if price is None or not set(shard.billing_components).issubset(item.component for item in price.prices):
+            raise ValueError("source binding requires complete provider pricing")
+        for alias in self.aliases:
+            if (
+                binding.shard_id in alias.eligible_shard_ids
+                and price.currency != prices[alias.price_schedule_id].currency
+            ):
+                raise ValueError("source pricing must use the alias currency")
 
     @model_validator(mode="after")
     def validate_policy_derivation(self) -> Self:
@@ -82,6 +96,12 @@ class ModelAccessCatalogV4(ModelAccessCatalogV3):
         for field in type(base).model_fields:
             if field not in mutable and getattr(self, field) != getattr(base, field):
                 raise ValueError("source selection cannot change spending policy")
+        self._validate_profiles(base)
+        self._validate_preserved_resources(base)
+        return self
+
+    def _validate_profiles(self, base: ModelAccessCatalogV3) -> None:
+        """A source overlay can narrow capabilities but cannot change profile policy."""
         profiles = {p.profile_id: p for p in self.profiles}
         if set(profiles) != {p.profile_id for p in base.profiles}:
             raise ValueError("source selection cannot add profiles")
@@ -92,8 +112,6 @@ class ModelAccessCatalogV4(ModelAccessCatalogV3):
                 or current.model_copy(update={"capabilities": old.capabilities}) != old
             ):
                 raise ValueError("source selection may only narrow profile capabilities")
-        self._validate_preserved_resources(base)
-        return self
 
     def _validate_preserved_resources(self, base: ModelAccessCatalogV3) -> None:
         """Legacy resources remain unchanged; quota ceilings may only tighten."""
@@ -101,11 +119,19 @@ class ModelAccessCatalogV4(ModelAccessCatalogV3):
             actual = {getattr(item, key): item for item in getattr(self, field)}
             if any(actual.get(getattr(item, key)) != item for item in getattr(base, field)):
                 raise ValueError("source selection cannot alter incumbent resources")
+        self._validate_preserved_quotas(base)
+        self._validate_preserved_aliases(base)
+
+    def _validate_preserved_quotas(self, base: ModelAccessCatalogV3) -> None:
+        """Keep each incumbent quota identity and permit only a tighter ceiling."""
         pools = {item.quota_pool_id: item for item in self.quota_pools}
         for old in base.quota_pools:
             current = pools.get(old.quota_pool_id)
             if current is None or current.limit > old.limit or current.model_copy(update={"limit": old.limit}) != old:
                 raise ValueError("source selection cannot broaden incumbent quota")
+
+    def _validate_preserved_aliases(self, base: ModelAccessCatalogV3) -> None:
+        """Only routing and source-specific pricing can change on existing aliases."""
         aliases = {item.logical_alias: item for item in self.aliases}
         if set(aliases) != {item.logical_alias for item in base.aliases}:
             raise ValueError("source selection cannot add logical aliases")

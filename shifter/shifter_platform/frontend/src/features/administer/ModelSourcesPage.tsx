@@ -55,7 +55,7 @@ function SourceList({ organization }: Readonly<{ organization: string }>) {
       const result = await retireModelSourceCredentials(organization, cleanup.id);
       setCleanupResult(result.retired ? `Retired ${result.retired} unused credential versions.` : "No unused credentials are eligible yet. Active ranges, outstanding usage and recently stored credentials are retained.");
       setCleanup(null);
-    } catch (failure) { setError(failure); } finally { setPending(false); }
+    } catch (error_) { setError(error_); } finally { setPending(false); }
   }
   async function changeState() {
     if (!changing || pending) return;
@@ -63,10 +63,10 @@ function SourceList({ organization }: Readonly<{ organization: string }>) {
     try {
       await saveModelSource(organization, { configuration: changing.configuration }, { ...changing, enabled: !changing.enabled });
       await Promise.all([client.invalidateQueries({ queryKey: sourceKey(organization) }), client.invalidateQueries({ queryKey: ["model-source-options"] })]); setChanging(null);
-    } catch (failure) { setError(failure); } finally { setPending(false); }
+    } catch (error_) { setError(error_); } finally { setPending(false); }
   }
   return <div className="space-y-4">
-    {cleanupResult ? <p role="status">{cleanupResult}</p> : null}
+    {cleanupResult ? <output>{cleanupResult}</output> : null}
     {query.isPending ? <output>Loading model sources…</output> : null}
     {query.error ? <Alert variant="destructive"><AlertDescription>{describeMutationError(query.error, "Sources could not be loaded.")}</AlertDescription></Alert> : null}
     {query.isSuccess ? <>
@@ -74,14 +74,9 @@ function SourceList({ organization }: Readonly<{ organization: string }>) {
       {editing ? <ModelSourceForm key={editing === "new" ? "new" : `${editing.id}-${editing.revision}`} organization={organization}
         source={editing === "new" ? undefined : editing} onSaved={() => setEditing(null)} /> : null}
       {query.data.results.length === 0 ? <p>No model sources are configured.</p> : null}
-      {query.data.results.map((source) => <article key={source.id} className="space-y-2 rounded border p-4">
-        <h2 className="font-semibold">{source.configuration.name}</h2>
-        <p>{source.configuration.model} · {source.configuration.region} · Revision {source.revision}</p>
-        <p>{source.state === "ready" ? "Configured" : source.state}. {source.configuration.allow_organization_members ? "Organization members may use this source." : "Use is restricted to explicitly authorized users."}</p>
-        <div className="flex gap-2"><Button variant="outline" onClick={() => setEditing(source)}>Edit {source.configuration.name}</Button>
-          <Button variant="outline" onClick={() => { setError(null); setChanging(source); }}>{source.enabled ? "Disable" : "Enable"} {source.configuration.name}</Button>
-          <Button variant="outline" onClick={() => { setError(null); setCleanup(source); }}>Retire unused credentials for {source.configuration.name}</Button></div>
-      </article>)}
+      {query.data.results.map((source) => <SourceCard key={source.id} source={source}
+        onEdit={() => setEditing(source)} onToggle={() => { setError(null); setChanging(source); }}
+        onRetire={() => { setError(null); setCleanup(source); }} />)}
     </> : null}
     <ConfirmDialog open={changing !== null} onOpenChange={(open) => { if (!open && !pending) setChanging(null); }}
       title={`${changing?.enabled ? "Disable" : "Enable"} model source?`} confirmLabel="Confirm source change" pending={pending} error={error}
@@ -94,4 +89,18 @@ function SourceList({ organization }: Readonly<{ organization: string }>) {
       Deletes obsolete stored credentials after their grace period. Current credentials and versions needed by active ranges or outstanding usage are retained. A failed cleanup can be retried here.
     </ConfirmDialog>
   </div>;
+}
+
+
+function SourceCard({ source, onEdit, onToggle, onRetire }: Readonly<{
+  source: ModelSource; onEdit: () => void; onToggle: () => void; onRetire: () => void;
+}>) {
+  return <article className="space-y-2 rounded border p-4">
+        <h2 className="font-semibold">{source.configuration.name}</h2>
+        <p>{source.configuration.model} · {source.configuration.region} · Revision {source.revision}</p>
+        <p>{source.state === "ready" ? "Configured" : source.state}. {source.configuration.allow_organization_members ? "Organization members may use this source." : "Use is restricted to explicitly authorized users."}</p>
+        <div className="flex gap-2"><Button variant="outline" onClick={onEdit}>Edit {source.configuration.name}</Button>
+          <Button variant="outline" onClick={onToggle}>{source.enabled ? "Disable" : "Enable"} {source.configuration.name}</Button>
+          <Button variant="outline" onClick={onRetire}>Retire unused credentials for {source.configuration.name}</Button></div>
+      </article>;
 }

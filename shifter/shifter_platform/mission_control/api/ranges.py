@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any, cast
-from uuid import UUID
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
@@ -44,7 +43,7 @@ from mission_control.api._base import (
     _raw_request,
     _validated,
 )
-from mission_control.api._retry_launch import RetrySafeLaunchMixin
+from mission_control.api._retry_launch import LaunchChoices, RetrySafeLaunchMixin
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
 from mission_control.api.rate_limit import RangeLaunchRateThrottle
 from mission_control.api.serializers import (
@@ -227,10 +226,8 @@ class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
             user,
             scenario,
             agents_by_os,
-            data.get("workspace_uuid"),
             caller_key,
-            self._agents_selection(data),
-            data.get("model_sources"),
+            LaunchChoices(data.get("workspace_uuid"), self._agents_selection(data), data.get("model_sources")),
         )
 
     def _resolve_agents_by_os(self, user: User, data: dict[str, Any]) -> tuple[dict[str, int] | None, Response | None]:
@@ -257,22 +254,18 @@ class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
         user: User,
         scenario: str,
         agents_by_os: dict[str, int] | None,
-        workspace_uuid: UUID | None = None,
-        caller_key: str | None = None,
-        agents_selection: dict[str, Any] | None = None,
-        model_sources: dict | None = None,
+        caller_key: str | None,
+        choices: LaunchChoices,
     ) -> Response:
         """Create a range and record the launch audit event."""
         if caller_key is not None:
-            return self._create_range_first_use(
-                request, user, scenario, agents_by_os, workspace_uuid, caller_key, agents_selection or {}, model_sources
-            )
-        source_kwargs: dict[str, Any] = {"model_sources": model_sources} if model_sources else {}
+            return self._create_range_first_use(request, user, scenario, agents_by_os, caller_key, choices)
+        source_kwargs: dict[str, Any] = {"model_sources": choices.model_sources} if choices.model_sources else {}
         try:
             range_ctx = cms_create_range(
                 user,
                 scenario,
-                workspace_uuid=workspace_uuid,
+                workspace_uuid=choices.workspace_uuid,
                 **source_kwargs,
             )
         except CMSError as exc:

@@ -165,6 +165,7 @@ def _finish(payload: JsonObject) -> JsonObject:
 
 
 def _source(payload: JsonObject) -> JsonObject:
+    """Project execution credentials only for an authenticated model grant."""
     from engine.services._model_source_control import model_source_execution
 
     request = SourceExecutionRequest.model_validate(payload)

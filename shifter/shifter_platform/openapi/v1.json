@@ -1625,6 +1625,7 @@
     "/api/v1/cms/model-source-options/": {
       "get": {
         "operationId": "cms_model_source_options_retrieve",
+        "description": "Discover source choices under the current session authority.",
         "parameters": [
           {
             "in": "query",
@@ -1707,6 +1708,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/model-ranges/": {
       "get": {
         "operationId": "cms_organizations_model_ranges_retrieve",
+        "description": "List model-enabled ranges in administrable tenant workspaces.",
         "parameters": [
           {
             "in": "path",
@@ -1776,6 +1778,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/model-source-users/": {
       "get": {
         "operationId": "cms_organizations_model_source_users_retrieve",
+        "description": "Search tenant members eligible for explicit source-use grants.",
         "parameters": [
           {
             "in": "path",
@@ -1854,6 +1857,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/model-sources/": {
       "get": {
         "operationId": "cms_organizations_model_sources_retrieve",
+        "description": "List and create sources for an administrable organization.",
         "parameters": [
           {
             "in": "path",
@@ -1911,6 +1915,7 @@
       },
       "post": {
         "operationId": "cms_organizations_model_sources_create",
+        "description": "List and create sources for an administrable organization.",
         "parameters": [
           {
             "in": "path",
@@ -1980,6 +1985,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/": {
       "put": {
         "operationId": "cms_organizations_model_sources_update",
+        "description": "Replace a source only at its expected revision.",
         "parameters": [
           {
             "in": "path",
@@ -2058,6 +2064,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/retire-credentials/": {
       "post": {
         "operationId": "cms_organizations_model_sources_retire_credentials_create",
+        "description": "Retire obsolete credentials after checking live references.",
         "parameters": [
           {
             "in": "path",
@@ -2126,6 +2133,7 @@
     "/api/v1/cms/organizations/{organization_uuid}/model-sources/available/": {
       "get": {
         "operationId": "cms_organizations_model_sources_available_retrieve",
+        "description": "List sources explicitly available to the current actor.",
         "parameters": [
           {
             "in": "path",
@@ -3192,6 +3200,7 @@
     "/api/v1/cms/ranges/{request_id}/model-sources/": {
       "get": {
         "operationId": "cms_ranges_model_sources_retrieve",
+        "description": "Read or replace model sources under range administration authority.",
         "parameters": [
           {
             "in": "path",
@@ -3249,6 +3258,7 @@
       },
       "put": {
         "operationId": "cms_ranges_model_sources_update",
+        "description": "Read or replace model sources under range administration authority.",
         "parameters": [
           {
             "in": "path",
@@ -15320,6 +15330,7 @@
       },
       "AliasSourceOptions": {
         "type": "object",
+        "description": "Compatible sources and mixing policy for one logical alias.",
         "properties": {
           "logical_alias": {
             "type": "string"
@@ -15342,6 +15353,7 @@
       },
       "AliasSourceSelection": {
         "type": "object",
+        "description": "Chosen source revisions for a logical model alias.",
         "properties": {
           "logical_alias": {
             "type": "string"
@@ -16360,6 +16372,7 @@
       },
       "CredentialRetirement": {
         "type": "object",
+        "description": "Number of obsolete credential versions retired.",
         "properties": {
           "retired": {
             "type": "integer",
@@ -17867,6 +17880,7 @@
       },
       "ModelAssignment": {
         "type": "object",
+        "description": "Effective provider assignment for a workload alias.",
         "properties": {
           "workload": {
             "type": "string"
@@ -17894,6 +17908,7 @@
       },
       "ModelPolicyRuntime": {
         "type": "object",
+        "description": "Runtime availability and effective model assignments.",
         "properties": {
           "state": {
             "$ref": "#/components/schemas/ModelPolicyRuntimeStateEnum"
@@ -17921,6 +17936,7 @@
       },
       "ModelRangePage": {
         "type": "object",
+        "description": "Paged tenant ranges with source policy metadata.",
         "properties": {
           "count": {
             "type": "integer"
@@ -17947,6 +17963,7 @@
       },
       "ModelRangeSummary": {
         "type": "object",
+        "description": "Range identity and source policy status for tenant administration.",
         "properties": {
           "request_id": {
             "type": "string",
@@ -18079,6 +18096,7 @@
       },
       "ModelSourcePage": {
         "type": "object",
+        "description": "Collection of authorized source metadata.",
         "properties": {
           "results": {
             "type": "array",
@@ -18093,6 +18111,7 @@
       },
       "ModelSourceSelection": {
         "type": "object",
+        "description": "Explicit source choices grouped by logical alias.",
         "properties": {
           "aliases": {
             "type": "array",
@@ -18107,7 +18126,7 @@
       },
       "ModelSourceUpdate": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "Revision-fenced replacement of source configuration and status.",
         "properties": {
           "configuration": {
             "$ref": "#/components/schemas/ModelSourceConfiguration"
@@ -18131,6 +18150,7 @@
       },
       "ModelSourceUser": {
         "type": "object",
+        "description": "Tenant directory identity for an explicit source-use grant.",
         "properties": {
           "id": {
             "type": "integer"
@@ -18150,6 +18170,7 @@
       },
       "ModelSourceUserPage": {
         "type": "object",
+        "description": "Bounded directory results and continuation indicator.",
         "properties": {
           "has_next": {
             "type": "boolean"
@@ -18168,6 +18189,7 @@
       },
       "ModelSourceView": {
         "type": "object",
+        "description": "Public source metadata with credential presence only.",
         "properties": {
           "id": {
             "type": "string",
@@ -18216,7 +18238,7 @@
       },
       "ModelSourceWrite": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "Source configuration and an optional transient credential.",
         "properties": {
           "configuration": {
             "$ref": "#/components/schemas/ModelSourceConfiguration"
@@ -21401,6 +21423,7 @@
       },
       "RangeModelSources": {
         "type": "object",
+        "description": "Range source policy and its current runtime status.",
         "properties": {
           "request_id": {
             "type": "string",
@@ -21438,7 +21461,7 @@
       },
       "RangeModelSourcesWrite": {
         "type": "object",
-        "description": "Reject ignored fields that could disguise attempted authority overrides.",
+        "description": "Revision-fenced source selection for an existing range.",
         "properties": {
           "expected_revision": {
             "type": "integer",
@@ -22569,6 +22592,7 @@
       },
       "SourceChoice": {
         "type": "object",
+        "description": "Immutable source revision and its allocation weight.",
         "properties": {
           "source_id": {
             "type": "string",
@@ -22592,6 +22616,7 @@
       },
       "SourceOptions": {
         "type": "object",
+        "description": "Authorized workspaces and scenario-specific source choices.",
         "properties": {
           "workspaces": {
             "type": "array",
@@ -22623,6 +22648,7 @@
       },
       "SourceWorkspace": {
         "type": "object",
+        "description": "Workspace identity displayed alongside tenant source options.",
         "properties": {
           "uuid": {
             "type": "string",

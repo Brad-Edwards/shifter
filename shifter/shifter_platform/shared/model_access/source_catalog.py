@@ -2,11 +2,17 @@
 
 from collections.abc import Mapping
 from hashlib import sha256
+from typing import Any
 from uuid import UUID
 
 from shared.model_access import ContractError, ModelAccessCatalog, seal_catalog
 from shared.model_access.catalog_v3 import ModelAccessCatalogV3
-from shared.model_access.sources import ModelSourceConfiguration, ModelSourceSelection, SourceChoice
+from shared.model_access.sources import (
+    AliasSourceSelection,
+    ModelSourceConfiguration,
+    ModelSourceSelection,
+    SourceChoice,
+)
 
 
 def compile_source_catalog(
@@ -43,26 +49,44 @@ def compile_source_catalog(
         alias = aliases.get(selected.logical_alias)
         if alias is None:
             raise ContractError("source.alias_unavailable")
-        candidates = []
-        for choice in selected.sources:
-            entry = sources.get(choice.source_id)
-            if entry is None or entry[0] != choice.revision:
-                raise ContractError("source.revision_conflict")
-            config = entry[1]
-            candidates.append(_append_source(payload, alias, choice, config))
-            if config.provider == "openrouter-v1":
-                for profile in payload["profiles"]:
-                    if profile["profile_id"] == alias["profile_id"]:
-                        profile["capabilities"] = [cap for cap in profile["capabilities"] if cap != "token-count"]
-        alias["eligible_shard_ids"] = candidates
-        alias["strategy"] = "weighted-rendezvous-v1" if len(candidates) > 1 else "fixed-v1"
-        # The inherited field validates protocol/currency; v4 settles using the
-        # chosen shard's own immutable schedule, not this compatibility field.
-        alias["price_schedule_id"] = f"price-{candidates[0]}"
+        _select_alias_sources(payload, alias, selected, sources)
     return seal_catalog(payload)
 
 
-def _append_source(payload: dict, alias: dict, choice: SourceChoice, config: ModelSourceConfiguration) -> str:
+def _select_alias_sources(
+    payload: dict[str, Any],
+    alias: dict[str, Any],
+    selected: AliasSourceSelection,
+    sources: Mapping[UUID, tuple[int, ModelSourceConfiguration]],
+) -> None:
+    """Apply immutable authorized revisions to one existing logical alias."""
+    candidates = []
+    for choice in selected.sources:
+        entry = sources.get(choice.source_id)
+        if entry is None or entry[0] != choice.revision:
+            raise ContractError("source.revision_conflict")
+        config = entry[1]
+        candidates.append(_append_source(payload, alias, choice, config))
+        if config.provider == "openrouter-v1":
+            _remove_token_count(payload, alias["profile_id"])
+    alias["eligible_shard_ids"] = candidates
+    alias["strategy"] = "weighted-rendezvous-v1" if len(candidates) > 1 else "fixed-v1"
+    # The inherited field validates protocol/currency; v4 settles using the
+    # chosen shard's own immutable schedule, not this compatibility field.
+    alias["price_schedule_id"] = f"price-{candidates[0]}"
+
+
+def _remove_token_count(payload: dict[str, Any], profile_id: str) -> None:
+    """Remove unsupported token counting from profiles using routed providers."""
+    for profile in payload["profiles"]:
+        if profile["profile_id"] == profile_id:
+            profile["capabilities"] = [cap for cap in profile["capabilities"] if cap != "token-count"]
+
+
+def _append_source(
+    payload: dict[str, Any], alias: dict[str, Any], choice: SourceChoice, config: ModelSourceConfiguration
+) -> str:
+    """Append a source shard, its physical quota, immutable price and binding."""
     target = config.target(choice.source_id, choice.revision)
     shard_id = f"{target.shard_id}-{sha256(alias['logical_alias'].encode()).hexdigest()[:8]}"
     # Renaming or duplicating a source cannot create another physical quota.
@@ -140,7 +164,7 @@ def _append_source(payload: dict, alias: dict, choice: SourceChoice, config: Mod
     return shard_id
 
 
-def _incumbent_quotas(payload: dict, config: ModelSourceConfiguration) -> set[str]:
+def _incumbent_quotas(payload: dict[str, Any], config: ModelSourceConfiguration) -> set[str]:
     """Keep baseline quota identities when a tenant selects the same cloud source.
 
     The account/region ceiling also applies, but it must not hide reservations

@@ -34,24 +34,15 @@ class ProviderTarget(ClosedModel):
         import re
 
         if self.authentication == "stored-credential" and not re.fullmatch(
-            r"source:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}:[1-9][0-9]{0,9}", self.credential_reference
+            r"source:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}:[1-9]\d{0,9}",
+            self.credential_reference,
+            flags=re.ASCII,
         ):
             raise ValueError("stored credentials require an owned source revision")
         if self.provider in {"anthropic-v1", "openai-v1", "openrouter-v1"}:
-            if self.region != "provider-managed":
-                raise ValueError("direct provider origins require provider-managed geography")
-            if self.authentication != "stored-credential" or self.project or self.principal or self.count_region:
-                raise ValueError("direct providers require a stored credential without a cloud principal")
+            self._validate_direct_identity()
         elif self.provider == "vertex-v1":
-            if not self.project or self.count_region not in {"us", "eu", "asia-southeast1"}:
-                raise ValueError("Vertex requires approved project and count geography")
-            if not re.fullmatch(
-                r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(self.project) + r"\.iam\.gserviceaccount\.com",
-                self.principal,
-            ):
-                raise ValueError("Vertex principal must belong to the approved project")
-            if not re.fullmatch(r"publishers/anthropic/models/[a-z0-9@-]+", self.model):
-                raise ValueError("Vertex requires a pinned Anthropic publisher model")
+            self._validate_vertex_identity()
         elif (
             self.project
             or self.count_region
@@ -59,6 +50,27 @@ class ProviderTarget(ClosedModel):
         ):
             raise ValueError("Bedrock requires an approved invocation role")
         return self
+
+    def _validate_direct_identity(self) -> None:
+        """Direct provider keys carry no cloud identity or caller-selected geography."""
+        if self.region != "provider-managed":
+            raise ValueError("direct provider origins require provider-managed geography")
+        if self.authentication != "stored-credential" or self.project or self.principal or self.count_region:
+            raise ValueError("direct providers require a stored credential without a cloud principal")
+
+    def _validate_vertex_identity(self) -> None:
+        """Validate the approved project, service account, and publisher model."""
+        import re
+
+        if not self.project or self.count_region not in {"us", "eu", "asia-southeast1"}:
+            raise ValueError("Vertex requires approved project and count geography")
+        if not re.fullmatch(
+            r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(self.project) + r"\.iam\.gserviceaccount\.com",
+            self.principal,
+        ):
+            raise ValueError("Vertex principal must belong to the approved project")
+        if not re.fullmatch(r"publishers/anthropic/models/[a-z0-9@-]+", self.model):
+            raise ValueError("Vertex requires a pinned Anthropic publisher model")
 
     def bind(self, shard: ModelShard) -> Self:
         if (

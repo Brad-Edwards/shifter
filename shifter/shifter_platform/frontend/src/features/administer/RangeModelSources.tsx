@@ -7,6 +7,12 @@ import { ModelSourcePicker } from "@/components/ModelSourcePicker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+const runtimeMessages = {
+  active: "Model access is active.",
+  refresh_pending: "Waiting for the guest to refresh its model access.",
+  unavailable: "Model access is unavailable.",
+};
+
 export function RangeModelSources({ organization }: Readonly<{ organization: string }>) {
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState("");
@@ -14,13 +20,13 @@ export function RangeModelSources({ organization }: Readonly<{ organization: str
   return <section aria-label="Range model sources" className="space-y-4 border-t pt-6">
     <h2 className="text-lg font-semibold">Existing ranges</h2>
     <p>Change a running range’s model sources. New requests pause until its guest adopts the replacement grant. Existing usage and outstanding charges remain accounted for.</p>
-    {ranges.isPending && <p role="status">Loading ranges…</p>}
+    {ranges.isPending && <output>Loading ranges…</output>}
     {ranges.error && <Alert variant="destructive"><AlertDescription>{describeMutationError(ranges.error, "Ranges could not be loaded.")}</AlertDescription></Alert>}
     {ranges.data?.results.length === 0 && <p>No ranges are available in this organization.</p>}
     {ranges.data?.results.map((range) => <article key={range.request_id} className="space-y-2 rounded border p-3">
       <h3 className="font-medium">{range.scenario} <span className="font-mono text-sm">{range.request_id.slice(0, 8)}</span></h3>
       <p>{range.status} · Model policy revision {range.revision}</p>
-      {range.error && <p role="status">Model access needs attention.</p>}
+      {range.error && <output>Model access needs attention.</output>}
       <Button variant="outline" onClick={() => setEditing(range.request_id)}>Manage model sources</Button>
       {editing === range.request_id && <RangeEditor request={range.request_id} onClose={() => setEditing("")} />}
     </article>)}
@@ -33,7 +39,7 @@ export function RangeModelSources({ organization }: Readonly<{ organization: str
 
 function RangeEditor({ request, onClose }: Readonly<{ request: string; onClose: () => void }>) {
   const query = useRangeModelSources(request);
-  if (query.isPending) return <p role="status">Loading current model policy…</p>;
+  if (query.isPending) return <output>Loading current model policy…</output>;
   if (query.error) return <Alert variant="destructive"><AlertDescription>{describeMutationError(query.error, "The range's model policy could not be loaded.")}</AlertDescription></Alert>;
   if (!query.data) return null;
   return <PolicyForm key={query.data.revision} policy={query.data} onClose={onClose} />;
@@ -51,11 +57,11 @@ function PolicyForm({ policy, onClose }: Readonly<{ policy: RangePolicy; onClose
       const result = await saveRangeModelSources(policy.request_id, policy.revision, selection);
       client.setQueryData(rangeSourceKey(policy.request_id), result);
       await client.invalidateQueries({ queryKey: ["model-ranges"] });
-    } catch (failure) { setError(failure); } finally { setPending(false); }
+    } catch (error_) { setError(error_); } finally { setPending(false); }
   }
   return <form aria-label="Edit range model sources" className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
     {Boolean(error) && <Alert variant="destructive"><AlertDescription>{describeMutationError(error, "The source change could not be saved. Reload the policy before retrying.")}</AlertDescription></Alert>}
-    <p role="status">{policy.runtime.state === "active" ? "Model access is active." : policy.runtime.state === "refresh_pending" ? "Waiting for the guest to refresh its model access." : "Model access is unavailable."}</p>
+    <output>{runtimeMessages[policy.runtime.state]}</output>
     {policy.error && <p role="alert">The selected policy could not be admitted. Correct the sources or their limits and retry. The old grant remains revoked.</p>}
     {policy.runtime.assignments.map((item) => <p key={`${item.workload}-${item.logical_alias}`} className="text-sm">{item.workload} / {item.logical_alias}: {item.provider} · {item.model} · {item.region}</p>)}
     <ModelSourcePicker scenario={policy.scenario} workspace={policy.workspace} purpose="admin" value={selection} onChange={setSelection} disabled={pending} />

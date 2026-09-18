@@ -5,6 +5,7 @@ from uuid import UUID
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -28,7 +29,7 @@ from .preparation_adapters import PreparationSerializer
 class ModelSourceConfigurationSerializer(PreparationSerializer):
     """Editable metadata; the service validates provider-specific combinations."""
 
-    def to_internal_value(self, data):
+    def to_internal_value(self, data: object) -> dict[str, object]:
         from shared.model_access.sources import ModelSourceConfiguration
 
         try:
@@ -60,16 +61,22 @@ class ModelSourceConfigurationSerializer(PreparationSerializer):
 
 
 class ModelSourceWriteSerializer(PreparationSerializer):
+    """Source configuration and an optional transient credential."""
+
     configuration = ModelSourceConfigurationSerializer()
     credential = serializers.JSONField(required=False, write_only=True)
 
 
 class ModelSourceUpdateSerializer(ModelSourceWriteSerializer):
+    """Revision-fenced replacement of source configuration and status."""
+
     expected_revision = ModelSourceRevisionField(min_value=0)
     enabled = serializers.BooleanField(default=True)
 
 
 class ModelSourceViewSerializer(serializers.Serializer):
+    """Public source metadata with credential presence only."""
+
     id = serializers.UUIDField()
     organization_uuid = serializers.UUIDField()
     revision = serializers.IntegerField()
@@ -80,10 +87,13 @@ class ModelSourceViewSerializer(serializers.Serializer):
 
 
 class ModelSourcePageSerializer(serializers.Serializer):
+    """Collection of authorized source metadata."""
+
     results = ModelSourceViewSerializer(many=True)
 
 
-def _error(request, exc):
+def _error(request: Request, exc: OrganizationAuthorizationError | ContractError) -> Response:
+    """Map service failures to opaque, actionable management API errors."""
     if isinstance(exc, OrganizationAuthorizationError):
         code, status, message = "source_access_denied", 403, "Organization access denied"
     else:
@@ -100,18 +110,20 @@ def _error(request, exc):
 
 
 class ModelSourceListCreateView(APIView):
+    """List and create sources for an administrable organization."""
+
     permission_classes = [IsAuthenticatedSession]
     parser_classes = [ClosedJSONParser]
 
     @extend_schema(responses=ModelSourcePageSerializer)
-    def get(self, request, organization_uuid: UUID):
+    def get(self, request: Request, organization_uuid: UUID) -> Response:
         try:
             return Response({"results": [asdict(row) for row in list_model_sources(request.user, organization_uuid)]})
         except OrganizationAuthorizationError as exc:
             return _error(request, exc)
 
     @extend_schema(request=ModelSourceWriteSerializer, responses={201: ModelSourceViewSerializer})
-    def post(self, request, organization_uuid: UUID):
+    def post(self, request: Request, organization_uuid: UUID) -> Response:
         body = ModelSourceWriteSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         try:
@@ -123,11 +135,13 @@ class ModelSourceListCreateView(APIView):
 
 
 class ModelSourceDetailView(APIView):
+    """Replace a source only at its expected revision."""
+
     permission_classes = [IsAuthenticatedSession]
     parser_classes = [ClosedJSONParser]
 
     @extend_schema(request=ModelSourceUpdateSerializer, responses=ModelSourceViewSerializer)
-    def put(self, request, organization_uuid: UUID, source_id: UUID):
+    def put(self, request: Request, organization_uuid: UUID, source_id: UUID) -> Response:
         body = ModelSourceUpdateSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         try:
@@ -139,10 +153,12 @@ class ModelSourceDetailView(APIView):
 
 
 class UsableModelSourceListView(APIView):
+    """List sources explicitly available to the current actor."""
+
     permission_classes = [IsAuthenticatedSession]
 
     @extend_schema(responses=ModelSourcePageSerializer)
-    def get(self, request, organization_uuid: UUID):
+    def get(self, request: Request, organization_uuid: UUID) -> Response:
         try:
             return Response(
                 {"results": [asdict(row) for row in list_usable_model_sources(request.user, organization_uuid)]}
@@ -152,15 +168,19 @@ class UsableModelSourceListView(APIView):
 
 
 class CredentialRetirementSerializer(serializers.Serializer):
+    """Number of obsolete credential versions retired."""
+
     retired = serializers.IntegerField(min_value=0)
 
 
 class ModelSourceCredentialRetirementView(APIView):
+    """Retire obsolete credentials after checking live references."""
+
     permission_classes = [IsAuthenticatedSession]
     parser_classes = [ClosedJSONParser]
 
     @extend_schema(request=PreparationSerializer, responses=CredentialRetirementSerializer)
-    def post(self, request, organization_uuid: UUID, source_id: UUID):
+    def post(self, request: Request, organization_uuid: UUID, source_id: UUID) -> Response:
         body = PreparationSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         try:
@@ -172,26 +192,34 @@ class ModelSourceCredentialRetirementView(APIView):
 
 
 class ModelSourceUserSerializer(serializers.Serializer):
+    """Tenant directory identity for an explicit source-use grant."""
+
     id = serializers.IntegerField()
     name = serializers.CharField()
     username = serializers.CharField()
 
 
 class ModelSourceUserPageSerializer(serializers.Serializer):
+    """Bounded directory results and continuation indicator."""
+
     has_next = serializers.BooleanField()
     results = ModelSourceUserSerializer(many=True)
 
 
 class ModelSourceUserQuerySerializer(PreparationSerializer):
+    """Search and paging inputs for the tenant directory."""
+
     search = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     page = serializers.IntegerField(min_value=1, max_value=1000000, default=1)
 
 
 class ModelSourceUsersView(APIView):
+    """Search tenant members eligible for explicit source-use grants."""
+
     permission_classes = [IsAuthenticatedSession]
 
     @extend_schema(parameters=[ModelSourceUserQuerySerializer], responses=ModelSourceUserPageSerializer)
-    def get(self, request, organization_uuid):
+    def get(self, request: Request, organization_uuid: UUID) -> Response:
         from workspaces.services import list_model_source_users
 
         query = ModelSourceUserQuerySerializer(data=request.query_params)

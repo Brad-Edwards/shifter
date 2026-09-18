@@ -205,19 +205,23 @@ class MessagesProvider(ModelProviderAdapter):
             payload = responses_request(payload, model=self.target.model, count_only=count_only)
             url = "https://api.openai.com/v1/responses" + ("/input_tokens" if count_only else "")
         elif self.target.provider == "openrouter-v1":
-            if count_only or not self.upstream_provider:
-                raise ContractError("provider.count_unsupported")
-            payload["model"] = self.target.model
-            payload["provider"] = {
-                "only": [self.upstream_provider],
-                "allow_fallbacks": False,
-                "require_parameters": True,
-                "data_collection": "deny",
-            }
-            url = "https://openrouter.ai/api/v1/messages"
+            url = self._routed_request(payload, count_only=count_only)
         else:
             raise ContractError("provider.transport_unsupported")
         return url, json.dumps(payload, separators=(",", ":"), allow_nan=False).encode()
+
+    def _routed_request(self, payload: JsonObject, *, count_only: bool) -> str:
+        """Pin the routed provider and prohibit fallback or data collection."""
+        if count_only or not self.upstream_provider:
+            raise ContractError("provider.count_unsupported")
+        payload["model"] = self.target.model
+        payload["provider"] = {
+            "only": [self.upstream_provider],
+            "allow_fallbacks": False,
+            "require_parameters": True,
+            "data_collection": "deny",
+        }
+        return "https://openrouter.ai/api/v1/messages"
 
     @asynccontextmanager
     async def _upstream(
@@ -313,13 +317,7 @@ class MessagesProvider(ModelProviderAdapter):
                 """Normalize each response and publish usage only at completion."""
                 if message.stream:
                     tracker = StreamUsage()
-                    if self.target.provider == "openai-v1":
-                        from .openai_messages import responses_events
-
-                        events = responses_events(response.aiter_bytes(chunk_size=16_384), model=self.target.model)
-                    else:
-                        decoder = bedrock_events if self.target.provider == "bedrock-v1" else vertex_events
-                        events = decoder(response.aiter_bytes(chunk_size=16_384))
+                    events = self._stream_events(response)
                     async for event in events:
                         tracker.observe(event)
                         yield encode_sse(event)
@@ -335,6 +333,15 @@ class MessagesProvider(ModelProviderAdapter):
 
             result = ProviderResponse("text/event-stream" if message.stream else "application/json", chunks())
             yield result
+
+    def _stream_events(self, response: httpx.Response) -> AsyncIterator[JsonObject]:
+        """Decode the configured provider's stream into Messages events."""
+        if self.target.provider == "openai-v1":
+            from .openai_messages import responses_events
+
+            return responses_events(response.aiter_bytes(chunk_size=16_384), model=self.target.model)
+        decoder = bedrock_events if self.target.provider == "bedrock-v1" else vertex_events
+        return decoder(response.aiter_bytes(chunk_size=16_384))
 
 
 def _vertex_request(target: ProviderTarget, payload: JsonObject, *, count_only: bool) -> str:

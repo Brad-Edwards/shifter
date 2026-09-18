@@ -1,5 +1,15 @@
 """Tenant-admin live source transitions through the incumbent range boundary."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
+    from workspaces.services import WorkspaceAuthorization
+
 from django.db import transaction
 
 from cms.models import RangeInstance
@@ -13,8 +23,13 @@ from workspaces.services import WorkspaceAuthorizationError, authorize_model_sou
 
 from ._model_source_selection import resolve_model_source_sponsorship
 
+REVISION_CONFLICT = "source.revision_conflict"
 
-def _authorized_instance(actor, request_id, *, locked=False):
+
+def _authorized_instance(
+    actor: User, request_id: UUID, *, locked: bool = False
+) -> tuple[RangeInstance, WorkspaceAuthorization]:
+    """Resolve the range and current authority, optionally holding its mutex."""
     query = RangeInstance.objects.select_related("request")
     if locked:
         query = query.select_for_update(of=("self",))
@@ -25,7 +40,7 @@ def _authorized_instance(actor, request_id, *, locked=False):
     return instance, authority
 
 
-def get_range_model_sources(actor, *, request_id):
+def get_range_model_sources(actor: User, *, request_id: UUID) -> dict[str, object]:
     """Read selected policy and effective grant state without credentials."""
     from engine.services import get_range_model_policy_status
 
@@ -44,7 +59,9 @@ def get_range_model_sources(actor, *, request_id):
     }
 
 
-def change_range_model_sources(actor, *, request_id, expected_revision, selection):
+def change_range_model_sources(
+    actor: User, *, request_id: UUID, expected_revision: int, selection: object
+) -> dict[str, object]:
     """Commit revocation, then attempt replacement; failure stays visibly blocked.
 
     The two commits deliberately prevent a failed replacement from restoring
@@ -55,7 +72,7 @@ def change_range_model_sources(actor, *, request_id, expected_revision, selectio
     with transaction.atomic():
         instance, _ = _authorized_instance(actor, request_id, locked=True)
         if instance.model_source_policy_revision != expected_revision:
-            raise ContractError("source.revision_conflict")
+            raise ContractError(REVISION_CONFLICT)
         if not _snapshot_needs(instance):
             raise ContractError("source.range_unavailable")
         sponsorship = resolve_model_source_sponsorship(actor, instance.workspace_id, selection, administrative=True)
@@ -86,7 +103,7 @@ def change_range_model_sources(actor, *, request_id, expected_revision, selectio
         with transaction.atomic():
             current, _ = _authorized_instance(actor, request_id, locked=True)
             if current.model_source_policy_revision != revision:
-                raise ContractError("source.revision_conflict")
+                raise ContractError(REVISION_CONFLICT)
             (view,) = resolve_model_access_range_views(request_uuids=(request_id,))
             prepare_model_access_for_dispatch(request_id, range_id=view.range_uuid, renew=True)
             admitted = admit_range_model_policy_change(request_id=request_id, expected_revision=revision)
@@ -96,12 +113,12 @@ def change_range_model_sources(actor, *, request_id, expected_revision, selectio
         RangeInstance.objects.filter(request__request_id=request_id, model_source_policy_revision=revision).update(
             model_source_policy_error="source.admission_unavailable"
         )
-        if exc.code == "source.revision_conflict":
+        if exc.code == REVISION_CONFLICT:
             raise
     return get_range_model_sources(actor, request_id=request_id)
 
 
-def list_organization_model_ranges(actor, *, organization_uuid, page=1):
+def list_organization_model_ranges(actor: User, *, organization_uuid: UUID, page: int = 1) -> dict[str, object]:
     """Page ranges in the tenant's active workspaces without exposing guest data."""
     from workspaces.services import resolve_model_access_organization
 

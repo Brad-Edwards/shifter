@@ -90,6 +90,7 @@ from ._model_request_reconcile import (
     reconcile_model_requests,
 )
 from ._model_sources import (
+    ModelSourceView,
     compile_authorized_model_sources,
     create_model_source,
     list_model_sources,
@@ -246,6 +247,7 @@ __all__ = (
     "MembershipEvidence",
     "MintedOperation",
     "ModelAccessRangeView",
+    "ModelSourceView",
     "PreparationAdapterView",
     "PreparationView",
     "RaesImageMappingError",
