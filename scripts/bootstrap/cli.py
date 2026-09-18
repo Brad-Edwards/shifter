@@ -529,9 +529,6 @@ Examples:
     _add_preflight_and_recovery_subparsers(subparsers)
     _add_runners_subparser(subparsers)
     _add_gdc_bootstrap_subparser(subparsers)
-    from inventory_cli import add_parser
-
-    add_parser(subparsers)
 
     return parser
 
@@ -671,11 +668,6 @@ _COMMAND_HANDLERS = {
 def main() -> None:
     """Parse CLI arguments, enforce shared gates, and invoke one handler."""
     args = _build_parser().parse_args()
-    if args.command == "inventory":
-        from inventory_cli import handle
-
-        handle(args)
-        return
     if getattr(args, "yes", False):
         set_assume_yes(True)
     check_dependencies(args.command, cloud=getattr(args, "cloud", None))

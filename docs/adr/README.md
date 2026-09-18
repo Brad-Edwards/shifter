@@ -53,25 +53,17 @@ directory credentials.
 
 ## Runtime Enforcement
 
-ADR-004-R23's [external inventory contract](../architecture/deployment-inventory-contract.md)
-extends the existing installation loader, bootstrap CLI and GCP identity module.
-The source WIF guard enforces a generic template; bootstrap checks the actual
-saved Terraform plan, requires pinned CKV_GCP_125 success, hashes it before apply,
-and verifies installed provider/account policies. Native Terraform tests are
-registered in the root validation inventory. Numeric repository/owner IDs, exact
-workflow/ref/Environment tuples and separately scoped state grants are mandatory.
-One project hosts each deployment, its runner and automation identities; deploy
-and destroy retain trusted project-administration authority. Optional two-project
-support is deferred.
-No Checkov waiver is introduced. See the [operator guide](../dev/gcp-inventory-bootstrap.md)
-and [preflight](../architecture/gcp-external-inventory-identity-preflight-2182.md).
-Live migration and allowed/denied authentication evidence are recorded per deployment;
-local checks do not establish that an existing deployment has cut over.
-Identity and runner plans retain private operator-review artifacts and print
-value-free action summaries before apply. Environment reconciliation preserves
-and verifies approval settings across case-insensitive name matches. Source-guard
-regression tests mutate the real module defaults and outputs to cover all retained
-role, permission and output restrictions.
+ADR-004-R23 generalizes the GCP CI identity module: purpose-separated build,
+validate, promote, release-scan, deploy and destroy identities are rendered from
+explicit per-deployment inputs rather than tenant-name branches. The source WIF
+guard enforces the generic template with pinned CKV_GCP_125 success and no
+Checkov waiver; numeric repository/owner IDs and exact workflow/ref/Environment
+tuples are mandatory, and native Terraform tests are registered in the root
+validation inventory. One project hosts each deployment, its runner and
+automation identities; deploy and destroy retain trusted project-administration
+authority. Optional two-project support is deferred. Source-guard regression
+tests mutate the real module defaults and outputs to cover all retained role,
+permission and output restrictions.
 
 ADR-063 records the [signed CTF receipt binding preflight for #1906](../architecture/ctf-signed-receipt-binding-preflight-1906.md).
 It fixes trusted context, protected signer/key registration, lifecycle fencing
