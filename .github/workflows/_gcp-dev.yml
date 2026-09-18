@@ -1099,6 +1099,19 @@ jobs:
                         value: ""
                       - name: REDIS_SECRET_ID
                         value: ""
+                      # This Job blanks REDIS_SECRET_ID (above), so entrypoint.sh
+                      # never hydrates REDIS_PASSWORD. The runtime ConfigMap still
+                      # carries REDIS_HOST/REDIS_TLS=true for the app pods, which
+                      # would make Django settings demand the (absent) AUTH token at
+                      # import (config/_redis.py resolve_redis_connection, ADR-008-R6).
+                      # Migrations touch only the database, so blank REDIS_HOST here
+                      # too: with no host, config/_redis.py and config/_channels.py
+                      # both select the LocMem cache and in-memory channel layer
+                      # instead of a Redis connection this Job neither needs nor
+                      # carries credentials for. Not a downgrade of a real
+                      # connection (there is none) — it declares there is no Redis.
+                      - name: REDIS_HOST
+                        value: ""
                       - name: EMAIL_API_KEY_SECRET_ID
                         value: ""
                     securityContext:
@@ -1107,6 +1120,7 @@ jobs:
                         drop: ["ALL"]
                       readOnlyRootFilesystem: true
                       runAsNonRoot: true
+                      runAsUser: 1000
                     volumeMounts:
                       - name: tmp
                         mountPath: /tmp
