@@ -42,6 +42,15 @@ def test_smoke_entrypoints_exist() -> None:
     assert "run_post_deploy_smoke" in GCP_SMOKE_SCRIPT.read_text(encoding="utf-8")
 
 
+def test_gcp_smoke_uses_an_ephemeral_job_instead_of_remote_exec() -> None:
+    text = GCP_SMOKE_SCRIPT.read_text(encoding="utf-8")
+    assert "render_smoke_job.py" in text
+    assert 'apply -f "${job_file}"' in text
+    assert 'logs "job/${job_name}"' in text
+    assert 'delete job "${job_name}" secret "${secret_name}"' in text
+    assert "kubectl -n shifter-platform exec" not in text
+
+
 def test_gcp_dev_workflow_declares_post_deploy_smoke_job() -> None:
     text = GCP_DEV_WORKFLOW.read_text(encoding="utf-8")
     assert "post-deploy-smoke:" in text
