@@ -24,6 +24,12 @@ class EnrollmentRequest(ClosedModel):
     operation_id: UUID
 
 
+class SourceExecutionRequest(TokenRequest):
+    """A guest-authorized logical alias, never a credential storage path."""
+
+    logical_alias: Identifier
+
+
 class ReservationRequest(TokenRequest):
     """A logical model request with a closed billing bound and retry identity."""
 

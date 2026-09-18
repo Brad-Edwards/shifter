@@ -1749,6 +1749,15 @@
             "additionalProperties": false,
             "description": "Explicit approved transport, principal and conservative model context bound.",
             "properties": {
+              "authentication": {
+                "default": "workload-identity",
+                "enum": [
+                  "workload-identity",
+                  "stored-credential"
+                ],
+                "title": "Authentication",
+                "type": "string"
+              },
               "context_window_tokens": {
                 "maximum": 2000000,
                 "minimum": 1,
@@ -1785,7 +1794,10 @@
               "provider": {
                 "enum": [
                   "vertex-v1",
-                  "bedrock-v1"
+                  "bedrock-v1",
+                  "anthropic-v1",
+                  "openai-v1",
+                  "openrouter-v1"
                 ],
                 "title": "Provider",
                 "type": "string"
@@ -2122,6 +2134,18 @@
           "destination": "runtime-env",
           "kind": "runtime-env",
           "name": "MODEL_BROKER_TLS_KEY",
+          "owner": "canonical model broker Helm projection",
+          "process_roles": [
+            "model-broker"
+          ],
+          "sensitivity": "public",
+          "source": "validated deployment transport and mounted catalog identity"
+        },
+        {
+          "description": "Broker-only configuration or mounted-file path; never a credential value.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_PROVIDER_PROXY",
           "owner": "canonical model broker Helm projection",
           "process_roles": [
             "model-broker"
@@ -3965,6 +3989,15 @@
             "additionalProperties": false,
             "description": "Explicit approved transport, principal and conservative model context bound.",
             "properties": {
+              "authentication": {
+                "default": "workload-identity",
+                "enum": [
+                  "workload-identity",
+                  "stored-credential"
+                ],
+                "title": "Authentication",
+                "type": "string"
+              },
               "context_window_tokens": {
                 "maximum": 2000000,
                 "minimum": 1,
@@ -4001,7 +4034,10 @@
               "provider": {
                 "enum": [
                   "vertex-v1",
-                  "bedrock-v1"
+                  "bedrock-v1",
+                  "anthropic-v1",
+                  "openai-v1",
+                  "openrouter-v1"
                 ],
                 "title": "Provider",
                 "type": "string"

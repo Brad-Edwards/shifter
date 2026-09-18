@@ -7,8 +7,8 @@ resource "terraform_data" "model_project_boundary" {
   count = var.model_broker.enabled ? 1 : 0
   lifecycle {
     precondition {
-      condition     = !contains(keys(local.model_projects), var.project_id) && !contains(keys(local.model_projects), var.dynamic_secret_project_id)
-      error_message = "Model projects must be dedicated outside platform and dynamic-secret projects."
+      condition     = !contains(keys(local.model_projects), var.dynamic_secret_project_id)
+      error_message = "Model invocation may use the platform project but must remain outside the dynamic-secret project."
     }
   }
 }
@@ -81,5 +81,53 @@ output "model_broker_identity" {
     gsa                 = try(google_service_account.model_broker[0].email, "")
     provisioner_subject = var.model_broker.enabled ? google_service_account.workload["provisioner"].email : ""
     model_identities    = { for project, account in google_service_account.model_invocation : project => account.email }
+  }
+}
+
+# Tenant source credentials are platform-owned, separate from participant secret
+# delivery. Creation authorizes on the project parent; all payload/lifecycle
+# permissions are constrained to the server-generated source namespace.
+resource "google_project_iam_custom_role" "model_source_create" {
+  count       = var.model_broker.enabled ? 1 : 0
+  project     = var.project_id
+  role_id     = "shifterModelSourceCreate"
+  title       = "Shifter model source credential creation"
+  permissions = ["secretmanager.secrets.create"]
+}
+
+resource "google_project_iam_member" "model_source_create" {
+  count   = var.model_broker.enabled ? 1 : 0
+  project = var.project_id
+  role    = google_project_iam_custom_role.model_source_create[0].name
+  member  = "serviceAccount:${google_service_account.workload["portal"].email}"
+}
+
+resource "google_project_iam_custom_role" "model_source_write" {
+  count       = var.model_broker.enabled ? 1 : 0
+  project     = var.project_id
+  role_id     = "shifterModelSourceWrite"
+  title       = "Shifter owned model source credential lifecycle"
+  permissions = ["secretmanager.versions.add", "secretmanager.versions.access", "secretmanager.secrets.delete"]
+}
+
+resource "google_project_iam_member" "model_source_write" {
+  count   = var.model_broker.enabled ? 1 : 0
+  project = var.project_id
+  role    = google_project_iam_custom_role.model_source_write[0].name
+  member  = "serviceAccount:${google_service_account.workload["portal"].email}"
+  condition {
+    title      = "owned_model_source_credentials"
+    expression = "resource.name.startsWith('projects/${data.google_project.platform.number}/secrets/shifter-model-source-')"
+  }
+}
+
+resource "google_project_iam_member" "model_source_control_read" {
+  count   = var.model_broker.enabled ? 1 : 0
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.workload["workers"].email}"
+  condition {
+    title      = "owned_model_source_credentials"
+    expression = "resource.name.startsWith('projects/${data.google_project.platform.number}/secrets/shifter-model-source-')"
   }
 }

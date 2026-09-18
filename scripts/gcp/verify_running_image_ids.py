@@ -60,6 +60,7 @@ _RELEASE_DEPLOYMENTS: dict[str, str] = {
 _BROKER_CONTAINERS = {
     "model-broker": {"model-broker": "portal"},
     "model-access-control": {"model-access-control": "portal"},
+    "model-provider-egress": {"provider-egress": "portal"},
 }
 
 

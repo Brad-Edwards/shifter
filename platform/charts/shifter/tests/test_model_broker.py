@@ -135,6 +135,7 @@ def test_aws_broker_uses_only_private_endpoints_and_exact_irsa(tmp_path):
         53,
         443,
         8444,
+        3128,
     }
     assert {
         peer["ipBlock"]["cidr"]
@@ -375,3 +376,26 @@ def test_model_listeners_bind_downward_api_private_pod_address(tmp_path, provide
             "name": variable,
             "valueFrom": {"fieldRef": {"fieldPath": "status.podIP"}},
         }
+
+
+def test_provider_egress_has_no_workload_identity_or_additive_private_access(tmp_path):
+    values = enabled_values()
+    values["network"]["providerApiCidrs"] = ["0.0.0.0/0"]
+    result = render(tmp_path, values)
+    assert result.returncode == 0, result.stderr
+    docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+    deployment = next(doc for doc in docs if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "model-provider-egress")
+    pod = deployment["spec"]["template"]
+    assert "serviceAccountName" not in pod["spec"]
+    assert pod["spec"]["automountServiceAccountToken"] is False
+    container = pod["spec"]["containers"][0]
+    assert "envFrom" not in container
+    assert container["command"] == ["python", "-m", "model_broker.egress_proxy"]
+    policies = [doc for doc in docs if doc["kind"] == "NetworkPolicy" and doc["metadata"]["namespace"] == "shifter-platform"
+                and selected(doc["spec"]["podSelector"], pod["metadata"]["labels"])]
+    assert {p["metadata"]["name"] for p in policies} == {"default-deny-platform", "allow-platform-dns-egress", "model-provider-egress-boundary"}
+    boundary = next(p["spec"] for p in policies if p["metadata"]["name"] == "model-provider-egress-boundary")
+    assert boundary["ingress"] == [{"from": [{"podSelector": {"matchLabels": {"app.kubernetes.io/component": "model-broker"}}}],
+                                    "ports": [{"protocol": "TCP", "port": 3128}]}]
+    public = next(peer["ipBlock"] for rule in boundary["egress"] for peer in rule["to"] if "ipBlock" in peer)
+    assert {"10.0.0.0/8", "169.254.0.0/16", "127.0.0.0/8"} <= set(public["except"])

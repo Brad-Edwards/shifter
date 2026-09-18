@@ -312,6 +312,7 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 
 | Name | Type | Required | Purpose |
 |------|------|----------|---------|
+| `GCP_PROJECT_ID` | secret | build, validate | The Google Cloud project the image is built and validated in. `packer-gcp.yml` and `packer-gcp-validate.yml` fail loud (`Required secret GCP_PROJECT_ID is not set`) if it is unset. Set it in **each** `gcp-build-<env>` and `gcp-validate-<env>` Environment (same value as that deployment's `GCP_PROJECT_ID`); the packer Environments are distinct from the deploy Environment, so setting it only on the deploy Environment is not enough. |
 | `GCP_PACKER_ZONE` | variable | no | Build zone. Defaults to `${GCP_REGION}-a`. |
 | `GCP_PACKER_NETWORK` | variable | no | Builder VPC network. Default `default`. |
 | `GCP_PACKER_SUBNETWORK` | variable | no | Builder subnetwork. Default `default`. |

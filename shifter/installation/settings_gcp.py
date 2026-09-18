@@ -123,9 +123,9 @@ class GcpBackendSettings(BaseModel):
 
     @model_validator(mode="after")
     def validate_model_projects(self) -> GcpBackendSettings:
-        """Keep invocation-only projects outside platform and range-secret authority."""
-        if {self.project_id, self.range_resource_project_id} & self.model_broker.model_projects.keys():
-            raise ValueError("model projects must be dedicated outside platform and dynamic-secret projects")
+        """Allow platform-hosted inference with distinct invocation-only identities."""
+        if self.range_resource_project_id in self.model_broker.model_projects:
+            raise ValueError("model projects must remain outside the dynamic-secret project")
         resolve_capacity_profile(self.shared_service_capacity_profile)
         return self
 

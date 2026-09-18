@@ -12,6 +12,7 @@ from pydantic import Field, StrictInt, model_validator
 
 from shared.model_access.admission import EventModelDemand
 from shared.model_access.core_models import ClosedModel, Digest, Identifier, OwnedReference, ScenarioNeed
+from shared.model_access.sources import ModelSourceSponsorship
 
 Quantity = Annotated[StrictInt, Field(ge=0, le=2**63 - 1)]
 
@@ -75,6 +76,9 @@ class ModelAllocationRequest(ClosedModel):
     window_start: datetime
     window_end: datetime
     authority_revisions: Annotated[tuple[AuthorityRevision, ...], Field(min_length=1, max_length=128)]
+    source_policy_revision: Annotated[StrictInt, Field(ge=0, le=2**31 - 1)] = Field(
+        default=0, exclude_if=lambda value: value == 0
+    )
     preparation_authority: OwnedReference | None = None
 
     def _effective_authority(self) -> OwnedReference:
@@ -140,6 +144,10 @@ class ModelLaunchScope(ClosedModel):
     window_end: datetime
     demands: Annotated[tuple[EventModelDemand, ...], Field(min_length=1, max_length=64)]
     authority_revisions: Annotated[tuple[AuthorityRevision, ...], Field(max_length=128)] = ()
+    source_policy_revision: Annotated[StrictInt, Field(ge=0, le=2**31 - 1)] = Field(
+        default=0, exclude_if=lambda value: value == 0
+    )
+    source_sponsorship: ModelSourceSponsorship | None = Field(default=None, exclude_if=lambda value: value is None)
     system_preparation: (
         Annotated[SystemPreparationAuthority | WarmPreparationAuthority, Field(discriminator="kind")] | None
     ) = None

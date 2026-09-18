@@ -6,6 +6,13 @@ adapter, M08 admission/enrollment projection, and M10 independent deployed
 proof. A configured endpoint or successful render is not a qualified model
 service. Do not enable this package with an image missing those consumers.
 
+The project-separation and file-backed inventory restrictions below describe
+the current package. [#2243's source-management boundary](source-management-preflight-2243.md)
+permits platform-project Vertex with distinct invocation/broker identities and
+tenant-managed source publication. Its implementation must reconcile all
+installation, IAM, readback and runtime validators; removing one check alone
+does not establish that capability.
+
 ## One deployment configuration
 
 `settings.model_broker` is a closed GCP installation block. Absence means
