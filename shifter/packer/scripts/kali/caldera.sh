@@ -31,10 +31,13 @@ uv venv --python 3.12 --seed .venv
 # Caldera from the baked image (the venv symlinks into UV_PYTHON_INSTALL_DIR).
 chmod -R a+rX /opt/uv/python
 source .venv/bin/activate
-# aiohttp-apispec pins 3.0.0b2, which PyPI publishes as an sdist only (no wheel),
-# so allow source for just that package while everything else stays wheels-only
-# (on Python 3.12 the other pins — pyyaml==6.0.1 etc. — all have wheels).
-uv pip install --only-binary :all: --no-binary aiohttp-apispec -r requirements.txt
+# Caldera pins several sdist-only dependencies (aiohttp-apispec==3.0.0b2,
+# svglib, ...) that have no PyPI wheels, so a wheels-only install
+# (`--only-binary :all:`) cannot resolve them. They are pure-Python, so allow
+# pip's default source builds — this matches Caldera's own documented install
+# (plain `pip install -r requirements.txt`). On Python 3.12 the wheel-having
+# pins still install as wheels.
+uv pip install -r requirements.txt
 
 echo "=== Starting server with --build to compile VueJS UI and download content ==="
 # Start server in background, let it initialize and build UI
