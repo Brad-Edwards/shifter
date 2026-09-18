@@ -32,6 +32,7 @@ on:
           - dev
           - proof
           - nazgul
+          - sauron
         default: dev
       dc_profile:
         description: 'Pre-promoted DC profile (dc-profiles/<name>.pkrvars.hcl); only used when image_type=dc-prebaked'
