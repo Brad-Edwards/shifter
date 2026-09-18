@@ -62,7 +62,7 @@ registered in the root validation inventory. Numeric repository/owner IDs, exact
 workflow/ref/Environment tuples and separately scoped state grants are mandatory.
 One project hosts each deployment, its runner and automation identities; deploy
 and destroy retain trusted project-administration authority. Optional two-project
-support is deferred to #2189.
+support is deferred.
 No Checkov waiver is introduced. See the [operator guide](../dev/gcp-inventory-bootstrap.md)
 and [preflight](../architecture/gcp-external-inventory-identity-preflight-2182.md).
 Live migration and allowed/denied authentication evidence are recorded per deployment;
