@@ -77,6 +77,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
             "value": {
                 "app": f"projects/{project_id}/secrets/shifter-gcp-dev-app",
                 "db": f"projects/{project_id}/secrets/shifter-gcp-dev-db",
+                "db-provisioner": f"projects/{project_id}/secrets/shifter-gcp-dev-db-provisioner",
                 "db-migration": f"projects/{project_id}/secrets/shifter-gcp-dev-db-migration",
                 "guacamole-db": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-db",
                 "guacamole-json-auth": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-json-auth",
@@ -101,6 +102,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "port": 5432,
                 "database_name": "shifter",
                 "user_name": "portal_runtime",
+                "provisioner_user_name": "provisioner_runtime",
             }
         },
         # ADR-008-R6 (#963): Memorystore runs with TLS on the GCP runtime,
