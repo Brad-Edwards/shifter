@@ -30,7 +30,6 @@ on:
         type: choice
         options:
           - gcp-dev
-          - proof
           - nazgul
           - orthanc
           - sauron

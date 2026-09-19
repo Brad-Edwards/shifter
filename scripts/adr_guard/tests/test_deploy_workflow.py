@@ -809,6 +809,16 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             destroy["jobs"]["destroy"]["environment"],
             "${{ inputs.environment }}-destroy",
         )
+        # A single upfront preflight fails with the full list of any secrets
+        # missing from the selected <environment>-destroy Environment before
+        # checkout/auth, rather than one render step at a time.
+        destroy_text = (REPO_ROOT / ".github/workflows/gcp-dev-destroy.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Preflight - required destroy secrets present", destroy_text)
+        self.assertIn(
+            "-destroy' Environment is missing required secret(s)", destroy_text
+        )
 
     def test_gcp_bootstrap_secrets_never_reach_process_argv(self):
         workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")

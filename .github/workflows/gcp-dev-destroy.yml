@@ -89,6 +89,35 @@ jobs:
               ;;
           esac
 
+      - name: Preflight - required destroy secrets present
+        # Fail fast, before checkout/auth, with the complete list of any secrets
+        # missing from the selected `<environment>-destroy` Environment, rather
+        # than discovering them one render step at a time mid-run. The later
+        # per-step checks stay as defense in depth.
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
+          GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
+          SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+        run: |
+          missing=""
+          for name in \
+            GCP_DESTROY_SERVICE_ACCOUNT \
+            GCP_WORKLOAD_IDENTITY_PROVIDER \
+            GCP_PROJECT_ID \
+            GCP_PUBLIC_HOSTNAME \
+            GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN \
+            SHIFTER_CONFIG_GCP_DEV; do
+            if [ -z "${!name}" ]; then
+              missing="${missing} ${name}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::The '${GCP_ENVIRONMENT}-destroy' Environment is missing required secret(s):${missing}. Provision them (see docs/dev/deploy-secrets.md) before dispatching teardown."
+            exit 1
+          fi
+          echo "All required destroy secrets are present for the '${GCP_ENVIRONMENT}-destroy' Environment."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false

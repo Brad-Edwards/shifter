@@ -437,8 +437,12 @@ The first slice intentionally stays small:
   rendered `false` actually lifts deletion protection at teardown instead of
   being dropped as an undeclared `-var-file` entry. The `packer-gcp.yml` and
   `packer-gcp-validate.yml` environment enums name the gcp-dev tenant `gcp-dev`
-  (mapped back to its existing `gcp-build-dev` / `gcp-validate-dev` Environments)
-  for parity with `deploy.yml`.
+  (mapped back to the `gcp-build-dev` / `gcp-validate-dev` Environments, whose
+  validate identity is provisioned at standup via the tenant's cicd-oidc
+  `validate` purpose) for parity with `deploy.yml`, and drop the unbacked
+  `proof` option. The teardown workflow runs an upfront preflight that fails with
+  the full list of any secrets missing from the selected `<environment>-destroy`
+  Environment before checkout or auth.
 
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`
