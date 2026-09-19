@@ -128,6 +128,28 @@ def resolve_event_authority(
     return source
 
 
+def events_with_capability(actor: Actor, *, capability: str):
+    """Query equivalent of event authority for collections before pagination."""
+    from django.db.models import Q
+
+    from ctf.enums import EventStaffRole
+    from ctf.models import CTFEvent, CTFEventStaff
+    from ctf.services.event.staff import actor_is_active_ctf_organizer, capabilities_for_role
+
+    events = CTFEvent.objects.all()
+    actor_pk = getattr(actor, "pk", None)
+    if actor_pk is None or not _capability_is_known(capability):
+        return events.none()
+    if is_ctf_platform_admin(actor):
+        return events
+    predicate = Q(created_by_id=actor_pk)
+    if actor_is_active_ctf_organizer(actor_pk):
+        roles = [role.value for role in EventStaffRole if capability in capabilities_for_role(role.value)]
+        delegated = CTFEventStaff.objects.filter(user_id=actor_pk, role__in=roles).values("event_id")
+        predicate |= Q(pk__in=delegated)
+    return events.filter(predicate)
+
+
 def _actor_id_is_platform_admin(actor_id: int) -> bool:
     """Resolve ``actor_id`` to a user and apply :func:`is_ctf_platform_admin`.
 

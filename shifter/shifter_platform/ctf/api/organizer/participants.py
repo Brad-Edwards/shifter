@@ -46,7 +46,6 @@ from ctf.api.serializers import (
     ParticipantListResponseSerializer,
     ParticipantPasswordRequestSerializer,
     ParticipantPasswordResultSerializer,
-    ResendLoginInfoResultSerializer,
 )
 from shared.audit import AuditAction
 from shared.log_sanitize import safe_log_value
@@ -224,28 +223,11 @@ class ParticipantResendLoginInfoView(APIView):
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(request=None, responses=ResendLoginInfoResultSerializer, deprecated=True)
-    def post(self, request: Request, participant_id: UUID) -> Response:
-        """Rate-limit, enforce ownership, then resend non-secret login information."""
-        from ctf.exceptions import CTFStateError, CTFValidationError
-        from ctf.services import resend_login_info
-        from ctf.views._access import _check_credential_delivery_rate_limit
+    @extend_schema(exclude=True)
+    def post(self, request, participant_id):
+        from ctf.api.retired_notifications import retired_notification_response
 
-        try:
-            if not _check_credential_delivery_rate_limit(_actor(request).pk):
-                _raise_throttled("Too many invitations. Try again later.")
-            _resolve_owned_participant(request, participant_id, capability="participants")
-            try:
-                with admin_external_audit(request, "participant.resend_login"):
-                    updated = resend_login_info(participant_id)
-            except (CTFStateError, CTFValidationError):
-                # CTFValidationError covers the fail-closed bootstrap-credential path
-                # (issue #1665): an unavailable/invalid configured source must surface
-                # as a controlled 400, never an uncaught 500.
-                _raise_bad_request(_INVALID_PARTICIPANT_REQUEST)
-            return Response({"success": True, "id": str(updated.id)})
-        except _CtfApiError as exc:
-            return exc.to_response(request)
+        return retired_notification_response(request)
 
 
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")

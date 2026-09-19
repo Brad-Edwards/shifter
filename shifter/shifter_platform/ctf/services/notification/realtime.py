@@ -50,16 +50,26 @@ def _can_subscribe(user: AbstractBaseUser | AnonymousUser, topic: str) -> bool:
     A live staff row authorizes only while the account still holds the global CTF
     Organizer role (#1922 review — no stale-row bypass).
     """
+    from django.contrib.auth import get_user_model
+
     from ctf.models import CTFEventStaff, CTFParticipant
     from ctf.services.event.staff import actor_is_active_ctf_organizer
     from ctf.services.participant import viewing_participant_q
+    from ctf.services.participant.accounts import live_participant_for_user
+    from management.services import is_ctf_password_change_required, is_temporary_ctf_account
 
     user_id = getattr(user, "pk", None)
     if user_id is None:
         return False
+    live_user = get_user_model().objects.filter(pk=user_id, is_active=True).first()
+    if live_user is None or getattr(getattr(live_user, "profile", None), "deleted_at", None):
+        return False
     event = _topic_event(topic)
     if event is None:
         return False
+    if is_temporary_ctf_account(live_user):
+        participant = live_participant_for_user(live_user)
+        return bool(participant and participant.event_id == event.pk and not is_ctf_password_change_required(live_user))
     return (
         event.created_by_id == user_id
         or (
@@ -70,6 +80,20 @@ def _can_subscribe(user: AbstractBaseUser | AnonymousUser, topic: str) -> bool:
     )
 
 
+def _reference_payload(payload):
+    """Never replay retained legacy content through the newly admitted socket."""
+    if payload.get("kind") != "communication":
+        return {"kind": "refresh"}
+    try:
+        return {
+            "kind": "communication",
+            "snapshot_id": str(UUID(payload["snapshot_id"])),
+            "intent_id": str(UUID(payload["intent_id"])),
+        }
+    except (KeyError, ValueError, TypeError, AttributeError):
+        return {"kind": "refresh"}
+
+
 def register_ctf_notifications() -> None:
     """Register the CTF notification type with the shared bus (idempotent)."""
     from shared.notifications import register_notification_type
@@ -78,6 +102,7 @@ def register_ctf_notifications() -> None:
         name=NOTIFICATION_TYPE,
         topic_prefix=TOPIC_PREFIX,
         can_subscribe=_can_subscribe,
+        payload_handler=_reference_payload,
     )
 
 

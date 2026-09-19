@@ -25,7 +25,7 @@ Participant management is the gatekeeping layer for CTF events. Shifter consulta
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/admin_people.py` (CTF views - organizer participant CRUD, magic link registration, role-based access control)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/lifecycle.py` (Participant lifecycle service - organizer add via immediate provisioning, resend login info, delete)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/accounts.py` (Isolated participant account provisioning - provision_participant_seat seam shared by add/import/generated-seat creation)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/notification/_participant.py` (Participant notifications - login-information delivery, credentials, reminders, announcements)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/credentials.py` (Volatile password issuance and non-secret ledger login notices; legacy dispatch retired by ADR-065)
 - IMPLEMENTS → GITHUB_ISSUE `535` (Clarify the participant lifecycle model around invite vs auto-registration (CTF-006))
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models/team.py` (CTFParticipant model - lifecycle fields (status, registered_at, login_info_sent_at), capacity/uniqueness constraints, team membership)
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_participant_views.py` (Participant view tests - admin list/status-filter/import/detail, API CRUD)
