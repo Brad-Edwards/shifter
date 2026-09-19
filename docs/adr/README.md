@@ -274,7 +274,11 @@ Current mechanisms:
   `default_fallback` key, valid when the block was first written and
   later removed upstream without a migration, was dropped in #1581. See
   `docs/technical/dev/adr-enforcement.md` for how whole-file validation
-  makes an unrecognized key fail closed.
+  makes an unrecognized key fail closed. The retired
+  `workflow.test_quality_review` block was removed in #2122 because the
+  current Ground Control schema no longer accepts the separate reviewer.
+  The configured pre-push review, pre-commit, CI, and SonarCloud gates
+  remain in force.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can
@@ -668,6 +672,14 @@ bindings. GCP deployment cleanup also removes the narrowly scoped provisioner-to
 control enrollment egress policy. Standby infrastructure renders zero broker and
 control replicas until model access is enabled; no executable deployment or cloud
 qualification is implied by rendering. See [model access operations](../ops/model-access.md).
+
+M05 additionally binds active GCP control identities to the distinct numeric
+service-account IDs read back from Terraform. Installer, Helm schema/templates
+and startup all reject absent or overlapping IDs. Broker isolation is checked
+by the existing import contract; real TLS, PostgreSQL races, bounded worker/DB
+waits and content-sentinel tests lock the runtime boundary. No architectural
+exception or CI relaxation is introduced. See the
+[implemented broker contract](../architecture/model-access/broker-runtime.md).
 
 The GCP workflow reads a reviewed per-environment model overlay when present,
 verifies deploy-owned TLS resources, and projects the sealed catalog into every

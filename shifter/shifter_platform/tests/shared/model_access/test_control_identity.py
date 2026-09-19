@@ -104,6 +104,9 @@ def google_signer():
         {"email_verified": "true"},
         {"iss": "https://evil.example"},
         {"exp": 1},
+        {"sub": None},
+        {"sub": ""},
+        {"sub": "123456789012345678902"},
     ],
 )
 def test_google_signature_and_exact_claims(google_signer, mutation):
@@ -116,15 +119,24 @@ def test_google_signature_and_exact_claims(google_signer, mutation):
         "exp": now + 60,
         "email": "broker@example.invalid",
         "email_verified": True,
+        "sub": "123456789012345678901",
         **mutation,
     }
     assertion = "Bearer " + jwt.encode(signer, claims).decode()
     if mutation:
         with pytest.raises(ContractError):
             verify_google_control_assertion(
-                assertion, audience="control-test", expected_subject="broker@example.invalid", request=request
+                assertion,
+                audience="control-test",
+                expected_subject="broker@example.invalid",
+                expected_subject_id="123456789012345678901",
+                request=request,
             )
     else:
         verify_google_control_assertion(
-            assertion, audience="control-test", expected_subject="broker@example.invalid", request=request
+            assertion,
+            audience="control-test",
+            expected_subject="broker@example.invalid",
+            expected_subject_id="123456789012345678901",
+            request=request,
         )

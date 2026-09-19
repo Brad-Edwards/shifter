@@ -121,6 +121,26 @@ is deferred with the broker runtime.
 
 ## Cost and quota controls
 
+### Private broker runtime rollout (M05)
+
+Apply Engine migration `0086_model_credential_rotation_budget` before deploying
+the updated control process. It adds a nullable window start and zero-initialized
+rotation count; existing opaque tokens and original hard deadlines are retained.
+For an active GCP deployment, refresh the applied Terraform output and render
+`broker_subject_id` / `provisioner_subject_id` from the actual service-account
+unique IDs. Older email-only active output is deliberately rejected. Disabled
+and standby deployment behavior is unchanged. These non-secret IDs are not
+provider keys and must not be supplied from guest or tenant request input.
+
+Broker readiness now checks authenticated Engine/DB reachability. SIGTERM fences
+active streams before normal server shutdown; retain control and reconciliation
+capacity while draining. Expect fail-closed load shedding when worker/rotation
+budgets are exhausted, and preserve unknown holds after interrupted transport.
+Use authored error codes and accounting state for diagnosis, not SDK wire DEBUG
+logging, request dumps or captured prompts. The exact runtime bounds and local
+test posture are recorded in the [broker contract](../architecture/model-access/broker-runtime.md).
+No live provider, source-preservation, load or restore qualification is claimed.
+
 Before an event, inventory provider model enablement, supported regions,
 quota-pool dimensions, observed usage/freshness, expected input/output rates,
 shard weights, capacity reservations and reviewed price validity. Test one
