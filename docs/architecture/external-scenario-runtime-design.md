@@ -162,6 +162,10 @@ setup step.
 The platform binds an installed version to an exact registered pack digest and
 pins that identity into each admitted operation. Admission checks compatibility,
 backend support, required bindings, and authorization before cloud mutation.
+An uploaded pack may carry a closed `model-needs.json` declaration containing
+only workload roles, capabilities, strategies, regions, and finite limits.
+Shifter binds it to the verified installed digest; provider sources, credentials,
+routing, and spending authority remain tenant administrator policy.
 An administrator may bind an exact provider image profile to an adapter target.
 The profile is organization-owned runtime data stored with the pack assignment,
 then pinned with the adapter and pack digest for the range lifetime. GCP profiles
