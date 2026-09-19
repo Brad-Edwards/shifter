@@ -42,6 +42,20 @@ class RaesImageMapping(models.Model):
         max_length=500,
         help_text="Concrete provider image (GCE source_image / family URL, AWS AMI id, ...).",
     )
+    image_kind = models.CharField(
+        max_length=32,
+        default="image",
+        help_text="Provider image contract: image or machine-image.",
+    )
+    bootstrap_capability = models.CharField(
+        max_length=64,
+        default="standard",
+        help_text="Generic realization capability required by the selected image.",
+    )
+    participant_container_name = models.CharField(max_length=128, blank=True, default="")
+    participant_username = models.CharField(max_length=32, blank=True, default="")
+    participant_readiness_contract = models.CharField(max_length=64, blank=True, default="")
+    participant_readiness_manifest_sha256 = models.CharField(max_length=64, blank=True, default="")
     # Portable RAES artifact identity + admission evidence (#1580, ADR-034-R2/R8).
     # A GCE image has no intrinsic sha256, so an operator binds a mapping to the
     # portable ArtifactIdentity here and attests the integrity/provenance evidence

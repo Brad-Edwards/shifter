@@ -62,7 +62,7 @@ class ProviderTarget(ClosedModel):
         """Validate the approved project, service account, and publisher model."""
         import re
 
-        if not self.project or self.count_region not in {"us", "eu", "asia-southeast1"}:
+        if not self.project or not self.count_region or self.count_region == "global":
             raise ValueError("Vertex requires approved project and count geography")
         if not re.fullmatch(
             r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(self.project) + r"\.iam\.gserviceaccount\.com",

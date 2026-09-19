@@ -97,6 +97,7 @@ quality_units:
   - id: gcp_scripts
     paths:
       - scripts/gcp/**
+      - platform/deploy/gcp/**
     sonar: false
     responsibilities:
       lint: [gcp-scripts-lint]

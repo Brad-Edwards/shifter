@@ -34,6 +34,42 @@ BROKER_RESOURCE_NAMES = frozenset(
 _SHARED_POLICIES = frozenset({"allow-platform-provider-apis-egress", "allow-platform-private-service-egress"})
 
 
+def _control_access_env(control: dict[str, object]) -> dict[str, str]:
+    keys = {"MODEL_ACCESS_ENABLED", "MODEL_ACCESS_CATALOG_PATH", "MODEL_ACCESS_CATALOG_DIGEST"}
+    container = control["spec"]["template"]["spec"]["containers"][0]
+    values = {item["name"]: item["value"] for item in container["env"] if item.get("name") in keys and "value" in item}
+    if set(values) != keys:
+        raise ValueError("control deployment lacks the complete model-access environment")
+    return values
+
+
+def _mount_catalog_for_runtime_consumers(documents: list[dict], digest: str) -> None:
+    for document in documents:
+        if document.get("kind") != "Deployment":
+            continue
+        template = document["spec"]["template"]
+        pod = template["spec"]
+        consumers = [
+            container
+            for container in pod["containers"]
+            if any(
+                ref.get("configMapRef", {}).get("name") == "platform-runtime" for ref in container.get("envFrom", [])
+            )
+        ]
+        if not consumers:
+            continue
+        volumes = pod.setdefault("volumes", [])
+        if not any(volume.get("name") == "model-access-catalog" for volume in volumes):
+            volumes.append({"name": "model-access-catalog", "configMap": {"name": "model-broker-catalog"}})
+        for container in consumers:
+            mounts = container.setdefault("volumeMounts", [])
+            if not any(mount.get("name") == "model-access-catalog" for mount in mounts):
+                mounts.append(
+                    {"name": "model-access-catalog", "mountPath": "/etc/shifter/model-access", "readOnly": True}
+                )
+        template.setdefault("metadata", {}).setdefault("annotations", {})["checksum/model-access-catalog"] = digest
+
+
 def combine_resources(base: str, broker: str) -> str:
     """Replace shared policies before apply, avoiding a transient broad grant."""
     additions = list(yaml.safe_load_all(broker)) if broker.strip() else []
@@ -91,7 +127,10 @@ def combine_resources(base: str, broker: str) -> str:
             ]
             if len(catalogs) != 1:
                 raise ValueError("control deployment requires exactly one broker catalog")
+            access_env = _control_access_env(controls[0])
             runtime[0].setdefault("data", {}).update(json.loads(catalogs[0]["data"]["enrollment.json"]))
+            runtime[0]["data"].update(access_env)
+            _mount_catalog_for_runtime_consumers(documents, access_env["MODEL_ACCESS_CATALOG_DIGEST"])
             checksum = hashlib.sha256(json.dumps(runtime[0].get("data", {}), sort_keys=True).encode()).hexdigest()
             for control in controls:
                 control["spec"]["template"]["metadata"].setdefault("annotations", {})["checksum/runtime-config"] = (

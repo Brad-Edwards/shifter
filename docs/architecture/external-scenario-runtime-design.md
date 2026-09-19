@@ -162,6 +162,18 @@ setup step.
 The platform binds an installed version to an exact registered pack digest and
 pins that identity into each admitted operation. Admission checks compatibility,
 backend support, required bindings, and authorization before cloud mutation.
+An uploaded pack may carry a closed `model-needs.json` declaration containing
+only workload roles, capabilities, strategies, regions, and finite limits.
+Shifter binds it to the verified installed digest; provider sources, credentials,
+routing, and spending authority remain tenant administrator policy.
+An administrator may bind an exact provider image profile to an adapter target.
+The profile is organization-owned runtime data stored with the pack assignment,
+then pinned with the adapter and pack digest for the range lifetime. GCP profiles
+accept exact image resources with either standard or prepromoted-directory
+bootstrap metadata, or the closed preconfigured-machine-host contract. AWS
+profiles accept exact AMI IDs. An authored portable artifact binding remains
+authoritative when present, and the adapter worker never receives cloud image
+selection authority.
 Runtime hooks receive bounded, operation-scoped input and authorized guest or
 resource bindings through the SDK. They do not receive ORM handles, deployment
 configuration dumps, unrestricted credentials, or platform import access.
@@ -190,6 +202,8 @@ The Administer workspace provides an Adapters page with:
 4. Disable and retire actions with dependent packs, ranges, and cleanup effects.
 5. Links from pack management to binding and readiness, separating missing pack,
    missing adapter, incompatible protocol, unavailable execution, and failed verification.
+6. Provider image selection per adapter target, including the bounded host and
+   participant-readiness fields required by a preconfigured GCP machine host.
 
 Permissions are enforced in the service and API as well as the UI. Rejected
 installation has no execution side effects. Audit records retain actor and
