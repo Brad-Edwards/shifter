@@ -83,6 +83,7 @@ def _domain_profile(profile: RuntimeTargetImageProfile) -> tuple[str, str]:
 
 
 def _validate_aws_image_profile(profile: RuntimeTargetImageProfile) -> None:
+    """Require an exact AMI and AWS-supported boot-image fields."""
     if profile.image_kind != "image" or not _AWS_AMI.fullmatch(profile.image_ref):
         raise ValueError("AWS image profiles require an exact AMI ID")
     if (
