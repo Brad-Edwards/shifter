@@ -712,7 +712,16 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(
             " ".join(match.group(1).split()),
-            'key != "guacamole-db" && key != "db-migration"',
+            'key != "guacamole-db" && key != "db-migration" && key != "db-provisioner"',
+        )
+
+    def test_provisioner_database_secret_is_bound_only_to_the_launcher(self) -> None:
+        self.assertIn('"provisioner-launcher:db-provisioner"', self.text)
+        self.assertRegex(
+            self.text,
+            r'"provisioner-launcher:db-provisioner"\s*=\s*\{\s*'
+            r'workload\s*=\s*"provisioner-launcher"\s*'
+            r'secret_id\s*=\s*var\.runtime_secret_ids\["db-provisioner"\]',
         )
 
     def test_migrator_reads_only_app_and_migration_database_secrets(self) -> None:
