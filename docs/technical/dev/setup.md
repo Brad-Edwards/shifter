@@ -473,6 +473,13 @@ Create a GCP project and enable the APIs required by the bootstrap path.
 
 ### 2. Configure Workload Identity Federation
 
+On a new project, run `scripts/bootstrap/deploy.py gcp-foundation --inputs
+/path/to/foundation.tfvars.json --yes` using the complete example and ordering
+in `scripts/bootstrap/README.md`. This creates the backend before identity
+Terraform initializes and can provision an isolated private image-build network
+before the platform exists. It verifies project/repository numeric IDs and
+requires explicit purpose Environment and workflow trust tuples.
+
 Apply `platform/terraform/gcp/global/cicd-oidc` for each used identity profile
 (`gcp-dev`, `proof`, and `prod`) and follow the staged cutover/readback in
 `docs/dev/deploy-secrets.md`. Do not hand-create service accounts or broaden the

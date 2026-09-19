@@ -29,12 +29,11 @@ on:
         required: true
         type: choice
         options:
-          - dev
-          - proof
+          - gcp-dev
           - nazgul
           - orthanc
           - sauron
-        default: dev
+        default: gcp-dev
       dc_profile:
         description: 'Pre-promoted DC profile (dc-profiles/<name>.pkrvars.hcl); only used when image_type=dc-prebaked'
         required: false
@@ -48,7 +47,10 @@ jobs:
   build:
     name: Build ${{ inputs.image_type }} GCE image in ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    environment: gcp-build-${{ inputs.environment }}
+    # The gcp-dev tenant's purpose Environments keep their historical short
+    # suffix (gcp-build-dev), so map the gcp-dev tenant name back to `dev` here;
+    # every other tenant uses its own name verbatim (gcp-build-<tenant>).
+    environment: gcp-build-${{ inputs.environment == 'gcp-dev' && 'dev' || inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -292,7 +294,7 @@ jobs:
       # do not boot on GDC (firmware/drivers), and their GDC images come from the
       # native gdc-vm-images build, so skip the export for the Windows family.
       - name: Export image to GCS for the GDC VM Runtime
-        if: inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
+        if: vars.GCP_RANGE_BACKEND != 'gce' && inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
         working-directory: shifter/packer/gcp
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

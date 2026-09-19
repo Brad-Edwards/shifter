@@ -158,7 +158,7 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal containing only connected RFC1918 networks. Use `[]` for the normal Connect Gateway path; public operator egress CIDRs are invalid for the private endpoint. |
 | `GCP_DEPLOY_SERVICE_ACCOUNT` | secret | yes | Purpose-scoped WIF service account for deploy and post-deploy smoke. |
 | `GCP_RELEASE_SCAN_SERVICE_ACCOUNT` | secret | yes | Purpose-scoped WIF service account for the isolated exact-digest image scan. Store it only in `gcp-release-scan-dev`; it has repository-scoped Artifact Registry read and create-only access under the private bucket's `release-scans/` prefix, but no deployment or runtime-secret authority. |
-| `GCP_DESTROY_SERVICE_ACCOUNT` | secret | destroy | Purpose-scoped WIF service account for `gcp-dev-destroy.yml`. Store it only in `gcp-dev-destroy`. |
+| `GCP_DESTROY_SERVICE_ACCOUNT` | secret | destroy | Purpose-scoped WIF service account for the GCP Environment Destroy workflow (`gcp-dev-destroy.yml`). Store each tenant's destroy identity only in its own `<environment>-destroy` Environment (for gcp-dev, `gcp-dev-destroy`). |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
 | `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | yes | First Identity Platform operator, elevated in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set to deliberately skip operator creation (the skip is logged). |
 | `GCP_BOOTSTRAP_ADMIN_PASSWORD` | secret | yes | Initial password for the bootstrap operator (rotated by TOTP enrollment on first sign-in). Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true`. |
@@ -312,6 +312,13 @@ workload bindings.
 
 ## GCP Packer image builds
 
+Fresh projects without a default or platform VPC use the optional image network
+from `deploy.py gcp-foundation` (see `scripts/bootstrap/README.md`). Set its
+network/subnet outputs in the build and validation Environments as
+`GCP_PACKER_NETWORK` and `GCP_PACKER_SUBNETWORK`; set
+`GCP_PACKER_USE_INTERNAL_IP=true` for builds. These values are variables, not
+secrets. Identity outputs remain in their matching purpose Environments.
+
 Consumed by `.github/workflows/packer-gcp.yml` (build),
 `.github/workflows/packer-gcp-validate.yml` (validate), and
 `.github/workflows/packer-gcp-promote.yml` (promote). Builds run on
@@ -332,7 +339,8 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
-| `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
+| `GCP_RANGE_BACKEND` | variable | no | Set `gce` in the build Environment for native GCE deployments. This skips the GDC-only qcow2 export; the exact image build evidence remains mandatory. Unset retains the legacy export behavior. |
+| `GCP_GDC_VM_IMAGE_BUCKET` | variable | for GDC export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset when `GCP_RANGE_BACKEND` is not `gce`. See `docs/architecture/gcp-guest-images.md`. |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
