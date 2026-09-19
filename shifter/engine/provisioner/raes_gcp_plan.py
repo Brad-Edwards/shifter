@@ -147,12 +147,24 @@ def build_raes_range_cell_plan(
 
     access_by_node = _access_by_node(resolved_options.access_bindings)
 
+    # Default-on, keyless model access (ADR-064): attach the range host identity
+    # so guests reach Vertex directly via Workload Identity, unless the ADR-059
+    # broker is the model path (MODEL_BROKER_GUEST_VIP set), where guests stay
+    # identity-less and reach models only through the broker.
+    attach_model_identity = bool(resolved_config.service_account_email) and not resolved_config.model_broker_vip
     instance_plans: list[InstancePlan] = []
     for network in raes_plan.networks:
         subnet = subnet_by_address[network.address]
         for node in nodes_by_network.get(network.address, ()):
             instance_plans.extend(
-                _instance_plans_for_node(node, subnet, range_id, resolve_image, access_by_node.get(node.address, ()))
+                _instance_plans_for_node(
+                    node,
+                    subnet,
+                    range_id,
+                    resolve_image,
+                    access_by_node.get(node.address, ()),
+                    attach_model_identity=attach_model_identity,
+                )
             )
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
@@ -387,6 +399,8 @@ def _instance_plans_for_node(
     range_id: int,
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
     access_bindings: Sequence[RealizedAccessBinding] = (),
+    *,
+    attach_model_identity: bool = False,
 ) -> list[InstancePlan]:
     """Render one InstancePlan per ``count`` for a node placed on ``subnet``.
 
@@ -440,7 +454,7 @@ def _instance_plans_for_node(
                 # Empty when the scenario authored none.
                 "participant_access_channels": [binding.channel for binding in access_bindings],
                 "participant_access_usernames": {binding.channel: binding.username for binding in access_bindings},
-                "attach_service_account": False,
+                "attach_service_account": attach_model_identity,
             }
         )
     return plans
