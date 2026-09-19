@@ -318,8 +318,7 @@ def _validate_runtime_profile(
         raise RaesImageMappingError("bootstrap_capability must be a lowercase logical capability")
     participant_fields = (container, participant_user, readiness_contract, readiness_sha)
     if image_kind == "image":
-        if any(participant_fields):
-            raise RaesImageMappingError("participant host fields require image_kind 'machine-image'")
+        _validate_boot_image_fields(participant_fields)
     else:
         _validate_machine_image_fields(provider, image_ref, bootstrap, management_user, participant_fields)
     return {
@@ -330,6 +329,12 @@ def _validate_runtime_profile(
         "participant_readiness_contract": readiness_contract,
         "participant_readiness_manifest_sha256": readiness_sha,
     }
+
+
+def _validate_boot_image_fields(participant_fields: tuple[str, str, str, str]) -> None:
+    """Reject participant-host metadata on a normal boot image."""
+    if any(participant_fields):
+        raise RaesImageMappingError("participant host fields require image_kind 'machine-image'")
 
 
 def _validate_machine_image_fields(
