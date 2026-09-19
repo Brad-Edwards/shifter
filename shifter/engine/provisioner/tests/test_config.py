@@ -1342,6 +1342,47 @@ class TestRangeNetworkEnv:
             ),
         )
 
+    @pytest.mark.parametrize(
+        "image_url",
+        [
+            "oci://ghcr.io/brad-edwards/shifter-vm-ubuntu:latest",
+            "docker://ghcr.io/brad-edwards/shifter-vm-ubuntu:latest",
+            "oci://ghcr.io/brad-edwards/shifter-vm-kali@sha256:" + "a" * 64,
+            "oci://registry.example.com/shifter-vm-ubuntu@sha256:" + "a" * 64,
+            "oci://ghcr.io/brad-edwards/shifter-vm-ubuntu@sha256:" + "A" * 64,
+        ],
+    )
+    def test_load_gdc_vmruntime_config_rejects_invalid_ghcr_vm_disk_reference(self, mocker, image_url):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
+                "GDC_UBUNTU_IMAGE_URL": image_url,
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="digest-pinned GHCR VM disk"):
+            load_gdc_vmruntime_config()
+
+    @pytest.mark.parametrize("scheme", ("oci://", "docker://", "registry://"))
+    def test_load_gdc_vmruntime_config_normalizes_role_matched_ghcr_vm_disk_digest(self, mocker, scheme):
+        digest = "a" * 64
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
+                "GDC_UBUNTU_IMAGE_URL": f"{scheme}ghcr.io/brad-edwards/shifter-vm-ubuntu@sha256:{digest}",
+            },
+            clear=True,
+        )
+
+        assert load_gdc_vmruntime_config().ubuntu.source_url == (
+            f"oci://ghcr.io/brad-edwards/shifter-vm-ubuntu@sha256:{digest}"
+        )
+
     def test_load_gdc_vmruntime_config_reads_sftp_root_env_override(self, mocker):
         mocker.patch.dict(
             os.environ,

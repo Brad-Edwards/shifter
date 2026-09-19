@@ -51,6 +51,11 @@ jobs:
     # suffix (gcp-build-dev), so map the gcp-dev tenant name back to `dev` here;
     # every other tenant uses its own name verbatim (gcp-build-<tenant>).
     environment: gcp-build-${{ inputs.environment == 'gcp-dev' && 'dev' || inputs.environment }}
+    outputs:
+      gce_image_id: ${{ steps.build_gce_image.outputs.image_id }}
+      gdc_vm_disk_uri: ${{ steps.export_gdc_vm_disk.outputs.uri }}
+      gdc_vm_disk_role: ${{ steps.export_gdc_vm_disk.outputs.role }}
+      gdc_vm_disk_published: ${{ steps.export_gdc_vm_disk.outputs.published }}
     permissions:
       contents: read
       id-token: write
@@ -202,6 +207,7 @@ jobs:
           packer validate -only="googlecompute.${IMAGE_TYPE}" ${VARFILE} .
 
       - name: Build GCE image
+        id: build_gce_image
         working-directory: shifter/packer/gcp
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -233,6 +239,7 @@ jobs:
             echo "BUILT_IMAGE_ID=${IMAGE_ID}"
             echo "BUILT_IMAGE_FAMILY=${IMAGE_FAMILY}"
           } >> "${GITHUB_ENV}"
+          echo "image_id=${IMAGE_ID}" >> "$GITHUB_OUTPUT"
           {
             echo "## ${{ inputs.environment }} GCE Image Build Complete"
             echo "- **Type:** ${IMAGE_TYPE}"
@@ -294,6 +301,7 @@ jobs:
       # do not boot on GDC (firmware/drivers), and their GDC images come from the
       # native gdc-vm-images build, so skip the export for the Windows family.
       - name: Export image to GCS for the GDC VM Runtime
+        id: export_gdc_vm_disk
         if: vars.GCP_RANGE_BACKEND != 'gce' && inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
         working-directory: shifter/packer/gcp
         env:
@@ -310,7 +318,11 @@ jobs:
           fi
           IMAGE_NAME=$(jq -r '.builds[-1].artifact_id' "${IMAGE_TYPE}-manifest.json")
           ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
-          DEST="gs://${GCP_GDC_VM_IMAGE_BUCKET}/${IMAGE_TYPE}.qcow2"
+          # Keep the legacy role path for existing explicit GDC bootstrap, but
+          # export first to a GCE-image-specific object. Publication consumes
+          # only that immutable-by-name object, never the mutable role alias.
+          IMMUTABLE_DEST="gs://${GCP_GDC_VM_IMAGE_BUCKET}/${IMAGE_TYPE}-${IMAGE_ID}.qcow2"
+          STABLE_DEST="gs://${GCP_GDC_VM_IMAGE_BUCKET}/${IMAGE_TYPE}.qcow2"
           # The export runs as a Cloud Build job that spins up a daisy worker VM.
           # Pin BOTH identities to the build SA: --cloudbuild-service-account so
           # the build itself runs as our least-priv SA (this project's builds
@@ -325,7 +337,7 @@ jobs:
           # where the build SA already holds storage.objectAdmin.
           gcloud compute images export \
             --image="${IMAGE_NAME}" \
-            --destination-uri="${DEST}" \
+            --destination-uri="${IMMUTABLE_DEST}" \
             --export-format=qcow2 \
             --project="${GCP_PROJECT_ID}" \
             --zone="${ZONE}" \
@@ -333,12 +345,19 @@ jobs:
             --cloudbuild-service-account="${BUILD_SA}" \
             --compute-service-account="${BUILD_SA}" \
             --log-location="gs://${GCP_GDC_VM_IMAGE_BUCKET}/export-logs"
+          gcloud storage cp --quiet "${IMMUTABLE_DEST}" "${STABLE_DEST}"
           GDC_VAR="GDC_$(echo "${IMAGE_TYPE}" | tr '[:lower:]' '[:upper:]')_IMAGE_URL"
+          {
+            echo "uri=${IMMUTABLE_DEST}"
+            echo "role=${IMAGE_TYPE}"
+            echo "published=true"
+          } >> "$GITHUB_OUTPUT"
           {
             echo "## GDC VM Runtime disk exported"
             echo "- **Image:** \`${IMAGE_NAME}\`"
-            echo "- **Disk:** \`${DEST}\`"
-            echo "- **Wire as:** \`${GDC_VAR}=${DEST}\` (see docs/architecture/gcp-guest-images.md)"
+            echo "- **Published disk:** \`${IMMUTABLE_DEST}\`"
+            echo "- **Bootstrap alias:** \`${STABLE_DEST}\`"
+            echo "- **Wire as:** \`${GDC_VAR}=${STABLE_DEST}\` (see docs/architecture/gcp-guest-images.md)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload manifest
@@ -350,3 +369,79 @@ jobs:
       - name: Remove local build-source evidence
         if: always()
         run: rm -f "${RUNNER_TEMP}/gce-build-evidence.json"
+
+  publish-gdc-vm-disk:
+    name: Publish ${{ inputs.image_type }} VM disk to GHCR
+    needs: build
+    # A package is only an alternate, explicit GDC VM Runtime source. The
+    # default GCE backend neither exports nor consumes this qcow2 artifact.
+    if: >-
+      needs.build.outputs.gdc_vm_disk_published == 'true' &&
+      (inputs.image_type == 'kali' || inputs.image_type == 'ubuntu')
+    runs-on: ubuntu-latest
+    environment: gcp-build-${{ inputs.environment == 'gcp-dev' && 'dev' || inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Authenticate to GCP for the exported disk
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_PACKER_BUILD_SERVICE_ACCOUNT }}
+
+      - name: Install gcloud
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+        with:
+          version: ">= 416.0.0"
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+
+      - name: Publish Linux VM disk to GHCR
+        env:
+          GDC_VM_DISK_URI: ${{ needs.build.outputs.gdc_vm_disk_uri }}
+          GCE_IMAGE_ID: ${{ needs.build.outputs.gce_image_id }}
+          IMAGE_TYPE: ${{ needs.build.outputs.gdc_vm_disk_role }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF}" in
+            refs/heads/dev|refs/heads/main) ;;
+            *)
+              echo "::error::GHCR VM-disk publication requires a protected dispatch ref."
+              exit 1
+              ;;
+          esac
+          case "${IMAGE_TYPE}" in kali|ubuntu) ;; *) exit 1 ;; esac
+          case "${GDC_VM_DISK_URI}" in gs://*.qcow2) ;; *)
+            echo "::error::Expected a GCS qcow2 export, got an invalid disk URI."
+            exit 1
+            ;;
+          esac
+          PACKAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shifter-vm-${IMAGE_TYPE}"
+          TAG="gce-${GCE_IMAGE_ID}"
+          DISK_PATH="$(mktemp "${RUNNER_TEMP}/${IMAGE_TYPE}.XXXXXX.qcow2")"
+          trap 'rm -f "${DISK_PATH}"' EXIT
+          # ORAS hashes a file before upload. Keep the disk out of the checkout
+          # and clean it even when the registry upload fails.
+          gcloud storage cp --quiet "${GDC_VM_DISK_URI}" "${DISK_PATH}"
+          printf '%s' "${GH_TOKEN}" | oras login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          DIGEST="$(oras push --format json \
+            --artifact-type application/vnd.shifter.vm-disk.v1 \
+            "${PACKAGE}:${TAG}" "${DISK_PATH}:application/vnd.shifter.vm-disk.qcow2" | jq -er '.digest')"
+          case "${DIGEST}" in sha256:[0-9a-f][0-9a-f]*) ;; *)
+            echo "::error::ORAS did not return an OCI manifest digest."
+            exit 1
+            ;;
+          esac
+          GDC_VAR="GDC_${IMAGE_TYPE^^}_IMAGE_URL"
+          {
+            echo "## GHCR VM disk published"
+            echo "- **Package:** \`${PACKAGE}\`"
+            echo "- **Version tag:** \`${TAG}\` (discovery only)"
+            echo "- **Immutable source:** \`oci://${PACKAGE}@${DIGEST}\`"
+            echo "- **Wire explicitly as:** \`${GDC_VAR}=oci://${PACKAGE}@${DIGEST}\`"
+            echo "- **Payload:** qcow2 VM disk; this is not a runnable container and does not change bootstrap defaults."
+          } >> "$GITHUB_STEP_SUMMARY"

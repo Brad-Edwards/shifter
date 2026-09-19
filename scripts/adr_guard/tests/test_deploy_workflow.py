@@ -690,6 +690,20 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn("ro,nosuid,nodev,noexec", scanner)
         self.assertNotIn("validator@${VALIDATION_VM}:/tmp/syft", validate)
 
+    def test_gcp_linux_guest_publish_keeps_vm_disk_contract_and_protected_ref_gate(self):
+        """#2297: GHCR packages are digest-pinned qcow2 VM disks, never containers."""
+        build = (REPO_ROOT / ".github/workflows/packer-gcp.yml").read_text(encoding="utf-8")
+
+        self.assertIn("packages: write", build)
+        self.assertIn("Publish Linux VM disk to GHCR", build)
+        self.assertIn('inputs.image_type == \'kali\' || inputs.image_type == \'ubuntu\'', build)
+        self.assertIn("oras-project/setup-oras@", build)
+        self.assertIn("application/vnd.shifter.vm-disk.qcow2", build)
+        self.assertIn("ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shifter-vm-${IMAGE_TYPE}", build)
+        self.assertIn("oci://${PACKAGE}@${DIGEST}", build)
+        self.assertIn("GDC_${IMAGE_TYPE^^}_IMAGE_URL", build)
+        self.assertIn("${IMAGE_TYPE}-${IMAGE_ID}.qcow2", build)
+
     def test_release_evidence_iam_is_purpose_and_prefix_scoped(self):
         identity = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text(encoding="utf-8")
         expected_resources = {
