@@ -3870,7 +3870,7 @@
       },
       {
         "id": "ADR-059-R3",
-        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and approved provider destinations. GCP preserves the no-service-account guest default and exact range network boundaries. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Under #2243, platform-project Vertex is valid with distinct broker/invocation principals and exact-target IAM; provider/authentication selection is independent of compute hosting. Tenant source and write-only credential management uses Engine publication with separate source-use authority, revision fencing and retained accounting. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback. AWS packaging uses exact-subject broker IRSA, separate regional invocation roles, private STS/Bedrock endpoints and a private TLS-pass-through NLB preserving actual guest peers over direct VPC peering; offline packaging tests do not establish live AWS qualification.",
+        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and approved provider destinations. Per ADR-064, GCP range guests receive a keyless predict-only Vertex model identity by default, or stay identity-less when the broker is the guest model path; exact range network boundaries are preserved. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Under #2243, platform-project Vertex is valid with distinct broker/invocation principals and exact-target IAM; provider/authentication selection is independent of compute hosting. Tenant source and write-only credential management uses Engine publication with separate source-use authority, revision fencing and retained accounting. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback. AWS packaging uses exact-subject broker IRSA, separate regional invocation roles, private STS/Bedrock endpoints and a private TLS-pass-through NLB preserving actual guest peers over direct VPC peering; offline packaging tests do not establish live AWS qualification.",
         "checks": []
       }
     ],
@@ -3888,6 +3888,37 @@
       "docs/architecture/model-access/security.md",
       "docs/architecture/model-access/delivery.md",
       "docs/architecture/native-ec2-runtime.md"
+    ]
+  },
+  {
+    "id": "ADR-064",
+    "title": "Range guests get default-on, keyless model access (supersedes ADR-059 no-service-account guest default)",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Restores default-on, keyless range model access removed by the ADR-059 direct guest-credential retirement, without reintroducing guest-held keys. GCP range guests receive a predict-only Vertex invocation identity (aiplatform.endpoints.predict) in the platform project attached via Workload Identity with no key material, decoupled from whether a scenario declares a model need; aiplatform.googleapis.com is enabled by default and per-model provider-console enablement is the only manual step. AWS mirrors this with default-on Bedrock invoke on the range instance role, delivered separately. Direct default-on access and the ADR-059 broker are mutually exclusive per range: when MODEL_BROKER_GUEST_VIP is set guests stay identity-less and model access crosses the broker only. This supersedes ADR-059-R3's no-service-account guest default for GCP. Direct-path invocations are not subject to broker request/spend/rate enforcement, which remains the reason to enable the broker.",
+    "rules": [
+      {
+        "id": "ADR-064-R1",
+        "description": "Range guests receive a keyless model-invocation identity by default, independent of scenario model-need. On GCP the range host service account carries a predict-only Vertex custom role (aiplatform.endpoints.predict) in the platform project and is attached to guests via Workload Identity with no key material minted or delivered; aiplatform.googleapis.com is enabled by default. On AWS the range instance role carries default-on Bedrock invoke. Only per-model provider-console enablement remains manual. The identity is least privilege: it never grants cloud management, project storage, secrets, another range, or the portal API.",
+        "checks": []
+      },
+      {
+        "id": "ADR-064-R2",
+        "description": "Direct default-on model access and the ADR-059 broker are mutually exclusive per range. When the broker is the guest model path (MODEL_BROKER_GUEST_VIP set) the provisioner leaves guests identity-less, preserving the broker's source-preserving keyless isolated egress; the keyless guest identity is attached only when no broker guest path is configured. Direct-path invocations bypass broker request/spend/rate enforcement by design.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2275",
+      "docs/adr/064-default-range-model-access.md",
+      "platform/terraform/gcp/modules/portal/iam/main.tf",
+      "platform/terraform/gcp/modules/platform-core/main.tf",
+      "shifter/engine/provisioner/raes_gcp_plan.py",
+      "shifter/engine/provisioner/gcp_range_cell_scenario.py",
+      "shifter/engine/provisioner/tests/test_raes_gcp_plan.py",
+      "scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py"
     ]
   },
   {

@@ -96,6 +96,9 @@ locals {
   }, local.email_runtime_secrets)
 
   required_services = toset([
+    # Default-on, keyless range model access (ADR-064): range guests call Vertex
+    # publisher models directly via the attached predict-only range host SA.
+    "aiplatform.googleapis.com",
     "artifactregistry.googleapis.com",
     "binaryauthorization.googleapis.com",
     "cloudbuild.googleapis.com",

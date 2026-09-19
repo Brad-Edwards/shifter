@@ -28,7 +28,13 @@ from raes_identity import RESERVED_MANAGEMENT_LOGIN
 from raes_plan import RaesPlan, RaesPlanAcl, RaesPlanImage, RaesPlanNetwork, RaesPlanNode, RaesPlanServicePort
 
 
-def _config(*, network_mode: str = "vpc-per-range", network_id: str = "") -> GCERangeCellConfig:
+def _config(
+    *,
+    network_mode: str = "vpc-per-range",
+    network_id: str = "",
+    service_account_email: str = "",
+    model_broker_vip: str = "",
+) -> GCERangeCellConfig:
     return GCERangeCellConfig(
         project_id="proj-1",
         region="us-east1",
@@ -36,6 +42,8 @@ def _config(*, network_mode: str = "vpc-per-range", network_id: str = "") -> GCE
         network_mode=network_mode,
         network_id=network_id,
         portal_network_cidrs=("203.0.113.0/24",),
+        service_account_email=service_account_email,
+        model_broker_vip=model_broker_vip,
     )
 
 
@@ -393,7 +401,23 @@ class TestInstances:
         assert instance["role"] == "raes-node"
         assert instance["os_type"] == "linux"
         assert instance["profile"].source_image == "projects/x/global/images/kali-1"
+        # No range host identity configured -> nothing to attach.
         assert instance["attach_service_account"] is False
+
+    def test_range_host_identity_attaches_by_default_for_model_access(self):
+        """ADR-064: guests get the keyless range host identity by default so they reach Vertex."""
+        config = _config(service_account_email="sh-range-host@proj-1.iam.gserviceaccount.com")
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
+        assert plan["instances"][0]["attach_service_account"] is True
+
+    def test_broker_active_leaves_guests_identity_less(self):
+        """ADR-059/ADR-064: when the broker is the model path, guests hold no cloud identity."""
+        config = _config(
+            service_account_email="sh-range-host@proj-1.iam.gserviceaccount.com",
+            model_broker_vip="10.60.0.10",
+        )
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
+        assert plan["instances"][0]["attach_service_account"] is False
 
     def test_count_fans_out_to_distinct_instances_and_ips(self):
         node = _node(count=3)
