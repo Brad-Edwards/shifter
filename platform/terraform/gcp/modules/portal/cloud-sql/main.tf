@@ -126,18 +126,25 @@ resource "google_sql_database" "guacamole" {
   instance = google_sql_database_instance.platform.name
 }
 
+# deletion_policy = "ABANDON": on PostgreSQL a role that owns objects cannot be
+# dropped via the Cloud SQL API ("role X cannot be dropped because some objects
+# depend on it"), which stalls `terraform destroy` before the instance is removed
+# (#2258). ABANDON drops the resource from state instead of issuing DROP ROLE; the
+# instance deletion that follows removes the role and its objects with it.
 resource "google_sql_user" "platform" {
-  name     = var.cloud_sql_user_name
-  project  = var.project_id
-  instance = google_sql_database_instance.platform.name
-  password = random_password.db_password.result
+  name            = var.cloud_sql_user_name
+  project         = var.project_id
+  instance        = google_sql_database_instance.platform.name
+  password        = random_password.db_password.result
+  deletion_policy = "ABANDON"
 }
 
 resource "google_sql_user" "runtime" {
-  name     = "portal_runtime"
-  project  = var.project_id
-  instance = google_sql_database_instance.platform.name
-  password = random_password.runtime_db_password.result
+  name            = "portal_runtime"
+  project         = var.project_id
+  instance        = google_sql_database_instance.platform.name
+  password        = random_password.runtime_db_password.result
+  deletion_policy = "ABANDON"
 }
 
 resource "google_sql_user" "provisioner" {
@@ -148,8 +155,9 @@ resource "google_sql_user" "provisioner" {
 }
 
 resource "google_sql_user" "guacamole" {
-  name     = "guacamole_admin"
-  project  = var.project_id
-  instance = google_sql_database_instance.platform.name
-  password = random_password.guacamole_db_password.result
+  name            = "guacamole_admin"
+  project         = var.project_id
+  instance        = google_sql_database_instance.platform.name
+  password        = random_password.guacamole_db_password.result
+  deletion_policy = "ABANDON"
 }

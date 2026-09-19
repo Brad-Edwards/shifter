@@ -201,6 +201,12 @@ variable "cloud_sql_user_name" {
   default     = "shifter"
 }
 
+variable "cloud_sql_deletion_protection" {
+  description = "Enable Cloud SQL deletion protection on the platform instance. Default true. The destroy workflow renders this false into an ephemeral tfvars so terraform destroy can delete the instance; without this variable being declared and wired to module.platform_core, that override is an undeclared-variable no-op and destroy fails with 'deletion_protection is set to true' (#2258)."
+  type        = bool
+  default     = true
+}
+
 variable "redis_tier" {
   description = "Memorystore tier for the control-plane Redis instance. STANDARD_HA is the default production high-availability posture; AUTH and TLS are enforced unconditionally by the platform-core module regardless of tier (ADR-008-R6)."
   type        = string
