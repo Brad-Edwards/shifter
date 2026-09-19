@@ -11,10 +11,7 @@ dynamic_secret_project_id  = "REPLACE_WITH_YOUR_GCP_RANGE_SECRET_PROJECT_ID"
 environment                = "sauron"
 region                     = "us-central1"
 artifact_registry_location = "us-central1"
-# RAPID carries GKE 1.37, which contains the upstream fix (k8s PR #134423) for the
-# ValidatingAdmissionPolicy ConfigMap-param informer bug that denies range Jobs on
-# 1.35/1.36; REGULAR/STABLE cannot carry it yet. Mirrors the gcp-dev fix (8e22b95f9).
-gke_release_channel        = "RAPID"
+gke_release_channel        = "REGULAR"
 
 gke_subnet_cidr      = "10.40.0.0/20"
 gke_pods_cidr        = "10.44.0.0/16"
