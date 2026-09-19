@@ -20,6 +20,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { manifestPreview } from "./adapter-manifest";
 import { PackUploadForm } from "./PackUploadForm";
 
+const MACHINE_IMAGE_KIND = "machine-image";
+
 function bindingStatus(pack: AdapterPack): string {
   if (!pack.binding) return "No adapter assigned";
   if (pack.binding.pack_digest !== pack.pack_digest) return "Pack updated — assign this version before launching";
@@ -202,14 +204,14 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
       {value.provider === "gcp" ? <div className="space-y-1">
         <Label htmlFor={`plugin-image-kind-${name}`}>Image type for {name}</Label>
         <select id={`plugin-image-kind-${name}`} value={value.image_kind} className="block w-full rounded border bg-background p-2"
-          onChange={(event) => { const machine = event.target.value === "machine-image"; update({
-            image_kind: machine ? "machine-image" : "image",
+          onChange={(event) => { const machine = event.target.value === MACHINE_IMAGE_KIND; update({
+            image_kind: machine ? MACHINE_IMAGE_KIND : "image",
             bootstrap_capability: machine ? "preconfigured-machine-host" : "standard",
             participant_readiness_contract: machine ? "participant-readiness/v1" : "",
             participant_container_name: "", participant_username: "", participant_readiness_manifest_sha256: "",
             domain_dns_name: "", domain_netbios_name: "",
           }); }}>
-          <option value="image">Boot image</option><option value="machine-image">Preconfigured machine host</option>
+          <option value="image">Boot image</option><option value={MACHINE_IMAGE_KIND}>Preconfigured machine host</option>
         </select>
       </div> : null}
       <ProfileInput id={`plugin-image-ref-${name}`} label={`Image reference for ${name}`} value={value.image_ref}
@@ -245,7 +247,7 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
         <ProfileInput id={`plugin-domain-netbios-${name}`} label={`Domain NetBIOS name for ${name}`}
           value={value.domain_netbios_name} onChange={(domain_netbios_name) => update({ domain_netbios_name })} />
       </> : null}
-      {value.provider === "gcp" && value.image_kind === "machine-image" ? <>
+      {value.provider === "gcp" && value.image_kind === MACHINE_IMAGE_KIND ? <>
         <ProfileInput id={`plugin-participant-container-${name}`} label={`Participant container for ${name}`}
           value={value.participant_container_name} onChange={(participant_container_name) => update({ participant_container_name })} />
         <ProfileInput id={`plugin-participant-user-${name}`} label={`Participant username for ${name}`}

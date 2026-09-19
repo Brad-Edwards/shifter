@@ -26,7 +26,7 @@ from model_enrollment import EnrollmentDelivery
 from provisioner_db_operation_input import RaesOperationRun
 from raes_ec2_apply import RaesEc2ApplyOptions, apply_raes_ec2_range, delete_ec2_guest_credentials
 from raes_ec2_image import Ec2ImageProfile, resolve_ec2_image
-from raes_plan import RaesPlanNode, parse_plan
+from raes_plan import RaesPlan, RaesPlanNode, parse_plan
 from range_subnet_allocation import _release_subnet_allocations_best_effort, _reserve_range_subnet_cidrs
 from runtime_plugin_execution import GuestPluginPlans
 
@@ -84,6 +84,33 @@ def _network(scope: Ec2CleanupScope, enrollment: EnrollmentDelivery | None) -> E
     )
 
 
+def _resolve_image(node: RaesPlanNode, run: RaesOperationRun) -> Ec2ImageProfile:
+    """Resolve a node image solely from the generation's immutable bindings."""
+    name = image_lookup_key(source_name=node.image.name if node.image else None, os_family=node.os_family)
+    return resolve_ec2_image(
+        node,
+        run.input.image_candidates_for("aws", name) if name else [],
+        binding=run.input.artifact_binding_for(node.address),
+        runtime_profile=(
+            run.input.runtime_plugin.bindings.image_profile_for(node.address)
+            if run.input.runtime_plugin is not None
+            else None
+        ),
+    )
+
+
+def _release_failed_reservation(
+    scope: Ec2CleanupScope, run: RaesOperationRun, plan: RaesPlan, ec2: BaseClient, secrets: Ec2GuestSecrets
+) -> None:
+    """Release a failed launch reservation only after verified cloud absence."""
+    try:
+        if inventory_ec2_resources(scope, ec2)["outcome"] == "VERIFIED_ABSENT":
+            delete_ec2_guest_credentials(scope.range_id, plan, secrets)
+            _release_subnet_allocations_best_effort(run.request_id, operation_id=run.operation_id)
+    except Exception:
+        logger.warning("EC2 failed-launch reservation retained after incomplete cleanup")
+
+
 def provision_ec2_run(
     run: RaesOperationRun,
     plugin_plans: GuestPluginPlans | None = None,
@@ -103,20 +130,6 @@ def provision_ec2_run(
         raise ValueError("EC2 authored addressing requires an exact subnet reservation capability")
     spec = {"subnets": [{"uuid": network.address, "name": network.name} for network in networks]}
 
-    def resolve(node: RaesPlanNode) -> Ec2ImageProfile:
-        """Resolve the node image solely from its immutable operation bindings."""
-        name = image_lookup_key(source_name=node.image.name if node.image else None, os_family=node.os_family)
-        return resolve_ec2_image(
-            node,
-            run.input.image_candidates_for("aws", name) if name else [],
-            binding=run.input.artifact_binding_for(node.address),
-            runtime_profile=(
-                run.input.runtime_plugin.bindings.image_profile_for(node.address)
-                if run.input.runtime_plugin is not None
-                else None
-            ),
-        )
-
     with _clients(scope) as (ec2, secrets):
         realized = _reserve_range_subnet_cidrs(run.request_id, spec, operation_id=run.operation_id)
         try:
@@ -125,7 +138,7 @@ def provision_ec2_run(
                 run.request_id,
                 scope.range_id,
                 plan,
-                resolve,
+                lambda node: _resolve_image(node, run),
                 RaesEc2ApplyOptions(
                     config=config,
                     generation=scope.generation,
@@ -142,12 +155,7 @@ def provision_ec2_run(
         except Exception:
             # Apply compensation is not absence evidence. A failed retry may
             # still have live guests, so keep its reservation until readback.
-            try:
-                if inventory_ec2_resources(scope, ec2)["outcome"] == "VERIFIED_ABSENT":
-                    delete_ec2_guest_credentials(scope.range_id, plan, secrets)
-                    _release_subnet_allocations_best_effort(run.request_id, operation_id=run.operation_id)
-            except Exception:
-                logger.warning("EC2 failed-launch reservation retained after incomplete cleanup")
+            _release_failed_reservation(scope, run, plan, ec2, secrets)
             raise
 
 

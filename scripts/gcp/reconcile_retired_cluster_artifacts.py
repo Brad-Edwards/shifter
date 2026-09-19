@@ -33,6 +33,23 @@ def _kubectl(context: str, namespace: str, *args: str, may_be_absent: bool = Fal
     raise RuntimeError("retired resource reconciliation failed")
 
 
+def _has_deployment_annotation(context: str, namespace: str, name: str, annotation: str) -> bool:
+    """Read the current Deployment before removing a one-time manual annotation."""
+    result = subprocess.run(  # nosec B603 - fixed kubectl argv, no shell.
+        ["kubectl", "--context", context, "-n", namespace, "get", "deployment", name, "-o", "json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("retired Deployment annotation reconciliation failed")
+    deployment = json.loads(result.stdout)
+    annotations = deployment.get("metadata", {}).get("annotations") or {}
+    if not isinstance(annotations, dict):
+        raise ValueError("Deployment annotations are malformed")
+    return annotation in annotations
+
+
 def reconcile(context: str, manifest: Path) -> None:
     raw = manifest.read_bytes()
     if len(raw) > MAX_MANIFEST_BYTES:
@@ -61,7 +78,8 @@ def reconcile(context: str, manifest: Path) -> None:
         annotation = item["annotation"]
         if annotation != "kubectl.kubernetes.io/restartedAt":
             raise ValueError("only the manual rollout annotation may be retired")
-        _kubectl(context, namespace, "annotate", "deployment", name, f"{annotation}-", "--overwrite")
+        if _has_deployment_annotation(context, namespace, name, annotation):
+            _kubectl(context, namespace, "annotate", "deployment", name, f"{annotation}-", "--overwrite")
 
 
 def main() -> int:
