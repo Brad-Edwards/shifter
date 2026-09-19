@@ -91,6 +91,7 @@ def aws_values():
 )
 def test_active_control_pins_applied_immutable_google_subjects(tmp_path, identities):
     values = enabled_values()
+    values["security"] = {"app": {"runAsGroup": 2000}}
     broker = values["modelBroker"]
     catalog = json.loads(
         (
@@ -120,6 +121,19 @@ def test_active_control_pins_applied_immutable_google_subjects(tmp_path, identit
         assert result.returncode != 0
         return
     assert result.returncode == 0, result.stderr
+    broker_pod = next(
+        doc["spec"]["template"]["spec"]
+        for doc in yaml.safe_load_all(result.stdout)
+        if doc
+        and doc["kind"] == "Deployment"
+        and doc["metadata"]["name"] == "model-broker"
+    )
+    assert broker_pod["securityContext"]["fsGroup"] == 2000
+    assert broker_pod["containers"][0]["securityContext"]["runAsGroup"] == 2000
+    fingerprint = next(
+        volume for volume in broker_pod["volumes"] if volume["name"] == "fingerprint"
+    )
+    assert fingerprint["secret"]["defaultMode"] == 0o440
     control = next(
         doc
         for doc in yaml.safe_load_all(result.stdout)
