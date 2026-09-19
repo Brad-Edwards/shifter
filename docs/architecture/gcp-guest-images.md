@@ -29,6 +29,35 @@ Runtime can boot from directly. The VM Runtime imports a disk from a source URL
 qcow2** and the range provisioner references that `gs://` disk through
 `GDC_<TYPE>_IMAGE_URL`.
 
+## Optional GHCR VM-disk packages
+
+When a protected `packer-gcp.yml` dispatch exports a Kali or Ubuntu GDC disk,
+the workflow first writes an image-ID-specific qcow2 object, updates the
+existing role-named GCS bootstrap alias from that object, and publishes that
+same image-specific object as an OCI artifact. These are VM-disk artifacts, not
+runnable containers:
+
+| Role | GHCR package |
+|---|---|
+| Kali | `ghcr.io/brad-edwards/shifter-vm-kali` |
+| Ubuntu | `ghcr.io/brad-edwards/shifter-vm-ubuntu` |
+
+The workflow summary records a discovery tag and the OCI manifest digest. A
+tenant must use only the digest-pinned reference shown there, for example
+`oci://ghcr.io/brad-edwards/shifter-vm-ubuntu@sha256:<digest>`, as the explicit
+`GDC_UBUNTU_IMAGE_URL` value. Tags are for discovery and are never deployment
+inputs. Packages are published with media type
+`application/vnd.shifter.vm-disk.qcow2` and preserve the exported qcow2
+payload.
+
+GHCR package visibility controls access. Public packages use the existing
+credential-free registry source; private-package consumption is unsupported
+until the deployed GDC VM Runtime registry credential contract is verified and
+wired through the existing secret-reference path. Do not put registry tokens in
+the runtime ConfigMap or image environment. Publishing is available only after
+the normal GDC export and does not select GHCR, change `GCP_RANGE_BACKEND`, or
+add image qualification to default tenant bootstrap.
+
 ## Pipeline stages
 
 ```
