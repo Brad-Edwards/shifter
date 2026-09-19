@@ -126,6 +126,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
         "portal_network_cidrs": {"value": ["10.46.0.0/20"]},
         "access_network_cidrs": {"value": ["10.47.0.0/20"]},
         "gke_services_cidr": {"value": "10.48.0.0/20"},
+        "gke_master_ipv4_cidr": {"value": "172.16.0.0/28"},
         "workload_service_accounts": {
             "value": {
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
@@ -1101,7 +1102,7 @@ class TestGdcControlPlaneHelmValues:
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
             "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32"],
-            "kubernetesApiCidrs": ["10.48.0.0/20"],
+            "kubernetesApiCidrs": ["10.48.0.0/20", "172.16.0.0/28"],
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
             "rangeAccessCidrs": ["10.50.0.0/16"],
