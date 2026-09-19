@@ -81,6 +81,24 @@ def _identity(document: dict[str, object]) -> tuple[str, str]:
 
 
 class BackendNeutralChartContractTests(unittest.TestCase):
+    def test_range_access_selects_smoke_without_broadening_destinations(self) -> None:
+        for profile in ("gcp-dev", "gcp-prod"):
+            with self.subTest(profile=profile):
+                rendered = _helm("template", "contract-test", str(CHART_DIR),
+                                 "-f", str(VALUES_FILES[profile]),
+                                 "--set", "network.rangeAccessCidrs[0]=10.50.0.0/16").stdout
+                documents = [doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)]
+                policy = next(doc for doc in documents if _identity(doc) == (
+                    "NetworkPolicy", "allow-platform-range-access-egress"))
+                self.assertEqual(policy["spec"]["podSelector"], {"matchExpressions": [{
+                    "key": "app.kubernetes.io/component", "operator": "In",
+                    "values": ["portal", "guacd", "post-deploy-smoke"],
+                }]})
+                self.assertEqual(policy["spec"]["egress"], [{
+                    "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
+                    "ports": [{"protocol": "TCP", "port": port} for port in (22, 3389)],
+                }])
+
     def test_aws_supplies_gvisor_runtime_class_for_only_the_isolated_pool(self) -> None:
         _, documents = _render(VALUES_FILES["aws-dev"])
         runtime = next(doc for doc in documents if _identity(doc) == ("RuntimeClass", "gvisor"))

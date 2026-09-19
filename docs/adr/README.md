@@ -185,6 +185,9 @@ Current mechanisms:
   The dedicated provisioner-launcher Role grants `list` on pods only in the
   jobs namespace so cancellation can confirm that foreground Job deletion
   removed every pod. It grants no pod mutation, log, or exec access (ADR-006-R4).
+  Range-access NetworkPolicies also select the ephemeral post-deploy smoke Job
+  so its documented SSH/RDP probe can reach guests; destination CIDRs and ports
+  remain identical to the existing portal/guacd access boundary.
 - `.github/workflows/_quality.yml`: CI architecture gate. Every quality unit
   it routes is declared in the `.github/quality-path-filters.yaml` contract
   (ADR-004-R24), which the `quality-path-ownership` check reconciles against
