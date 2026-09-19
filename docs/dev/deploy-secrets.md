@@ -344,7 +344,13 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
-there is no SSM equivalent). A built dev image must pass the
+there is no SSM equivalent). For bootstrap and deployment, bake the required
+guest images and configure their references. Separate candidate qualification
+is optional and off by default: only an explicit operator dispatch runs
+`packer-gcp-validate.yml`; bootstrap and deploy do not require its verdict or
+wait for its software-inventory scan.
+
+For the separate image-promotion workflow, a built dev image must pass the
 `packer-gcp-validate.yml` candidate-boot gate (which labels it
 `validated=passed`) before `packer-gcp-promote.yml` will copy that exact image to
 prod. For Windows/DC, the workflow generates a throwaway `winrm_bootstrap_password`
