@@ -6,12 +6,10 @@ adapter, M08 admission/enrollment projection, and M10 independent deployed
 proof. A configured endpoint or successful render is not a qualified model
 service. Do not enable this package with an image missing those consumers.
 
-The project-separation and file-backed inventory restrictions below describe
-the current package. [#2243's source-management boundary](source-management-preflight-2243.md)
+The file-backed inventory restrictions below describe the current package.
+[#2243's source-management boundary](source-management-preflight-2243.md)
 permits platform-project Vertex with distinct invocation/broker identities and
-tenant-managed source publication. Its implementation must reconcile all
-installation, IAM, readback and runtime validators; removing one check alone
-does not establish that capability.
+tenant-managed source publication.
 
 ## One deployment configuration
 
@@ -19,13 +17,15 @@ does not establish that capability.
 `enabled: false`; no new GSA, model role, VIP, DNS zone or workload is created.
 Enabled configuration requires hostname, exact private IPv4 VIP, admitted
 range subnets, separate versioned broker/control TLS Secret names, a CA
-ConfigMap name, and a bounded map of dedicated model project IDs to stable
+ConfigMap name, and a bounded map of model project IDs to stable
 invocation GSA account IDs. `global_access` defaults false; explicitly enabling
 it permits cross-region private LB clients, not global provider routing.
-Model projects cannot be the platform or dynamic-secret project. Terraform
-also checks that admitted subnets belong to the configured range network and
-the VIP belongs to the GKE subnet. These are deployment-owned coordinates,
-not scenario fields or alternative quota-pool identifiers.
+The platform project, dynamic-secret project, or another project may be selected
+as a source. Broker and invocation identities remain distinct, and exact-target
+IAM applies equally when projects coincide. Terraform also checks that admitted
+subnets belong to the configured range network and the VIP belongs to the GKE
+subnet. These are deployment-owned coordinates, not scenario fields or
+alternative quota-pool identifiers.
 
 `shifter-config render` supplies the typed Terraform bridge. Environment →
 platform-core → portal/iam create the identities. Platform-core owns the
@@ -88,7 +88,7 @@ components only on validated enablement and still requires exact image IDs.
 
 The broker's only token-issuance grant is a custom role containing
 `iam.serviceAccounts.getAccessToken`, attached to each exact target GSA.
-Each target has only `aiplatform.endpoints.predict` in its dedicated project.
+Each target has only `aiplatform.endpoints.predict` in its selected project.
 No key resource, delegation chain, project-wide token creator, `actAs`, key
 admin, endpoint creation or broad `aiplatform.user` is part of this path.
 Broker-to-Engine ID tokens use its own GKE metadata identity; they are not

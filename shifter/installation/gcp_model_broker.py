@@ -30,9 +30,10 @@ def validate_broker_configmap_payload(catalog_json: str, identities_json: str) -
 class GcpModelBrokerSettings(BaseModel):
     """Closed transport configuration, provisioned only on explicit enablement.
 
-    Model projects are pre-existing, dedicated, deployment-owned projects. The
-    map values are stable invocation GSA account IDs, never credentials. This
-    package creates identities and an endpoint, not active participant grants.
+    Model projects are pre-existing, deployment-owned choices and may include
+    the platform project. The map values are stable invocation GSA account IDs,
+    never credentials. This package creates identities and an endpoint, not
+    active participant grants.
     """
 
     model_config = ConfigDict(extra="forbid")

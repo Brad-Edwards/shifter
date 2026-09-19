@@ -59,7 +59,6 @@ def test_enabled_broker_roundtrips_through_canonical_terraform_render(write_conf
         ("admitted_subnets", ["0.0.0.0/0"]),
         ("admitted_subnets", ["10.50.1.1/24"]),
         ("admitted_subnets", ["10.40.0.0/24"]),
-        ("model_projects", {"secrets-example": "model-invoke"}),
         ("model_projects", {}),
         ("tls_secret_name", "portal/runtime"),
         ("provider_key", "synthetic-secret-sentinel"),
@@ -78,9 +77,9 @@ def test_disabled_defaults_need_no_identity_or_listener(write_config):
     assert '"enabled":false' in render_tfvars(config)
 
 
-@pytest.mark.parametrize("project", ["platform-example", "models-example"])
+@pytest.mark.parametrize("project", ["platform-example", "secrets-example", "models-example"])
 def test_model_source_placement_is_an_explicit_choice(write_config, project):
-    """Platform and external projects use the same invocation-only contract."""
+    """Platform, dynamic-secret and external projects use the same invocation-only contract."""
     broker = {**broker_settings(), "model_projects": {project: "model-invoke"}}
     config = load_root_config(write_config(root_config(broker)))
     line = next(line for line in render_tfvars(config).splitlines() if line.startswith("model_broker = "))
