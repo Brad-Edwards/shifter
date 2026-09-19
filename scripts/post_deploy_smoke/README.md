@@ -21,8 +21,17 @@ real scenarios, not by the post-deploy smoke (#1422).
 - `ENV` (default `dev`) and optional `PORTAL_INSTANCE_TAG` (default `${ENV}-portal`)
 
 For GCP, use an authenticated `kubectl` context for the target platform cluster
-instead of AWS credentials. The deployed portal runs as
-`deployment/portal-web`, container `portal`, in `shifter-platform`.
+instead of AWS credentials. The harness derives a short-lived Job from the live
+`portal-web` pod template in `shifter-platform`, retaining its exact image,
+service account, access-pool placement and runtime configuration. The Job and
+its temporary identity Secret are deleted on exit. This avoids relying on the
+streaming `kubectl exec` transport through GKE Connect Gateway.
+
+The GCP migration Job idempotently registers the immutable shipped smoke pack
+through `bootstrap_inbox_catalog` before the release rolls out. It uses a
+bounded, non-login system actor so first deployment does not depend on a human
+administrator having signed in already. Pack registration and conformance still
+use the normal ingestion services and fail closed on identity drift.
 
 ## Local usage
 
@@ -39,14 +48,6 @@ the deployed portal:
 
 ```bash
 bash scripts/smoke-test-gcp.sh --variant linux
-```
-
-Or directly via kubectl:
-
-```bash
-kubectl -n shifter-platform exec deployment/portal-web -c portal -- \
-  env SMOKE_TEST_USER_EMAIL=smoke-dev@example.com \
-  python manage.py run_post_deploy_smoke --variant linux
 ```
 
 The CI `post-deploy-smoke` job in `.github/workflows/_gcp-dev.yml` runs

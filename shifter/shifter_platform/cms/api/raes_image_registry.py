@@ -53,6 +53,8 @@ class RaesImageMappingViewSerializer(serializers.Serializer):
     machine_type = serializers.CharField(read_only=True, allow_blank=True)
     disk_size_gb = serializers.IntegerField(read_only=True, allow_null=True)
     disk_type = serializers.CharField(read_only=True, allow_blank=True)
+    management_ssh_username = serializers.CharField(read_only=True, allow_blank=True)
+    management_ssh_port = serializers.IntegerField(read_only=True)
     enabled = serializers.BooleanField(read_only=True)
     notes = serializers.CharField(read_only=True, allow_blank=True)
     artifact_id = serializers.CharField(read_only=True, allow_blank=True)
@@ -81,6 +83,8 @@ class RaesImageMappingRegisterSerializer(serializers.Serializer):
     machine_type = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     disk_size_gb = serializers.IntegerField(min_value=1, required=False, allow_null=True, default=None)
     disk_type = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    management_ssh_username = serializers.CharField(max_length=32, allow_blank=True, required=False, default="")
+    management_ssh_port = serializers.IntegerField(min_value=1, max_value=65535, required=False, default=22)
     enabled = serializers.BooleanField(required=False, default=True)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     # Portable RAES artifact identity + admission evidence (#1580); supply all five
@@ -112,7 +116,7 @@ def _domain_error(request: Request, exc: RaesImageMappingError) -> Response:
     """Render an RAES registry domain-validation error as the shared 400 envelope."""
     return api_error_response(
         code="invalid",
-        message=str(exc),
+        message=exc.message,
         status_code=status.HTTP_400_BAD_REQUEST,
         request=request,
     )
@@ -162,6 +166,8 @@ class RaesImageMappingListCreateView(APIView):
                     machine_type=data["machine_type"],
                     disk_size_gb=data["disk_size_gb"],
                     disk_type=data["disk_type"],
+                    management_ssh_port=data["management_ssh_port"],
+                    management_ssh_username=data["management_ssh_username"],
                     enabled=data["enabled"],
                     notes=data["notes"],
                     artifact_id=data["artifact_id"],

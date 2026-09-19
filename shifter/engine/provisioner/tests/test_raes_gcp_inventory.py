@@ -72,6 +72,19 @@ def test_all_resources_absent_is_verified():
     assert result["scope"]["project"] == "proj-1"
 
 
+def test_broker_firewall_is_inventoried_after_transport_is_disabled():
+    clients = _clients()
+
+    def lookup(**kwargs):
+        if kwargs["firewall"] == "shifter-r-7-egress-model-broker":
+            return SimpleNamespace(name=kwargs["firewall"])
+        raise _NotFound()
+
+    clients.firewalls.get.side_effect = lookup
+    result = inventory_raes_range_cell(_REQUEST, 7, _plan(), config=_config(), clients=clients)
+    assert result["outcome"] == RESIDUALS_FOUND
+
+
 def test_present_resources_are_residuals():
     result = inventory_raes_range_cell(_REQUEST, 7, _plan(), config=_config(), clients=_clients(exists=True))
     assert result["outcome"] == RESIDUALS_FOUND

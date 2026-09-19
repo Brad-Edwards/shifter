@@ -48,6 +48,7 @@ class LaunchOptions:
     # launch subject rather than the launcher identity.
     model_admission_subject: OwnedReference | None = None
     model_launch_scope: ModelLaunchScope | None = None
+    model_sources: dict | None = None
 
 
 def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR

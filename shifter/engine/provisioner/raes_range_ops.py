@@ -35,14 +35,7 @@ from typing import Any
 from shared.operation_results import MAX_DIAGNOSTIC_CHARS, ResultStep
 from shared.raes.completion_evidence import build_completion_evidence
 from shared.raes.operation_input import RaesOperationInput, image_lookup_key
-from shared.range_instantiation_policy import (
-    POLICY_DENIAL_CODE,
-    PREREQUISITE_DENIAL_CODE,
-    InstantiationPurpose,
-    evaluate_gcp_backend_admission,
-)
 
-from cloud.exceptions import CloudError
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_operation_input import (
@@ -52,7 +45,6 @@ from provisioner_db_operation_input import (
 )
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
-from raes_gcp_image_keys import _keyed_image_profile
 from raes_gcp_inventory import VERIFIED_ABSENT, inventory_raes_range_cell
 from raes_gcp_network_allocation import (
     GceNetworkAllocation,
@@ -65,6 +57,7 @@ from raes_gcp_network_allocation import (
     allocated_networks_for_provision as _allocated_networks_for_provision,
 )
 from raes_plan import RaesPlan, RaesPlanNode, parse_plan
+from raes_range_contract import _classify_failure, _require_gce_live_fire_binding
 from raes_range_members import realized_members as _realized_members
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
@@ -85,49 +78,16 @@ _FAILURE_REASON_CODE = "cloud_operation_failed"
 _INPUT_REASON_CODE = "dependency_unavailable"
 
 #: Reported when the realization contract itself was violated (bad plan, missing proof).
-_INVALID_STATE_REASON_CODE = "invalid_state"
+
 
 #: Reported when a cloud operation exceeded its budget.
-_TIMEOUT_REASON_CODE = "cloud_timeout"
+
 
 _RESOURCE = "raes-range"
 
 
 class RaesGenerationError(RuntimeError):
     """An RAES operation was invoked without its canonical operation generation."""
-
-
-def _binding_error(message: str, code: str) -> CloudError:
-    """Return an authored lifecycle failure with a stable classification."""
-    error = CloudError(message)
-    error.code = code
-    return error
-
-
-def _require_gce_live_fire_binding(operation_input: RaesOperationInput) -> str:
-    """Validate the projected ownership/purpose pair for a normal RAES range."""
-    raw_backend = operation_input.range_backend
-    if not raw_backend:
-        raise _binding_error(
-            "RAES GCP range ownership binding is missing",
-            PREREQUISITE_DENIAL_CODE,
-        )
-    try:
-        purpose = InstantiationPurpose(operation_input.instantiation_purpose)
-    except (TypeError, ValueError):
-        raise _binding_error(
-            "RAES GCP range instantiation purpose is missing or invalid",
-            PREREQUISITE_DENIAL_CODE,
-        ) from None
-    if purpose is not InstantiationPurpose.LIVE_FIRE:
-        raise _binding_error(
-            "Normal RAES GCP ranges require the live_fire instantiation purpose",
-            POLICY_DENIAL_CODE,
-        )
-    admission = evaluate_gcp_backend_admission(raw_backend, None, purpose)
-    if not admission.admitted:
-        raise _binding_error(admission.reason, admission.code)
-    return admission.backend
 
 
 def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> GCERangeCellConfig:
@@ -142,9 +102,7 @@ def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> 
     return resolve_range_cell_placement(request_id, config)
 
 
-def _registry_resolver(
-    operation_input: RaesOperationInput, config: GCERangeCellConfig
-) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
+def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
     """Return an image resolver bound to the projected candidates + GCE policy."""
 
     def resolve(node: RaesPlanNode) -> GCERangeImageProfile:
@@ -157,13 +115,6 @@ def _registry_resolver(
         binding = operation_input.artifact_binding_for(node.address)
         if binding is not None:
             return resolve_gce_image_from_binding(node, binding)
-        # An authored source that names a tenant keyed image profile (capability-
-        # bearing, e.g. polaris-vm/polaris-dc) realizes that profile verbatim so
-        # its bootstrap_capability reaches the provisioner. This is the RAES-path
-        # counterpart of the legacy range-cell ami_key selection.
-        keyed = _keyed_image_profile(config, node.image.name if node.image else None)
-        if keyed is not None:
-            return keyed
         # The lookup key rule is shared with the Engine that scoped the
         # projection; deriving it separately here is what would make an image
         # silently go missing.
@@ -211,30 +162,6 @@ def _report_failure(
     )
 
 
-def _classify_failure(exc: BaseException, stage: str) -> tuple[str, str]:
-    """Map a realization failure onto an authored reason code and diagnostic.
-
-    The exception *message* must never cross this boundary. RAES failures travel
-    through cloud-provider, storage, content-delivery, and guest-realization
-    code whose messages can carry provider response bodies, resource ids,
-    storage references, signed URLs, and guest output; the result inbox is a
-    durable channel readable by anyone permitted to inspect diagnostics, and an
-    authenticated range author can deliberately provoke failures to populate it.
-    Truncation bounds size, not confidentiality, and ``safe_log_value`` is
-    injection defence, not redaction (ADR-043-R5).
-
-    The exception *type* is a code identifier rather than runtime data, so it
-    crosses to keep the channel useful for triage. Full context stays in the
-    provisioner's own logs, where the raw error is re-raised to the task runner.
-    """
-    if isinstance(exc, RaesRealizationError):
-        # Authored by this module, so its text is already safe to report.
-        return _INVALID_STATE_REASON_CODE, f"{stage}: {exc}"
-    if isinstance(exc, TimeoutError):
-        return _TIMEOUT_REASON_CODE, f"{stage} timed out ({type(exc).__name__})"
-    return _FAILURE_REASON_CODE, f"{stage} failed ({type(exc).__name__})"
-
-
 def _load_input(ref: OperationRef, operation_id: str, operation: str, request_id: str) -> RaesOperationRun:
     """Read and validate this generation's input, reporting failure if it cannot.
 
@@ -279,37 +206,53 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
     config: GCERangeCellConfig | None = None
     pre_mutation_release_attempted = False
     try:
-        backend = _require_gce_live_fire_binding(operation_input)
-        config = load_gce_range_cell_config(backend=backend)
-        config = _config_for_range_placement(request_id, config)
+        from model_enrollment import load_model_enrollment
+        from runtime_plugin_execution import load_guest_plugin_plans
+
+        plugin_plans = load_guest_plugin_plans(run)
+        enrollment = load_model_enrollment(run)
         raes_plan = parse_plan(operation_input.plan)
-        network_allocation = _allocated_networks_for_provision(
-            request_id,
-            generation,
-            raes_plan,
-            config,
-        )
+        if operation_input.range_backend == "ec2":
+            from raes_ec2_runtime import provision_ec2_run
 
-        def release_pre_mutation_allocation() -> None:
-            """Release this generation's reservation before provider mutation."""
-            nonlocal pre_mutation_release_attempted
-            pre_mutation_release_attempted = True
-            _release_subnet_allocations_best_effort(request_id, operation_id=generation)
+            apply_result = provision_ec2_run(run, plugin_plans, enrollment)
+        else:
+            backend = _require_gce_live_fire_binding(operation_input)
+            config = load_gce_range_cell_config(backend=backend)
+            config = _config_for_range_placement(request_id, config)
+            raes_plan = parse_plan(operation_input.plan)
+            network_allocation = _allocated_networks_for_provision(
+                request_id,
+                generation,
+                raes_plan,
+                config,
+            )
 
-        apply_result = apply_raes_range_cell(
-            request_id,
-            range_id,
-            raes_plan,
-            _registry_resolver(operation_input, config),
-            options=RaesGceApplyOptions(
-                config=config,
-                egress_mode=operation_input.egress_mode,
-                allocated_network_cidrs=network_allocation.require_available(),
-                on_pre_mutation_failure=(release_pre_mutation_allocation if network_allocation.network_cidrs else None),
-            ),
-            delivery_bindings=operation_input.binding_transport(),
-            access_bindings=operation_input.access_binding_transport(),
-        )
+            def release_pre_mutation_allocation() -> None:
+                """Release this generation's reservation before provider mutation."""
+                nonlocal pre_mutation_release_attempted
+                pre_mutation_release_attempted = True
+                _release_subnet_allocations_best_effort(request_id, operation_id=generation)
+
+            apply_result = apply_raes_range_cell(
+                request_id,
+                range_id,
+                raes_plan,
+                _registry_resolver(operation_input),
+                options=RaesGceApplyOptions(
+                    config=config,
+                    egress_mode=operation_input.egress_mode,
+                    allocated_network_cidrs=network_allocation.require_available(),
+                    runtime_plugin=plugin_plans.execute if plugin_plans is not None else None,
+                    model_enrollment=enrollment.execute if enrollment is not None else None,
+                    model_broker=enrollment.gce_egress_capability() if enrollment is not None else None,
+                    on_pre_mutation_failure=(
+                        release_pre_mutation_allocation if network_allocation.network_cidrs else None
+                    ),
+                ),
+                delivery_bindings=operation_input.binding_transport(),
+                access_bindings=operation_input.access_binding_transport(),
+            )
         verified_addresses = apply_result.get("composition_verified_addresses")
         if not isinstance(verified_addresses, list) or not all(
             isinstance(address, str) for address in verified_addresses
@@ -325,16 +268,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             generation_id=run.operation_id,
         )
     except Exception as exc:
-        if (
-            network_allocation is not None
-            and network_allocation.network_cidrs
-            and raes_plan is not None
-            and config is not None
-            and not pre_mutation_release_attempted
-        ):
-            cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config, network_allocation)
-            if cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
-                _release_subnet_allocations_best_effort(request_id, operation_id=generation)
+        _release_failed_provision_allocation(run, raes_plan, config, network_allocation, pre_mutation_release_attempted)
         reason_code, diagnostic = _classify_failure(exc, "raes range provision")
         logger.error("RAES range provision failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
@@ -349,6 +283,28 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         ResultStep.RAES_TERMINAL_READY,
         {"raes_status": "succeeded", "members": members, "completion": completion},
     )
+
+
+def _release_failed_provision_allocation(
+    run: RaesOperationRun,
+    raes_plan: RaesPlan | None,
+    config: GCERangeCellConfig | None,
+    network_allocation: GceNetworkAllocation | None,
+    pre_mutation_release_attempted: bool,
+) -> None:
+    """Release failed GCE addressing only after proving original resources absent."""
+    if (
+        network_allocation is not None
+        and network_allocation.network_cidrs
+        and raes_plan is not None
+        and config is not None
+        and not pre_mutation_release_attempted
+    ):
+        cleanup_inventory = _raes_cleanup_inventory(
+            run.request_id, run.input.legacy_range_id, raes_plan, config, network_allocation
+        )
+        if cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
+            _release_subnet_allocations_best_effort(run.request_id, operation_id=run.operation_id)
 
 
 def run_raes_range_activate(request_id: str, *, operation_id: str | None = None) -> None:
@@ -381,6 +337,8 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
     _report(ref, operation, ResultStep.RAES_ACTIVATE_RUNNING, {"raes_status": "running"})
     try:
         operation_input = activation.raes_input
+        if operation_input.runtime_plugin is not None:
+            raise RaesRealizationError("Runtime plugin warm activation is not supported")
         backend = _require_gce_live_fire_binding(operation_input)
         config = _config_for_range_placement(request_id, load_gce_range_cell_config(backend=backend))
         raes_plan = parse_plan(operation_input.plan)
@@ -452,6 +410,17 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
     logger.info("Starting RAES range destroy for request_id=%s", request_id)
     _report(ref, operation, ResultStep.RAES_DESTROY_RUNNING, {"raes_status": "running"})
     try:
+        if operation_input.range_backend == "ec2":
+            from raes_ec2_runtime import destroy_ec2_run
+
+            cleanup_inventory = destroy_ec2_run(run)
+            _report(
+                ref,
+                operation,
+                ResultStep.RAES_TERMINAL_DESTROYED,
+                {"raes_status": "succeeded", "cleanup_inventory": cleanup_inventory},
+            )
+            return
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
         config = _config_for_range_placement(request_id, config)

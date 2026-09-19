@@ -337,7 +337,7 @@ def preview_effective_policy(
         ).first()
         if revision is None:
             continue
-        match = _match_for_subject(record, revision, subject_ref, moment, catalog.digest)
+        match = _match_for_subject(record, revision, subject_ref, moment, catalog.authority_catalog_digest)
         if match is not None:
             matches.append(match)
 

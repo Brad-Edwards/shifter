@@ -369,6 +369,11 @@ edge:
 # M06 packages the M05 process contract; enable only with qualified listener images.
 modelBroker:
   enabled: false
+  role_arn: ""
+  target_group_arn: ""
+  vpc_id: ""
+  endpoint_cidrs: []
+  health_check_cidrs: []
   hostname: ""
   vip: ""
   admitted_subnets: []
@@ -382,3 +387,9 @@ modelBroker:
   catalog_json: ""
   catalog_digest: ""
   identities_json: ""
+  providers_json: ""
+  enrollment_env: {}
+  provisioner_subject: ""
+  fingerprint_secret_name: ""
+  fingerprint_key_version: ""
+  fingerprint_previous_secret_name: ""

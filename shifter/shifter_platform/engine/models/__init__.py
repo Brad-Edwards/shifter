@@ -50,6 +50,8 @@ from ._model_budget import (
     ModelReconciliationObligation,
     ModelRequestReservation,
 )
+from ._model_credentials import ModelAccessCredential
+from ._model_sources import ModelSource, ModelSourceRegistry, ModelSourceRevision
 from ._operation_io import (
     OperationInput,
     OperationResultDisposition,
@@ -75,6 +77,12 @@ from ._range import Range
 from ._receipt import ReceiptVerifierRegistration
 from ._request import App, Instance, Instantiation, Request
 from ._retry_binding import PublicOperationRetryBinding, RetryBindingStatus
+from ._runtime_plugins import (
+    RuntimePluginInstallation,
+    RuntimePluginInvocation,
+    RuntimePluginPackBinding,
+    RuntimePluginRangeBinding,
+)
 from ._sharing import (
     AllocationGroup,
     MembershipProjection,
@@ -99,6 +107,7 @@ __all__ = [
     "Instantiation",
     "InterruptState",
     "MembershipProjection",
+    "ModelAccessCredential",
     "ModelAliasAssignment",
     "ModelAllocation",
     "ModelAllocationAuthority",
@@ -114,6 +123,9 @@ __all__ = [
     "ModelQuotaReading",
     "ModelReconciliationObligation",
     "ModelRequestReservation",
+    "ModelSource",
+    "ModelSourceRegistry",
+    "ModelSourceRevision",
     "OperationInput",
     "OperationResultDisposition",
     "OperationResultInbox",
@@ -138,6 +150,10 @@ __all__ = [
     "ReceiptVerifierRegistration",
     "Request",
     "RetryBindingStatus",
+    "RuntimePluginInstallation",
+    "RuntimePluginInvocation",
+    "RuntimePluginPackBinding",
+    "RuntimePluginRangeBinding",
     "SharingAuthorityFence",
     "SharingBindingRecord",
     "SharingBindingRevision",

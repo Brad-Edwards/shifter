@@ -128,6 +128,18 @@ class TestOutboxAndLegacyCapabilitiesAreGone:
 
 
 class TestAllowlistedTablePrivileges:
+    @pytest.mark.parametrize("column", ["id", "operation_id", "state", "input_digest", "result"])
+    def test_plugin_plan_projection_is_readable(self, column):
+        assert _column("engine_runtime_plugin_invocation", column, "SELECT") is True
+
+    @pytest.mark.parametrize("column", ["input", "request_id", "phase", "expires_at", "updated_at"])
+    def test_plugin_controller_input_is_not_readable(self, column):
+        assert _column("engine_runtime_plugin_invocation", column, "SELECT") is False
+
+    @pytest.mark.parametrize("privilege", ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"])
+    def test_plugin_plan_projection_has_no_table_wide_grant(self, privilege):
+        assert _table("engine_runtime_plugin_invocation", privilege) is False
+
     @pytest.mark.parametrize(
         ("table", "priv"),
         [

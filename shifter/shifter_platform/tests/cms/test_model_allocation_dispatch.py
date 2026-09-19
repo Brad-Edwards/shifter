@@ -343,8 +343,11 @@ def test_resume_reauthorizes_after_status_change_and_commits_new_grant(django_us
     original = ModelAllocation.objects.get()
     row = Range.objects.get(uuid=request.range_id)
     revoke_model_generation(row.uuid, operation_id=original.operation_id)
+    # Exercise reauthorization on the supported legacy power path. Native RAES
+    # resume is separately required to reject without minting a replacement grant.
     row.status = Range.Status.PAUSED
-    row.save(update_fields=["status"])
+    row.range_config = {}
+    row.save(update_fields=["status", "range_config"])
     assert resume_model_range(request.request_id)
     replacement = ModelAllocation.objects.exclude(pk=original.pk).get()
     assert replacement.operation_id != original.operation_id

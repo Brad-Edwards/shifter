@@ -24,7 +24,9 @@ from uuid import UUID
 from django.db import transaction
 from django.db.models import F
 
-from shared.model_access import ContractError, ModelAccessCatalog, validate_catalog
+from shared.model_access import BillingBound, ContractError, ModelAccessCatalog, validate_catalog
+from shared.model_access.core_models import BillingComponent, Price
+from shared.model_access.effective_policy import EffectivePolicy
 from shared.model_access.provider import ProviderUsage
 
 from ._model_request_accounting import _checked_ceil, _recheck_authority
@@ -44,6 +46,7 @@ _DEFAULT_HORIZON_SECONDS = 900
 _DISPATCH_LEASE_SECONDS = 10
 _CONTINUATION_LEASE_SECONDS = 5
 _REVOKED = "request.revoked"
+_USAGE_INCOMPLETE = "request.usage_incomplete"
 _LEASE_EXPIRED = "request.lease_expired"
 # Transport-fence states in which no new provider work may start.
 _CLOSED_TRANSPORT = {"revoking", "revoked", "closed"}
@@ -69,6 +72,7 @@ def open_dispatch(*, request_uuid: UUID, now: datetime | None = None) -> Dispatc
         reservation = ModelRequestReservation.objects.get(request_uuid=request_uuid)
         allocation = ModelAllocation.objects.select_for_update().get(pk=reservation.allocation_id)
         _assert_allocation_live(allocation, moment)
+        _assert_request_current(reservation, moment)
         _assert_grant_current(ModelPendingGrant, reservation)
         _recheck_authority(allocation)
         reservation = ModelRequestReservation.objects.select_for_update().get(pk=reservation.pk)
@@ -100,6 +104,7 @@ def check_dispatch_lease(*, request_uuid: UUID, dispatch_token: str, now: dateti
         reservation = ModelRequestReservation.objects.get(request_uuid=request_uuid)
         allocation = ModelAllocation.objects.select_for_update().get(pk=reservation.allocation_id)
         _assert_allocation_live(allocation, moment)
+        _assert_request_current(reservation, moment)
         _assert_grant_current(ModelPendingGrant, reservation)
         _recheck_authority(allocation)
         lease = ModelDispatchLease.objects.select_for_update().filter(reservation_id=reservation.pk).first()
@@ -124,6 +129,7 @@ def renew_continuation_lease(*, request_uuid: UUID, now: datetime | None = None)
         reservation = ModelRequestReservation.objects.get(request_uuid=request_uuid)
         allocation = ModelAllocation.objects.select_for_update().get(pk=reservation.allocation_id)
         _assert_allocation_live(allocation, moment)
+        _assert_request_current(reservation, moment)
         _assert_grant_current(ModelPendingGrant, reservation)
         _recheck_authority(allocation)
         reservation = ModelRequestReservation.objects.select_for_update().get(pk=reservation.pk)
@@ -162,12 +168,16 @@ def settle_request(
                 provider_request_ref=provider_request_ref,
                 now=now,
             )
-        raise ContractError("request.usage_incomplete")
+        raise ContractError(_USAGE_INCOMPLETE)
     with transaction.atomic():
-        reservation = ModelRequestReservation.objects.select_for_update().get(request_uuid=request_uuid)
+        reservation = _lock_request(request_uuid=request_uuid)
         if reservation.settlement_state == "settled":
             # Idempotent: a repeat settle returns the already-recorded charge.
             return _settled_total(reservation)
+        if reservation.settlement_state == "unknown_charged":
+            from ._model_request_reconcile import apply_late_evidence
+
+            return apply_late_evidence(request_uuid=request_uuid, usage=usage)
         settled = _settled_charge(reservation, usage)
         _apply_settlement(reservation, settled, usage, provider_request_ref)
         _close_lease(reservation)
@@ -178,10 +188,9 @@ def settle_request(
 
 def release_before_dispatch(*, request_uuid: UUID) -> None:
     """Release money/concurrency on a proven pre-transport failure; keep rate count."""
-    from engine.models import ModelRequestReservation
 
     with transaction.atomic():
-        reservation = ModelRequestReservation.objects.select_for_update().get(request_uuid=request_uuid)
+        reservation = _lock_request(request_uuid=request_uuid)
         if reservation.state != "reserved":
             raise ContractError("request.dispatch_state")
         for posting, account in _locked_postings(reservation):
@@ -202,11 +211,11 @@ def charge_unknown(
     horizon_seconds: int = _DEFAULT_HORIZON_SECONDS,
 ) -> None:
     """Retain the conservative hold for an ambiguous dispatch and record an obligation."""
-    from engine.models import ModelReconciliationObligation, ModelRequestReservation
+    from engine.models import ModelReconciliationObligation
 
     moment = now or datetime.now(UTC)
     with transaction.atomic():
-        reservation = ModelRequestReservation.objects.select_for_update().get(request_uuid=request_uuid)
+        reservation = _lock_request(request_uuid=request_uuid)
         if reservation.settlement_state == "settled":
             # Already resolved; never reopen a settled request.
             return
@@ -285,16 +294,13 @@ def _usage_incomplete(reservation: ModelRequestReservation, usage: ProviderUsage
 
 def _settled_charge(reservation: ModelRequestReservation, usage: ProviderUsage) -> int:
     """Compute the settled charge from proven usage and the snapshot price schedule."""
-    catalog = _snapshot_catalog(reservation)
-    alias = next((item for item in catalog.aliases if item.logical_alias == reservation.logical_alias), None)
-    if alias is None:
-        raise ContractError("request.alias_unavailable")
-    schedule = next(
-        (item for item in catalog.price_schedules if item.price_schedule_id == alias.price_schedule_id), None
-    )
-    if schedule is None:
-        raise ContractError("request.price_unavailable")
-    prices = {price.component: price for price in schedule.prices}
+    if _usage_incomplete(reservation, usage):
+        raise ContractError(_USAGE_INCOMPLETE)
+    if reservation.billing_bound:
+        bound = BillingBound.model_validate(reservation.billing_bound)
+        if {item.component for item in usage.items} != {amount.component for amount in bound.amounts}:
+            raise ContractError(_USAGE_INCOMPLETE)
+    prices = _settlement_prices(reservation)
     total = 0
     for item in usage.items:
         if not item.provider_verified:
@@ -304,7 +310,17 @@ def _settled_charge(reservation: ModelRequestReservation, usage: ProviderUsage) 
         if price is None:
             raise ContractError("request.price_unavailable")
         total += _checked_ceil(item.units, price.price_micro_units, price.unit_denominator)
-    return min(total, reservation.canonical_request_cost)
+    if total > reservation.canonical_request_cost:
+        raise ContractError("request.usage_exceeds_bound")
+    return total
+
+
+def _settlement_prices(reservation: ModelRequestReservation) -> dict[BillingComponent, Price]:
+    """Resolve prices exclusively from the reservation's immutable catalog snapshot."""
+    catalog = _snapshot_catalog(reservation)
+    schedule = catalog.price_for_alias(reservation.logical_alias, reservation.shard["shard_id"])
+    prices = {price.component: price for price in schedule.prices}
+    return prices
 
 
 def _locked_postings(
@@ -425,3 +441,33 @@ def _lifecycle_audit(reservation: ModelRequestReservation, action_name: str, con
         ),
         strict=True,
     )
+
+
+def _lock_reservation(reservation_id: int) -> ModelRequestReservation:
+    """Lock a reservation row by its integer identity."""
+    from engine.models import ModelRequestReservation
+
+    candidate = ModelRequestReservation.objects.get(pk=reservation_id)
+    return _lock_request(request_uuid=candidate.request_uuid)
+
+
+def _assert_request_current(reservation: ModelRequestReservation, moment: datetime) -> None:
+    """Enforce the immutable policy request deadline before renewing provider effects."""
+    policy = EffectivePolicy.model_validate(reservation.allocation.snapshot["effective_policy"])
+    if policy.effective_profile is None:
+        raise ContractError("request.policy_unavailable")
+    seconds = min(120, policy.effective_profile.limits.max_request_seconds)
+    if reservation.created_at + timedelta(seconds=seconds) <= moment:
+        raise ContractError("request.deadline_expired")
+
+
+def _lock_request(*, request_uuid: UUID) -> ModelRequestReservation:
+    """Serialize settlement against admission in the same owner-first order."""
+    from engine.models import ModelAllocation, ModelPendingGrant, ModelRequestReservation
+
+    candidate = ModelRequestReservation.objects.get(request_uuid=request_uuid)
+    ModelAllocation.objects.select_for_update().get(pk=candidate.allocation_id)
+    ModelPendingGrant.objects.select_for_update().get(allocation_id=candidate.allocation_id)
+    # Account rows precede request rows, matching the admission transaction.
+    list(_locked_postings(candidate))
+    return ModelRequestReservation.objects.select_for_update().get(pk=candidate.pk)

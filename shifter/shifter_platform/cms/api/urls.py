@@ -6,16 +6,88 @@ from django.urls import path
 
 from cms.api import (
     artifact_preparation,
+    model_source_options,
+    model_sources,
     preparation_adapters,
     preparation_workers,
     raes_image_registry,
+    range_model_sources,
     range_scope,
+    runtime_plugin_packs,
+    runtime_plugins,
+    tenant_packs,
     views,
 )
 
 app_name = "cms"
 
 urlpatterns = [
+    path(
+        "organizations/<uuid:organization_uuid>/model-source-users/",
+        model_sources.ModelSourceUsersView.as_view(),
+        name="model-source-users",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/model-ranges/",
+        range_model_sources.OrganizationModelRangesView.as_view(),
+        name="organization-model-ranges",
+    ),
+    path(
+        "ranges/<uuid:request_id>/model-sources/",
+        range_model_sources.RangeModelSourcesView.as_view(),
+        name="range-model-sources",
+    ),
+    path("model-source-options/", model_source_options.ModelSourceOptionsView.as_view(), name="model-source-options"),
+    path(
+        "organizations/<uuid:organization_uuid>/model-sources/",
+        model_sources.ModelSourceListCreateView.as_view(),
+        name="model-sources",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/model-sources/available/",
+        model_sources.UsableModelSourceListView.as_view(),
+        name="model-sources-available",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/model-sources/<uuid:source_id>/",
+        model_sources.ModelSourceDetailView.as_view(),
+        name="model-source-detail",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/model-sources/<uuid:source_id>/retire-credentials/",
+        model_sources.ModelSourceCredentialRetirementView.as_view(),
+        name="model-source-credential-retirement",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/packs/",
+        tenant_packs.TenantPackUploadView.as_view(),
+        name="tenant-pack-upload",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/plugin-packs/",
+        runtime_plugin_packs.RuntimePluginPackListView.as_view(),
+        name="runtime-plugin-packs",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/plugin-packs/<slug:pack_id>/",
+        runtime_plugin_packs.RuntimePluginPackDetailView.as_view(),
+        name="runtime-plugin-pack-detail",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/plugins/",
+        runtime_plugins.RuntimePluginListCreateView.as_view(),
+        name="runtime-plugins",
+    ),
+    path(
+        "organizations/<uuid:organization_uuid>/plugins/<uuid:plugin_id>/actions/",
+        runtime_plugins.RuntimePluginActionView.as_view(),
+        name="runtime-plugin-action",
+    ),
+    path(
+        "preparation-adapter-grants/",
+        preparation_adapters.PreparationAdapterGrantListView.as_view(),
+        name="preparation-adapter-grants",
+    ),
     path(
         "artifact-preparation/workers/<uuid:operation_id>/",
         preparation_workers.PreparationWorkerView.as_view(),

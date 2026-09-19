@@ -365,7 +365,7 @@ def _resources(request_cpu: str, request_memory: str, limit_cpu: str, limit_memo
 
 def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityProfile:
     """Build one immutable catalog entry from its supported participant tier."""
-    sizes = {
+    sizes: dict[int, tuple[int, int, int, int, str, Literal["ZONAL", "REGIONAL"], int, int]] = {
         10: (2, 1, 2, 4, "db-custom-2-7680", "ZONAL", 2, 100),
         30: (5, 2, 3, 8, "db-custom-4-15360", "REGIONAL", 8, 200),
         50: (8, 4, 4, 12, "db-custom-8-30720", "REGIONAL", 12, 350),
@@ -373,7 +373,7 @@ def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityP
     }
     portal_replicas, guacd_replicas, access_nodes, access_max, sql_tier, sql_ha, redis_gb, sql_budget = sizes[count]
     return GcpSharedServiceCapacityProfile(
-        profile_id=f"gcp-shared-v1-p{count}",
+        profile_id=cast(CapacityProfileId, f"gcp-shared-v1-p{count}"),
         participant_count=count,
         portal=PortalCapacity(
             replicas=portal_replicas,

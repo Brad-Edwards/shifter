@@ -24,6 +24,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from config._cloud import STORAGE_BUCKET_NAME
+
 __all__ = [
     "RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
     "RAES_CONTENT_DELIVERY_PREFIX",
@@ -61,10 +63,10 @@ RAES_PACKAGE_ROOT = os.environ.get("SHIFTER_RAES_PACKAGE_ROOT", str(_raes_defaul
 # object; the native launch resolver downloads it from this bucket (optionally
 # under a fixed key prefix), safely extracts it into a private temp dir, and
 # verifies its canonical content digest before SDL resolution or dispatch. An
-# empty bucket keeps object-backed packs non-launchable (fail closed) — object
-# launchability requires this to be configured. Read via the literal
+# explicit bucket overrides the tenant assets bucket used by default for
+# runtime uploads. Both absent keeps object-backed packs non-launchable. Read via the literal
 # os.environ.get form so config/env-manifest.json picks it up.
-RAES_PACKAGE_BUCKET = os.environ.get("SHIFTER_RAES_PACKAGE_BUCKET", "")
+RAES_PACKAGE_BUCKET = os.environ.get("SHIFTER_RAES_PACKAGE_BUCKET", "") or STORAGE_BUCKET_NAME
 RAES_PACKAGE_PREFIX = os.environ.get("SHIFTER_RAES_PACKAGE_PREFIX", "")
 
 # Fail-closed bounds for object-backed package retrieval and extraction (defense

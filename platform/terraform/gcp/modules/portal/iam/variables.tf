@@ -82,7 +82,7 @@ variable "vmseries_bootstrap_bucket_name" {
 variable "raes_package_bucket_name" {
   type        = string
   default     = ""
-  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal read-only (objectViewer) access. Empty disables the binding."
+  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal objectUser access for verified reads, tenant uploads and failed-upload cleanup. Empty disables the binding."
 }
 
 variable "ctf_content_bucket_name" {

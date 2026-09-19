@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 from shared.operation_results import ResultStep
-from shared.raes.operation_input import RaesInputBindings, build_raes_operation_input
+from shared.raes.operation_input import RaesInputBindings, RaesRangeIdentity, build_raes_operation_input
 from shared.warm_pool.activation_input import (
     ActivationClaimant,
     ActivationGeneration,
@@ -35,7 +35,7 @@ def _activation():
         image_candidates={},
         range_backend="gce",
         instantiation_purpose="live_fire",
-        legacy_range_id=1001,
+        identity=RaesRangeIdentity(1001, None),
     )
     payload = build_activation_input(
         claimant=ActivationClaimant(user_id=42, username="claimant@example.com", workspace_id=7),
@@ -153,8 +153,7 @@ class TestRealizeClaimantAccessOnCell:
     def test_happy_path_returns_projected_members(self, monkeypatch):
         members = [{"target_address": "n1", "channel": "ssh"}]
         monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
-        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi, cfg: lambda node: None)
-        monkeypatch.setattr(raes_gcp_activate_realize, "load_gce_range_cell_config", lambda: SimpleNamespace())
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
         monkeypatch.setattr(
             raes_gcp_activate_realize,
             "realize_access_on_existing_cell",
@@ -175,8 +174,7 @@ class TestRealizeClaimantAccessOnCell:
 
     def test_realization_error_fails_closed(self, monkeypatch):
         monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
-        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi, cfg: lambda node: None)
-        monkeypatch.setattr(raes_gcp_activate_realize, "load_gce_range_cell_config", lambda: SimpleNamespace())
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
 
         def _boom(*a, **k):
             raise RuntimeError("apply failed")
@@ -189,8 +187,7 @@ class TestRealizeClaimantAccessOnCell:
     @pytest.mark.parametrize("addresses", ["n1", {"n1": True}, [1], None])
     def test_malformed_verification_addresses_fail_before_snapshot(self, monkeypatch, addresses):
         monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
-        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi, cfg: lambda node: None)
-        monkeypatch.setattr(raes_gcp_activate_realize, "load_gce_range_cell_config", lambda: SimpleNamespace())
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
         monkeypatch.setattr(
             raes_gcp_activate_realize,
             "realize_access_on_existing_cell",
@@ -447,5 +444,5 @@ def _raw_raes_input():
         image_candidates={},
         range_backend="gce",
         instantiation_purpose="live_fire",
-        legacy_range_id=1001,
+        identity=RaesRangeIdentity(1001, None),
     )

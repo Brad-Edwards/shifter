@@ -31,7 +31,6 @@ from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_credentials import _default_vertex_ops, mint_range_vertex_key
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
@@ -58,10 +57,17 @@ from raes_content_delivery import assert_content_delivery_bindings_complete
 from raes_gcp_apply_types import RaesGceApplyOptions, RaesGceApplyRuntime
 from raes_gcp_composition import node_bootstrap_script
 from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
-from raes_gcp_plan import RaesGcePlanError, RaesGcePlanOptions, build_raes_range_cell_plan
-from raes_gcp_polaris import _run_polaris_post_provision
+from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
+from raes_guest_plan import (
+    _access_by_node,
+    _accounts_by_node,
+    _assert_composition_targets_resolve,
+    _publish_participant_access,
+    assert_management_login_separate,
+)
 from raes_operating_system import validate_operating_systems
+from raes_participant_host_keys import observe_participant_host_keys
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
 from raes_snapshot import snapshot_resources
 from raes_substrate_observation import verify_prepared_source
@@ -80,7 +86,6 @@ def _apply_runtime(
         config=config or options.config or load_gce_range_cell_config(),
         clients=options.clients or _build_clients(),
         secret_ops=options.secret_ops or _default_secret_ops(),
-        vertex_ops=options.vertex_ops or _default_vertex_ops(),
         account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
         credential_installer=options.credential_installer,
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
@@ -90,20 +95,9 @@ def _apply_runtime(
         operating_system_observer=options.operating_system_observer,
         substrate_observer=options.substrate_observer,
         allocated_network_cidrs=options.allocated_network_cidrs,
+        runtime_plugin=options.runtime_plugin,
+        model_enrollment=options.model_enrollment,
     )
-
-
-def _assert_composition_targets_resolve(raes_plan: RaesPlan) -> None:
-    """Fail closed if any content/feature/account placement targets an unknown node."""
-    node_addresses = {node.address for node in raes_plan.nodes}
-    placements = (
-        [(c.target_address, "content", c.name) for c in raes_plan.content]
-        + [(a.target_address, "account", a.username) for a in raes_plan.accounts]
-        + [(f.target_address, "feature", f.name) for f in raes_plan.features]
-    )
-    for target, kind, name in placements:
-        if target not in node_addresses:
-            raise RaesGcePlanError(f"{kind} placement {name!r} targets node {target!r} not present in this plan")
 
 
 def _assert_content_delivery_bindings_complete(
@@ -189,9 +183,6 @@ def _provision_raes_resources(
     authored account credential installed and verified on the guest, so a
     declared endpoint never appears with a credential that was never realized.
     """
-    # Per-range Vertex agent credential (polaris docker-host); persisted on every
-    # instance output (only the polaris host reads it), mirroring the legacy path.
-    vertex_secret_ref = mint_range_vertex_key(plan["range_id"], plan["project_id"], runtime.config, runtime.vertex_ops)
     if plan["manage_network"]:
         _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
@@ -221,7 +212,6 @@ def _provision_raes_resources(
                 host_public_key=host_public_key,
             ),
             runtime.config,
-            vertex_secret_ref=vertex_secret_ref,
         )
         node_address = _node_address_of(instance)
         accounts = accounts_by_node.get(node_address, ())
@@ -243,54 +233,9 @@ def _provision_raes_resources(
     return instance_outputs
 
 
-def _publish_participant_access(
-    output: ResourceDict,
-    access_bindings: tuple[RealizedAccessBinding, ...],
-    account_secret_refs: dict[str, str],
-) -> None:
-    """Attach the participant credential reference for each declared channel.
-
-    The reference is the one the account realizer already minted and verified for
-    the authored account; the reserved provisioner-management SSH secret is never
-    brokered. A declared channel whose account produced no verified reference is
-    a failed realization, not a silently credential-less endpoint.
-    """
-    for binding in access_bindings:
-        secret_ref = account_secret_refs.get(binding.account_address, "")
-        if not secret_ref:
-            raise RaesGcePlanError(
-                "declared participant access has no verified account credential: "
-                f"{binding.target_address}/{binding.channel}"
-            )
-        field = "ssh_key_secret_arn" if binding.channel == "ssh" else "rdp_password_secret_arn"
-        output[field] = secret_ref
-
-
-def _access_by_node(
-    access_bindings: tuple[RealizedAccessBinding, ...],
-) -> dict[str, tuple[RealizedAccessBinding, ...]]:
-    """Group joined participant access by target node address."""
-    grouped: dict[str, list[RealizedAccessBinding]] = {}
-    for binding in access_bindings:
-        grouped.setdefault(binding.target_address, []).append(binding)
-    return {address: tuple(bindings) for address, bindings in grouped.items()}
-
-
 def _bootstrap_by_node(raes_plan: RaesPlan) -> dict[str, str]:
     """Render non-empty local composition bootstrap scripts by node."""
     return {node.address: script for node in raes_plan.nodes if (script := node_bootstrap_script(node, raes_plan))}
-
-
-def _accounts_by_node(raes_plan: RaesPlan) -> dict[str, tuple[RaesPlanAccount, ...]]:
-    """Return local-only guest accounts grouped by target node."""
-    return {
-        node.address: tuple(
-            account
-            for account in raes_plan.accounts
-            if account.target_address == node.address and account.domain_ref is None and account.domain_id is None
-        )
-        for node in raes_plan.nodes
-    }
 
 
 def _realize_directory(
@@ -350,7 +295,6 @@ def _cleanup_failed_apply(
             config=runtime.config,
             clients=runtime.clients,
             secret_ops=runtime.secret_ops,
-            vertex_ops=runtime.vertex_ops,
             account_secret_ops=runtime.account_secret_ops,
             directory_secret_ops=runtime.directory_secret_ops,
             allocated_network_cidrs=runtime.allocated_network_cidrs,
@@ -403,10 +347,14 @@ def apply_raes_range_cell(
             RaesGcePlanOptions(
                 config=resolved_config,
                 access_bindings=realized_access,
-                egress_policy=GceEgressPolicy(mode=resolved_options.egress_mode),
+                egress_policy=GceEgressPolicy(
+                    mode=resolved_options.egress_mode, model_broker=resolved_options.model_broker
+                ),
                 allocated_network_cidrs=resolved_options.allocated_network_cidrs,
             ),
         )
+        for instance in plan["instances"]:
+            assert_management_login_separate(raes_plan, _node_address_of(instance), instance["host_ssh_username"])
         runtime = _apply_runtime(resolved_options, config=resolved_config)
         mutation_started = True
         instance_outputs = _provision_raes_resources(
@@ -416,12 +364,13 @@ def apply_raes_range_cell(
             _accounts_by_node(raes_plan),
             _access_by_node(realized_access),
         )
-        # Per-scenario post-provision: a polaris-docker-host guest needs its baked
-        # compose stack rewired to this range's DC IP + participant key before the
-        # composition is verified. No-op for standard ranges.
-        _run_polaris_post_provision(instance_outputs, range_id)
         verified = set(_realize_directory(plan, raes_plan, instance_outputs, runtime))
         verified.update(_realize_content_delivery(raes_plan, instance_outputs, delivery_bindings, runtime))
+        if runtime.model_enrollment is not None:
+            runtime.model_enrollment(raes_plan, instance_outputs)
+        if runtime.runtime_plugin is not None:
+            runtime.runtime_plugin(raes_plan, instance_outputs)
+        observe_participant_host_keys(instance_outputs)
         verified.update(runtime.composition_verifier(raes_plan, instance_outputs))
         operating_systems = runtime.operating_system_observer(raes_plan, instance_outputs)
         validate_operating_systems(raes_plan, operating_systems)

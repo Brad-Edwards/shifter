@@ -27,6 +27,14 @@ triggers a deploy (#730).
 | Manual dispatch, `environment: aws-proof` | Quality, then AWS proof deploy |
 | Manual dispatch, `environment: gcp-dev` | Quality, then GCP dev deploy |
 | Manual dispatch, `environment: nazgul` | Quality, then Nazgul deploy |
+| Manual dispatch, `environment: orthanc` | Quality, then Orthanc deploy |
+
+GCP dispatches bind deployment and release scanning to separate protected
+Environments. The deploy Environment matches the selected Terraform root; the
+scanner uses `gcp-release-scan-<deployment suffix>`. Both accept the non-secret
+identity locators published by deployment-inventory bootstrap. The prepare
+preflight validates only the deploy boundary; the release-scan job validates
+its scanner identity after entering the scanner Environment.
 
 Run a deploy from the Actions UI (**Deploy → Run workflow**, pick the branch to
 deploy and the `environment`) or the CLI:
@@ -90,7 +98,7 @@ The orchestrator uses path filters to run only relevant jobs:
 | `portal_image` | Portal image build inputs (`shifter/shifter_platform/**`, `cyberscript`, `installation`, `.dockerignore`); triggers the portal image build/deploy on a deploy dispatch without running Terraform |
 | `gcp` | GCP Terraform, GCP Kubernetes assets, GCP scripts, GCP cloud adapters |
 | `mcp` | MCP package changes, routed to Quality only |
-| `quality_only` | Non-deploy test-support and guardrail surfaces (`scripts/polaris-aws-range/**`, `scenario-dev/polaris/tests/**`, `_quality.yml`, ADR/guardrail checker paths), routed to Quality only |
+| `quality_only` | Non-deploy test-support and guardrail surfaces (`scripts/stack-smoke/**`, `scenario-dev/**`, `_quality.yml`, ADR/guardrail checker paths), routed to Quality only |
 
 ## Quality Gate
 
@@ -140,8 +148,7 @@ image when the top-level Quality job is legitimately skipped.
   Terraform soft-fail.
 - **Tests**: package-local Python, JavaScript, and harness suites, including
   `shifter_platform`, `cyberscript`, `shifter/engine/provisioner`, `packer`,
-  `installation`, `scripts/bootstrap`, `scripts/gcp`, `scripts/polaris-aws-range`,
-  `scenario-dev/polaris/tests`, the Postgres migration proof, and MCP package
+  `installation`, `scripts/bootstrap`, `scripts/gcp`, `scripts/stack-smoke`, the Postgres migration proof, and MCP package
   tests including `mcp/planner`.
 - **IaC scanning**: Checkov for Terraform is a **blocking gate** under
   ADR-004-R11. Pre-commit and CI share the same config at
@@ -269,7 +276,7 @@ Pull request                   → Quality only
 Push to dev / main             → Quality only
 dispatch environment=aws-dev   → AWS dev deploy
 dispatch environment=aws-proof → AWS proof deploy
-dispatch environment=gcp-dev|nazgul → selected GCP deploy
+dispatch environment=gcp-dev|nazgul|orthanc → selected GCP deploy
 ```
 
 ## Provider Routing
@@ -319,7 +326,7 @@ Terraform plans are also posted as PR comments.
 - Check branch protection rules
 - Verify path filters match your changes
 - Look for `paths-filter` in deploy.yml
-- A deploy is a manual dispatch: `gh workflow run deploy.yml --ref <branch> -f environment=<aws-dev|aws-proof|gcp-dev|nazgul>`. Pushes and PRs run validation only; no branch push deploys.
+- A deploy is a manual dispatch: `gh workflow run deploy.yml --ref <branch> -f environment=<aws-dev|aws-proof|gcp-dev|nazgul|orthanc>`. Pushes and PRs run validation only; no branch push deploys.
 
 ### Terraform Plan Fails
 - Check for formatting issues: `terraform fmt -recursive`

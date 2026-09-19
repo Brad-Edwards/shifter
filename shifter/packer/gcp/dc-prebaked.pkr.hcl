@@ -7,8 +7,7 @@
 // One template bakes MANY DC images. The domain, NetBIOS name, AD-content seed,
 // and image purpose/family are variables (var.dc_domain_name, var.dc_netbios_name,
 // var.dc_content_script, var.dc_image_purpose); a profile var-file in
-// dc-profiles/ supplies them. Defaults reproduce the Polaris BOREAS.LOCAL image
-// (shifter-polaris-dc). See docs/dev/gcp-range-cell-deploy.md for how to bake a
+// dc-profiles/ supplies them explicitly. See docs/dev/gcp-range-cell-deploy.md for how to bake a
 // new-domain DC.
 //
 // Captured UN-SYSPREPPED on purpose: GCESysprep cannot generalize a promoted DC.
@@ -87,11 +86,11 @@ build {
 
   // Stage the AD content seed for finalize.ps1 to run post-promotion.
   provisioner "powershell" {
-    inline = ["New-Item -ItemType Directory -Force -Path C:\\polaris | Out-Null"]
+    inline = ["New-Item -ItemType Directory -Force -Path C:\\shifter-build | Out-Null"]
   }
   provisioner "file" {
     source      = var.dc_content_script
-    destination = "C:\\polaris\\a2_setup.ps1"
+    destination = "C:\\shifter-build\\content-seed.ps1"
   }
 
   // Install AD DS/DNS, disable firewall, and Install-ADDSForest for the profile's

@@ -31,7 +31,6 @@ variable "provisioner_static_secret_refs" {
       "GDC_VM_IMAGE_GCS_SECRET_ID",
       "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
       "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-      "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
     ]))) == 0
     error_message = "provisioner_static_secret_refs contains an unsupported runtime key."
   }

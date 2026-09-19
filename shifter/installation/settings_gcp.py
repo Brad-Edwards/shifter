@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .capacity_profiles_gcp import CapacityProfileId, resolve_capacity_profile
 from .gcp_model_broker import GcpModelBrokerSettings
+from .model_broker_runtime import ModelBrokerRuntimeSettings
 
 # GCP project id grammar: 6-30 characters, starting with a lowercase letter, then lowercase
 # letters, digits, and hyphens, and not ending in a hyphen. This is Google's documented
@@ -50,7 +51,6 @@ GcpProvisionerStaticSecretKey = Literal[
     "GDC_VM_IMAGE_GCS_SECRET_ID",
     "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
     "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-    "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
 ]
 GcpNamedResourceRef = Annotated[
     str,
@@ -101,7 +101,7 @@ class GcpBackendSettings(BaseModel):
         alias="provisioner_static_secret_refs",
         default_factory=dict,
         description=(
-            "Closed map of operator-created GDC and Vertex input references. The same full references drive "
+            "Closed map of operator-created GDC input references. The same full references drive "
             "per-secret provisioner IAM and runtime environment publication."
         ),
     )
@@ -119,12 +119,13 @@ class GcpBackendSettings(BaseModel):
     )
 
     model_broker: GcpModelBrokerSettings = Field(default_factory=GcpModelBrokerSettings)
+    model_broker_runtime: ModelBrokerRuntimeSettings | None = None
 
     @model_validator(mode="after")
     def validate_model_projects(self) -> GcpBackendSettings:
-        """Keep invocation-only projects outside platform and range-secret authority."""
-        if {self.project_id, self.range_resource_project_id} & self.model_broker.model_projects.keys():
-            raise ValueError("model projects must be dedicated outside platform and dynamic-secret projects")
+        """Allow platform-hosted inference with distinct invocation-only identities."""
+        if self.range_resource_project_id in self.model_broker.model_projects:
+            raise ValueError("model projects must remain outside the dynamic-secret project")
         resolve_capacity_profile(self.shared_service_capacity_profile)
         return self
 

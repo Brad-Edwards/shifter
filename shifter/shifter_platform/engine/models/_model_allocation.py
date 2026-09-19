@@ -44,6 +44,7 @@ class ModelAllocation(models.Model):
     range_id = models.UUIDField(db_index=True)
     draw_key = models.UUIDField(db_index=True)
     workload_role = models.CharField(max_length=128)
+    source_policy_revision = models.PositiveIntegerField(default=0)
     intent_digest = models.CharField(max_length=71)
     policy_digest = models.CharField(max_length=71)
     alias_shards = models.JSONField()
@@ -60,7 +61,7 @@ class ModelAllocation(models.Model):
 
         constraints = [
             models.UniqueConstraint(
-                fields=["request_id", "operation_id", "workload_role"],
+                fields=["request_id", "operation_id", "workload_role", "source_policy_revision"],
                 name="model_allocation_operation_role",
             )
         ]
@@ -220,6 +221,7 @@ class ModelOptionalAbsence(models.Model):
     request_id = models.UUIDField()
     operation_id = models.UUIDField()
     workload_role = models.CharField(max_length=128)
+    source_policy_revision = models.PositiveIntegerField(default=0)
     intent_digest = models.CharField(max_length=71)
     reason = models.CharField(max_length=128)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -229,7 +231,8 @@ class ModelOptionalAbsence(models.Model):
 
         constraints = [
             models.UniqueConstraint(
-                fields=["request_id", "operation_id", "workload_role"], name="model_optional_operation_role"
+                fields=["request_id", "operation_id", "workload_role", "source_policy_revision"],
+                name="model_optional_operation_role",
             )
         ]
 

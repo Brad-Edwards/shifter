@@ -15,9 +15,22 @@
 #
 # Reference: https://guacamole.apache.org/doc/gug/guacamole-docker.html
 
-ARG GUACAMOLE_VERSION=1.5.5
-# base image: guacamole 1.5.5 (keep in sync with GUACAMOLE_VERSION)
-FROM guacamole/guacamole@sha256:0f62f6d17ab379e46aa66874b2ff564dab856a6ef5e754a69cbb34c32d3e588a
+# Base image pinned by digest for reproducibility.
+#
+# This digest is the guacamole/guacamole:latest rebuild published 2026-09-17:
+# the Guacamole 1.6.0 web application rebuilt on Apache Tomcat 9.0.122 and
+# Ubuntu 24.04. It is pinned by digest (not by the mutable :latest tag) so
+# builds stay reproducible.
+#
+# Why this digest and not the versioned :1.6.0 tag: the released :1.6.0 tag
+# bundles Tomcat 9.0.106, which still carries fixable HIGH/CRITICAL Tomcat
+# CVEs (fixes require >= 9.0.107) plus an older Ubuntu with fixable OS CVEs.
+# Pinning the 9.0.122 rebuild clears all Tomcat + OS HIGH/CRITICAL findings.
+# Re-point this digest when a versioned Guacamole release ships an
+# equally-patched (or newer) Tomcat/OS base.
+ARG GUACAMOLE_VERSION=1.6.0
+# base image: guacamole 1.6.0 webapp on Tomcat 9.0.122 / Ubuntu 24.04 (keep in sync with the digest below)
+FROM guacamole/guacamole@sha256:10417af3f1920ce443b6ccc46ae275b7033847cc0031dcc30fbf0684d280e69c
 
 # Install PostgreSQL client for schema initialization
 USER root
@@ -30,5 +43,10 @@ RUN chmod +x /opt/guacamole/bin/custom-entrypoint.sh
 
 USER guacamole
 
+# custom-entrypoint.sh runs idempotent schema init then `exec "$@"` to hand off
+# to the base image's start command. Guacamole 1.6.0's image starts via
+# /opt/guacamole/bin/entrypoint.sh (the base image's own CMD); older images used
+# start.sh, which the pinned 1.6.0 rebuild no longer ships. Keep this in sync
+# with the base image's CMD (`docker inspect ... .Config.Cmd`).
 ENTRYPOINT ["/opt/guacamole/bin/custom-entrypoint.sh"]
-CMD ["/opt/guacamole/bin/start.sh"]
+CMD ["/opt/guacamole/bin/entrypoint.sh"]

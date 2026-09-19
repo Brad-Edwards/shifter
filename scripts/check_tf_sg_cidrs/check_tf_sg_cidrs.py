@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Lint AWS security group ingress CIDR blocks in Terraform files.
 
-Catches the failure mode that produced the polaris cross-range leak in
-v3.93.x: a "shared SG" with `cidr_blocks = ["10.1.0.0/16"]` ingress let
-range 1's kali container reach range 0's domain controller at L3, even
-though each range was supposed to be isolated to its own /28 subnet.
+Reject shared security groups that let one range reach another range's guests.
+Each range must remain bounded to its own subnet and explicit access sources.
 
 Rules enforced (per file, per ingress rule, per CIDR):
 

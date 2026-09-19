@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
@@ -102,6 +103,12 @@ BROKER_RUNTIME_ENV_KEYS = frozenset(
         "MODEL_BROKER_TLS_KEY",
         "MODEL_BROKER_CA_FILE",
         "MODEL_BROKER_REGION",
+        "MODEL_BROKER_PROVIDER",
+        "MODEL_BROKER_PROVIDERS_PATH",
+        "MODEL_PROVIDER_PROXY",
+        "MODEL_BROKER_FINGERPRINT_KEY_PATH",
+        "MODEL_BROKER_FINGERPRINT_KEY_VERSION",
+        "MODEL_BROKER_FINGERPRINT_PREVIOUS_KEYS_PATH",
     }
 )
 
@@ -130,7 +137,7 @@ def validate_model_broker_readback(output: object, config: RootConfig) -> None:
 def _broker_output_settings(output: dict[str, object]) -> GcpModelBrokerSettings:
     """Reject unexpected readback fields before extracting deployment settings."""
     settings_keys = set(GcpModelBrokerSettings.model_fields)
-    if set(output) - settings_keys - {"gsa", "model_identities", "region"}:
+    if set(output) - settings_keys - {"gsa", "model_identities", "region", "provisioner_subject"}:
         raise ValueError("unknown model broker deployment output")
     return GcpModelBrokerSettings.model_validate({key: value for key, value in output.items() if key in settings_keys})
 
@@ -196,7 +203,9 @@ def _broker_catalog_projection(catalog_json: str, model_access_env: str) -> dict
     }
 
 
-def project_model_broker(output: object, *, catalog_json: str = "", model_access_env: str = "") -> dict[str, object]:
+def project_model_broker(
+    output: object, *, catalog_json: str = "", model_access_env: str = "", runtime_settings: object = None
+) -> dict[str, object]:
     """Validate Terraform readback and produce the sole broker Helm projection."""
     if output is None:
         return {"enabled": False}
@@ -210,5 +219,29 @@ def project_model_broker(output: object, *, catalog_json: str = "", model_access
     result = settings.model_dump(mode="json", exclude={"model_projects"})
     result.update(_broker_identity_inventory(output, settings))
     result.update(_broker_catalog_projection(catalog_json, model_access_env))
-    validate_broker_configmap_payload(result["catalog_json"], result["identities_json"])
+    if result["control_env"]["MODEL_ACCESS_ENABLED"] == "true":
+        import re
+
+        from .model_broker_runtime import project_broker_runtime, project_enrollment_env
+
+        subject = output.get("provisioner_subject", "")
+        platform_project = str(output["gsa"]).partition("@")[2]
+        if (
+            not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(platform_project), subject)
+            or subject == output["gsa"]
+        ):
+            raise ValueError("active broker requires a distinct applied provisioner identity")
+        result["provisioner_subject"] = subject
+        result.update(
+            project_broker_runtime(
+                runtime_settings, catalog_json=catalog_json, provider="gcp", model_identities=output["model_identities"]
+            )
+        )
+        result["enrollment_env"] = project_enrollment_env(
+            runtime_settings, hostname=result["hostname"], guest_vip=settings.vip
+        )
+    validate_broker_configmap_payload(
+        result["catalog_json"],
+        result["identities_json"] + result.get("providers_json", "") + json.dumps(result.get("enrollment_env", {})),
+    )
     return result

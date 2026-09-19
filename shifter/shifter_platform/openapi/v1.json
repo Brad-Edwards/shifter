@@ -1622,6 +1622,1157 @@
         ]
       }
     },
+    "/api/v1/cms/model-source-options/": {
+      "get": {
+        "operationId": "cms_model_source_options_retrieve",
+        "description": "Discover source choices under the current session authority.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "purpose",
+            "schema": {
+              "enum": [
+                "range",
+                "ctf",
+                "admin"
+              ],
+              "type": "string",
+              "default": "range",
+              "minLength": 1
+            },
+            "description": "* `range` - range\n* `ctf` - ctf\n* `admin` - admin"
+          },
+          {
+            "in": "query",
+            "name": "scenario",
+            "schema": {
+              "type": "string",
+              "default": "",
+              "maxLength": 255
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-ranges/": {
+      "get": {
+        "operationId": "cms_organizations_model_ranges_retrieve",
+        "description": "List model-enabled ranges in administrable tenant workspaces.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "maximum": 1000000,
+              "minimum": 1,
+              "default": 1
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRangePage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-source-users/": {
+      "get": {
+        "operationId": "cms_organizations_model_source_users_retrieve",
+        "description": "Search tenant members eligible for explicit source-use grants.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "maximum": 1000000,
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "default": "",
+              "maxLength": 100
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourceUserPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/": {
+      "get": {
+        "operationId": "cms_organizations_model_sources_retrieve",
+        "description": "List and create sources for an administrable organization.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourcePage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "cms_organizations_model_sources_create",
+        "description": "List and create sources for an administrable organization.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSourceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourceView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/": {
+      "put": {
+        "operationId": "cms_organizations_model_sources_update",
+        "description": "Replace a source only at its expected revision.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSourceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourceView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/retire-credentials/": {
+      "post": {
+        "operationId": "cms_organizations_model_sources_retire_credentials_create",
+        "description": "Retire obsolete credentials after checking live references.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialRetirement"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/available/": {
+      "get": {
+        "operationId": "cms_organizations_model_sources_available_retrieve",
+        "description": "List sources explicitly available to the current actor.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSourcePage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/packs/": {
+      "post": {
+        "operationId": "cms_organizations_packs_create",
+        "description": "Validate and install an organization-owned scenario pack.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPackUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantPackInstalled"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/": {
+      "get": {
+        "operationId": "cms_organizations_plugin_packs_list",
+        "description": "List packs that the organization administrator can bind.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedRuntimePluginPackList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/{pack_id}/": {
+      "get": {
+        "operationId": "cms_organizations_plugin_packs_retrieve",
+        "description": "Inspect verified guests and update the organization's binding.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginPackDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "cms_organizations_plugin_packs_create",
+        "description": "Inspect verified guests and update the organization's binding.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginPackUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginPackUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginPackUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginPackBinding"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/": {
+      "get": {
+        "operationId": "cms_organizations_plugins_retrieve",
+        "description": "Organization administrators install their own plugins without staff status.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "cms_organizations_plugins_create",
+        "description": "Organization administrators install their own plugins without staff status.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginInstall"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginInstall"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginInstall"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/{plugin_id}/actions/": {
+      "post": {
+        "operationId": "cms_organizations_plugins_actions_create",
+        "description": "Apply authorized lifecycle actions to an organization's adapter.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginAction"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginAction"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePluginAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePluginView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/preparation-adapter-grants/": {
+      "get": {
+        "operationId": "cms_preparation_adapter_grants_list",
+        "description": "Grant selection is read-only; cloud authority is installed separately.",
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdapterGrantView"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation-adapters:read"
+        ]
+      }
+    },
     "/api/v1/cms/preparation-adapters/": {
       "get": {
         "operationId": "cms_preparation_adapters_list",
@@ -2044,6 +3195,144 @@
         "x-required-scopes": [
           "cms:authoring:write"
         ]
+      }
+    },
+    "/api/v1/cms/ranges/{request_id}/model-sources/": {
+      "get": {
+        "operationId": "cms_ranges_model_sources_retrieve",
+        "description": "Read or replace model sources under range administration authority.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeModelSources"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "put": {
+        "operationId": "cms_ranges_model_sources_update",
+        "description": "Read or replace model sources under range administration authority.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeModelSourcesWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeModelSources"
+                }
+              }
+            },
+            "description": ""
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeModelSources"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
       }
     },
     "/api/v1/cms/ranges/{request_id}/workspace/": {
@@ -13671,6 +14960,29 @@
         "type": "string",
         "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito"
       },
+      "AdapterGrantView": {
+        "type": "object",
+        "description": "Select existing authority without returning its private cloud configuration.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "active",
+          "id",
+          "verified_at"
+        ]
+      },
       "AdapterInstall": {
         "type": "object",
         "description": "Only an existing grant and the closed versioned manifest enter installation.",
@@ -13691,12 +15003,21 @@
         "description": "Lifecycle changes retain immutable registration and cleanup references.",
         "properties": {
           "state": {
-            "$ref": "#/components/schemas/StateEnum"
+            "$ref": "#/components/schemas/AdapterStateStateEnum"
           }
         },
         "required": [
           "state"
         ]
+      },
+      "AdapterStateStateEnum": {
+        "enum": [
+          "enabled",
+          "disabled",
+          "retired"
+        ],
+        "type": "string",
+        "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `retired` - retired"
       },
       "AdapterView": {
         "type": "object",
@@ -14007,6 +15328,48 @@
         "type": "string",
         "description": "* `xdr` - xdr\n* `xdr_collector` - xdr_collector\n* `cloud_identity_engine` - cloud_identity_engine"
       },
+      "AliasSourceOptions": {
+        "type": "object",
+        "description": "Compatible sources and mixing policy for one logical alias.",
+        "properties": {
+          "logical_alias": {
+            "type": "string"
+          },
+          "multiple_allowed": {
+            "type": "boolean"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSourceView"
+            }
+          }
+        },
+        "required": [
+          "logical_alias",
+          "multiple_allowed",
+          "sources"
+        ]
+      },
+      "AliasSourceSelection": {
+        "type": "object",
+        "description": "Chosen source revisions for a logical model alias.",
+        "properties": {
+          "logical_alias": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceChoice"
+            }
+          }
+        },
+        "required": [
+          "logical_alias",
+          "sources"
+        ]
+      },
       "ApiError": {
         "type": "object",
         "description": "Schema-only component for the canonical platform API error envelope.\n\nMirrors :func:`shared.api.errors.api_exception_handler` /\n:func:`shared.api.errors.api_error_response` output. It describes the wire\ncontract; it never runs at request time.",
@@ -14158,6 +15521,14 @@
           "user_agent"
         ]
       },
+      "AuthenticationEnum": {
+        "enum": [
+          "workload-identity",
+          "stored-credential"
+        ],
+        "type": "string",
+        "description": "* `workload-identity` - workload-identity\n* `stored-credential` - stored-credential"
+      },
       "Award": {
         "type": "object",
         "description": "One organizer-granted award row (CTF-204).",
@@ -14291,6 +15662,12 @@
             "type": "boolean"
           },
           "can_delete_users": {
+            "type": "boolean"
+          },
+          "can_manage_adapters": {
+            "type": "boolean"
+          },
+          "can_manage_model_sources": {
             "type": "boolean"
           }
         },
@@ -14993,6 +16370,19 @@
           "name"
         ]
       },
+      "CredentialRetirement": {
+        "type": "object",
+        "description": "Number of obsolete credential versions retired.",
+        "properties": {
+          "retired": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "retired"
+        ]
+      },
       "CtfScenarioListResponse": {
         "type": "object",
         "description": "Envelope returned by the scenario list.",
@@ -15026,6 +16416,19 @@
           "id",
           "name"
         ]
+      },
+      "CurrencyEnum": {
+        "enum": [
+          "AUD",
+          "CAD",
+          "CHF",
+          "EUR",
+          "GBP",
+          "JPY",
+          "USD"
+        ],
+        "type": "string",
+        "description": "* `AUD` - AUD\n* `CAD` - CAD\n* `CHF` - CHF\n* `EUR` - EUR\n* `GBP` - GBP\n* `JPY` - JPY\n* `USD` - USD"
       },
       "CurrentRangeResponse": {
         "type": "object",
@@ -15442,6 +16845,23 @@
             },
             "readOnly": true
           },
+          "model_sources": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelSourceSelection"
+              }
+            ],
+            "readOnly": true
+          },
+          "workspace": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "model_source_revision": {
+            "type": "integer",
+            "readOnly": true
+          },
           "logo_url": {
             "type": "string",
             "readOnly": true
@@ -15484,6 +16904,8 @@
           "managed_content",
           "max_participants",
           "model_demand",
+          "model_source_revision",
+          "model_sources",
           "name",
           "owner",
           "public_registration_enabled",
@@ -15504,7 +16926,8 @@
           "team_mode",
           "team_size_limit",
           "theme_color",
-          "visible_os_types"
+          "visible_os_types",
+          "workspace"
         ]
       },
       "EventLifecycleRequest": {
@@ -15892,6 +17315,17 @@
             },
             "maxItems": 64
           },
+          "model_sources": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expected_model_source_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
           "logo_url": {
             "type": "string",
             "format": "uri",
@@ -16211,6 +17645,9 @@
         "type": "object",
         "description": "Validate range launch requests.",
         "properties": {
+          "model_sources": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          },
           "agents": {
             "type": "object",
             "additionalProperties": {
@@ -16440,6 +17877,379 @@
         ],
         "type": "string",
         "description": "* `advisory` - Advisory (soft cap)\n* `enforcing` - Enforcing (hard cap)"
+      },
+      "ModelAssignment": {
+        "type": "object",
+        "description": "Effective provider assignment for a workload alias.",
+        "properties": {
+          "workload": {
+            "type": "string"
+          },
+          "logical_alias": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "logical_alias",
+          "model",
+          "provider",
+          "region",
+          "workload"
+        ]
+      },
+      "ModelPolicyRuntime": {
+        "type": "object",
+        "description": "Runtime availability and effective model assignments.",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/ModelPolicyRuntimeStateEnum"
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelAssignment"
+            }
+          }
+        },
+        "required": [
+          "assignments",
+          "state"
+        ]
+      },
+      "ModelPolicyRuntimeStateEnum": {
+        "enum": [
+          "active",
+          "refresh_pending",
+          "unavailable"
+        ],
+        "type": "string",
+        "description": "* `active` - active\n* `refresh_pending` - refresh_pending\n* `unavailable` - unavailable"
+      },
+      "ModelRangePage": {
+        "type": "object",
+        "description": "Paged tenant ranges with source policy metadata.",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "has_next": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelRangeSummary"
+            }
+          }
+        },
+        "required": [
+          "count",
+          "has_next",
+          "page",
+          "results"
+        ]
+      },
+      "ModelRangeSummary": {
+        "type": "object",
+        "description": "Range identity and source policy status for tenant administration.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "request_id",
+          "revision",
+          "scenario",
+          "status"
+        ]
+      },
+      "ModelSourceConfiguration": {
+        "type": "object",
+        "description": "Editable metadata; the service validates provider-specific combinations.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderEnum"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/AuthenticationEnum"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "project": {
+            "type": "string",
+            "default": "",
+            "maxLength": 30
+          },
+          "principal": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "count_region": {
+            "type": "string",
+            "default": "",
+            "maxLength": 64
+          },
+          "quota_identity": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "context_window_tokens": {
+            "type": "integer",
+            "maximum": 2000000,
+            "minimum": 1
+          },
+          "tokens_per_minute": {
+            "type": "integer",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "format": "int64"
+          },
+          "input_price_per_million": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output_price_per_million": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "currency": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CurrencyEnum"
+              }
+            ],
+            "default": "USD"
+          },
+          "price_valid_until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "allow_organization_members": {
+            "type": "boolean",
+            "default": false
+          },
+          "allowed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxItems": 256
+          },
+          "upstream_provider": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "authentication",
+          "context_window_tokens",
+          "input_price_per_million",
+          "model",
+          "name",
+          "output_price_per_million",
+          "price_valid_until",
+          "provider",
+          "quota_identity",
+          "region",
+          "tokens_per_minute"
+        ]
+      },
+      "ModelSourcePage": {
+        "type": "object",
+        "description": "Collection of authorized source metadata.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSourceView"
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "ModelSourceSelection": {
+        "type": "object",
+        "description": "Explicit source choices grouped by logical alias.",
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasSourceSelection"
+            }
+          }
+        },
+        "required": [
+          "aliases"
+        ]
+      },
+      "ModelSourceUpdate": {
+        "type": "object",
+        "description": "Revision-fenced replacement of source configuration and status.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ModelSourceConfiguration"
+          },
+          "credential": {
+            "writeOnly": true
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "configuration",
+          "expected_revision"
+        ]
+      },
+      "ModelSourceUser": {
+        "type": "object",
+        "description": "Tenant directory identity for an explicit source-use grant.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "username"
+        ]
+      },
+      "ModelSourceUserPage": {
+        "type": "object",
+        "description": "Bounded directory results and continuation indicator.",
+        "properties": {
+          "has_next": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSourceUser"
+            }
+          }
+        },
+        "required": [
+          "has_next",
+          "results"
+        ]
+      },
+      "ModelSourceView": {
+        "type": "object",
+        "description": "Public source metadata with credential presence only.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ModelSourceViewStateEnum"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ModelSourceConfiguration"
+          },
+          "has_credential": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configuration",
+          "enabled",
+          "has_credential",
+          "id",
+          "organization_uuid",
+          "revision",
+          "state"
+        ]
+      },
+      "ModelSourceViewStateEnum": {
+        "enum": [
+          "pending",
+          "ready",
+          "failed",
+          "retired",
+          "disabled"
+        ],
+        "type": "string",
+        "description": "* `pending` - pending\n* `ready` - ready\n* `failed` - failed\n* `retired` - retired\n* `disabled` - disabled"
+      },
+      "ModelSourceWrite": {
+        "type": "object",
+        "description": "Source configuration and an optional transient credential.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ModelSourceConfiguration"
+          },
+          "credential": {
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "configuration"
+        ]
       },
       "NGFWCreate": {
         "type": "object",
@@ -17259,6 +19069,37 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RangeScopeBinding"
+            }
+          }
+        }
+      },
+      "PaginatedRuntimePluginPackList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimePluginPack"
             }
           }
         }
@@ -18648,6 +20489,17 @@
           "workspace_uuid"
         ]
       },
+      "ProviderEnum": {
+        "enum": [
+          "vertex-v1",
+          "bedrock-v1",
+          "anthropic-v1",
+          "openai-v1",
+          "openrouter-v1"
+        ],
+        "type": "string",
+        "description": "* `vertex-v1` - vertex-v1\n* `bedrock-v1` - bedrock-v1\n* `anthropic-v1` - anthropic-v1\n* `openai-v1` - openai-v1\n* `openrouter-v1` - openrouter-v1"
+      },
       "PublicRegistrationDisposition": {
         "type": "object",
         "description": "Closed organizer decision vocabulary.",
@@ -18929,6 +20781,17 @@
             "default": "",
             "maxLength": 100
           },
+          "management_ssh_username": {
+            "type": "string",
+            "default": "",
+            "maxLength": 32
+          },
+          "management_ssh_port": {
+            "type": "integer",
+            "maximum": 65535,
+            "minimum": 1,
+            "default": 22
+          },
           "enabled": {
             "type": "boolean",
             "default": true
@@ -19011,6 +20874,14 @@
             "type": "string",
             "readOnly": true
           },
+          "management_ssh_username": {
+            "type": "string",
+            "readOnly": true
+          },
+          "management_ssh_port": {
+            "type": "integer",
+            "readOnly": true
+          },
           "enabled": {
             "type": "boolean",
             "readOnly": true
@@ -19066,6 +20937,8 @@
           "image_ref",
           "integrity_ref",
           "machine_type",
+          "management_ssh_port",
+          "management_ssh_username",
           "media_type",
           "notes",
           "provenance_ref",
@@ -19548,6 +21421,61 @@
           "ranges"
         ]
       },
+      "RangeModelSources": {
+        "type": "object",
+        "description": "Range source policy and its current runtime status.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          },
+          "error": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/ModelPolicyRuntime"
+          }
+        },
+        "required": [
+          "error",
+          "request_id",
+          "revision",
+          "runtime",
+          "scenario",
+          "selection",
+          "workspace"
+        ]
+      },
+      "RangeModelSourcesWrite": {
+        "type": "object",
+        "description": "Revision-fenced source selection for an existing range.",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ModelSourceSelection"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "selection"
+        ]
+      },
       "RangePresentation": {
         "type": "object",
         "description": "Response-only projection of ``shared.schemas.RangeContext``.\n\nField set mirrors ``RangeContext.model_fields`` plus its computed\nproperties (``is_ready``, ``is_terminal``, ``is_active``).",
@@ -19924,6 +21852,25 @@
           "message"
         ]
       },
+      "RegistryCredentials": {
+        "type": "object",
+        "description": "Write-only credentials for the isolated image pull.",
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ]
+      },
       "ReplaceLeasePolicy": {
         "type": "object",
         "description": "Strict full replacement plus expected revision.",
@@ -20020,6 +21967,303 @@
         ],
         "type": "string",
         "description": "* `pending` - pending\n* `provisioning` - provisioning\n* `ready` - ready\n* `pausing` - pausing\n* `paused` - paused\n* `resuming` - resuming\n* `destroying` - destroying\n* `destroyed` - destroyed\n* `failed` - failed"
+      },
+      "RuntimePluginAction": {
+        "type": "object",
+        "description": "An administrator lifecycle action for an installed adapter.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/RuntimePluginActionActionEnum"
+          },
+          "registry_credentials": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RegistryCredentials"
+              }
+            ],
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "RuntimePluginActionActionEnum": {
+        "enum": [
+          "disable",
+          "enable",
+          "retry",
+          "retire"
+        ],
+        "type": "string",
+        "description": "* `disable` - disable\n* `enable` - enable\n* `retry` - retry\n* `retire` - retire"
+      },
+      "RuntimePluginBindings": {
+        "type": "object",
+        "description": "Guest target mappings and bounded adapter parameters.",
+        "properties": {
+          "targets": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          }
+        },
+        "required": [
+          "targets"
+        ]
+      },
+      "RuntimePluginInstall": {
+        "type": "object",
+        "description": "A conforming adapter manifest and optional registry credentials.",
+        "properties": {
+          "manifest": {},
+          "registry_credentials": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RegistryCredentials"
+              }
+            ],
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "manifest"
+        ]
+      },
+      "RuntimePluginPack": {
+        "type": "object",
+        "description": "Catalog pack identity with its current administrator binding.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_digest": {
+            "type": "string"
+          },
+          "binding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimePluginPackBinding"
+              }
+            ],
+            "nullable": true
+          },
+          "can_update": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "binding",
+          "id",
+          "name",
+          "pack_digest"
+        ]
+      },
+      "RuntimePluginPackBinding": {
+        "type": "object",
+        "description": "An organization's explicit pack-to-installation selection.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pack_id": {
+            "type": "string"
+          },
+          "pack_digest": {
+            "type": "string"
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bindings": {
+            "$ref": "#/components/schemas/RuntimePluginBindings"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "installation_state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bindings",
+          "enabled",
+          "id",
+          "installation_id",
+          "installation_state",
+          "organization_uuid",
+          "pack_digest",
+          "pack_id"
+        ]
+      },
+      "RuntimePluginPackDetail": {
+        "type": "object",
+        "description": "Verified pack revision and the guests available for binding.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_digest": {
+            "type": "string"
+          },
+          "binding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimePluginPackBinding"
+              }
+            ],
+            "nullable": true
+          },
+          "can_update": {
+            "type": "boolean",
+            "default": false
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimePluginTarget"
+            }
+          }
+        },
+        "required": [
+          "binding",
+          "id",
+          "name",
+          "pack_digest",
+          "targets"
+        ]
+      },
+      "RuntimePluginPackUpdate": {
+        "type": "object",
+        "description": "An optimistic update pinned to the verified pack digest.",
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pack_digest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "bindings": {
+            "$ref": "#/components/schemas/RuntimePluginBindings"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "bindings",
+          "installation_id",
+          "pack_digest"
+        ]
+      },
+      "RuntimePluginPage": {
+        "type": "object",
+        "description": "A bounded installation page with an opaque continuation cursor.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimePluginView"
+            }
+          },
+          "next_cursor": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "next_cursor",
+          "results"
+        ]
+      },
+      "RuntimePluginTarget": {
+        "type": "object",
+        "description": "A selectable compiled guest address and operating system.",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "os_family": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "os_family"
+        ]
+      },
+      "RuntimePluginView": {
+        "type": "object",
+        "description": "Installation status without stored registry credentials.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manifest": {},
+          "manifest_digest": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RuntimePluginViewStateEnum"
+          },
+          "failure_code": {
+            "type": "string"
+          },
+          "has_registry_credentials": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "failure_code",
+          "has_registry_credentials",
+          "id",
+          "manifest",
+          "manifest_digest",
+          "organization_uuid",
+          "state"
+        ]
+      },
+      "RuntimePluginViewStateEnum": {
+        "enum": [
+          "checking",
+          "ready",
+          "failed",
+          "disabled",
+          "retired"
+        ],
+        "type": "string",
+        "description": "* `checking` - checking\n* `ready` - ready\n* `failed` - failed\n* `disabled` - disabled\n* `retired` - retired"
       },
       "ScenarioDetail": {
         "type": "object",
@@ -20346,6 +22590,87 @@
           "egress_policy"
         ]
       },
+      "SourceChoice": {
+        "type": "object",
+        "description": "Immutable source revision and its allocation weight.",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "weight": {
+            "type": "integer",
+            "maximum": 64,
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "revision",
+          "source_id"
+        ]
+      },
+      "SourceOptions": {
+        "type": "object",
+        "description": "Authorized workspaces and scenario-specific source choices.",
+        "properties": {
+          "workspaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceWorkspace"
+            }
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasSourceOptions"
+            }
+          },
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "aliases",
+          "available",
+          "workspace",
+          "workspaces"
+        ]
+      },
+      "SourceWorkspace": {
+        "type": "object",
+        "description": "Workspace identity displayed alongside tenant source options.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "is_personal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_personal",
+          "name",
+          "organization_name",
+          "uuid"
+        ]
+      },
       "SparePoolRequest": {
         "type": "object",
         "description": "Organizer spare-pool top-up request body (``count`` bounded non-negative).",
@@ -20385,15 +22710,6 @@
           "existing",
           "target_count"
         ]
-      },
-      "StateEnum": {
-        "enum": [
-          "enabled",
-          "disabled",
-          "retired"
-        ],
-        "type": "string",
-        "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `retired` - retired"
       },
       "SubmissionListItem": {
         "type": "object",
@@ -20561,6 +22877,73 @@
         },
         "required": [
           "participant_id"
+        ]
+      },
+      "TenantPackInstalled": {
+        "type": "object",
+        "description": "The immutable registered pack identity and conformance result.",
+        "properties": {
+          "scenario_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source_kind": {
+            "type": "string"
+          },
+          "contract_kind": {
+            "type": "string"
+          },
+          "contract_profile": {
+            "type": "string"
+          },
+          "package_version": {
+            "type": "string"
+          },
+          "package_digest": {
+            "type": "string"
+          },
+          "conformance_status": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "conformance_status",
+          "contract_kind",
+          "contract_profile",
+          "created",
+          "name",
+          "package_digest",
+          "package_version",
+          "scenario_id",
+          "source_kind"
+        ]
+      },
+      "TenantPackUpload": {
+        "type": "object",
+        "description": "Named pack archive with an optional expected revision digest.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "archive": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expected_digest": {
+            "type": "string",
+            "default": "",
+            "pattern": "^(sha256:[a-f0-9]{64})?$"
+          }
+        },
+        "required": [
+          "archive",
+          "name"
         ]
       },
       "TransferOwnershipRequest": {

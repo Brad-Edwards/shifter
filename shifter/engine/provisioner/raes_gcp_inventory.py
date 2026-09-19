@@ -18,6 +18,7 @@ from typing import Any
 
 from config import GCERangeCellConfig, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _get_or_none
 from raes_gcp_destroy import _default_destroy_profile
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
@@ -108,9 +109,10 @@ def inventory_raes_range_cell(
             region=plan["region"],
             router=router_nat["router_name"],
         )
-    for firewall in plan["firewalls"]:
+    firewall_names = {rule["name"] for rule in plan["firewalls"]} | {broker_firewall_name(range_id)}
+    for firewall_name in sorted(firewall_names):
         tally.check(
-            resolved_clients, "firewalls", resolved_clients.firewalls.get, project=project, firewall=firewall["name"]
+            resolved_clients, "firewalls", resolved_clients.firewalls.get, project=project, firewall=firewall_name
         )
     for subnet in plan["subnets"]:
         tally.check(

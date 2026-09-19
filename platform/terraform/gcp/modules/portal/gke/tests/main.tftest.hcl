@@ -13,6 +13,7 @@
 #   terraform -chdir=platform/terraform/gcp/modules/portal/gke test
 
 mock_provider "google" {}
+mock_provider "google-beta" {}
 
 variables {
   project_id                                = "shifter-test"
@@ -50,5 +51,29 @@ run "network_policy_enforcement_contract" {
   assert {
     condition     = google_container_cluster.platform.networking_mode == "VPC_NATIVE"
     error_message = "Dataplane V2 requires a VPC-native cluster; the enforcing datapath is invalid without it."
+  }
+}
+
+run "untrusted_plugin_sandbox_pool" {
+  command = plan
+
+  assert {
+    condition = (
+      google_container_node_pool.runtime_plugins.node_config[0].sandbox_config[0].sandbox_type == "gvisor" &&
+      google_container_node_pool.runtime_plugins.node_config[0].image_type == "COS_CONTAINERD" &&
+      google_container_node_pool.runtime_plugins.node_config[0].labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
+      anytrue([for taint in google_container_node_pool.runtime_plugins.node_config[0].taint :
+        taint.key == "shifter.dev/runtime-plugin" && taint.value == "true" && taint.effect == "NO_SCHEDULE"
+      ])
+    )
+    error_message = "Tenant plugin code requires the dedicated gVisor sandbox pool and exclusive placement."
+  }
+
+  assert {
+    condition = (
+      google_container_node_pool.runtime_plugins.initial_node_count == 1 &&
+      google_container_node_pool.runtime_plugins.autoscaling[0].total_max_node_count == 3
+    )
+    error_message = "The plugin pool must keep warm capacity and bounded autoscaling."
   }
 }

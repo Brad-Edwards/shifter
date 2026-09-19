@@ -669,10 +669,11 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertEqual(
             self.bucket_roles,
             {
-                # portal: objectAdmin on the assets bucket, and read-only
-                # objectViewer on the optional object-backed RAES package bucket
-                # (#1567, gated on raes_package_bucket_name).
-                "portal": {"roles/storage.objectAdmin", "roles/storage.objectViewer"},
+                # Portal owns assets and tenant uploads; package writes are
+                # scoped to the configured package bucket, never the project.
+                "portal": {
+                    "roles/storage.objectAdmin", "roles/storage.objectViewer", "roles/storage.objectUser"
+                },
                 "workers": {"roles/storage.objectViewer"},
                 "provisioner": {
                     "roles/storage.objectViewer",
@@ -711,7 +712,16 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(
             " ".join(match.group(1).split()),
-            'key != "guacamole-db" && key != "db-migration"',
+            'key != "guacamole-db" && key != "db-migration" && key != "db-provisioner"',
+        )
+
+    def test_provisioner_database_secret_is_bound_only_to_the_launcher(self) -> None:
+        self.assertIn('"provisioner-launcher:db-provisioner"', self.text)
+        self.assertRegex(
+            self.text,
+            r'"provisioner-launcher:db-provisioner"\s*=\s*\{\s*'
+            r'workload\s*=\s*"provisioner-launcher"\s*'
+            r'secret_id\s*=\s*var\.runtime_secret_ids\["db-provisioner"\]',
         )
 
     def test_migrator_reads_only_app_and_migration_database_secrets(self) -> None:

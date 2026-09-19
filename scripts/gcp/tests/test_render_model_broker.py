@@ -4,9 +4,11 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 
+@pytest.mark.integration
 def test_disabled_and_enabled_projection_use_real_chart(tmp_path):
     path = Path(__file__).resolve().parents[1] / "render_model_broker.py"
     spec = importlib.util.spec_from_file_location("render_model_broker", path)
@@ -42,10 +44,12 @@ def test_disabled_and_enabled_projection_use_real_chart(tmp_path):
     identities = {(doc["kind"], doc["metadata"]["name"]) for doc in docs}
     assert ("Deployment", "model-broker") in identities
     assert ("Deployment", "model-access-control") in identities
+    assert ("Deployment", "model-provider-egress") in identities
+    assert ("NetworkPolicy", "model-provider-egress-boundary") in identities
     assert ("Deployment", "portal-web") not in identities
     assert ("ValidatingAdmissionPolicy", "restrict-provisioner-jobs") not in identities
     policy = next(doc for doc in docs if doc["metadata"]["name"] == "allow-platform-private-service-egress")
-    assert policy["spec"]["podSelector"]["matchExpressions"][0]["values"] == ["model-broker"]
+    assert policy["spec"]["podSelector"]["matchExpressions"][0]["values"] == ["model-broker", "model-provider-egress"]
 
 
 def test_combining_manifests_replaces_shared_policies_before_any_apply():
@@ -64,7 +68,11 @@ def test_combining_manifests_replaces_shared_policies_before_any_apply():
         "spec": {
             "podSelector": {
                 "matchExpressions": [
-                    {"key": "app.kubernetes.io/component", "operator": "NotIn", "values": ["model-broker"]}
+                    {
+                        "key": "app.kubernetes.io/component",
+                        "operator": "NotIn",
+                        "values": ["model-broker", "model-provider-egress"],
+                    }
                 ]
             }
         },
@@ -91,6 +99,7 @@ def test_deploy_job_installs_renderer_dependencies_before_use():
     assert "GITHUB_PATH" in helm[0]["run"]
 
 
+@pytest.mark.integration
 def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     import subprocess
 
@@ -136,12 +145,20 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
             }
         },
     }
+    catalog = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": "model-broker-catalog", "namespace": "shifter-platform"},
+        "data": {"enrollment.json": json.dumps({"MODEL_BROKER_GUEST_VIP": "10.40.0.25"})},
+    }
     versions = []
     for value in ("old", "new", "new"):
         runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] = value
         combined = list(
             yaml.safe_load_all(
-                module.combine_resources(base + "\n---\n" + yaml.safe_dump(runtime), yaml.safe_dump(control))
+                module.combine_resources(
+                    base + "\n---\n" + yaml.safe_dump(runtime), yaml.safe_dump_all([control, catalog])
+                )
             )
         )
         policies = {
@@ -159,7 +176,7 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
             assert {
                 "key": "app.kubernetes.io/component",
                 "operator": "NotIn",
-                "values": ["model-broker"],
+                "values": ["model-broker", "model-provider-egress"],
             } in policy["podSelector"].get("matchExpressions", [])
         versions.append(
             next(
@@ -175,6 +192,10 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
         applied_control["spec"]["template"]["spec"]["containers"][0]["envFrom"]
         == worker_patch["spec"]["template"]["spec"]["containers"][0]["envFrom"]
     )
+    applied_runtime = next(
+        doc for doc in combined if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "platform-runtime"
+    )
+    assert applied_runtime["data"]["MODEL_BROKER_GUEST_VIP"] == "10.40.0.25"
     assert versions[0] != versions[1]
     assert versions[1] == versions[2]
 

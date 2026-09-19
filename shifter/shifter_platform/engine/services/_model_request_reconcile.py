@@ -13,7 +13,7 @@ are reused here; this module adds only the reconciliation-specific mutators.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -24,11 +24,13 @@ from shared.model_access.provider import ProviderUsage
 
 from ._model_request_lifecycle import (
     _lifecycle_audit,
+    _lock_request,
     _locked_postings,
     _release_liability,
     _settled_charge,
     _usage_incomplete,
     _usage_payload,
+    release_before_dispatch,
 )
 
 if TYPE_CHECKING:
@@ -74,10 +76,11 @@ def reconcile_model_requests(*, now: datetime | None = None, limit: int = 100) -
     )
     for obligation_id in obligation_ids:
         with transaction.atomic():
+            candidate = ModelReconciliationObligation.objects.get(pk=obligation_id)
+            reservation = _lock_reservation(candidate.reservation_id)
             obligation = ModelReconciliationObligation.objects.select_for_update().get(pk=obligation_id)
             if obligation.outcome != "unknown":
                 continue
-            reservation = _lock_reservation(obligation.reservation_id)
             if reservation.settlement_state == "open":
                 _charge_hold(reservation)
                 reservation.settlement_state = "unknown_charged"
@@ -100,53 +103,66 @@ def reconcile_expired_dispatches(*, now: datetime | None = None, limit: int = 10
     obligation so reconcile_model_requests can conservatively charge it - it is
     never released for free and never replayed.
     """
-    from engine.models import ModelDispatchLease, ModelReconciliationObligation, ModelRequestReservation
+    from engine.models import ModelRequestReservation
 
     moment = now or datetime.now(UTC)
     swept = 0
     reservation_ids = list(
-        ModelRequestReservation.objects.filter(state="dispatched", settlement_state="open")
+        ModelRequestReservation.objects.filter(state__in=["reserved", "dispatched"], settlement_state="open")
         .order_by("pk")
         .values_list("pk", flat=True)[:limit]
     )
     for reservation_id in reservation_ids:
         with transaction.atomic():
-            reservation = ModelRequestReservation.objects.select_for_update().get(pk=reservation_id)
-            if reservation.state != "dispatched" or reservation.settlement_state != "open":
-                continue
-            lease = ModelDispatchLease.objects.select_for_update().filter(reservation=reservation).first()
-            if lease is None:
-                continue
-            effective_deadline = lease.continuation_deadline or lease.dispatch_deadline
-            if effective_deadline > moment:
-                # Still within a live lease.
-                continue
-            reservation.state = "unknown"
-            reservation.uncertainty_reason = "dispatch_lease_expired"
-            reservation.save(update_fields=["state", "uncertainty_reason", "updated_at"])
-            ModelReconciliationObligation.objects.get_or_create(
-                reservation=reservation,
-                defaults={
-                    "allocation": reservation.allocation,
-                    "provider_request_ref": reservation.provider_request_ref or "",
-                    "next_attempt_at": moment,
-                    "outcome": "unknown",
-                },
-            )
-            if lease.transport_status in {"dispatching", "active"}:
-                lease.transport_status = "revoking"
-                lease.save(update_fields=["transport_status"])
-            _lifecycle_audit(reservation, "MODEL_REQUEST_UNKNOWN", "dispatch lease expired")
-            swept += 1
+            reservation = _lock_reservation(reservation_id)
+            swept += _reconcile_expired_reservation(reservation, moment)
     return swept
+
+
+def _reconcile_expired_reservation(reservation: ModelRequestReservation, moment: datetime) -> bool:
+    """Release stale undispatched work or retain uncertain dispatched work for charging."""
+    if reservation.state == "reserved":
+        expired = reservation.created_at + timedelta(seconds=120) <= moment
+        if expired:
+            release_before_dispatch(request_uuid=reservation.request_uuid)
+        return expired
+    return _reconcile_expired_dispatch(reservation, moment)
+
+
+def _reconcile_expired_dispatch(reservation: ModelRequestReservation, moment: datetime) -> bool:
+    """Lock an expired dispatched lease and preserve its uncertain liability."""
+    from engine.models import ModelDispatchLease, ModelReconciliationObligation
+
+    if reservation.state != "dispatched" or reservation.settlement_state != "open":
+        return False
+    lease = ModelDispatchLease.objects.select_for_update().filter(reservation=reservation).first()
+    if lease is None or (lease.continuation_deadline or lease.dispatch_deadline) > moment:
+        return False
+    reservation.state = "unknown"
+    reservation.uncertainty_reason = "dispatch_lease_expired"
+    reservation.save(update_fields=["state", "uncertainty_reason", "updated_at"])
+    ModelReconciliationObligation.objects.get_or_create(
+        reservation=reservation,
+        defaults={
+            "allocation": reservation.allocation,
+            "provider_request_ref": reservation.provider_request_ref or "",
+            "next_attempt_at": moment,
+            "outcome": "unknown",
+        },
+    )
+    if lease.transport_status in {"dispatching", "active"}:
+        lease.transport_status = "revoking"
+        lease.save(update_fields=["transport_status"])
+    _lifecycle_audit(reservation, "MODEL_REQUEST_UNKNOWN", "dispatch lease expired")
+    return True
 
 
 def apply_late_evidence(*, request_uuid: UUID, usage: ProviderUsage) -> int:
     """Adjust a conservatively-charged unknown once from later authoritative usage."""
-    from engine.models import ModelReconciliationObligation, ModelRequestReservation
+    from engine.models import ModelReconciliationObligation
 
     with transaction.atomic():
-        reservation = ModelRequestReservation.objects.select_for_update().get(request_uuid=request_uuid)
+        reservation = _lock_request(request_uuid=request_uuid)
         if reservation.settlement_state != "unknown_charged":
             raise ContractError("request.not_reconcilable")
         if _usage_incomplete(reservation, usage):
@@ -155,9 +171,10 @@ def apply_late_evidence(*, request_uuid: UUID, usage: ProviderUsage) -> int:
             raise ContractError("request.usage_incomplete")
         settled = _settled_charge(reservation, usage)
         _readjust_spend(reservation, settled)
+        reservation.state = "settled"
         reservation.settlement_state = "settled"
         reservation.usage = _usage_payload(usage)
-        reservation.save(update_fields=["settlement_state", "usage", "updated_at"])
+        reservation.save(update_fields=["state", "settlement_state", "usage", "updated_at"])
         obligation = ModelReconciliationObligation.objects.select_for_update().filter(reservation=reservation).first()
         if obligation is not None:
             obligation.outcome = "adjusted"
@@ -200,4 +217,5 @@ def _lock_reservation(reservation_id: int) -> ModelRequestReservation:
     """Lock a reservation row by its integer identity."""
     from engine.models import ModelRequestReservation
 
-    return ModelRequestReservation.objects.select_for_update().get(pk=reservation_id)
+    candidate = ModelRequestReservation.objects.get(pk=reservation_id)
+    return _lock_request(request_uuid=candidate.request_uuid)

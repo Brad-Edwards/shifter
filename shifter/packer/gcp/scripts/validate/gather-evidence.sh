@@ -12,7 +12,7 @@
 # Inputs (env):
 #   VM, ZONE, GCP_PROJECT_ID   the disposable validation instance
 #   IMAGE_TYPE                 logical image type (routes the check)
-#   SSH_PORT                   guest SSH port for Linux (22, or 2222 polaris-vm)
+#   SSH_PORT                   guest SSH port for Linux (22, or 2222 preconfigured Linux images)
 #   LDAP_PORT                  guest LDAP port for a DC (389)
 #   EXPECTED_DOMAIN            DC forest DNS domain (dc-prebaked)
 #   SSH_KEY                    private key path for the injected validator user

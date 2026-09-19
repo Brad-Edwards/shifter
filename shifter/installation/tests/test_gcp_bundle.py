@@ -24,13 +24,13 @@ _GCP_SECRET_ID_KEYS = frozenset(
     {
         "APP_SECRET_ID",
         "DB_SECRET_ID",
+        "PROVISIONER_DB_SECRET_ID",
         "REDIS_SECRET_ID",
         "GUACAMOLE_SECRET_ID",
         "GDC_ACCESS_SECRET_ID",
         "GDC_VM_IMAGE_GCS_SECRET_ID",
         "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
         "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
         "DC_DOMAIN_PASSWORD_SECRET_ID",
         "EMAIL_API_KEY_SECRET_ID",
     }
@@ -155,10 +155,8 @@ class TestGcpGeneratedOutputs:
         # The standalone provisioner reads CLOUD_PROVIDER to select its adapter family.
         assert ProcessRole.PROVISIONER in outputs["CLOUD_PROVIDER"].process_roles
 
-    def test_static_vertex_key_source_is_provisioner_only_not_range_task_input(self):
-        roles = set(self._by_name()["GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID"].process_roles)
-        assert ProcessRole.PROVISIONER in roles
-        assert ProcessRole.RANGE_TASK not in roles
+    def test_guest_provider_credentials_are_not_published(self):
+        assert not any("VERTEX" in name or "ANTHROPIC" in name for name in self._by_name())
 
     def test_runtime_outputs_declare_their_isolated_consumers(self):
         for output in _gcp().generated_outputs:

@@ -71,6 +71,8 @@ dependencies = [
     # stack smoke exists to catch.
     "websockets",
     "whitenoise",
+    "httpx>=0.28,<1",
+    "defusedxml>=0.7.1",
 ]
 
 [dependency-groups]

@@ -417,6 +417,7 @@ def test_hmac_rotation_replays_across_key_versions():
         idempotency=RequestIdempotency(
             caller_key_hmac=new_hmac,
             prior_caller_key_hmacs=(old_hmac,),
+            retained_key_versions=("k1",),
             key_version="k2",
             intent_fingerprint_hmac=fingerprint,
         ),
@@ -460,3 +461,20 @@ def test_lowered_ceiling_blocks_new_work_but_keeps_committed():
         _reserve(allocation)
     spend.refresh_from_db()
     assert spend.reserved == 3000  # committed value retained
+
+
+def test_key_rotation_without_retained_key_cannot_create_a_second_invocation():
+    allocation = make_reservable_allocation()
+    first = _reserve(
+        allocation,
+        idempotency=RequestIdempotency(caller_key_hmac="a" * 64, key_version="v1", intent_fingerprint_hmac="b" * 64),
+    )
+    ModelRequestReservation.objects.filter(request_uuid=first.request_uuid).update(state="settled")
+    with pytest.raises(ContractError, match=r"request\.retry_key_rotation_unavailable"):
+        _reserve(
+            allocation,
+            idempotency=RequestIdempotency(
+                caller_key_hmac="c" * 64, key_version="v2", intent_fingerprint_hmac="d" * 64
+            ),
+        )
+    assert ModelRequestReservation.objects.count() == 1
