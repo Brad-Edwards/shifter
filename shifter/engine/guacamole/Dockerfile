@@ -34,6 +34,17 @@ FROM guacamole/guacamole@sha256:10417af3f1920ce443b6ccc46ae275b7033847cc0031dcc3
 
 # Install PostgreSQL client for schema initialization
 USER root
+# Shifter authenticates with JSON auth and stores sessions in PostgreSQL.
+# These unused upstream extensions bundle vulnerable Bouncy Castle providers
+# (CVE-2026-8763, CVE-2026-13505, CVE-2026-13506, CVE-2026-8798). Remove the
+# extensions and their activation links instead of shipping dormant providers.
+RUN rm -rf /opt/guacamole/extensions/guacamole-auth-sso/cas \
+    /opt/guacamole/extensions/guacamole-auth-sso/ssl \
+    /opt/guacamole/extensions/guacamole-vault/ksm \
+    /opt/guacamole/environment/CAS_ \
+    /opt/guacamole/environment/SSL_AUTH_ \
+    /opt/guacamole/environment/KSM_
+
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
