@@ -59,17 +59,17 @@ def _can_subscribe(user: AbstractBaseUser | AnonymousUser, topic: str) -> bool:
     from management.services import is_ctf_password_change_required, is_temporary_ctf_account
 
     user_id = getattr(user, "pk", None)
-    user = get_user_model().objects.filter(pk=user_id, is_active=True).first()
-    if user is None or getattr(getattr(user, "profile", None), "deleted_at", None):
-        return False
     if user_id is None:
+        return False
+    live_user = get_user_model().objects.filter(pk=user_id, is_active=True).first()
+    if live_user is None or getattr(getattr(live_user, "profile", None), "deleted_at", None):
         return False
     event = _topic_event(topic)
     if event is None:
         return False
-    if is_temporary_ctf_account(user):
-        participant = live_participant_for_user(user)
-        return bool(participant and participant.event_id == event.pk and not is_ctf_password_change_required(user))
+    if is_temporary_ctf_account(live_user):
+        participant = live_participant_for_user(live_user)
+        return bool(participant and participant.event_id == event.pk and not is_ctf_password_change_required(live_user))
     return (
         event.created_by_id == user_id
         or (

@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import ctf_error_response
-from ctf.api.communication_schema import CommunicationSchema
+from ctf.api.communication_schema import SessionCommunicationSchema
 from ctf.api.organizer.communication import validate_query
 from ctf.api.serializers.communication import (
     CommunicationEmptySerializer,
@@ -30,7 +30,7 @@ class InboxPageSerializer(serializers.Serializer):
 
 
 class InboxView(APIView):
-    schema = CommunicationSchema()
+    schema = SessionCommunicationSchema()
     permission_classes = [IsAuthenticatedSession]
     parser_classes = [CommunicationJSONParser]
 
@@ -45,7 +45,6 @@ class CommunicationInboxView(InboxView):
         operation_id="ctf_communication_inbox_list",
         parameters=[InboxQuerySerializer],
         responses=InboxPageSerializer,
-        auth=[{"cookieAuth": []}],
     )
     def get(self, request, event_id):
         query = validate_query(request, InboxQuerySerializer)
@@ -60,7 +59,7 @@ class CommunicationInboxView(InboxView):
 
 
 class CommunicationInboxDetailView(InboxView):
-    @extend_schema(responses=CommunicationInboxItemSerializer, auth=[{"cookieAuth": []}])
+    @extend_schema(responses=CommunicationInboxItemSerializer)
     def get(self, request, event_id, snapshot_id):
         validate_query(request, CommunicationEmptySerializer)
         snapshot = inbox_for_participant(request.user, event_id).filter(pk=snapshot_id).first()
@@ -72,9 +71,7 @@ class CommunicationInboxDetailView(InboxView):
 class CommunicationReadView(InboxView):
     acknowledge = False
 
-    @extend_schema(
-        request=CommunicationEmptySerializer, responses=CommunicationInboxItemSerializer, auth=[{"cookieAuth": []}]
-    )
+    @extend_schema(request=CommunicationEmptySerializer, responses=CommunicationInboxItemSerializer)
     def post(self, request, event_id, snapshot_id):
         validate_query(request, CommunicationEmptySerializer)
         serializer = CommunicationEmptySerializer(data=request.data)

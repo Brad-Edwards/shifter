@@ -60,3 +60,10 @@ class CommunicationSchema(PlatformAutoSchema):
             operation["responses"].setdefault(
                 code, {"description": description, "content": {"application/json": {"schema": error_ref}}}
             )
+
+
+class SessionCommunicationSchema(CommunicationSchema):
+    """Retain only the registered cookie scheme for participant receipt APIs."""
+
+    def get_auth(self):
+        return [scheme for scheme in super().get_auth() if "cookieAuth" in scheme]
