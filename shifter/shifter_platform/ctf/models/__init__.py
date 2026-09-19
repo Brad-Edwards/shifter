@@ -47,6 +47,7 @@ from .communication import (
     ParticipantReceipt,
     RecipientSnapshot,
 )
+from .communication_cutover import CommunicationCutover, LegacyCommunication
 from .content_hydration import CTFContentHydrationReceipt
 from .event import CTFEvent
 from .event_page import CTFEventPage
@@ -98,9 +99,11 @@ __all__ = [
     "CTFTopic",
     "CTFWebhook",
     "CommunicationCampaign",
+    "CommunicationCutover",
     "CommunicationIntent",
     "CommunicationTargetEvent",
     "DeliveryAttempt",
+    "LegacyCommunication",
     "MessageRevision",
     "ParticipantReceipt",
     "RecipientSnapshot",
