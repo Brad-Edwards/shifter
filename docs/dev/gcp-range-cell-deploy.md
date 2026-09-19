@@ -139,8 +139,10 @@ compatibility are separate from range readiness; see the
 
 The deployment `shifter.yaml` must also set
 `settings.dynamic_secret_project_id` to the pre-existing, deployment-only
-range-secret project. This is distinct from the guest compute project and the
-broker's dedicated model invocation projects. New guest, RAES/GDC, VM-Series
+range-secret project. This is distinct from the guest compute project. Broker
+model invocation may use that project, the platform project, or another
+administrator-selected project while retaining separate least-privilege
+identities. New guest, RAES/GDC, VM-Series
 and VPN secrets use canonical deployment- and audience-prefixed names in that
 project; persisted full references remain authoritative for guest access.
 

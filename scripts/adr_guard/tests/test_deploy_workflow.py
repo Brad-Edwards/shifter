@@ -217,7 +217,7 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc", "sauron"}
 
     @classmethod
     def setUpClass(cls):
@@ -273,7 +273,7 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
 
     def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
-        for environment in ("gcp-dev", "nazgul", "orthanc"):
+        for environment in ("gcp-dev", "nazgul", "orthanc", "sauron"):
             with self.subTest(environment=environment):
                 out = self.env(
                     "workflow_dispatch",
@@ -877,6 +877,11 @@ class TestGcpDeployPreflightInputs(unittest.TestCase):
             "${{ secrets.SHIFTER_CONFIG_GCP_DEV }}",
         )
         self.assertIn("--component deploy", step.get("run", ""))
+
+    def test_non_secret_overlay_reaches_every_ephemeral_config_consumer(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}"), 3)
+        self.assertEqual(workflow.count("python scripts/gcp/apply_shifter_config_overlay.py --config"), 3)
 
 
 class TestRangePlacementSingleSource(unittest.TestCase):

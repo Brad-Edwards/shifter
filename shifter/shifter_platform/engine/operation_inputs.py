@@ -15,6 +15,7 @@ not cross the boundary.
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from engine.models import Instance, Range, Request
 from shared.raes.artifact_binding import ArtifactBinding
@@ -29,6 +30,9 @@ from shared.raes.operation_input import (
 from shared.raes.participant_access import ParticipantAccessBinding
 
 __all__ = ["operation_input_payload"]
+
+if TYPE_CHECKING:
+    from engine.models import RaesImageMapping
 
 
 # Durable ownership discriminants persisted on ``engine_instance.state`` (#1666).
@@ -95,18 +99,35 @@ def _raes_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, 
         "provider", "source_name", "source_version"
     )
     for row in rows:
-        projected.setdefault(candidate_key(str(row.provider), str(row.source_name)), []).append(
-            {
-                "source_version": row.source_version,
-                "image_ref": row.image_ref,
-                "machine_type": row.machine_type,
-                "disk_size_gb": row.disk_size_gb,
-                "disk_type": row.disk_type,
-                **({"management_ssh_port": row.management_ssh_port} if row.management_ssh_port != 22 else {}),
-                **({"management_ssh_username": row.management_ssh_username} if row.management_ssh_username else {}),
-            }
-        )
+        key = candidate_key(str(row.provider), str(row.source_name))
+        projected.setdefault(key, []).append(_image_candidate_row(row))
     return projected
+
+
+def _image_candidate_row(row: RaesImageMapping) -> dict[str, object]:
+    """Project only resolver columns, omitting unchanged optional defaults."""
+    candidate: dict[str, object] = {
+        "source_version": row.source_version,
+        "image_ref": row.image_ref,
+        "machine_type": row.machine_type,
+        "disk_size_gb": row.disk_size_gb,
+        "disk_type": row.disk_type,
+    }
+    optional_defaults = {
+        "management_ssh_port": 22,
+        "management_ssh_username": "",
+        "image_kind": "image",
+        "bootstrap_capability": "standard",
+        "participant_container_name": "",
+        "participant_username": "",
+        "participant_readiness_contract": "",
+        "participant_readiness_manifest_sha256": "",
+    }
+    for key, default in optional_defaults.items():
+        value = getattr(row, key)
+        if value != default:
+            candidate[key] = value
+    return candidate
 
 
 def _raes_delivery_bindings(target: Range) -> list[DeliveryBinding]:

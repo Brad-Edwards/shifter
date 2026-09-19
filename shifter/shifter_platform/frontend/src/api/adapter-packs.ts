@@ -6,6 +6,7 @@ import type { components } from "./schema";
 export type AdapterPack = components["schemas"]["RuntimePluginPack"];
 export type AdapterPackDetail = components["schemas"]["RuntimePluginPackDetail"];
 export type AdapterPackUpdate = components["schemas"]["RuntimePluginPackUpdate"];
+export type AdapterTargetImageProfile = components["schemas"]["RuntimeTargetImageProfile"];
 const key = (organization: string) => ["adapter-packs", organization] as const;
 const base = (organization: string) => `/cms/organizations/${organization}/plugin-packs/`;
 

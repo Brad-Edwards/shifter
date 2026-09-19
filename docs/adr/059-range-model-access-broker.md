@@ -124,6 +124,15 @@ rejections. M08 owns production enrollment and operation projection; M05 owns
 the listener call to the transport-peer binding contract. Installing the
 package alone establishes neither enrollment nor peer authentication.
 
+GCP deployment activation is branch-owned: a reviewed per-environment model
+overlay supplies non-secret policy and endpoint intent, while the workflow
+establishes or verifies versioned TLS Secrets and seals the catalog against the
+deployment project. The same overlay is used for Terraform and workload
+rendering. The compatibility renderer must project the catalog reference into
+the application runtime and mount that catalog in runtime consumers before
+enabling access. Direct cluster patches or a render-only check are not
+qualification evidence.
+
 The [AWS packaging contract](../architecture/model-access/aws-packaging.md)
 applies the same broker boundary to EKS: exact-subject IRSA, separate regional
 invocation roles, direct range peering, private DNS and TLS passthrough with

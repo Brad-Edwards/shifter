@@ -103,6 +103,70 @@ def test_existing_range_keeps_original_version_after_pack_upgrade_and_retirement
     assert retained_runtime_plugin_pin(launch(pack)).installation_id == replacement.id
 
 
+def test_tenant_admin_image_profile_is_pinned_with_the_adapter_target(pack):
+    binding = bind_runtime_plugin(
+        pack.actor,
+        pack.scope,
+        pack.installed.id,
+        {
+            "targets": {"server": "node.web"},
+            "image_profiles": {
+                "server": {
+                    "provider": "gcp",
+                    "image_kind": "machine-image",
+                    "image_ref": "projects/example/global/machineImages/nested-host-v1",
+                    "machine_type": "e2-standard-8",
+                    "bootstrap_capability": "preconfigured-machine-host",
+                    "management_ssh_username": "host-admin",
+                    "participant_container_name": "participant-desktop",
+                    "participant_username": "student",
+                    "participant_readiness_contract": "participant-readiness/v1",
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                }
+            },
+        },
+    )
+    assert binding.bindings["image_profiles"]["server"]["provider"] == "gcp"
+    pin = retained_runtime_plugin_pin(launch(pack))
+    assert pin is not None
+    assert pin.bindings.image_profile_for("node.web").image_ref.endswith("/machineImages/nested-host-v1")
+
+
+def test_image_profile_cannot_name_an_undeclared_binding(pack):
+    with pytest.raises(ValidationError, match="declaration"):
+        bind_runtime_plugin(
+            pack.actor,
+            pack.scope,
+            pack.installed.id,
+            {
+                "targets": {"server": "node.web"},
+                "image_profiles": {
+                    "other": {"provider": "aws", "image_ref": "ami-0123456789abcdef0"},
+                },
+            },
+        )
+
+
+def test_image_profile_provider_must_match_the_admitted_backend(pack):
+    bind_runtime_plugin(
+        pack.actor,
+        pack.scope,
+        pack.installed.id,
+        {
+            "targets": {"server": "node.web"},
+            "image_profiles": {
+                "server": {
+                    "provider": "gcp",
+                    "image_ref": "projects/example/global/images/training-v1",
+                }
+            },
+        },
+    )
+    with pytest.raises(ValidationError, match="compiled guests"):
+        launch(pack, backend="ec2")
+    assert not Range.objects.exists()
+
+
 @pytest.mark.parametrize("action", ["disable", "retire"])
 def test_disabled_or_retired_selection_blocks_new_range_before_dispatch(pack, action):
     change_runtime_plugin(pack.actor, pack.organization.uuid, pack.installed.id, action)
