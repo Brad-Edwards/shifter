@@ -112,6 +112,11 @@ class TestSelfHostedClassLabels(unittest.TestCase):
         self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": "gcp-dev"}))
         self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": ["gcp-dev"]}))
 
+    def test_dynamic_gcp_tenant_label_is_recognized_as_self_hosted_class(self):
+        selector = "${{ inputs.environment }}"
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": selector}))
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": [selector]}))
+
     def test_github_hosted_label_is_not_self_hosted(self):
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": "ubuntu-latest"}))
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": ["ubuntu-latest"]}))
@@ -212,7 +217,7 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc", "sauron"}
 
     @classmethod
     def setUpClass(cls):
@@ -268,7 +273,7 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
 
     def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
-        for environment in ("gcp-dev", "nazgul"):
+        for environment in ("gcp-dev", "nazgul", "orthanc", "sauron"):
             with self.subTest(environment=environment):
                 out = self.env(
                     "workflow_dispatch",
@@ -630,6 +635,11 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertNotIn("GCP_BOOTSTRAP_ADMIN_PASSWORD", scan_env)
         self.assertIn("TRIVY_ARCHIVE_SHA256", workflow)
 
+    def test_gcp_mutating_jobs_run_on_the_requested_tenant(self):
+        jobs = ADR_GUARD._dw_jobs(_load("_gcp-dev.yml"), "_gcp-dev.yml")
+        for job_id in ("prepare", "deploy", "post-deploy-smoke"):
+            self.assertEqual(jobs[job_id]["runs-on"], "${{ inputs.environment }}")
+
     def test_raw_release_evidence_is_not_uploaded_as_an_actions_artifact(self):
         for workflow_name in (
             "_gcp-dev.yml",
@@ -867,6 +877,11 @@ class TestGcpDeployPreflightInputs(unittest.TestCase):
             "${{ secrets.SHIFTER_CONFIG_GCP_DEV }}",
         )
         self.assertIn("--component deploy", step.get("run", ""))
+
+    def test_non_secret_overlay_reaches_every_ephemeral_config_consumer(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}"), 3)
+        self.assertEqual(workflow.count("python scripts/gcp/apply_shifter_config_overlay.py --config"), 3)
 
 
 class TestRangePlacementSingleSource(unittest.TestCase):

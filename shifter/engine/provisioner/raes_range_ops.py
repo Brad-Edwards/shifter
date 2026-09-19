@@ -43,7 +43,7 @@ from provisioner_db_operation_input import (
     get_activation_operation_input,
     get_raes_operation_input,
 )
-from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
+from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding, resolve_gce_image_from_runtime_profile
 from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
 from raes_gcp_inventory import VERIFIED_ABSENT, inventory_raes_range_cell
 from raes_gcp_network_allocation import (
@@ -115,6 +115,10 @@ def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPla
         binding = operation_input.artifact_binding_for(node.address)
         if binding is not None:
             return resolve_gce_image_from_binding(node, binding)
+        if operation_input.runtime_plugin is not None:
+            runtime_profile = operation_input.runtime_plugin.bindings.image_profile_for(node.address)
+            if runtime_profile is not None:
+                return resolve_gce_image_from_runtime_profile(node, runtime_profile)
         # The lookup key rule is shared with the Engine that scoped the
         # projection; deriving it separately here is what would make an image
         # silently go missing.

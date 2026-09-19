@@ -27,13 +27,25 @@ def project_event_model_scope(
 
     with transaction.atomic():
         current = CTFEvent.objects.select_for_update().get(pk=event.pk)
+        default_demands: tuple[EventModelDemand, ...] = ()
         if not current.model_demand:
-            return None
+            if not getattr(settings, "MODEL_ACCESS_ENABLED", False):
+                return None
+            from ctf.bridges import cms_project_scenario_model_demands
+
+            default_demands = cms_project_scenario_model_demands(
+                current.scenario_id, expected_concurrency=current.max_participants or 1
+            )
+            if not default_demands:
+                return None
         catalog = getattr(settings, "MODEL_ACCESS_CATALOG", None)
         if catalog is None:
             raise ContractError("allocation.policy_unavailable")
         try:
-            demands = tuple(EventModelDemand.model_validate(item) for item in current.model_demand)
+            demands = tuple(EventModelDemand.model_validate(item) for item in current.model_demand) or default_demands
+            from ctf.services.event.model_sources import project_event_model_sources
+
+            sponsorship = project_event_model_sources(current)
             system = _system_preparation(current, spare_id) if spare_id is not None else None
             refs: tuple[OwnedReference, ...] = (OwnedReference(owner="ctf", reference=f"event:{current.pk}"),)
             if system is not None:
@@ -52,6 +64,7 @@ def project_event_model_scope(
                 demands=demands,
                 authority_revisions=revisions,
                 system_preparation=system,
+                source_sponsorship=sponsorship,
             )
         except ContractError:
             raise

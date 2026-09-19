@@ -96,6 +96,10 @@ design policy. Existing import and registry checks validate structure; they
 do not prove the future broker, accounting, cloud isolation or release claims.
 Implementation and qualification ownership is explicit in the linked backlog.
 
+Accepted ADR-064 supersedes ADR-059's "no-service-account guest default" for
+GCP: range guests receive a default-on, keyless predict-only Vertex model
+identity via Workload Identity, mutually exclusive per range with the broker.
+
 The enforcement entrypoint is:
 
 ```bash
@@ -295,7 +299,9 @@ Current mechanisms:
   orchestrator role's env-scoped grant is not inspected. Guards the #1178
   cross-tenant credential-access fix.
 - ADR-004-R21's legacy guest-role issuer and dedicated checker have been removed.
-  ADR-059 requires broker-mediated model access; the general IAM checks remain.
+  ADR-059's broker mediates model access where enforcement is required; ADR-064
+  adds a default-on, keyless predict-only guest model identity as the baseline.
+  The general IAM checks remain.
 - `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` and
   `scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py`: ADR-004-R25
   request-owned VPN gateway hardening. The checks pin the exact gateway role
@@ -650,6 +656,12 @@ bindings. GCP deployment cleanup also removes the narrowly scoped provisioner-to
 control enrollment egress policy. Standby infrastructure renders zero broker and
 control replicas until model access is enabled; no executable deployment or cloud
 qualification is implied by rendering. See [model access operations](../ops/model-access.md).
+
+The GCP workflow reads a reviewed per-environment model overlay when present,
+verifies deploy-owned TLS resources, and projects the sealed catalog into every
+runtime ConfigMap consumer. `platform/deploy/gcp/**` is owned by the GCP scripts
+lint, SAST, and test quality unit; a template change therefore cannot bypass
+the production-path quality matrix.
 
 Guest model enrollment is projected as allocation/role/target identities alongside
 an immutable operation input. The tenant-approved adapter manifest declares role

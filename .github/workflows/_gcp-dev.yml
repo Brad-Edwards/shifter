@@ -108,12 +108,12 @@ jobs:
       - run: /tmp/kubeconform -strict -summary /tmp/gcp-platform.yaml
 
   prepare:
-    # Runs on the GCP tenant's own runner (label gcp-dev), provisioned by
-    # `deploy.py runners --cloud gcp` (issue #1546), so a GCP dev tenant deploys
-    # without borrowing the AWS self-hosted fleet. gcp-dev is self-hosted-class
+    # Runs on the requested GCP tenant's same-named runner, provisioned by
+    # `deploy.py runners --cloud gcp` (issue #1546), so one tenant never borrows
+    # another tenant's self-hosted fleet. The dynamic label is self-hosted-class
     # to the ADR-003-R5 exposure checker, so the PR gate below still applies.
     name: Prepare release (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     environment: ${{ inputs.github_environment }}
     needs: validate
     if: inputs.deploy_changes && github.event_name != 'pull_request'
@@ -248,9 +248,29 @@ jobs:
           PY
           chmod 600 "${TF_VARS_FILE}"
           echo "TF_VARS_FILE=${TF_VARS_FILE}" >> "${GITHUB_ENV}"
+      - name: Reconcile reviewed model broker trust and overlay
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          template="platform/deploy/gcp/${GCP_ENVIRONMENT}/model-broker-overlay.template.json"
+          if [ ! -f "${template}" ]; then
+            exit 0
+          fi
+          cluster="shifter-${GCP_ENVIRONMENT}-gke"
+          gcloud container fleet memberships get-credentials "${cluster}" \
+            --location "${GCP_REGION}" --project "${GCP_PROJECT_ID}"
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_${cluster}"
+          overlay="${RUNNER_TEMP}/model-broker-overlay.json"
+          uv run --project scripts/gcp python scripts/gcp/prepare_model_broker_overlay.py \
+            --template "${template}" --project-id "${GCP_PROJECT_ID}" \
+            --context "${context}" --output "${overlay}" --mode ensure
+          echo "SHIFTER_CONFIG_OVERLAY_FILE=${overlay}" >> "${GITHUB_ENV}"
       - name: Render range egress allowlist from shifter.yaml
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+          SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}
         run: |
           if [ -z "${SHIFTER_CONFIG_GCP_DEV}" ]; then
             echo "::error::Required secret SHIFTER_CONFIG_GCP_DEV is not set. See docs/dev/deploy-secrets.md."
@@ -261,6 +281,8 @@ jobs:
           RANGE_EGRESS_TFVARS_FILE="${RUNNER_TEMP}/gcp-${GCP_ENVIRONMENT}-range-egress.auto.tfvars"
           printf '%s\n' "${SHIFTER_CONFIG_GCP_DEV}" > "${CONFIG_FILE}"
           chmod 600 "${CONFIG_FILE}"
+          uv run --project "${GITHUB_WORKSPACE}/scripts/gcp" \
+            python scripts/gcp/apply_shifter_config_overlay.py --config "${CONFIG_FILE}"
           uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
             shifter-config render "${CONFIG_FILE}" \
             --output "${RANGE_EGRESS_TFVARS_FILE}"
@@ -715,7 +737,7 @@ jobs:
 
   deploy:
     name: Deploy verified release (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     environment: ${{ inputs.github_environment }}
     needs: [validate, prepare, release_scan]
     if: inputs.deploy_changes && github.event_name != 'pull_request'
@@ -810,6 +832,22 @@ jobs:
           LOCATION=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_location']['value'])")
           gcloud container fleet memberships get-credentials "${CLUSTER}" \
             --location "${LOCATION}" --project "${PROJECT_ID}"
+      - name: Read reviewed model broker overlay
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          template="platform/deploy/gcp/${GCP_ENVIRONMENT}/model-broker-overlay.template.json"
+          if [ ! -f "${template}" ]; then
+            exit 0
+          fi
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_shifter-${GCP_ENVIRONMENT}-gke"
+          overlay="${RUNNER_TEMP}/model-broker-overlay.json"
+          uv run --project scripts/gcp python scripts/gcp/prepare_model_broker_overlay.py \
+            --template "${template}" --project-id "${GCP_PROJECT_ID}" \
+            --context "${context}" --output "${overlay}" --mode read
+          echo "SHIFTER_CONFIG_OVERLAY_FILE=${overlay}" >> "${GITHUB_ENV}"
       - name: Export deploy metadata
         run: |
           python3 - <<'PY'
@@ -863,6 +901,7 @@ jobs:
       - name: Render Mission Control lease policy from shifter.yaml
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+          SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}
         run: |
           # Project settings.mission_control_leases from shifter.yaml into the runtime
           # env the next step generates, so a configured lease policy (including
@@ -875,6 +914,9 @@ jobs:
           fi
           config="${RUNNER_TEMP}/shifter.yaml"
           printf '%s\n' "${SHIFTER_CONFIG_GCP_DEV}" > "${config}"
+          chmod 600 "${config}"
+          uv run --project "${GITHUB_WORKSPACE}/scripts/gcp" \
+            python scripts/gcp/apply_shifter_config_overlay.py --config "${config}"
           uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
             shifter-config render-mission-control-lease-env "${config}" >> "${GITHUB_ENV}"
       - name: Render generated runtime env
@@ -897,7 +939,7 @@ jobs:
           GCP_RANGE_CELL_PROJECT_ID: ${{ vars.GCP_RANGE_CELL_PROJECT_ID }}
           GCP_RANGE_LINUX_IMAGE: ${{ vars.GCP_RANGE_LINUX_IMAGE }}
           GCP_RANGE_KALI_IMAGE: ${{ vars.GCP_RANGE_KALI_IMAGE }}
-          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON || vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
+          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON || secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
           GCP_RANGE_HOST_IDENTITY_POOL_SIZE: ${{ vars.GCP_RANGE_HOST_IDENTITY_POOL_SIZE }}
           GCP_RANGE_WINDOWS_IMAGE: ${{ vars.GCP_RANGE_WINDOWS_IMAGE }}
           GCP_RANGE_DC_IMAGE: ${{ vars.GCP_RANGE_DC_IMAGE }}
@@ -1010,6 +1052,7 @@ jobs:
       - name: Render and apply optional model broker from the canonical chart
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+          SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
         run: |
           set -euo pipefail
@@ -1017,6 +1060,9 @@ jobs:
           config="${RUNNER_TEMP}/model-broker-shifter.yaml"
           manifest="${RUNNER_TEMP}/model-broker.generated.yaml"
           printf '%s\n' "${SHIFTER_CONFIG_GCP_DEV}" > "${config}"
+          chmod 600 "${config}"
+          uv run --project "${GITHUB_WORKSPACE}/scripts/gcp" \
+            python scripts/gcp/apply_shifter_config_overlay.py --config "${config}"
           base_manifest="${RUNNER_TEMP}/platform-base.yaml"
           kubectl kustomize "${K8S_OVERLAY_DIR}" > "${base_manifest}"
           printf '\n---\n' >> "${base_manifest}"
@@ -1028,19 +1074,32 @@ jobs:
           enabled="$(cat "${manifest}.enabled")"
           echo "MODEL_BROKER_ENABLED=${enabled}" >> "${GITHUB_ENV}"
           if [ "${enabled}" = false ]; then
-            kubectl delete deployment model-broker model-access-control \
+            kubectl delete deployment model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found --cascade=foreground --wait=true --timeout=180s
-            kubectl delete service,poddisruptionbudget model-broker model-access-control \
+            kubectl delete service,poddisruptionbudget model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found
             kubectl delete serviceaccount model-broker -n shifter-platform --ignore-not-found
             kubectl delete configmap model-broker-catalog -n shifter-platform --ignore-not-found
-            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress \
+            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress model-provider-egress-boundary \
               -n shifter-platform --ignore-not-found
             kubectl delete networkpolicy model-enrollment-control-egress \
               -n shifter-jobs --ignore-not-found
           fi
           kubectl apply -f "${manifest}"
-      - name: Run database migrations with the migration identity
+      - name: Retire inventoried manual qualification objects
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          inventory="platform/deploy/gcp/${GCP_ENVIRONMENT}/retired-cluster-artifacts.json"
+          if [ ! -f "${inventory}" ]; then
+            exit 0
+          fi
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_shifter-${GCP_ENVIRONMENT}-gke"
+          python3 scripts/gcp/reconcile_retired_cluster_artifacts.py \
+            --context "${context}" --manifest "${inventory}"
+      - name: Run database migrations and bootstrap the in-box catalog with the migration identity
         env:
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
         run: |
@@ -1081,7 +1140,9 @@ jobs:
                   - name: migrate
                     image: ${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}
                     imagePullPolicy: IfNotPresent
-                    args: ["/bin/true"]
+                    # entrypoint.sh runs migrations first, then registers the
+                    # immutable shipped seed through the normal ingestion path.
+                    args: ["python", "manage.py", "bootstrap_inbox_catalog"]
                     envFrom:
                       - configMapRef:
                           name: platform-runtime
@@ -1339,7 +1400,7 @@ jobs:
       contents: read
       issues: write
     name: Post-deploy smoke (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     # Backstop only (see #1220).
     timeout-minutes: 60
     environment: ${{ inputs.github_environment }}

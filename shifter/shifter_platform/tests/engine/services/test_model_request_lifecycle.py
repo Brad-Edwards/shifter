@@ -115,6 +115,40 @@ def test_settle_charges_actual_and_releases_unused():
     assert _concurrency().active_leases == 0
 
 
+def test_source_price_is_used_for_both_hold_and_settlement():
+    """The selected provider's immutable price survives later source changes."""
+    from copy import deepcopy
+
+    from shared.model_access import seal_catalog
+
+    allocation = make_reservable_allocation()
+    payload = deepcopy(allocation.snapshot["catalog"])
+    payload["contract_version"] = "model-access-policy/v4"
+    selected_price = deepcopy(payload["price_schedules"][0])
+    selected_price["price_schedule_id"] = "selected-source-price"
+    selected_price["prices"][0]["price_micro_units"] = 7_000_000
+    payload["price_schedules"].append(selected_price)
+    source_id = uuid4()
+    payload["shards"][0]["credential_ref"] = {"owner": "broker", "reference": f"source:{source_id}:2"}
+    payload["source_bindings"] = [
+        {
+            "shard_id": "vertex-primary",
+            "source_id": str(source_id),
+            "source_revision": 2,
+            "credential_revision": 2,
+            "price_schedule_id": "selected-source-price",
+        }
+    ]
+    allocation.snapshot["catalog"] = seal_catalog(payload).model_dump(mode="json")
+    allocation.save(update_fields=["snapshot"])
+    outcome = _reserve(allocation)
+    assert outcome.canonical_request_cost == 7000
+    open_dispatch(request_uuid=outcome.request_uuid)
+    assert settle_request(request_uuid=outcome.request_uuid, usage=_usage(500)) == 3500
+    assert _spend().spent == 3500
+    assert _spend().reserved == 0
+
+
 def test_settle_is_idempotent():
     allocation = make_reservable_allocation()
     outcome = _reserve(allocation)

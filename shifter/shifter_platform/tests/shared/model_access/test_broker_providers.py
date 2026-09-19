@@ -103,7 +103,7 @@ async def test_fixed_provider_origins_count_before_invoke_and_normalize_usage(pr
     invoke = json.loads(calls[1].content)
     assert "model" not in invoke
     if provider == "vertex-v1":
-        assert calls[0].url.host == "us-aiplatform.googleapis.com"
+        assert calls[0].url.host == "aiplatform.us.rep.googleapis.com"
         assert calls[1].url.host == "us-east5-aiplatform.googleapis.com"
         assert invoke["anthropic_version"] == "vertex-2023-10-16"
     else:
@@ -134,6 +134,21 @@ async def test_revocation_between_count_and_invoke_prevents_paid_transport():
             async with adapter.invoke(message(), count_only=False, before_transport=before_transport):
                 pytest.fail("revoked invocation yielded a provider response")
     assert len(calls) == 1 and "count-tokens" in calls[0].url.path
+
+
+async def test_vertex_count_can_use_the_same_regional_endpoint_as_inference():
+    configured = ProviderTarget.model_validate({**target("vertex-v1").model_dump(), "count_region": "us-east5"})
+    calls = []
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(200, json={"input_tokens": 2})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = MessagesProvider(target=configured, limits=_limits(), credentials=CredentialsPort(), client=client)
+        async with adapter.invoke(message(), count_only=True, before_transport=lease) as result:
+            assert json.loads(b"".join([chunk async for chunk in result.chunks])) == {"input_tokens": 2}
+    assert calls[0].url.host == "us-east5-aiplatform.googleapis.com"
 
 
 async def test_short_lease_never_starts_provider_transport():
@@ -229,3 +244,279 @@ async def test_broker_entry_import_does_not_initialize_application_or_database()
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+async def test_direct_anthropic_uses_owned_key_and_fixed_messages_and_count_routes():
+    from model_broker.provider_credentials import ProviderCredentials
+
+    configured = ProviderTarget(
+        shard_id="direct",
+        provider="anthropic-v1",
+        authentication="stored-credential",
+        region="provider-managed",
+        model="synthetic-model",
+        credential_reference="source:00000000-0000-0000-0000-000000000001:1",
+        principal="",
+        context_window_tokens=200_000,
+    )
+    calls = []
+
+    def transport(request):
+        calls.append(request)
+        assert request.url.host == "api.anthropic.com"
+        assert request.headers["x-api-key"] == "synthetic-owned-key"
+        assert json.loads(request.content)["model"] == "synthetic-model"
+        if request.url.path.endswith("count_tokens"):
+            return httpx.Response(200, json={"input_tokens": 12})
+        return httpx.Response(
+            200,
+            json={
+                "type": "message",
+                "content": [{"type": "text", "text": "answer"}],
+                "usage": {"input_tokens": 12, "output_tokens": 5},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = MessagesProvider(
+            target=configured,
+            limits=_limits(),
+            client=client,
+            credentials=ProviderCredentials(credential={"api_key": "synthetic-owned-key"}),
+        )
+        async with adapter.invoke(message(), count_only=False, before_transport=lease) as result:
+            raw = b"".join([chunk async for chunk in result.chunks])
+        assert json.loads(raw)["content"][0]["text"] == "answer"
+        assert [(item.component, item.units) for item in result.usage.items] == [
+            ("input_tokens", 12),
+            ("output_tokens", 5),
+        ]
+    assert [request.url.path for request in calls] == ["/v1/messages/count_tokens", "/v1/messages"]
+
+
+async def test_direct_openai_counts_complete_prompt_and_preserves_local_tools():
+    calls = []
+    bound = ProviderTarget(
+        shard_id="source-test",
+        provider="openai-v1",
+        authentication="stored-credential",
+        region="provider-managed",
+        model="gpt-synthetic",
+        credential_reference="source:11111111-1111-4111-8111-111111111111:1",
+        principal="",
+        context_window_tokens=200_000,
+    )
+    prompt = parse_messages(
+        json.dumps(
+            {
+                "model": "coding-main",
+                "max_tokens": 32,
+                "system": "Be concise",
+                "messages": [{"role": "user", "content": "read it"}],
+                "tools": [{"name": "read", "description": "Read local text", "input_schema": {"type": "object"}}],
+                "tool_choice": {"type": "any"},
+            }
+        ).encode(),
+        count_only=False,
+        limits=_limits(),
+    )
+
+    def transport(request):
+        calls.append(request)
+        if request.url.path.endswith("input_tokens"):
+            return httpx.Response(200, json={"input_tokens": 20})
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp-synthetic",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": "call-synthetic",
+                        "name": "read",
+                        "arguments": '{"path":"example.txt"}',
+                    }
+                ],
+                "usage": {"input_tokens": 20, "output_tokens": 12, "output_tokens_details": {"reasoning_tokens": 8}},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = MessagesProvider(target=bound, limits=_limits(), credentials=CredentialsPort(), client=client)
+        async with adapter.invoke(prompt, count_only=False, before_transport=lease) as result:
+            reply = json.loads(b"".join([part async for part in result.chunks]))
+    assert [(r.url.host, r.url.path) for r in calls] == [
+        ("api.openai.com", "/v1/responses/input_tokens"),
+        ("api.openai.com", "/v1/responses"),
+    ]
+    count, invoke = [json.loads(r.content) for r in calls]
+    assert count["tools"] == invoke["tools"] and count["input"] == invoke["input"]
+    assert invoke["store"] is False and invoke["truncation"] == "disabled"
+    assert invoke["model"] == "gpt-synthetic" and invoke["tool_choice"] == "required"
+    assert reply["content"][0] == {
+        "type": "tool_use",
+        "id": "call-synthetic",
+        "name": "read",
+        "input": {"path": "example.txt"},
+    }
+    assert reply["stop_reason"] == "tool_use"
+    assert [(item.component, item.units) for item in result.usage.items] == [
+        ("input_tokens", 20),
+        ("output_tokens", 12),
+    ]
+
+
+async def test_openai_stream_translates_text_and_requires_terminal_usage():
+    bound = ProviderTarget(
+        shard_id="source-test",
+        provider="openai-v1",
+        authentication="stored-credential",
+        region="provider-managed",
+        model="gpt-synthetic",
+        credential_reference="source:11111111-1111-4111-8111-111111111111:1",
+        principal="",
+        context_window_tokens=200_000,
+    )
+    events = [
+        {"type": "response.created", "response": {"id": "resp-stream"}},
+        {"type": "response.output_item.added", "output_index": 0, "item": {"type": "message"}},
+        {
+            "type": "response.content_part.added",
+            "output_index": 0,
+            "content_index": 0,
+            "part": {"type": "output_text", "text": ""},
+        },
+        {"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": "answer"},
+        {"type": "response.content_part.done", "output_index": 0, "content_index": 0},
+        {
+            "type": "response.completed",
+            "response": {
+                "id": "resp-stream",
+                "status": "completed",
+                "output": [{"type": "message", "content": [{"type": "output_text", "text": "answer"}]}],
+                "usage": {"input_tokens": 12, "output_tokens": 5},
+            },
+        },
+    ]
+
+    def transport(request):
+        if request.url.path.endswith("input_tokens"):
+            return httpx.Response(200, json={"input_tokens": 12})
+        return httpx.Response(200, content=b"".join(b"data: " + json.dumps(e).encode() + b"\n\n" for e in events))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = MessagesProvider(target=bound, limits=_limits(), credentials=CredentialsPort(), client=client)
+        async with adapter.invoke(message(stream=True), count_only=False, before_transport=lease) as result:
+            reply = b"".join([part async for part in result.chunks])
+        assert b'"text":"answer"' in reply and b"event: message_stop" in reply
+        assert [(item.component, item.units) for item in result.usage.items] == [
+            ("input_tokens", 12),
+            ("output_tokens", 5),
+        ]
+        events.pop()
+        with pytest.raises(ContractError, match="incomplete_usage"):
+            async with adapter.invoke(message(stream=True), count_only=False, before_transport=lease) as result:
+                _ = b"".join([part async for part in result.chunks])
+        assert result.usage is None
+
+
+async def test_openrouter_pins_upstream_without_inventing_a_count_endpoint():
+    calls = []
+    bound = ProviderTarget(
+        shard_id="source-test",
+        provider="openrouter-v1",
+        authentication="stored-credential",
+        region="provider-managed",
+        model="vendor/synthetic",
+        credential_reference="source:11111111-1111-4111-8111-111111111111:1",
+        principal="",
+        context_window_tokens=200_000,
+    )
+    limits = _limits().model_copy(update={"max_input_tokens": 200_000})
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "type": "message",
+                "content": [{"type": "text", "text": "answer"}],
+                "usage": {"input_tokens": 12, "output_tokens": 5},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = MessagesProvider(
+            target=bound, limits=limits, credentials=CredentialsPort(), client=client, upstream_provider="Synthetic"
+        )
+        assert adapter.capabilities().token_counting is False
+        async with adapter.invoke(message(), count_only=False, before_transport=lease) as result:
+            _ = b"".join([part async for part in result.chunks])
+        assert len(calls) == 1 and str(calls[0].url) == "https://openrouter.ai/api/v1/messages"
+        payload = json.loads(calls[0].content)
+        assert payload["provider"] == {
+            "only": ["Synthetic"],
+            "allow_fallbacks": False,
+            "require_parameters": True,
+            "data_collection": "deny",
+        }
+        with pytest.raises(ContractError, match="count_unsupported"):
+            async with adapter.invoke(message(), count_only=True, before_transport=lease):
+                pytest.fail("Unsupported counting returned a fabricated count")
+        assert len(calls) == 1
+        adapter.limits = _limits()
+        with pytest.raises(ContractError, match="input_limit"):
+            async with adapter.invoke(message(), count_only=False, before_transport=lease):
+                pytest.fail("A source without counting exceeded the admitted input envelope")
+        assert len(calls) == 1
+
+
+@pytest.mark.parametrize("mutation", ["output_item", "content", "part", "part_type", "incomplete"])
+async def test_malformed_openai_reply_fails_with_bounded_contract_error(mutation):
+    from model_broker.openai_messages import response_message
+
+    reply = {"status": "completed", "usage": {"input_tokens": 2, "output_tokens": 3}, "output": []}
+    if mutation == "output_item":
+        reply["output"] = [None]
+    elif mutation == "content":
+        reply["output"] = [{"type": "message", "content": "unexpected-private-provider-text"}]
+    elif mutation == "part":
+        reply["output"] = [{"type": "message", "content": [None]}]
+    elif mutation == "part_type":
+        reply["output"] = [{"type": "message", "content": [{"type": ["unexpected-private-provider-text"]}]}]
+    else:
+        reply.update(status="incomplete", incomplete_details="unexpected-private-provider-text")
+    with pytest.raises(ContractError) as error:
+        response_message(reply, model="synthetic")
+    assert "unexpected-private-provider-text" not in str(error.value)
+
+
+async def test_openai_stream_preserves_local_tool_arguments_and_usage():
+    from model_broker.openai_messages import responses_events
+
+    item = {"type": "function_call", "call_id": "call-synthetic", "name": "read", "arguments": '{"path":"example.txt"}'}
+    events = [
+        {"type": "response.created", "response": {"id": "response-synthetic"}},
+        {"type": "response.output_item.added", "output_index": 0, "item": {**item, "arguments": ""}},
+        {"type": "response.function_call_arguments.delta", "output_index": 0, "delta": '{"path":'},
+        {"type": "response.function_call_arguments.delta", "output_index": 0, "delta": '"example.txt"}'},
+        {"type": "response.output_item.done", "output_index": 0, "item": item},
+        {
+            "type": "response.completed",
+            "response": {"status": "completed", "output": [item], "usage": {"input_tokens": 4, "output_tokens": 7}},
+        },
+    ]
+
+    async def chunks():
+        for event in events:
+            yield b"data: " + json.dumps(event).encode() + b"\n\n"
+
+    translated = [event async for event in responses_events(chunks(), model="synthetic")]
+    assert translated[1]["content_block"] == {"type": "tool_use", "id": "call-synthetic", "name": "read", "input": {}}
+    fragments = [event["delta"]["partial_json"] for event in translated if event["type"] == "content_block_delta"]
+    assert json.loads("".join(fragments)) == {"path": "example.txt"}
+    assert translated[-2]["usage"] == {"input_tokens": 4, "output_tokens": 7}
+    events[2]["output_index"] = True
+    with pytest.raises(ContractError, match="invalid_stream"):
+        _ = [event async for event in responses_events(chunks(), model="synthetic")]

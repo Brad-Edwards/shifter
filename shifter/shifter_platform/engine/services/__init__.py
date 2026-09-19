@@ -67,6 +67,11 @@ from ._model_launch_api import (
     project_model_launch_authority,
     record_model_observations,
 )
+from ._model_policy_transition import (
+    admit_range_model_policy_change,
+    begin_range_model_policy_change,
+    get_range_model_policy_status,
+)
 from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
 from ._model_request_lifecycle import (
     DispatchGrant,
@@ -83,6 +88,15 @@ from ._model_request_reconcile import (
     close_expired_revocations,
     reconcile_expired_dispatches,
     reconcile_model_requests,
+)
+from ._model_sources import (
+    ModelSourceView,
+    compile_authorized_model_sources,
+    create_model_source,
+    list_model_sources,
+    project_authorized_model_sources,
+    retire_unused_model_source_credentials,
+    update_model_source,
 )
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
@@ -233,6 +247,7 @@ __all__ = (
     "MembershipEvidence",
     "MintedOperation",
     "ModelAccessRangeView",
+    "ModelSourceView",
     "PreparationAdapterView",
     "PreparationView",
     "RaesImageMappingError",
@@ -263,12 +278,14 @@ __all__ = (
     "active_generation_count",
     "admit_range_capacity",
     "admit_range_model_access",
+    "admit_range_model_policy_change",
     "admit_warm_generation_capacity",
     "apply_late_evidence",
     "apply_pending_operation_results",
     "assess_declared_event_capacity",
     "assess_event_capacity",
     "authenticate_model_access",
+    "begin_range_model_policy_change",
     "bind_public_operation",
     "bind_runtime_plugin",
     "bucket_state_counts",
@@ -280,9 +297,11 @@ __all__ = (
     "check_dispatch_lease",
     "claim_ready_generation",
     "close_expired_revocations",
+    "compile_authorized_model_sources",
     "confirm_receipt_verifier_binding",
     "connect_ngfw_terminal",
     "connect_terminal",
+    "create_model_source",
     "create_ngfw",
     "create_raes_range",
     "create_warm_generation",
@@ -310,6 +329,7 @@ __all__ = (
     "get_or_create_allocation_group",
     "get_owned_instance_request_ref",
     "get_range_membership",
+    "get_range_model_policy_status",
     "get_range_pause_resume_capability",
     "get_range_status",
     "get_ranges_for_ngfw",
@@ -329,6 +349,7 @@ __all__ = (
     "latest_cleanup_verification",
     "list_backend_artifacts",
     "list_model_launch_refreshes",
+    "list_model_sources",
     "list_preparation_adapter_grants",
     "list_preparation_adapters",
     "list_raes_image_mappings",
@@ -340,6 +361,7 @@ __all__ = (
     "pause_range",
     "prepare_model_launch",
     "preview_effective_policy",
+    "project_authorized_model_sources",
     "project_model_launch_authority",
     "project_raes_operation_status",
     "project_range_cleanup_outcome",
@@ -385,6 +407,7 @@ __all__ = (
     "retire_generation",
     "retire_generations_for_request",
     "retire_removed_bucket_generations",
+    "retire_unused_model_source_credentials",
     "retry_artifact_preparation",
     "revoke_preparation_grant",
     "revoke_receipt_verifier",
@@ -395,6 +418,7 @@ __all__ = (
     "stop_ngfw",
     "total_active_generation_count",
     "transaction",
+    "update_model_source",
     "upsert_raes_image_mapping",
     "validate_sharing_binding",
     "warm_capacity_scope_ref",

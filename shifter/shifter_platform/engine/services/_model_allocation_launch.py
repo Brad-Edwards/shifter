@@ -217,9 +217,9 @@ def allocate_launch_models(payload: dict[str, object], operation_id: UUID) -> tu
     if intent.scope is None or prepared.catalog is None:
         raise ContractError("allocation.invalid_input")
     catalog = validate_catalog(prepared.catalog)
-    observations = tuple(
-        ModelQuotaReading.objects.filter(catalog_digest=catalog.digest).values_list("observation", flat=True)
-    )
+    from ._model_source_observations import launch_model_observations
+
+    observations = launch_model_observations(catalog)
     demands = {item.workload_role: item for item in intent.scope.demands}
     allocated = []
     for need in sorted(intent.needs, key=lambda item: item.workload_role):
@@ -233,6 +233,7 @@ def allocate_launch_models(payload: dict[str, object], operation_id: UUID) -> tu
             subject_ref=intent.scope.subject_ref,
             scope_kind=intent.scope.kind,
             scope_id=intent.scope.scope_id,
+            source_policy_revision=intent.scope.source_policy_revision,
             need=need,
             demand=demands[need.workload_role],
             window_start=intent.scope.window_start,
@@ -260,6 +261,7 @@ def _allocate_workload(
         "request_id": request.request_id,
         "operation_id": request.operation_id,
         "workload_role": request.need.workload_role,
+        "source_policy_revision": request.source_policy_revision,
     }
     digest = compute_digest(request)
     absence = ModelOptionalAbsence.objects.filter(**key).first()

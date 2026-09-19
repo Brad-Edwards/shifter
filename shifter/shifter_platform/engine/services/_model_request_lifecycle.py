@@ -318,14 +318,7 @@ def _settled_charge(reservation: ModelRequestReservation, usage: ProviderUsage) 
 def _settlement_prices(reservation: ModelRequestReservation) -> dict[BillingComponent, Price]:
     """Resolve prices exclusively from the reservation's immutable catalog snapshot."""
     catalog = _snapshot_catalog(reservation)
-    alias = next((item for item in catalog.aliases if item.logical_alias == reservation.logical_alias), None)
-    if alias is None:
-        raise ContractError("request.alias_unavailable")
-    schedule = next(
-        (item for item in catalog.price_schedules if item.price_schedule_id == alias.price_schedule_id), None
-    )
-    if schedule is None:
-        raise ContractError("request.price_unavailable")
+    schedule = catalog.price_for_alias(reservation.logical_alias, reservation.shard["shard_id"])
     prices = {price.component: price for price in schedule.prices}
     return prices
 

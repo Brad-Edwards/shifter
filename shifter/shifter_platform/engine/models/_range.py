@@ -85,6 +85,7 @@ class Range(models.Model):
     )
     provisioner_operation = models.CharField(max_length=32, blank=True, default="")
     provisioner_operation_id = models.UUIDField(null=True, blank=True, editable=False)
+    model_source_policy_revision = models.PositiveIntegerField(default=0)
     # Stable cloud ownership epoch; destroy has a different operation fence.
     resource_generation = models.UUIDField(null=True, blank=True, editable=False)
     # Range-backend ownership binding (#1666): write-once (backend, purpose) set at

@@ -72,15 +72,23 @@ def _lock_binding(allocation_id: UUID, moment: datetime) -> tuple[ModelAllocatio
         range_obj is None
         or grant is None
         or grant.state not in {"pending", "active"}
-        or allocation.released_at is not None
-        or allocation.deadline <= moment
-        or range_obj.provisioner_operation_id != allocation.operation_id
+        or not _allocation_is_current(allocation, range_obj, moment)
         or range_obj.status not in {Range.Status.PENDING, Range.Status.PROVISIONING, Range.Status.READY}
         or range_obj.egress_mode == "none"
     ):
         raise ContractError(_DENIED)
     _recheck_authority(allocation)
     return allocation, grant, range_obj
+
+
+def _allocation_is_current(allocation: ModelAllocation, range_obj: Range, moment: datetime) -> bool:
+    """Check allocation lifetime and exact execution and policy generations."""
+    return (
+        allocation.released_at is None
+        and allocation.deadline > moment
+        and range_obj.provisioner_operation_id == allocation.operation_id
+        and range_obj.model_source_policy_revision == allocation.source_policy_revision
+    )
 
 
 def issue_model_enrollment(*, allocation_id: UUID, operation_id: UUID, now: datetime | None = None) -> ModelEnrollment:
@@ -214,6 +222,11 @@ def refresh_model_access(*, token: str, transport_peer: str, now: datetime | Non
     """Consume the current refresh token and invalidate its predecessor pair."""
     moment = now or timezone.now()
     with transaction.atomic():
+        from ._model_credential_transition import refresh_successor
+
+        successor = refresh_successor(token, transport_peer, moment)
+        if successor is not None:
+            return successor
         _, grant, credential = _lock_credential(token, transport_peer, "refresh", moment)
         return _rotate(grant, credential, moment)
 

@@ -122,10 +122,8 @@ class GcpBackendSettings(BaseModel):
     model_broker_runtime: ModelBrokerRuntimeSettings | None = None
 
     @model_validator(mode="after")
-    def validate_model_projects(self) -> GcpBackendSettings:
-        """Keep invocation-only projects outside platform and range-secret authority."""
-        if {self.project_id, self.range_resource_project_id} & self.model_broker.model_projects.keys():
-            raise ValueError("model projects must be dedicated outside platform and dynamic-secret projects")
+    def validate_capacity_profile(self) -> GcpBackendSettings:
+        """Validate the selected shared-service capacity contract."""
         resolve_capacity_profile(self.shared_service_capacity_profile)
         return self
 

@@ -1,4 +1,4 @@
-"""Vertex and Bedrock invocation through fixed, deployment-approved origins."""
+"""Model invocation through fixed provider origins and revision-bound identities."""
 
 from __future__ import annotations
 
@@ -31,8 +31,9 @@ from shared.model_access.provider import (
     ProviderUsage,
     VerifiedUsage,
 )
-from shared.model_access.provider_runtime import ProviderInventory, ProviderTarget
+from shared.model_access.provider_runtime import ProviderInventory, ProviderTarget, SourceExecutionProjection
 
+from .egress import provider_proxy
 from .errors import NoBillableEffect
 from .provider_credentials import ProviderCredentials
 from .provider_usage import StreamUsage, bedrock_events, encode_sse, usage_from_message, vertex_events
@@ -56,6 +57,7 @@ class ProviderRegistry:
         self.targets = {target.shard_id: target for target in inventory.targets}
         self.credentials = credentials
         self.client = client or httpx.AsyncClient(
+            proxy=provider_proxy(),
             trust_env=False,
             follow_redirects=False,
             timeout=httpx.Timeout(5, connect=1, pool=0.25, write=1),
@@ -81,6 +83,24 @@ class ProviderRegistry:
         )
         return cast(MessagesProvider, registry.build(shard))
 
+    def build_projected(self, shard: ModelShard, limits: AccessLimits, projection: object) -> MessagesProvider:
+        """Bind transient control credentials to this exact allocation shard."""
+        try:
+            value = SourceExecutionProjection.model_validate(projection)
+            target = value.target.bind(shard)
+            credential = strict_json(value.credential.encode(), limit=32768) if value.credential else None
+        except ValueError:
+            raise ContractError("provider.invalid_projection") from None
+        if not {"input_tokens", "output_tokens"}.issubset(shard.billing_components):
+            raise ContractError("provider.billing_unsupported")
+        return MessagesProvider(
+            target=target,
+            limits=limits,
+            credentials=ProviderCredentials(credential=credential),
+            client=self.client,
+            upstream_provider=value.upstream_provider,
+        )
+
     async def close(self) -> None:
         await self.client.aclose()
 
@@ -95,15 +115,17 @@ class MessagesProvider(ModelProviderAdapter):
         limits: AccessLimits,
         credentials: ProviderCredentials,
         client: httpx.AsyncClient,
+        upstream_provider: str = "",
     ) -> None:
         self.target, self.limits, self.credentials, self.client = target, limits, credentials, client
+        self.upstream_provider = upstream_provider
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             adapter_id=self.target.provider,
             protocols=("anthropic-messages/2023-06-01",),
             models=(self.target.model,),
-            capabilities=("messages", "token-count"),
+            capabilities=("messages",) if self.target.provider == "openrouter-v1" else ("messages", "token-count"),
             billing_components=(
                 BillingComponent.INPUT_TOKENS,
                 BillingComponent.OUTPUT_TOKENS,
@@ -115,7 +137,7 @@ class MessagesProvider(ModelProviderAdapter):
                 BillingComponent.REQUEST,
             ),
             streaming=True,
-            token_counting=True,
+            token_counting=self.target.provider != "openrouter-v1",
             cancellation=False,
             completion_horizon_seconds=900,
         )
@@ -171,17 +193,42 @@ class MessagesProvider(ModelProviderAdapter):
                 payload.pop(field, None)
         if self.target.provider == "vertex-v1":
             url = _vertex_request(self.target, payload, count_only=count_only)
-        else:
+        elif self.target.provider == "bedrock-v1":
             output_limit = message.max_tokens if isinstance(message, MessagesRequest) else self.limits.max_output_tokens
             url, payload = _bedrock_request(self.target, payload, count_only=count_only, output_limit=output_limit)
+        elif self.target.provider == "anthropic-v1":
+            payload["model"] = self.target.model
+            url = "https://api.anthropic.com/v1/messages" + ("/count_tokens" if count_only else "")
+        elif self.target.provider == "openai-v1":
+            from .openai_messages import responses_request
+
+            payload = responses_request(payload, model=self.target.model, count_only=count_only)
+            url = "https://api.openai.com/v1/responses" + ("/input_tokens" if count_only else "")
+        elif self.target.provider == "openrouter-v1":
+            url = self._routed_request(payload, count_only=count_only)
+        else:
+            raise ContractError("provider.transport_unsupported")
         return url, json.dumps(payload, separators=(",", ":"), allow_nan=False).encode()
+
+    def _routed_request(self, payload: JsonObject, *, count_only: bool) -> str:
+        """Pin the routed provider and prohibit fallback or data collection."""
+        if count_only or not self.upstream_provider:
+            raise ContractError("provider.count_unsupported")
+        payload["model"] = self.target.model
+        payload["provider"] = {
+            "only": [self.upstream_provider],
+            "allow_fallbacks": False,
+            "require_parameters": True,
+            "data_collection": "deny",
+        }
+        return "https://openrouter.ai/api/v1/messages"
 
     @asynccontextmanager
     async def _upstream(
         self, message: CountTokensRequest, *, count_only: bool, before_transport: Callable[[], Awaitable[str]]
     ) -> AsyncIterator[httpx.Response]:
-        url, raw = self._request(message, count_only=count_only)
         try:
+            url, raw = self._request(message, count_only=count_only)
             headers = await self.credentials.headers(self.target, url=url, body=raw)
             deadline = datetime.fromisoformat(await before_transport())
             if datetime.now(UTC) + timedelta(seconds=4) >= deadline:
@@ -209,7 +256,7 @@ class MessagesProvider(ModelProviderAdapter):
     async def _count(self, message: CountTokensRequest, before_transport: Callable[[], Awaitable[str]]) -> int:
         async with self._upstream(message, count_only=True, before_transport=before_transport) as response:
             value = await self._json(response)
-        key = "input_tokens" if self.target.provider == "vertex-v1" else "inputTokens"
+        key = "inputTokens" if self.target.provider == "bedrock-v1" else "input_tokens"
         tokens = value.get(key)
         if type(tokens) is not int or not 0 <= tokens <= self.target.context_window_tokens:
             raise ContractError("provider.invalid_count")
@@ -219,6 +266,15 @@ class MessagesProvider(ModelProviderAdapter):
         self, message: CountTokensRequest, *, count_only: bool, before_transport: Callable[[], Awaitable[str]]
     ) -> int:
         """Check the free count and context bounds before attempting billable work."""
+        if self.target.provider == "openrouter-v1":
+            if count_only:
+                raise NoBillableEffect("provider.count_unsupported", count_only=True)
+            # This provider offers no documented free counting endpoint. The
+            # full physical context is the only safe pre-dispatch input bound.
+            # Smaller input envelopes fail closed; no estimate becomes a count.
+            if self.target.context_window_tokens > self.limits.max_input_tokens:
+                raise NoBillableEffect("messages.input_limit", count_only=False)
+            return self.target.context_window_tokens
         # The count is covered by the request's existing reservation and lease.
         # It cannot mint a second grant or bypass rate/concurrency admission.
         try:
@@ -261,23 +317,39 @@ class MessagesProvider(ModelProviderAdapter):
                 """Normalize each response and publish usage only at completion."""
                 if message.stream:
                     tracker = StreamUsage()
-                    decoder = vertex_events if self.target.provider == "vertex-v1" else bedrock_events
-                    async for event in decoder(response.aiter_bytes(chunk_size=16_384)):
+                    events = self._stream_events(response)
+                    async for event in events:
                         tracker.observe(event)
                         yield encode_sse(event)
                     result.usage = tracker.result()
                 else:
                     value = await self._json(response)
+                    if self.target.provider == "openai-v1":
+                        from .openai_messages import response_message
+
+                        value = response_message(value, model=self.target.model)
                     result.usage = usage_from_message(value)
                     yield json.dumps(value, separators=(",", ":")).encode()
 
             result = ProviderResponse("text/event-stream" if message.stream else "application/json", chunks())
             yield result
 
+    def _stream_events(self, response: httpx.Response) -> AsyncIterator[JsonObject]:
+        """Decode the configured provider's stream into Messages events."""
+        if self.target.provider == "openai-v1":
+            from .openai_messages import responses_events
+
+            return responses_events(response.aiter_bytes(chunk_size=16_384), model=self.target.model)
+        decoder = bedrock_events if self.target.provider == "bedrock-v1" else vertex_events
+        return decoder(response.aiter_bytes(chunk_size=16_384))
+
 
 def _vertex_request(target: ProviderTarget, payload: JsonObject, *, count_only: bool) -> str:
     """Bind a Vertex request to its configured region, project and publisher model."""
     region = target.count_region if count_only else target.region
+    hostname = (
+        f"aiplatform.{region}.rep.googleapis.com" if region in {"us", "eu"} else f"{region}-aiplatform.googleapis.com"
+    )
     model = "count-tokens" if count_only else target.model.rsplit("/", 1)[1]
     method = "streamRawPredict" if payload.get("stream") else "rawPredict"
     if count_only:
@@ -285,7 +357,7 @@ def _vertex_request(target: ProviderTarget, payload: JsonObject, *, count_only: 
     else:
         payload["anthropic_version"] = "vertex-2023-10-16"
     return (
-        f"https://{region}-aiplatform.googleapis.com/v1/projects/{target.project}/locations/{region}"
+        f"https://{hostname}/v1/projects/{target.project}/locations/{region}"
         f"/publishers/anthropic/models/{model}:{method}"
     )
 

@@ -221,6 +221,25 @@ class TestDeliveryBindings:
 
 
 class TestImageCandidates:
+    def test_machine_host_profile_crosses_as_closed_tenant_runtime_data(self):
+        fx = _RaesRange()
+        RaesImageMapping.objects.create(
+            provider="gce",
+            source_name="kali",
+            image_ref="projects/example/global/machineImages/nested-host-v1",
+            image_kind="machine-image",
+            bootstrap_capability="preconfigured-machine-host",
+            management_ssh_username="host-admin",
+            participant_container_name="participant-desktop",
+            participant_username="student",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        candidate = fx.payload().image_candidates_for("gce", "kali")[0]
+        assert candidate["image_kind"] == "machine-image"
+        assert candidate["bootstrap_capability"] == "preconfigured-machine-host"
+        assert candidate["participant_readiness_manifest_sha256"] == "a" * 64
+
     def test_candidates_are_projected_for_plan_referenced_sources(self):
         fx = _RaesRange()
         _mapping("kali", version="2024.1")

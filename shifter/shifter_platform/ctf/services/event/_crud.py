@@ -122,6 +122,11 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
             status=EventStatus.DRAFT.value,
             **safe_data,
         )
+        if "model_sources" in event_data:
+            from .model_sources import set_event_model_sources
+
+            set_event_model_sources(event, user, event_data["model_sources"], expected_revision=0)
+            event.save(update_fields=["model_sources", "model_source_actor_id", "model_source_revision", "updated_at"])
         if resolved_content is not None:
             from ctf.services.content_hydration import hydrate_event_ctf_content
 

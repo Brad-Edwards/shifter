@@ -20,6 +20,15 @@ resource "random_password" "runtime_db_password" {
   }
 }
 
+resource "random_password" "provisioner_db_password" {
+  length  = 32
+  special = true
+
+  keepers = {
+    rotation = 1
+  }
+}
+
 resource "random_password" "guacamole_db_password" {
   length  = 32
   special = true
@@ -136,6 +145,13 @@ resource "google_sql_user" "runtime" {
   instance        = google_sql_database_instance.platform.name
   password        = random_password.runtime_db_password.result
   deletion_policy = "ABANDON"
+}
+
+resource "google_sql_user" "provisioner" {
+  name     = "provisioner_runtime"
+  project  = var.project_id
+  instance = google_sql_database_instance.platform.name
+  password = random_password.provisioner_db_password.result
 }
 
 resource "google_sql_user" "guacamole" {

@@ -440,6 +440,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/model-source-options/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Discover source choices under the current session authority. */
+        get: operations["cms_model_source_options_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-ranges/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List model-enabled ranges in administrable tenant workspaces. */
+        get: operations["cms_organizations_model_ranges_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-source-users/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Search tenant members eligible for explicit source-use grants. */
+        get: operations["cms_organizations_model_source_users_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List and create sources for an administrable organization. */
+        get: operations["cms_organizations_model_sources_retrieve"];
+        put?: never;
+        /** @description List and create sources for an administrable organization. */
+        post: operations["cms_organizations_model_sources_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace a source only at its expected revision. */
+        put: operations["cms_organizations_model_sources_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/retire-credentials/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Retire obsolete credentials after checking live references. */
+        post: operations["cms_organizations_model_sources_retire_credentials_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/available/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List sources explicitly available to the current actor. */
+        get: operations["cms_organizations_model_sources_available_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/organizations/{organization_uuid}/packs/": {
         parameters: {
             query?: never;
@@ -608,6 +728,24 @@ export interface paths {
         put?: never;
         /** @description Disable an existing mapping without deleting it (preserves audit). */
         post: operations["cms_raes_image_mappings_disable_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/ranges/{request_id}/model-sources/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read or replace model sources under range administration authority. */
+        get: operations["cms_ranges_model_sources_retrieve"];
+        /** @description Read or replace model sources under range administration authority. */
+        put: operations["cms_ranges_model_sources_update"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3288,6 +3426,17 @@ export interface components {
          * @enum {string}
          */
         AgentTypeEnum: "xdr" | "xdr_collector" | "cloud_identity_engine";
+        /** @description Compatible sources and mixing policy for one logical alias. */
+        AliasSourceOptions: {
+            logical_alias: string;
+            multiple_allowed: boolean;
+            sources: components["schemas"]["ModelSourceView"][];
+        };
+        /** @description Chosen source revisions for a logical model alias. */
+        AliasSourceSelection: {
+            logical_alias: string;
+            sources: components["schemas"]["SourceChoice"][];
+        };
         /**
          * @description Schema-only component for the canonical platform API error envelope.
          *
@@ -3343,6 +3492,12 @@ export interface components {
             readonly user_agent: string;
             readonly request_id: string;
         };
+        /**
+         * @description * `workload-identity` - workload-identity
+         *     * `stored-credential` - stored-credential
+         * @enum {string}
+         */
+        AuthenticationEnum: "workload-identity" | "stored-credential";
         /** @description One organizer-granted award row (CTF-204). */
         Award: {
             readonly id: string;
@@ -3382,6 +3537,7 @@ export interface components {
             can_change_users: boolean;
             can_delete_users: boolean;
             can_manage_adapters?: boolean;
+            can_manage_model_sources?: boolean;
         };
         /** @description Authenticated principal summary for the SPA shell. */
         BootstrapPrincipal: {
@@ -3591,6 +3747,10 @@ export interface components {
             name: string;
             credential_type: string;
         };
+        /** @description Number of obsolete credential versions retired. */
+        CredentialRetirement: {
+            retired: number;
+        };
         /** @description Envelope returned by the scenario list. */
         CtfScenarioListResponse: {
             readonly scenarios: components["schemas"]["CtfScenarioRef"][];
@@ -3600,6 +3760,17 @@ export interface components {
             readonly id: string;
             readonly name: string;
         };
+        /**
+         * @description * `AUD` - AUD
+         *     * `CAD` - CAD
+         *     * `CHF` - CHF
+         *     * `EUR` - EUR
+         *     * `GBP` - GBP
+         *     * `JPY` - JPY
+         *     * `USD` - USD
+         * @enum {string}
+         */
+        CurrencyEnum: "AUD" | "CAD" | "CHF" | "EUR" | "GBP" | "JPY" | "USD";
         /** @description Response body for ``CurrentRangeView.get``. */
         CurrentRangeResponse: {
             has_range: boolean;
@@ -3744,6 +3915,9 @@ export interface components {
             readonly model_demand: {
                 [key: string]: unknown;
             }[];
+            readonly model_sources: components["schemas"]["ModelSourceSelection"];
+            readonly workspace: string | null;
+            readonly model_source_revision: number;
             readonly logo_url: string;
             readonly visible_os_types: string[];
             readonly theme_color: string;
@@ -3881,6 +4055,10 @@ export interface components {
             model_demand?: {
                 [key: string]: unknown;
             }[];
+            model_sources?: components["schemas"]["ModelSourceSelection"];
+            /** Format: uuid */
+            workspace?: string;
+            expected_model_source_revision?: number;
             /** Format: uri */
             logo_url?: string;
             visible_os_types?: string[];
@@ -3979,6 +4157,12 @@ export interface components {
             penalty?: number;
             order?: number;
         };
+        /**
+         * @description * `image` - image
+         *     * `machine-image` - machine-image
+         * @enum {string}
+         */
+        ImageKindEnum: "image" | "machine-image";
         /** @description Response-only projection of ``shared.schemas.InstanceContext``. */
         InstancePresentation: {
             uuid: string | null;
@@ -4011,6 +4195,7 @@ export interface components {
         KindEnum: "generated" | "set";
         /** @description Validate range launch requests. */
         LaunchRange: {
+            model_sources?: components["schemas"]["ModelSourceSelection"];
             agents?: {
                 [key: string]: number;
             };
@@ -4101,6 +4286,133 @@ export interface components {
          * @enum {string}
          */
         ModeEnum: "advisory" | "enforcing";
+        /** @description Effective provider assignment for a workload alias. */
+        ModelAssignment: {
+            workload: string;
+            logical_alias: string;
+            provider: string;
+            model: string;
+            region: string;
+        };
+        /** @description Runtime availability and effective model assignments. */
+        ModelPolicyRuntime: {
+            state: components["schemas"]["ModelPolicyRuntimeStateEnum"];
+            assignments: components["schemas"]["ModelAssignment"][];
+        };
+        /**
+         * @description * `active` - active
+         *     * `refresh_pending` - refresh_pending
+         *     * `unavailable` - unavailable
+         * @enum {string}
+         */
+        ModelPolicyRuntimeStateEnum: "active" | "refresh_pending" | "unavailable";
+        /** @description Paged tenant ranges with source policy metadata. */
+        ModelRangePage: {
+            count: number;
+            page: number;
+            has_next: boolean;
+            results: components["schemas"]["ModelRangeSummary"][];
+        };
+        /** @description Range identity and source policy status for tenant administration. */
+        ModelRangeSummary: {
+            /** Format: uuid */
+            request_id: string;
+            scenario: string;
+            status: string;
+            revision: number;
+            error: string;
+        };
+        /** @description Editable metadata; the service validates provider-specific combinations. */
+        ModelSourceConfiguration: {
+            name: string;
+            provider: components["schemas"]["ModelSourceConfigurationProviderEnum"];
+            authentication: components["schemas"]["AuthenticationEnum"];
+            model: string;
+            region: string;
+            /** @default  */
+            project: string;
+            /** @default  */
+            principal: string;
+            /** @default  */
+            count_region: string;
+            quota_identity: string;
+            context_window_tokens: number;
+            /** Format: int64 */
+            tokens_per_minute: number;
+            input_price_per_million: number;
+            output_price_per_million: number;
+            /** @default USD */
+            currency: components["schemas"]["CurrencyEnum"];
+            /** Format: date-time */
+            price_valid_until: string;
+            /** @default false */
+            allow_organization_members: boolean;
+            allowed_user_ids?: number[];
+            /** @default  */
+            upstream_provider: string;
+        };
+        /**
+         * @description * `vertex-v1` - vertex-v1
+         *     * `bedrock-v1` - bedrock-v1
+         *     * `anthropic-v1` - anthropic-v1
+         *     * `openai-v1` - openai-v1
+         *     * `openrouter-v1` - openrouter-v1
+         * @enum {string}
+         */
+        ModelSourceConfigurationProviderEnum: "vertex-v1" | "bedrock-v1" | "anthropic-v1" | "openai-v1" | "openrouter-v1";
+        /** @description Collection of authorized source metadata. */
+        ModelSourcePage: {
+            results: components["schemas"]["ModelSourceView"][];
+        };
+        /** @description Explicit source choices grouped by logical alias. */
+        ModelSourceSelection: {
+            aliases: components["schemas"]["AliasSourceSelection"][];
+        };
+        /** @description Revision-fenced replacement of source configuration and status. */
+        ModelSourceUpdate: {
+            configuration: components["schemas"]["ModelSourceConfiguration"];
+            credential?: unknown;
+            expected_revision: number;
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description Tenant directory identity for an explicit source-use grant. */
+        ModelSourceUser: {
+            id: number;
+            name: string;
+            username: string;
+        };
+        /** @description Bounded directory results and continuation indicator. */
+        ModelSourceUserPage: {
+            has_next: boolean;
+            results: components["schemas"]["ModelSourceUser"][];
+        };
+        /** @description Public source metadata with credential presence only. */
+        ModelSourceView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_uuid: string;
+            revision: number;
+            enabled: boolean;
+            state: components["schemas"]["ModelSourceViewStateEnum"];
+            configuration: components["schemas"]["ModelSourceConfiguration"];
+            has_credential: boolean;
+        };
+        /**
+         * @description * `pending` - pending
+         *     * `ready` - ready
+         *     * `failed` - failed
+         *     * `retired` - retired
+         *     * `disabled` - disabled
+         * @enum {string}
+         */
+        ModelSourceViewStateEnum: "pending" | "ready" | "failed" | "retired" | "disabled";
+        /** @description Source configuration and an optional transient credential. */
+        ModelSourceWrite: {
+            configuration: components["schemas"]["ModelSourceConfiguration"];
+            credential?: unknown;
+        };
         /** @description Validate NGFW creation requests. */
         NGFWCreate: {
             /** @default  */
@@ -4892,6 +5204,18 @@ export interface components {
             management_ssh_username: string;
             /** @default 22 */
             management_ssh_port: number;
+            /** @default image */
+            image_kind: components["schemas"]["ImageKindEnum"];
+            /** @default standard */
+            bootstrap_capability: string;
+            /** @default  */
+            participant_container_name: string;
+            /** @default  */
+            participant_username: string;
+            /** @default  */
+            participant_readiness_contract: string;
+            /** @default  */
+            participant_readiness_manifest_sha256: string;
             /** @default true */
             enabled: boolean;
             /** @default  */
@@ -4926,6 +5250,12 @@ export interface components {
             readonly disk_type: string;
             readonly management_ssh_username: string;
             readonly management_ssh_port: number;
+            readonly image_kind: string;
+            readonly bootstrap_capability: string;
+            readonly participant_container_name: string;
+            readonly participant_username: string;
+            readonly participant_readiness_contract: string;
+            readonly participant_readiness_manifest_sha256: string;
             readonly enabled: boolean;
             readonly notes: string;
             readonly artifact_id: string;
@@ -5100,6 +5430,23 @@ export interface components {
             readonly progress: {
                 [key: string]: unknown;
             };
+        };
+        /** @description Range source policy and its current runtime status. */
+        RangeModelSources: {
+            /** Format: uuid */
+            request_id: string;
+            /** Format: uuid */
+            workspace: string;
+            scenario: string;
+            revision: number;
+            selection: components["schemas"]["ModelSourceSelection"];
+            error: string;
+            runtime: components["schemas"]["ModelPolicyRuntime"];
+        };
+        /** @description Revision-fenced source selection for an existing range. */
+        RangeModelSourcesWrite: {
+            expected_revision: number;
+            selection: components["schemas"]["ModelSourceSelection"];
         };
         /**
          * @description Response-only projection of ``shared.schemas.RangeContext``.
@@ -5310,6 +5657,9 @@ export interface components {
             parameters?: {
                 [key: string]: string;
             };
+            image_profiles?: {
+                [key: string]: components["schemas"]["RuntimeTargetImageProfile"];
+            };
         };
         /** @description A conforming adapter manifest and optional registry credentials. */
         RuntimePluginInstall: {
@@ -5390,6 +5740,42 @@ export interface components {
          * @enum {string}
          */
         RuntimePluginViewStateEnum: "checking" | "ready" | "failed" | "disabled" | "retired";
+        /** @description Closed provider image profile selected for one adapter target. */
+        RuntimeTargetImageProfile: {
+            provider: components["schemas"]["RuntimeTargetImageProfileProviderEnum"];
+            /** @default image */
+            image_kind: components["schemas"]["ImageKindEnum"];
+            image_ref: string;
+            /** @default  */
+            machine_type: string;
+            disk_size_gb?: number | null;
+            /** @default  */
+            disk_type: string;
+            /** @default standard */
+            bootstrap_capability: string;
+            /** @default  */
+            management_ssh_username: string;
+            /** @default 22 */
+            management_ssh_port: number;
+            /** @default  */
+            participant_container_name: string;
+            /** @default  */
+            participant_username: string;
+            /** @default  */
+            participant_readiness_contract: string;
+            /** @default  */
+            participant_readiness_manifest_sha256: string;
+            /** @default  */
+            domain_dns_name: string;
+            /** @default  */
+            domain_netbios_name: string;
+        };
+        /**
+         * @description * `gcp` - gcp
+         *     * `aws` - aws
+         * @enum {string}
+         */
+        RuntimeTargetImageProfileProviderEnum: "gcp" | "aws";
         /** @description Read-only RAES package identity and availability for the SPA. */
         ScenarioDetail: {
             readonly id: string;
@@ -5499,6 +5885,30 @@ export interface components {
          */
         SetWorkspaceEgressPolicy: {
             egress_policy: components["schemas"]["EgressPolicyEnum"];
+        };
+        /** @description Immutable source revision and its allocation weight. */
+        SourceChoice: {
+            /** Format: uuid */
+            source_id: string;
+            revision: number;
+            /** @default 1 */
+            weight: number;
+        };
+        /** @description Authorized workspaces and scenario-specific source choices. */
+        SourceOptions: {
+            workspaces: components["schemas"]["SourceWorkspace"][];
+            /** Format: uuid */
+            workspace: string | null;
+            aliases: components["schemas"]["AliasSourceOptions"][];
+            available: boolean;
+        };
+        /** @description Workspace identity displayed alongside tenant source options. */
+        SourceWorkspace: {
+            /** Format: uuid */
+            uuid: string;
+            name: string;
+            organization_name: string;
+            is_personal: boolean;
         };
         /** @description Organizer spare-pool top-up request body (``count`` bounded non-negative). */
         SparePoolRequest: {
@@ -6778,6 +7188,340 @@ export interface operations {
             };
         };
     };
+    cms_model_source_options_retrieve: {
+        parameters: {
+            query?: {
+                /**
+                 * @description * `range` - range
+                 *     * `ctf` - ctf
+                 *     * `admin` - admin
+                 */
+                purpose?: "range" | "ctf" | "admin";
+                scenario?: string;
+                workspace?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOptions"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_ranges_retrieve: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRangePage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_source_users_retrieve: {
+        parameters: {
+            query?: {
+                page?: number;
+                search?: string;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourceUserPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourcePage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelSourceWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourceView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelSourceUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourceView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_retire_credentials_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialRetirement"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_available_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourcePage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     cms_organizations_packs_create: {
         parameters: {
             query?: never;
@@ -7347,6 +8091,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RaesImageMappingView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_ranges_model_sources_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeModelSources"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_ranges_model_sources_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RangeModelSourcesWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeModelSources"];
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeModelSources"];
                 };
             };
             /** @description Authentication failed. */
