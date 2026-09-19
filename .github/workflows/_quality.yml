@@ -2612,3 +2612,4 @@ jobs:
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.scanner.skipJreProvisioning=true
             -Dsonar.qualitygate.wait=true
+            ${{ github.event_name == 'workflow_dispatch' && format('-Dsonar.branch.name={0}', github.ref_name) || '' }}

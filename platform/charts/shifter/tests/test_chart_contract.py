@@ -44,9 +44,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # (allow-platform/jobs-metadata-server-egress) so the Helm path matches the kustomize base.
 # Regenerated for isolated runtime plugins, broker enrollment and retirement of
 # direct-provider configuration, capacity contracts, and isolated provider egress.
+# Regenerated for #2305 after granting namespace-scoped pod listing for cancellation.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "3d454d3c638cd1f52593169228144d4caca82e7151b623a1321cbdf8cf93d1fc",
-    "gcp-prod": "d1d1ac232c1f03c909b3187a4f14fbc6209b57d895b937070cf4af7bcdcbcb28",
+    "gcp-dev": "5d0eb638a5daa5475ca3e24db923c021abd67499f85812e9523510a797c7e1a2",
+    "gcp-prod": "4ac4b1254186ce4565cb44f3e923c95e1c51abf5672fde77872d71e865c60ac8",
 }
 
 
@@ -80,6 +81,24 @@ def _identity(document: dict[str, object]) -> tuple[str, str]:
 
 
 class BackendNeutralChartContractTests(unittest.TestCase):
+    def test_range_access_selects_smoke_without_broadening_destinations(self) -> None:
+        for profile in ("gcp-dev", "gcp-prod"):
+            with self.subTest(profile=profile):
+                rendered = _helm("template", "contract-test", str(CHART_DIR),
+                                 "-f", str(VALUES_FILES[profile]),
+                                 "--set", "network.rangeAccessCidrs[0]=10.50.0.0/16").stdout
+                documents = [doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)]
+                policy = next(doc for doc in documents if _identity(doc) == (
+                    "NetworkPolicy", "allow-platform-range-access-egress"))
+                self.assertEqual(policy["spec"]["podSelector"], {"matchExpressions": [{
+                    "key": "app.kubernetes.io/component", "operator": "In",
+                    "values": ["portal", "guacd", "post-deploy-smoke"],
+                }]})
+                self.assertEqual(policy["spec"]["egress"], [{
+                    "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
+                    "ports": [{"protocol": "TCP", "port": port} for port in (22, 3389)],
+                }])
+
     def test_aws_supplies_gvisor_runtime_class_for_only_the_isolated_pool(self) -> None:
         _, documents = _render(VALUES_FILES["aws-dev"])
         runtime = next(doc for doc in documents if _identity(doc) == ("RuntimeClass", "gvisor"))

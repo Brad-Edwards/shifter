@@ -111,6 +111,23 @@ is not parity evidence. Delivery and proof owners are listed in the
 Registry checks validate documentation structure and existing import rules.
 They do not prove this proposed runtime boundary.
 
+The [M05 broker preflight](../architecture/model-access/broker-preflight-2122.md)
+applies this boundary to the existing listeners, shared contracts, Engine
+credentials/accounting and deployment validators. It records gaps in bounded
+stream cleanup, credential abuse controls, workload-identity claim binding,
+safe startup diagnostics and drain/readiness evidence. It introduces no new
+authority or implementation claim; ADR-064's direct posture is not a fallback
+for a range requiring broker enforcement.
+
+The [M05 runtime](../architecture/model-access/broker-runtime.md) applies these
+findings through bounded headers/bodies, closed control replies, immutable GCP
+subject IDs, locked credential rotation budgets, isolated synchronous control
+capacity and database waits, immediate upstream cancellation and signal drain.
+Transport diagnostics are suppressed at their namespace boundary; startup errors
+never serialize rejected configuration. Real local TLS and PostgreSQL tests
+exercise the boundary alongside import enforcement. These are local proofs, not
+the live IAM/network/load evidence required to adopt this ADR's support claims.
+
 The [M06 GCP packaging preflight](../architecture/model-access/gcp-packaging-preflight-2123.md)
 records the repository integration gates for broker-only runtime inventory,
 effective NetworkPolicy isolation, exact-target IAM, explicit range egress
@@ -123,6 +140,15 @@ Their integration tests verify the exact exception and incompatible-posture
 rejections. M08 owns production enrollment and operation projection; M05 owns
 the listener call to the transport-peer binding contract. Installing the
 package alone establishes neither enrollment nor peer authentication.
+
+GCP deployment activation is branch-owned: a reviewed per-environment model
+overlay supplies non-secret policy and endpoint intent, while the workflow
+establishes or verifies versioned TLS Secrets and seals the catalog against the
+deployment project. The same overlay is used for Terraform and workload
+rendering. The compatibility renderer must project the catalog reference into
+the application runtime and mount that catalog in runtime consumers before
+enabling access. Direct cluster patches or a render-only check are not
+qualification evidence.
 
 The [AWS packaging contract](../architecture/model-access/aws-packaging.md)
 applies the same broker boundary to EKS: exact-subject IRSA, separate regional

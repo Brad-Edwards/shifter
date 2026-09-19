@@ -129,6 +129,30 @@ the substrate, then deploy. The maintained end-to-end walkthrough is the GCP
 Deployment section of
 `docs/technical/dev/setup.md`.
 
+For a fresh project, copy `gcp-foundation.example.tfvars.json` to an
+operator-owned file outside the repository. Supply the project ID and number,
+numeric GitHub repository and owner IDs, bucket names, and exact purpose
+Environment/branch/workflow tuples. Obtain IDs with `gcloud projects describe`
+and `gh api repos/<owner>/<repo>`; bootstrap verifies them before writes. Keep
+image build and validation on protected `dev`/`main` refs. Deploy and destroy
+use the selected tenant branch. No secret payload belongs in this file.
+
+```bash
+./scripts/bootstrap/deploy.py gcp-foundation --inputs /path/to/foundation.tfvars.json --dry-run
+./scripts/bootstrap/deploy.py gcp-foundation --inputs /path/to/foundation.tfvars.json --yes
+```
+
+This enables the foundation APIs, creates the private versioned state bucket,
+and applies the independently owned `cicd-oidc` root from a saved plan under
+operator credentials. The evidence bucket has an irreversible 90-day retention
+lock. `enable_image_build_network=true` creates a foundation-owned custom VPC,
+private subnet, Cloud NAT, and IAP-only build/validation ingress before any
+platform deployment. It has no peering to runner or runtime networks. Publish
+its network/subnet outputs as `GCP_PACKER_NETWORK` / `GCP_PACKER_SUBNETWORK` in
+the build and validate Environments, and set `GCP_PACKER_USE_INTERNAL_IP=true`
+in the build Environment. Existing foundations keep this network disabled by
+default; their state addresses and existing image network remain unchanged.
+
 1. Create the GCP project and enable the required APIs.
 2. Apply the foundational OIDC/WIF identity root
    (`platform/terraform/gcp/global/cicd-oidc`) to create the GitHub Actions
@@ -174,11 +198,17 @@ Deployment section of
    GCP range backend defaults to the GCE range-cell path, and a range launch
    needs the guest images to exist. See `docs/dev/gcp-range-cell-deploy.md` and
    `docs/architecture/gcp-guest-images.md`.
+   Run `packer-gcp.yml` for the minimum image set required by the bootstrap
+   preflight and the ranges being deployed. Separate image qualification
+   (`packer-gcp-validate.yml`, including boot/reboot checks and disk inventory)
+   is optional and off by default. Bootstrap and deploy do not invoke it or
+   wait for it; run it only when explicitly requested.
 5. Bootstrap the GDC/GKE substrate and control plane with `gdc-bootstrap` (see
    the command below). It applies the GCP Terraform (GKE, Cloud SQL,
    Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
-   Helm values from Terraform outputs and Secret Manager, and installs the
-   Shifter Helm release.
+   Helm values from Terraform outputs and Secret Manager, migrates the database
+   and registers the shipped scenario catalog, then installs the Shifter Helm
+   release. Catalog registration uses the same idempotent command as deploy CI.
 6. Subsequent deploys run through CI as a manual dispatch:
    `gh workflow run deploy.yml --ref <branch> -f environment=gcp-dev` (see the
    CI/CD trigger matrix in `docs/technical/dev/ci-cd.md`). Branch names no longer
@@ -289,6 +319,16 @@ unless each runner is online with the expected label.
 ```
 
 ### Bootstrap a Repeatable GDC VM Runtime Cluster
+
+When operator credentials and runtime inputs have been explicitly supplied in
+the process environment, set `SHIFTER_BOOTSTRAP_ENV_SOURCE=process`. The GCP
+bootstrap then uses only those process values for operator/runtime environment
+resolution and does not discover additional credential files or sibling
+checkout inputs. The explicitly selected root config and Terraform overlay
+remain separate deployment inputs. The default `files` mode preserves the
+file-backed operator workflow within the selected checkout only; sibling
+checkouts are never searched. Unknown modes fail closed.
+
 ```bash
 ./scripts/bootstrap/deploy.py gdc-bootstrap --project-id prod-rwctxzl6shxk --cluster-id cluster1
 ```

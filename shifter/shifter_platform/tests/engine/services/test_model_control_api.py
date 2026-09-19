@@ -1,5 +1,8 @@
 """Exercise the private HTTP boundary through real Engine transactions."""
 
+import asyncio
+import threading
+
 import httpx
 import pytest
 
@@ -74,3 +77,63 @@ async def test_unsupported_routes_and_prompt_fields_do_not_reach_services(contro
         )
         assert result.status_code == 400
         assert "sensitive marker" not in result.text
+
+
+async def test_slow_identity_work_remains_bounded_after_caller_cancellation():
+    release = threading.Event()
+    entered = []
+
+    def verify(assertion, *, operation_id):
+        if assertion == "lifecycle":
+            return
+        entered.append(assertion)
+        release.wait(5)
+
+    app = ControlApplication(verify_identity=verify, ready=lambda: True)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://control.invalid") as client:
+        tasks = [
+            asyncio.create_task(client.post("/control/v1/exchange", json={"token": "x", "transport_peer": "10.0.0.1"}))
+            for _ in range(24)
+        ]
+        try:
+            await asyncio.sleep(0.2)
+            assert len(entered) <= 8, "identity verification must not create an unbounded synchronous backlog"
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            response = await client.post("/control/v1/exchange", json={"token": "x", "transport_peer": "10.0.0.1"})
+            assert response.status_code == 503
+            assert len(entered) <= 8
+            response = await client.post("/control/v1/ready", json={}, headers={"authorization": "lifecycle"})
+            assert response.status_code == 200, "control admission load must not starve the lifecycle lane"
+        finally:
+            release.set()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def test_control_readiness_requires_workload_identity_and_closed_payload(control_case):
+    app, _, _ = control_case
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://control.invalid") as client:
+        assert (await client.post("/control/v1/ready", json={})).status_code == 401
+        response = await client.post("/control/v1/ready", json={}, headers={"authorization": "broker"})
+        assert response.json() == {"ready": True}
+        assert (
+            await client.post("/control/v1/ready", json={"extra": True}, headers={"authorization": "broker"})
+        ).status_code == 400
+
+
+@pytest.mark.postgres
+async def test_control_database_statement_wait_is_bounded():
+    from django.db import OperationalError, connection
+
+    from engine.model_access_control.work import ControlWork
+
+    def stalled_database():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(5)")
+
+    started = asyncio.get_running_loop().time()
+    async with asyncio.timeout(3):
+        with pytest.raises(OperationalError):
+            await ControlWork().run(stalled_database, lifecycle=False, database=True)
+    assert asyncio.get_running_loop().time() - started < 2.5

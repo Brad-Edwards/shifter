@@ -2,6 +2,26 @@
 
 This directory holds the machine-readable part of ADR enforcement.
 
+The GCP model-broker IAM guard accepts the cluster-derived
+`var.workload_identity_pool` reference for its exact Kubernetes service account
+binding. The owning GKE output is resource-backed so fresh bootstrap creates the
+pool before bindings; the allowed role, namespace and service account are unchanged.
+
+The GCP `gcp-foundation` bootstrap applies the existing purpose-scoped identity
+root before runners, images, and platform infrastructure. Its optional private
+image-build VPC has no runtime/runner peering, admits builder and validator
+management only through IAP, and remains in the independent foundation state.
+The option defaults off for existing deployments. Target project/repository IDs
+are checked before writes; targeted bootstrap tests and Terraform validation
+cover the first-project ordering (ADR-004 purpose separation; ADR-008 private
+operator access).
+Native GCE image builds explicitly select `GCP_RANGE_BACKEND=gce` to omit the
+GDC-only disk export dependency. Builds retain their immutable image evidence.
+Separate candidate qualification is optional and off by default for bootstrap
+and deployment; it runs only when an operator dispatches the validation workflow.
+Bootstrap requires the configured guest images to exist, not a qualification
+verdict. The separate image-promotion workflow retains its evidence requirements.
+
 SDK candidate distributions from pull-request CI include their SHA-256 checksums
 and are retained under a revision-specific artifact name for independent adapter
 builds. Candidate retention grants no publishing authority. The provisional SDK
@@ -158,6 +178,16 @@ Current mechanisms:
     formatting/linting. Type checks, architecture and policy guards, IaC
     validation/security scanners, migration checks, and test suites are
     CI-only so a commit does not reproduce the repository-wide pipeline.
+- GCP bootstrap and deployment migration Jobs explicitly disable model access
+  and clear its catalog path/digest: these database-only Jobs do not mount the
+  runtime catalog. Model-broker pods use their application group as `fsGroup`
+  so their non-root process can read the projected 0440 fingerprint files.
+  The dedicated provisioner-launcher Role grants `list` on pods only in the
+  jobs namespace so cancellation can confirm that foreground Job deletion
+  removed every pod. It grants no pod mutation, log, or exec access (ADR-006-R4).
+  Range-access NetworkPolicies also select the ephemeral post-deploy smoke Job
+  so its documented SSH/RDP probe can reach guests; destination CIDRs and ports
+  remain identical to the existing portal/guacd access boundary.
 - `.github/workflows/_quality.yml`: CI architecture gate. Every quality unit
   it routes is declared in the `.github/quality-path-filters.yaml` contract
   (ADR-004-R24), which the `quality-path-ownership` check reconciles against
@@ -176,6 +206,10 @@ Current mechanisms:
   action majors for checkout, artifact restore, Java setup, and the
   SonarQube Cloud scan so runner deprecation warnings do not mask real
   SonarCloud quality findings.
+  Manual deployment scans explicitly pass the selected Git branch through
+  `sonar.branch.name`: scanner auto-detection does not identify branches for
+  `workflow_dispatch`, which otherwise publishes tenant analysis to the Sonar
+  project's main branch. Pull-request and push analysis retain auto-detection.
   - Repository branch protection for `main` and `dev` requires the
     aggregate `PR Gate`, CodeQL, and `Lint PR title` with strict
     up-to-date status checks. The title-lint workflow triggers on PRs
@@ -262,7 +296,11 @@ Current mechanisms:
   `default_fallback` key, valid when the block was first written and
   later removed upstream without a migration, was dropped in #1581. See
   `docs/technical/dev/adr-enforcement.md` for how whole-file validation
-  makes an unrecognized key fail closed.
+  makes an unrecognized key fail closed. The retired
+  `workflow.test_quality_review` block was removed in #2122 because the
+  current Ground Control schema no longer accepts the separate reviewer.
+  The configured pre-push review, pre-commit, CI, and SonarCloud gates
+  remain in force.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can
@@ -657,6 +695,20 @@ control enrollment egress policy. Standby infrastructure renders zero broker and
 control replicas until model access is enabled; no executable deployment or cloud
 qualification is implied by rendering. See [model access operations](../ops/model-access.md).
 
+M05 additionally binds active GCP control identities to the distinct numeric
+service-account IDs read back from Terraform. Installer, Helm schema/templates
+and startup all reject absent or overlapping IDs. Broker isolation is checked
+by the existing import contract; real TLS, PostgreSQL races, bounded worker/DB
+waits and content-sentinel tests lock the runtime boundary. No architectural
+exception or CI relaxation is introduced. See the
+[implemented broker contract](../architecture/model-access/broker-runtime.md).
+
+The GCP workflow reads a reviewed per-environment model overlay when present,
+verifies deploy-owned TLS resources, and projects the sealed catalog into every
+runtime ConfigMap consumer. `platform/deploy/gcp/**` is owned by the GCP scripts
+lint, SAST, and test quality unit; a template change therefore cannot bypass
+the production-path quality matrix.
+
 Guest model enrollment is projected as allocation/role/target identities alongside
 an immutable operation input. The tenant-approved adapter manifest declares role
 bindings; only Engine's admitted allocations can populate them. A trusted SSH
@@ -707,3 +759,14 @@ temporary-directory findings: broker/control sockets are private Kubernetes
 Services with mandatory TLS, workload authentication and enforced NetworkPolicy;
 the plugin `/tmp` is a per-pod, size-bounded memory volume, with host mounts denied.
 These scoped annotations retain those deployment controls and their contract tests.
+
+The GCP image validator's custom role includes instance metadata and label writes
+required when creating its disposable candidate and scanner VMs. SSH keys stay
+instance-local with project keys blocked; both VMs retain no service account,
+no OAuth scopes, and no external IP. This does not grant project metadata writes
+or service-account attachment permissions.
+Instance listing and Compute project readback support the existing gcloud
+IAP/SSH/SCP transport; the role retains no project metadata write permission.
+The runner starts its IAP listener without a one-shot guest connection check;
+bounded SSH/LDAP probes still gate validation through first boot and reboot.
+An exited tunnel process fails promptly instead of consuming the boot timeout.

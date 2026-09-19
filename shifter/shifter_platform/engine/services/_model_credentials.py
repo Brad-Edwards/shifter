@@ -192,13 +192,30 @@ def _verify_token(
 
 def _rotate(grant: ModelPendingGrant, credential: ModelAccessCredential, moment: datetime) -> ModelTokenPair:
     """Replace both guest capabilities while consuming the previous token pair."""
+    window = credential.rotation_window_started_at
+    if window is None or moment >= window + timedelta(seconds=60):
+        credential.rotation_window_started_at = moment
+        credential.rotation_count = 0
+    if credential.rotation_count >= 60:
+        raise ContractError("credential.rate_limited")
+    credential.rotation_count += 1
     access, refresh = _token(grant.public_id), _token(grant.public_id)
     expires = min(moment + timedelta(minutes=5), credential.hard_expires_at)
     credential.enrollment_hash = ""
     credential.access_hash = _hash(access)
     credential.access_expires_at = expires
     credential.refresh_hash = _hash(refresh)
-    credential.save(update_fields=["enrollment_hash", "access_hash", "access_expires_at", "refresh_hash", "updated_at"])
+    credential.save(
+        update_fields=[
+            "enrollment_hash",
+            "access_hash",
+            "access_expires_at",
+            "refresh_hash",
+            "updated_at",
+            "rotation_window_started_at",
+            "rotation_count",
+        ]
+    )
     _audit(grant, "credential rotated")
     return ModelTokenPair(
         access_token=SecretStr(access),

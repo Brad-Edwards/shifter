@@ -67,12 +67,12 @@ locals {
   }
 
   workload_identity_members = {
-    portal               = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"
-    workers              = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"
-    ctf-scheduler        = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/ctf-scheduler]"
-    migrator             = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/migrator]"
-    provisioner-launcher = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/provisioner-launcher]"
-    provisioner          = "serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"
+    portal               = "serviceAccount:${var.workload_identity_pool}[shifter-platform/portal]"
+    workers              = "serviceAccount:${var.workload_identity_pool}[shifter-platform/workers]"
+    ctf-scheduler        = "serviceAccount:${var.workload_identity_pool}[shifter-platform/ctf-scheduler]"
+    migrator             = "serviceAccount:${var.workload_identity_pool}[shifter-platform/migrator]"
+    provisioner-launcher = "serviceAccount:${var.workload_identity_pool}[shifter-platform/provisioner-launcher]"
+    provisioner          = "serviceAccount:${var.workload_identity_pool}[shifter-jobs/provisioner]"
   }
 
   node_roles = toset([

@@ -1,3 +1,8 @@
+variable "workload_identity_pool" {
+  type        = string
+  description = "Workload Identity pool from the GKE cluster resource, ordering bindings after pool creation."
+}
+
 variable "project_id" {
   type = string
 }

@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: SHOULD
 wave: 2
 created_at: 2026-04-16T22:49:32.549002Z
-updated_at: 2026-09-18T00:00:00Z
+updated_at: 2026-09-19T00:00:00Z
 ---
 
 # PLAT-202: Per-Range LLM Access Management
@@ -276,3 +276,33 @@ Scenario authors need a provider-neutral way to request model access. The platfo
 - TESTS → TEST `shifter/shifter_platform/tests/shared/test_bootstrap_api.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/workspaces/services/__init__.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/workspaces/services/_organization.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2122` (M05: bounded private broker and authenticated control API)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/broker-runtime.md`
+- DOCUMENTS → DOCUMENTATION `docs/architecture/model-access/broker-preflight-2122.md`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/__main__.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/execution.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/identity.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/runtime_server.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/model_access_control/__main__.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/model_access_control/work.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_broker_control.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/migrations/0086_model_credential_rotation_budget.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/control_identity.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/control_wire.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/credentials.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/diagnostics.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/http.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/traffic.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/work.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_bounded_work.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_broker_boundary.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_broker_startup.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_control_identity.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_control_replies.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_private_listeners.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_broker_http.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_control_api.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_credentials.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_credentials_postgres.py`
+- TESTS → TEST `shifter/installation/tests/test_model_broker_runtime.py`

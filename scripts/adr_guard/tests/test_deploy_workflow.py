@@ -217,7 +217,7 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc", "sauron"}
 
     @classmethod
     def setUpClass(cls):
@@ -273,7 +273,7 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
 
     def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
-        for environment in ("gcp-dev", "nazgul", "orthanc"):
+        for environment in ("gcp-dev", "nazgul", "orthanc", "sauron"):
             with self.subTest(environment=environment):
                 out = self.env(
                     "workflow_dispatch",
@@ -573,6 +573,14 @@ class TestSonarScannerIdentity(unittest.TestCase):
             "push and manually dispatched release analysis must wait for the quality-gate verdict too (#2084)",
         )
 
+    def test_manual_deploy_analysis_uses_selected_branch(self):
+        self.assertIn(
+            "${{ github.event_name == 'workflow_dispatch' && "
+            "format('-Dsonar.branch.name={0}', github.ref_name) || '' }}",
+            self.args,
+        )
+        self.assertNotIn("sonar.branch.name", self.property_keys)
+
 
 class TestGcpReleaseSecurityClosure(unittest.TestCase):
     """#2084: release security checks fail closed and preserve exact evidence."""
@@ -690,6 +698,20 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn("ro,nosuid,nodev,noexec", scanner)
         self.assertNotIn("validator@${VALIDATION_VM}:/tmp/syft", validate)
 
+    def test_gcp_linux_guest_publish_keeps_vm_disk_contract_and_protected_ref_gate(self):
+        """#2297: GHCR packages are digest-pinned qcow2 VM disks, never containers."""
+        build = (REPO_ROOT / ".github/workflows/packer-gcp.yml").read_text(encoding="utf-8")
+
+        self.assertIn("packages: write", build)
+        self.assertIn("Publish Linux VM disk to GHCR", build)
+        self.assertIn('inputs.image_type == \'kali\' || inputs.image_type == \'ubuntu\'', build)
+        self.assertIn("oras-project/setup-oras@", build)
+        self.assertIn("application/vnd.shifter.vm-disk.qcow2", build)
+        self.assertIn("ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shifter-vm-${IMAGE_TYPE}", build)
+        self.assertIn("oci://${PACKAGE}@${DIGEST}", build)
+        self.assertIn("GDC_${IMAGE_TYPE^^}_IMAGE_URL", build)
+        self.assertIn("${IMAGE_TYPE}-${IMAGE_ID}.qcow2", build)
+
     def test_release_evidence_iam_is_purpose_and_prefix_scoped(self):
         identity = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text(encoding="utf-8")
         expected_resources = {
@@ -792,7 +814,33 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             self.assertIn("-var-file=", workflow)
 
         destroy = yaml.safe_load((REPO_ROOT / ".github/workflows/gcp-dev-destroy.yml").read_text(encoding="utf-8"))
-        self.assertEqual(destroy["jobs"]["destroy"]["env"]["GCP_ENVIRONMENT"], "gcp-dev")
+        destroy_env = destroy["jobs"]["destroy"]["env"]
+        # The teardown workflow is parameterized over the GCP tenant: the TF root,
+        # state prefix, and destroy Environment all derive from the dispatch input
+        # rather than being hardcoded to gcp-dev.
+        self.assertEqual(destroy_env["GCP_ENVIRONMENT"], "${{ inputs.environment }}")
+        self.assertEqual(
+            destroy_env["TF_DIR"],
+            "platform/terraform/gcp/environments/${{ inputs.environment }}",
+        )
+        self.assertEqual(
+            destroy_env["TF_BACKEND_PREFIX"],
+            "shifter/${{ inputs.environment }}/platform-core",
+        )
+        self.assertEqual(
+            destroy["jobs"]["destroy"]["environment"],
+            "${{ inputs.environment }}-destroy",
+        )
+        # A single upfront preflight fails with the full list of any secrets
+        # missing from the selected <environment>-destroy Environment before
+        # checkout/auth, rather than one render step at a time.
+        destroy_text = (REPO_ROOT / ".github/workflows/gcp-dev-destroy.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Preflight - required destroy secrets present", destroy_text)
+        self.assertIn(
+            "-destroy' Environment is missing required secret(s)", destroy_text
+        )
 
     def test_gcp_bootstrap_secrets_never_reach_process_argv(self):
         workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
@@ -877,6 +925,11 @@ class TestGcpDeployPreflightInputs(unittest.TestCase):
             "${{ secrets.SHIFTER_CONFIG_GCP_DEV }}",
         )
         self.assertIn("--component deploy", step.get("run", ""))
+
+    def test_non_secret_overlay_reaches_every_ephemeral_config_consumer(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}"), 3)
+        self.assertEqual(workflow.count("python scripts/gcp/apply_shifter_config_overlay.py --config"), 3)
 
 
 class TestRangePlacementSingleSource(unittest.TestCase):

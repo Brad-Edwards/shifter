@@ -41,6 +41,12 @@
 {{- $_ := required (printf "active model broker requires %s" $key) (index $b $key) }}
 {{- end }}
 {{- if eq $b.provisioner_subject $subject }}{{ fail "broker and provisioner identities must differ" }}{{ end }}
+{{- if eq .Values.provider.name "gcp" }}
+{{- range $key := list "broker_subject_id" "provisioner_subject_id" }}
+{{- if not (regexMatch "^[0-9]{10,32}$" (index $b $key)) }}{{ fail "active GCP control requires immutable subject IDs" }}{{ end }}
+{{- end }}
+{{- if eq $b.broker_subject_id $b.provisioner_subject_id }}{{ fail "broker and provisioner subject IDs must differ" }}{{ end }}
+{{- end }}
 {{- end }}
 {{- if and $active (ne (get $catalog "contract_version") "model-access-policy/v3") }}
 {{- fail "active model broker requires v3 accounting catalog" }}
@@ -104,6 +110,8 @@ spec:
       enableServiceLinks: false
       terminationGracePeriodSeconds: 150
       {{- include "shifter.podSecurityContext" . | nindent 6 }}
+        # Projected fingerprint files are 0440; grant the broker's group access.
+        fsGroup: {{ .Values.security.app.runAsGroup }}
       {{- include "shifter.podAntiAffinity" (dict "component" "model-broker") | nindent 6 }}
       containers:
         - name: model-broker

@@ -329,10 +329,15 @@ def load_bootstrap_env_values(repo_root: Path | None = None, environment: str = 
     ``repo_root`` defaults to :func:`get_repo_root`; it is injectable so callers
     (and tests) can point the lookup at a specific checkout.
     """
+    source = os.environ.get("SHIFTER_BOOTSTRAP_ENV_SOURCE", "files")
+    if source not in {"files", "process"}:
+        raise ValueError("SHIFTER_BOOTSTRAP_ENV_SOURCE must be files or process")
+    if source == "process":
+        return dict(os.environ)
+
     repo_root = repo_root or get_repo_root()
     values: dict[str, str] = {}
-    for env_path in [repo_root / ".env", repo_root.parent / "shifter" / ".env"]:
-        values.update(parse_simple_env_file(env_path))
+    values.update(parse_simple_env_file(repo_root / ".env"))
     values.update(os.environ)
     values.update(_gcp_bootstrap_creds_from_tfvars(repo_root, environment))
     return values
@@ -1988,7 +1993,7 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                             "name": "migrate",
                             "image": platform_image,
                             "imagePullPolicy": "IfNotPresent",
-                            "args": ["/bin/true"],
+                            "args": ["python", "manage.py", "bootstrap_inbox_catalog"],
                             "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
                             "env": [
                                 {
@@ -2014,6 +2019,10 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                                 # too: with no host, config/_redis.py and config/_channels.py
                                 # both select the LocMem cache and in-memory channel layer.
                                 {"name": "REDIS_HOST", "value": ""},
+                                # This DB-only Job has no mounted model catalog.
+                                {"name": "MODEL_ACCESS_ENABLED", "value": "false"},
+                                {"name": "MODEL_ACCESS_CATALOG_PATH", "value": ""},
+                                {"name": "MODEL_ACCESS_CATALOG_DIGEST", "value": ""},
                                 {"name": "EMAIL_API_KEY_SECRET_ID", "value": ""},
                             ],
                             "securityContext": {

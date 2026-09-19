@@ -99,6 +99,34 @@ def test_deploy_job_installs_renderer_dependencies_before_use():
     assert "GITHUB_PATH" in helm[0]["run"]
 
 
+def test_migration_does_not_load_the_unmounted_runtime_catalog():
+    from shared.model_access.runtime import load_mounted_catalog
+
+    root = Path(__file__).resolve().parents[3]
+    workflow = yaml.safe_load((root / ".github/workflows/_gcp-dev.yml").read_text())
+    step = next(
+        step
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name", "").startswith("Run database migrations")
+    )
+    manifest = step["run"].split("cat <<YAML | kubectl apply -f -\n", 1)[1].split("\nYAML\n", 1)[0]
+    container = yaml.safe_load(manifest)["spec"]["template"]["spec"]["containers"][0]
+    effective = {
+        "MODEL_ACCESS_ENABLED": "true",
+        "MODEL_ACCESS_CATALOG_PATH": "/unmounted/catalog.json",
+        "MODEL_ACCESS_CATALOG_DIGEST": "sha256:" + "a" * 64,
+        **{item["name"]: item["value"] for item in container["env"] if "value" in item},
+    }
+    assert (
+        load_mounted_catalog(
+            enabled=effective["MODEL_ACCESS_ENABLED"] == "true",
+            path=effective["MODEL_ACCESS_CATALOG_PATH"],
+            expected_digest=effective["MODEL_ACCESS_CATALOG_DIGEST"],
+        )
+        is None
+    )
+
+
 @pytest.mark.integration
 def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     import subprocess
@@ -141,7 +169,21 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
         "spec": {
             "template": {
                 "metadata": {"annotations": {"checksum/runtime-config": "empty"}},
-                "spec": {"containers": [{"name": "model-access-control"}]},
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "model-access-control",
+                            "env": [
+                                {"name": "MODEL_ACCESS_ENABLED", "value": "true"},
+                                {
+                                    "name": "MODEL_ACCESS_CATALOG_PATH",
+                                    "value": "/etc/shifter/model-access/catalog.json",
+                                },
+                                {"name": "MODEL_ACCESS_CATALOG_DIGEST", "value": "old"},
+                            ],
+                        }
+                    ]
+                },
             }
         },
     }
@@ -153,7 +195,7 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     }
     versions = []
     for value in ("old", "new", "new"):
-        runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] = value
+        control["spec"]["template"]["spec"]["containers"][0]["env"][2]["value"] = value
         combined = list(
             yaml.safe_load_all(
                 module.combine_resources(
@@ -196,6 +238,15 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
         doc for doc in combined if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "platform-runtime"
     )
     assert applied_runtime["data"]["MODEL_BROKER_GUEST_VIP"] == "10.40.0.25"
+    assert applied_runtime["data"]["MODEL_ACCESS_ENABLED"] == "true"
+    assert applied_runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] == "new"
+    applied_worker = next(
+        doc for doc in combined if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "worker-engine"
+    )
+    assert any(
+        mount["mountPath"] == "/etc/shifter/model-access"
+        for mount in applied_worker["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
+    )
     assert versions[0] != versions[1]
     assert versions[1] == versions[2]
 

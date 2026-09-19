@@ -81,6 +81,7 @@ from shared.model_access.effective_policy import (
     compile_effective_policy,
 )
 from shared.model_access.models import AccessGrant, ModelAccessCatalog
+from shared.model_access.pack_declaration import PackModelNeed, PackModelNeedsDeclaration
 from shared.model_access.policy import intersect_profile
 from shared.model_access.provider import (
     BillingAmount,
@@ -143,6 +144,8 @@ __all__ = [
     "ModelProviderAdapter",
     "ModelShard",
     "OwnedReference",
+    "PackModelNeed",
+    "PackModelNeedsDeclaration",
     "PolicyConflict",
     "PolicyContribution",
     "Price",

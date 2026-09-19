@@ -2084,7 +2084,7 @@
       },
       {
         "id": "ADR-037-R5",
-        "description": "Release OCI image builds MUST produce an SBOM and maximum build provenance and MUST create a GitHub OIDC-signed artifact attestation bound to the exact repository name and image@sha256 digest. Build jobs receive only the narrow attestation/id-token permissions; no long-lived signing key or PAT is introduced, and credentials are never passed as Docker build arguments. Packer AMI/GCE artifacts are not OCI images and MUST NOT be represented as OCI provenance.",
+        "description": "Release OCI image builds MUST produce an SBOM and maximum build provenance and MUST create a GitHub OIDC-signed artifact attestation bound to the exact repository name and image@sha256 digest. Build jobs receive only the narrow attestation/id-token permissions; no long-lived signing key or PAT is introduced, and credentials are never passed as Docker build arguments. Packer AMI/GCE artifacts are not OCI application images and MUST NOT be represented as OCI application-image provenance. A qcow2 VM-disk artifact may use OCI distribution only when its media type, digest-pinned consumption contract, and VM-disk boundary are explicit.",
         "checks": []
       },
       {
@@ -2100,6 +2100,11 @@
       {
         "id": "ADR-037-R8",
         "description": "A GCP exact-release decision binds source revision to the four built OCI digests, their SBOM/provenance attestations, a blocking HIGH/CRITICAL vulnerability scan of each exact digest before rollout, and a closed inventory of every running GKE workload and normal/init/ephemeral container after rollout. Every Deployment in that same closed component inventory MUST converge before evidence is sampled; a partial rollout wait cannot establish runtime identity. Every declared image and runtime image ID MUST equal its approved full repository@sha256 identity; unexpected workloads or containers fail closed. For GCE guests, the build producer MUST bind its protected source revision to the server-assigned numeric image ID in immutable private evidence before validation. Protected validation MUST collect a non-empty SPDX JSON package inventory outside the candidate trust domain by attaching an exact candidate-derived disk read-only to a separate credentialless trusted scanner, mounting it read-only/noexec/nosuid/nodev, and using a source-pinned scanner archive digest. Versioned validation evidence binds the SBOM SHA-256, scanner version and identity, external collection boundary, numeric candidate image ID, and source revision. Promotion MUST authenticate the exact redacted verdict artifact from the successful protected validation run and verify its candidate-binding and private-evidence digests before verifying every raw evidence binding. Tags, families, labels, source locks, OCI SBOMs, candidate-executed tools, and source-only tests never substitute for the matching running-workload or guest-image evidence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-037-R9",
+        "description": "Protected Packer GCE Linux builds may publish their already-exported qcow2 payloads to the canonical GHCR VM-disk packages only through a dedicated package-write job. The job MUST stream no credentials into artifact content or runtime configuration, record the resulting manifest digest, and document an explicit digest-pinned GDC VM Runtime opt-in. Publication MUST NOT replace GCE image-family, AWS AMI, or default bootstrap consumption.",
         "checks": []
       }
     ],
@@ -2120,6 +2125,10 @@
       "scripts/gcp/tests/test_verify_running_image_ids.py",
       ".github/workflows/packer-gcp-validate.yml",
       ".github/workflows/packer-gcp-promote.yml",
+      ".github/workflows/packer-gcp.yml",
+      "docs/architecture/gcp-guest-images.md",
+      "docs/architecture/ghcr-vm-guest-image-preflight-2297.md",
+      "shifter/engine/provisioner/config/_gdc.py",
       "shifter/packer/gcp/scripts/validate/verify-promotion-evidence.sh",
       "shifter/packer/tests/test_packer_gcp.py",
       ".github/dependabot.yml",
@@ -3235,7 +3244,7 @@
       },
       {
         "id": "ADR-051-R12",
-        "description": "The #2049 delivery engine extends the #2048 communication ledger rather than introducing another outbox or workflow owner. Occurrence release revalidates source authority and atomically commits bounded immutable audience, commands, in-app availability, and correlated strict audit; accepting a future declaration commits recoverable timing work without exposing future content. Release, lifecycle fencing, and worker claims share deterministic locking; claim leases fence stale completion, recovery, and retries without holding database locks across transport I/O. A claim is not evidence of a send. Reclaimed work rechecks cancellation and current scope; conflicting idempotent replay is rejected. Authored occurrence identity is separate from mutable retry/run-now timestamps; rescheduling fences superseded declarations, scheduler event routing never narrows campaign-wide authorization, and task controls cannot bypass communication policy. Lifecycle communication handoff is recoverable without browser polling. CMS retains range lease/credential-ceiling and expiry ownership independently of communication delivery. Scheduler completion, channel acceptance, participant receipt, and partial-failure aggregation retain distinct truthful meanings. Retry and backlog budgets are bounded and shared across processes, and all worker/configuration/secret/observability surfaces satisfy the #2049 preflight. These are architecture obligations; registry validation alone does not prove runtime delivery or recovery.",
+        "description": "The #2049 delivery engine extends the #2048 communication ledger rather than introducing another outbox or workflow owner. Occurrence release revalidates source authority and atomically commits bounded immutable audience, commands, in-app availability, and correlated strict audit; accepting a future declaration commits recoverable timing work without exposing future content. Release, lifecycle fencing, and worker claims share deterministic locking; claim leases fence stale completion, recovery, and retries without holding database locks across transport I/O. A claim is not evidence of a send. Reclaimed work rechecks cancellation and current scope; conflicting idempotent replay is rejected. Authored occurrence identity is separate from mutable retry/run-now timestamps; rescheduling fences superseded declarations, scheduler event routing never narrows campaign-wide authorization, and task controls cannot bypass communication policy. Lifecycle communication handoff is recoverable without browser polling. CMS retains range lease/credential-ceiling and expiry ownership independently of communication delivery. Scheduler completion, channel acceptance, participant receipt, and partial-failure aggregation retain distinct truthful meanings. Retry and backlog budgets are bounded and shared across processes, and all worker/configuration/secret/observability surfaces satisfy the #2049 preflight. The #2100 API/cutover preflight specializes the final slice: exact shared token scopes and live original-owner authorization, session-bound parent-scoped receipts, shared closed parsing and safe error envelopes, and a controlled single-writer legacy cutover that accounts for in-flight work and channel readiness without inventing historical success. These are architecture obligations; registry validation alone does not prove runtime delivery or recovery.",
         "checks": []
       }
     ],
@@ -3249,6 +3258,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/2048",
       "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
       "docs/architecture/ctf-communication-delivery-engine-preflight-2049.md",
+      "docs/architecture/ctf-communication-api-cutover-preflight-2100.md",
       "docs/architecture/email-templating-delivery-preflight-581.md",
       "docs/architecture/notifications-websocket-fanout-preflight-941.md",
       "docs/design/ctf-email-template-rendering-preflight-1095.md",
@@ -3861,7 +3871,10 @@
       {
         "id": "ADR-059-R1",
         "description": "Cross-layer access uses owning service facades and native shared contracts. Only shared.raes interprets released scenario contracts. Model needs are logical capabilities bound to exact scenario artifacts, never author-supplied provider coordinates, credentials, URLs or executable configuration.",
-        "checks": ["layer-imports", "cross-layer-model-imports"]
+        "checks": [
+          "layer-imports",
+          "cross-layer-model-imports"
+        ]
       },
       {
         "id": "ADR-059-R2",
@@ -3875,7 +3888,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/059-range-model-access-broker.md",
@@ -3909,7 +3925,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/2275",
       "docs/adr/064-default-range-model-access.md",
@@ -3945,7 +3964,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/060-model-access-allocation-accounting.md",
@@ -3989,7 +4011,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/061-model-access-operations-qualification.md",
@@ -4103,6 +4128,42 @@
       "shifter/shifter_platform/engine/models",
       "shifter/shifter_platform/shared/operation_envelope.py",
       "shifter/shifter_platform/mission_control/api"
+    ]
+  },
+  {
+    "id": "ADR-065",
+    "title": "Retire legacy CTF notification writes in favor of scoped communications",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The maintainer explicitly accepted retirement of the complete legacy CTF notification write capability on 2026-09-19 for #2100. Legacy notification creation, dispatch, schedule cancellation and bulk invitation writes return bounded 410 responses. New authoring uses exact communication scopes and ledger acceptance semantics. Historical notification reads remain legacy aggregate evidence. This is the separately accepted ADR-040 retirement exception, not a parallel-major migration.",
+    "rules": [
+      {
+        "id": "ADR-065-R1",
+        "description": "All legacy HTTP, HTML, service and scheduler notification writers MUST be fenced. The exact retired write methods are enumerated in openapi/v1.retirements.json; the compatibility projection MUST retain checks for every non-retired method and reject reintroduced retired writes. No broad event scope dispatch compatibility remains.",
+        "checks": []
+      },
+      {
+        "id": "ADR-065-R2",
+        "description": "Cutover MUST occur in maintenance mode after all old web, scheduler and email-dispatch processes are stopped and drained. RUNNING/SENDING ambiguity blocks fencing. PostgreSQL fences prevent legacy notification writes and task claims after the maintenance marker. Conversion is bounded, restart-safe and atomic with task cancellation, preserving historical aggregate evidence without invented recipient outcomes. Unsupported/orphaned work requires explicit reconciliation. Never roll back to an old sender; forward recovery retains the fence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-065-R3",
+        "description": "Email remains dependency-gated on #1525. Migrated declarations preserve the email channel, scope, author and due time without runnable delivery work while unavailable. Credential passwords/tokens and volatile issuance objects never enter retained content. Lifecycle notifications use scoped ledger declarations; retired organizer-only email alerts remain explicitly unavailable until a supported recipient/delivery contract exists.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2100",
+      "docs/adr/065-retire-legacy-ctf-notification-writes.md",
+      "docs/architecture/ctf-communication-migration-decision-2100.md",
+      "shifter/shifter_platform/tests/ctf/test_communication_cutover.py",
+      "shifter/shifter_platform/tests/shared/test_api_operation_retirement.py"
     ]
   }
 ]

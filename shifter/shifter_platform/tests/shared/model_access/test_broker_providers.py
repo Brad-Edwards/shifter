@@ -103,7 +103,7 @@ async def test_fixed_provider_origins_count_before_invoke_and_normalize_usage(pr
     invoke = json.loads(calls[1].content)
     assert "model" not in invoke
     if provider == "vertex-v1":
-        assert calls[0].url.host == "us-aiplatform.googleapis.com"
+        assert calls[0].url.host == "aiplatform.us.rep.googleapis.com"
         assert calls[1].url.host == "us-east5-aiplatform.googleapis.com"
         assert invoke["anthropic_version"] == "vertex-2023-10-16"
     else:
@@ -134,6 +134,21 @@ async def test_revocation_between_count_and_invoke_prevents_paid_transport():
             async with adapter.invoke(message(), count_only=False, before_transport=before_transport):
                 pytest.fail("revoked invocation yielded a provider response")
     assert len(calls) == 1 and "count-tokens" in calls[0].url.path
+
+
+async def test_vertex_count_can_use_the_same_regional_endpoint_as_inference():
+    configured = ProviderTarget.model_validate({**target("vertex-v1").model_dump(), "count_region": "us-east5"})
+    calls = []
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(200, json={"input_tokens": 2})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = MessagesProvider(target=configured, limits=_limits(), credentials=CredentialsPort(), client=client)
+        async with adapter.invoke(message(), count_only=True, before_transport=lease) as result:
+            assert json.loads(b"".join([chunk async for chunk in result.chunks])) == {"input_tokens": 2}
+    assert calls[0].url.host == "us-east5-aiplatform.googleapis.com"
 
 
 async def test_short_lease_never_starts_provider_transport():

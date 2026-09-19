@@ -11,7 +11,7 @@ from uuid import uuid4
 from shared.model_access import ContractError
 from shared.model_access.credentials import ModelAccessAuthorization
 from shared.model_access.http import Receive, Send
-from shared.model_access.messages import MAX_RESPONSE_BYTES, CountTokensRequest, JsonObject
+from shared.model_access.messages import MAX_RESPONSE_BYTES, CountTokensRequest, JsonObject, MessagesRequest
 from shared.model_access.provider import ProviderUsage
 
 from .control import ControlClient
@@ -31,16 +31,25 @@ class BrokerRequest:
     peer: str
     count_only: bool
     retry_fields: JsonObject
+    deadline: float
 
 
 class BrokerInvocation:
     """Settle verified usage once; interrupted billable work retains its hold."""
 
     def __init__(
-        self, control: ControlClient, provider: MessagesProvider, request: BrokerRequest, receive: Receive, send: Send
+        self,
+        control: ControlClient,
+        provider: MessagesProvider,
+        request: BrokerRequest,
+        receive: Receive,
+        send: Send,
+        *,
+        drain: asyncio.Event,
     ) -> None:
         self.control, self.provider, self.request = control, provider, request
         self.receive, self.send = receive, send
+        self.drain = drain
         self.request_uuid = str(uuid4())
         self.identity = {"token": request.token, "transport_peer": request.peer, "request_uuid": self.request_uuid}
         self.dispatched = False
@@ -50,17 +59,18 @@ class BrokerInvocation:
 
     async def run(self) -> None:
         """Reserve before dispatch and finalize accounting even on disconnect."""
-        if not await self._reserve():
-            return
         try:
-            await self._dispatch()
-            async with asyncio.timeout(min(120, self.request.authority.limits.max_request_seconds)):
+            async with asyncio.timeout_at(self.request.deadline):
+                if not await self._reserve():
+                    return
+                await self._dispatch()
                 await self._settle(await self._wait_for_transfer())
                 await self.send({"type": _RESPONSE_BODY, "body": b"", "more_body": False})
         except NoBillableEffect as exc:
             await self._settle(exc.usage)
             raise
         except Exception:
+            await self._cancel_transport()
             if not self.started:
                 raise
             await self._interrupted()
@@ -99,9 +109,10 @@ class BrokerInvocation:
         work = asyncio.create_task(self._transfer())
         heartbeat = asyncio.create_task(self._renew())
         disconnect = asyncio.create_task(self._disconnected())
-        self.tasks = [work, heartbeat, disconnect]
+        draining = asyncio.create_task(self._drained())
+        self.tasks = [work, heartbeat, disconnect, draining]
         done, _ = await asyncio.wait(self.tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in (heartbeat, disconnect):
+        for task in (heartbeat, disconnect, draining):
             if task in done:
                 task.result()
         return work.result()
@@ -115,29 +126,38 @@ class BrokerInvocation:
 
     async def _interrupted(self) -> None:
         """Close a started stream with a fixed error and no upstream diagnostics."""
-        await self.send(
-            {
-                "type": _RESPONSE_BODY,
-                "body": (
-                    b'\n\nevent: error\ndata: {"type":"error",'
-                    b'"error":{"type":"api_error","message":"broker.interrupted"}}\n\n'
-                ),
-                "more_body": False,
-            }
-        )
+        payload = b""
+        if isinstance(self.request.message, MessagesRequest) and self.request.message.stream:
+            payload = (
+                b'\n\nevent: error\ndata: {"type":"error",'
+                b'"error":{"type":"api_error","message":"broker.interrupted"}}\n\n'
+            )
+        with suppress(OSError, TimeoutError):
+            async with asyncio.timeout(1):
+                await self.send(
+                    {
+                        "type": _RESPONSE_BODY,
+                        "body": payload,
+                        "more_body": False,
+                    }
+                )
 
     async def _finalize(self) -> None:
         """Cancel sibling tasks and preserve uncertain provider liability."""
-        for task in self.tasks:
-            task.cancel()
-        for task in self.tasks:
-            with suppress(asyncio.CancelledError, Exception):
-                await task
+        await self._cancel_transport()
         if not self.settled:
             with suppress(Exception):
                 await self.control.call(
                     "finish", {"request_uuid": self.request_uuid, "action": "unknown" if self.dispatched else "release"}
                 )
+
+    async def _cancel_transport(self) -> None:
+        """Fence upstream before attempting any downstream error notification."""
+        for task in self.tasks:
+            task.cancel()
+        for task in self.tasks:
+            with suppress(asyncio.CancelledError, Exception):
+                await task
 
     async def _before_transport(self) -> str:
         """Recheck authority immediately before every upstream HTTP operation."""
@@ -182,3 +202,8 @@ class BrokerInvocation:
         while True:
             if (await self.receive())["type"] == "http.disconnect":
                 raise ContractError("http.disconnected")
+
+    async def _drained(self) -> NoReturn:
+        """Terminate transport as soon as process drain starts."""
+        await self.drain.wait()
+        raise ContractError("broker.draining")

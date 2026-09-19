@@ -108,6 +108,8 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
             "region": "us-central1",
             "gsa": "model-broker@platform-example.iam.gserviceaccount.com",
             "provisioner_subject": "provisioner@platform-example.iam.gserviceaccount.com",
+            "broker_subject_id": "123456789012345678901",
+            "provisioner_subject_id": "123456789012345678902",
             "model_identities": {"models-example": "model-invoke@models-example.iam.gserviceaccount.com"},
         }
     }

@@ -1060,6 +1060,9 @@ class TestGdcControlPlaneHelmValues:
         pod = job["spec"]["template"]["spec"]
         assert pod["serviceAccountName"] == "migrator"
         container = pod["containers"][0]
+        # Entrypoint migrates first; then register the shipped catalog through
+        # the same idempotent command used by the deploy workflow.
+        assert container["args"] == ["python", "manage.py", "bootstrap_inbox_catalog"]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
         temp_dir = next(item for item in container["env"] if item["name"] == "TMPDIR")["value"]
@@ -1076,6 +1079,22 @@ class TestGdcControlPlaneHelmValues:
         assert redis_secret["value"] == ""
         redis_host = next(item for item in container["env"] if item["name"] == "REDIS_HOST")
         assert redis_host["value"] == ""
+        from shared.model_access.runtime import load_mounted_catalog
+
+        effective = {
+            "MODEL_ACCESS_ENABLED": "true",
+            "MODEL_ACCESS_CATALOG_PATH": "/unmounted/catalog.json",
+            "MODEL_ACCESS_CATALOG_DIGEST": "sha256:" + "a" * 64,
+            **{item["name"]: item["value"] for item in container["env"] if "value" in item},
+        }
+        assert (
+            load_mounted_catalog(
+                enabled=effective["MODEL_ACCESS_ENABLED"] == "true",
+                path=effective["MODEL_ACCESS_CATALOG_PATH"],
+                expected_digest=effective["MODEL_ACCESS_CATALOG_DIGEST"],
+            )
+            is None
+        )
         assert container["image"] == values["images"]["platform"]
         assert (
             values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]
@@ -1952,9 +1971,9 @@ class TestGcpPlatformCoreContracts:
 
         assert 'resource "google_service_account_iam_member" "workload_identity"' in module_main
         assert 'role               = "roles/iam.workloadIdentityUser"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/portal]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/workers]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-jobs/provisioner]"' in module_main
 
     def test_workers_have_pubsub_publish_and_subscribe_permissions(self):
         """The shared workers service account must publish as well as consume Pub/Sub events."""
@@ -2102,6 +2121,35 @@ class TestGcpBootstrapIdentityPlatform:
         values = gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
 
         assert values["GCP_BOOTSTRAP_ADMIN_PASSWORD"] == "from-overlay"
+
+    def test_process_bootstrap_source_never_reads_configuration_files(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "process")
+        monkeypatch.setenv("GCP_BOOTSTRAP_ADMIN_EMAIL", "operator@example.test")
+
+        def forbidden_read(*args, **kwargs):
+            raise AssertionError("Process-only bootstrap must not inspect files")
+
+        monkeypatch.setattr(Path, "read_text", forbidden_read)
+        monkeypatch.setattr(Path, "exists", forbidden_read)
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+        assert values["GCP_BOOTSTRAP_ADMIN_EMAIL"] == "operator@example.test"
+
+    def test_unknown_bootstrap_source_fails_closed(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "unknown")
+        with pytest.raises(ValueError, match="must be files or process"):
+            gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+
+    def test_file_bootstrap_source_ignores_sibling_checkout(self, tmp_path, monkeypatch):
+        root = tmp_path / "active"
+        sibling = tmp_path / "shifter"
+        root.mkdir()
+        sibling.mkdir()
+        (sibling / ".env").write_text("GCP_BOOTSTRAP_ADMIN_EMAIL=wrong@example.test\n")
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "files")
+        monkeypatch.delenv("GCP_BOOTSTRAP_ADMIN_EMAIL", raising=False)
+
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=root)
+        assert "GCP_BOOTSTRAP_ADMIN_EMAIL" not in values
 
     def test_resolve_gcp_bootstrap_operator_credentials_returns_none_when_missing(self):
         """Bootstrap should report no operator credentials when the env files do not provide them."""

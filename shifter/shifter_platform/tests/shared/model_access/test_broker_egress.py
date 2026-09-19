@@ -14,6 +14,8 @@ from model_broker.egress_proxy import connect_host, handle_connect, resolve_publ
         "api.anthropic.com:443",
         "openrouter.ai:443",
         "europe-west4-aiplatform.googleapis.com:443",
+        "aiplatform.us.rep.googleapis.com:443",
+        "aiplatform.eu.rep.googleapis.com:443",
         "sts.us-east-1.amazonaws.com:443",
         "bedrock-runtime.us-west-2.amazonaws.com:443",
     ],

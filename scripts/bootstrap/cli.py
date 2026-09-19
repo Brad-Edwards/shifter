@@ -22,6 +22,7 @@ from bootstrap_core import (
     warn,
 )
 from gcp_control_plane import gdc_bootstrap_cluster
+from gcp_foundation import bootstrap_gcp_foundation
 from preflight import Cloud, Mode, preflight_gate
 from terraform_deploy import terraform_deploy
 from walkthrough import (
@@ -238,6 +239,8 @@ _TOOL_HINTS = {
 
 def _required_tools(command: str | None, cloud: str | None) -> set[str]:
     """Return the set of required CLI tools for a bootstrap command."""
+    if command == "gcp-foundation":
+        return {"git", "gcloud", "gh", "terraform"}
     if command == "gdc-bootstrap":
         return {"git", "gcloud", "ssh-keygen", "terraform", "docker", "kubectl", "helm"}
     if command == "runners":
@@ -529,6 +532,10 @@ Examples:
     _add_preflight_and_recovery_subparsers(subparsers)
     _add_runners_subparser(subparsers)
     _add_gdc_bootstrap_subparser(subparsers)
+    foundation = subparsers.add_parser("gcp-foundation", help="Bootstrap GCP state, CI identities, and image network")
+    foundation.add_argument("--inputs", required=True, help="Explicit foundation JSON Terraform var-file")
+    foundation.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    foundation.add_argument("--yes", action="store_true", help=HELP_YES)
 
     return parser
 
@@ -653,6 +660,7 @@ def _handle_gdc_bootstrap(args: argparse.Namespace) -> None:
 
 
 _COMMAND_HANDLERS = {
+    "gcp-foundation": lambda args: bootstrap_gcp_foundation(args.inputs, dry_run=args.dry_run),
     "preflight": _handle_preflight,
     "account-recovery": _handle_account_recovery,
     "eks-deploy": _handle_eks_deploy,

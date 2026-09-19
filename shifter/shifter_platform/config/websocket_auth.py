@@ -25,7 +25,8 @@ class CTFAccountWebSocketBoundary:
         user = scope.get("user")
         if isinstance(user, (User, AnonymousUser)) and await self._is_ctf_account(user):
             path = str(scope.get("path", ""))
-            if not self._TERMINAL_PATH.fullmatch(path) or not await self._may_access_terminal(user):
+            allowed_path = bool(self._TERMINAL_PATH.fullmatch(path)) or path == "/ws/notifications/"
+            if not allowed_path or not await self._may_access_terminal(user):
                 await send({"type": "websocket.close", "code": 4403})
                 return
         await self.application(scope, receive, send)

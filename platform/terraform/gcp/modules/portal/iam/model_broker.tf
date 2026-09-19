@@ -3,24 +3,15 @@ locals {
   model_projects = var.model_broker.enabled ? var.model_broker.model_projects : {}
 }
 
-resource "terraform_data" "model_project_boundary" {
-  count = var.model_broker.enabled ? 1 : 0
-  lifecycle {
-    precondition {
-      condition     = !contains(keys(local.model_projects), var.dynamic_secret_project_id)
-      error_message = "Model invocation may use the platform project but must remain outside the dynamic-secret project."
-    }
-  }
-}
-
 # Existing projects only. API activation and billing/model/effective-IAM readback
 # are deployment onboarding obligations, not participant or broker permissions.
+# A deployment may select its platform/dynamic-secret project as a model source;
+# the broker and invocation service accounts remain distinct and least-privilege.
 module "model_project_services" {
   for_each          = local.model_projects
   source            = "../../project-services"
   project_id        = each.key
   required_services = toset(["aiplatform.googleapis.com", "iamcredentials.googleapis.com"])
-  depends_on        = [terraform_data.model_project_boundary]
 }
 
 resource "google_service_account" "model_broker" {
@@ -34,7 +25,7 @@ resource "google_service_account_iam_member" "model_broker_workload_identity" {
   count              = var.model_broker.enabled ? 1 : 0
   service_account_id = google_service_account.model_broker[0].name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/model-broker]"
+  member             = "serviceAccount:${var.workload_identity_pool}[shifter-platform/model-broker]"
 }
 
 resource "google_service_account" "model_invocation" {
@@ -78,9 +69,11 @@ resource "google_service_account_iam_member" "model_target_token" {
 output "model_broker_identity" {
   description = "Broker-only GSA and exact invocation targets, never credentials."
   value = {
-    gsa                 = try(google_service_account.model_broker[0].email, "")
-    provisioner_subject = var.model_broker.enabled ? google_service_account.workload["provisioner"].email : ""
-    model_identities    = { for project, account in google_service_account.model_invocation : project => account.email }
+    gsa                    = try(google_service_account.model_broker[0].email, "")
+    provisioner_subject    = var.model_broker.enabled ? google_service_account.workload["provisioner"].email : ""
+    broker_subject_id      = try(google_service_account.model_broker[0].unique_id, "")
+    provisioner_subject_id = var.model_broker.enabled ? google_service_account.workload["provisioner"].unique_id : ""
+    model_identities       = { for project, account in google_service_account.model_invocation : project => account.email }
   }
 }
 
