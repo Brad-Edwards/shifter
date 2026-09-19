@@ -7,8 +7,7 @@ live-fire backend (ADR-030). This runbook covers enabling it in a real
 environment and mapping images.
 
 For the backend design see
-`docs/architecture/gcp-range-cell-backend-preflight-1341.md`; for the Polaris
-port see `docs/dev/polaris-gcp-range-cell.md`. For the image build see
+`docs/architecture/gcp-range-cell-backend-preflight-1341.md`. For image builds see
 `docs/architecture/gcp-guest-images.md`.
 
 ## Backend selection
@@ -93,8 +92,7 @@ The boundary is the closed, versioned `shifter.gcp-vm-range-cell` contract in
   access result.
 
 `gcp_range_cell_scenario.py` is the compatibility adapter for the current
-legacy `RangeSpec`; it owns role/image/host-access interpretation. Polaris is
-one composition supported by that adapter, not a platform range class. A future
+legacy `RangeSpec`; it owns role/image/host-access interpretation. A future
 scenario artifact can use a new discriminator/version adapter while retaining
 the same cell lifecycle contract. See
 `docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md` for the
@@ -134,20 +132,26 @@ disable admission or remove the suffix.
 Set the GCE range-cell variables documented in
 `docs/dev/deploy-secrets.md` ("GCE range-cell backend variables"). The
 minimum for a live range is: `RANGE_NETWORK_ZONE`, `GCP_RANGE_LINUX_IMAGE`,
-`GCP_RANGE_DC_IMAGE`, and `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`. Polaris also
-needs `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL`.
+and any additional guest image profiles required by the authored topology.
+Native guests do not receive a host service account. Plugin installation and
+compatibility are separate from range readiness; see the
+[external runtime boundary](../architecture/external-scenario-runtime-design.md).
 
 The deployment `shifter.yaml` must also set
 `settings.dynamic_secret_project_id` to the pre-existing, deployment-only
-range-secret project. This is distinct from `GCP_RANGE_CELL_PROJECT_ID` (Compute
-resources), `GCP_RANGE_VERTEX_PROJECT_ID` (Vertex API/quota), and the project in
-an optional full `GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID` reference. Equal values
-in a small deployment do not merge those ownership concepts. New guest,
-RAES/GDC, Vertex, VM-Series, and VPN secrets use canonical deployment- and
-audience-prefixed names in that project; persisted full references remain the
-authority for bootstrap and portal access.
+range-secret project. This is distinct from the guest compute project. Broker
+model invocation may use that project, the platform project, or another
+administrator-selected project while retaining separate least-privilege
+identities. New guest, RAES/GDC, VM-Series
+and VPN secrets use canonical deployment- and audience-prefixed names in that
+project; persisted full references remain authoritative for guest access.
 
-When GDC access/image inputs or a shared Vertex source are enabled, declare the
+Direct guest provider credentials are retired. Applying the deployment removes
+the old invocation service account and its provisioner key-admin grants. Revoke
+any externally owned shared keys through their owner. Legacy range teardown
+removes only the range's stored copies; it never reads or reissues provider keys.
+
+When GDC access/image inputs are enabled, declare the
 full versionless refs under `settings.provisioner_static_secret_refs`. Do not add
 a broad Secret Manager role to compensate for a missing entry. The migration,
 permission-probe, quota, audit-cost, and revocation procedure is documented in
@@ -213,30 +217,30 @@ letters, digits, and hyphens. For example:
 ```json
 {
   "kali": {
-    "polaris-vm": {
-      "source_image": "projects/PROJECT/global/images/family/shifter-polaris-vm",
-      "machine_type": "e2-standard-8",
-      "disk_size_gb": 210,
+    "example-desktop": {
+      "source_image": "projects/PROJECT/global/images/example-desktop-v1",
+      "machine_type": "e2-standard-4",
+      "disk_size_gb": 80,
       "disk_type": "pd-balanced",
-      "bootstrap_capability": "polaris-docker-host"
+      "bootstrap_capability": "standard"
     }
   },
   "dc": {
-    "polaris-dc": {
-      "source_image": "projects/PROJECT/global/images/family/shifter-polaris-dc",
+    "example-directory": {
+      "source_image": "projects/PROJECT/global/images/example-directory-v1",
       "machine_type": "e2-standard-4",
       "disk_size_gb": 100,
       "disk_type": "pd-balanced",
       "bootstrap_capability": "prepromoted-domain-controller",
-      "domain_dns_name": "boreas.local",
-      "domain_netbios_name": "BOREAS"
+      "domain_dns_name": "example.test",
+      "domain_netbios_name": "EXAMPLE"
     }
   }
 }
 ```
 
 The supported bootstrap capabilities are `standard`,
-`polaris-docker-host`, `prepromoted-domain-controller`, and
+`prepromoted-domain-controller`, and
 `preconfigured-machine-host`. Other well-formed capability values remain
 parseable so the adapter can return the stable `unsupported-capability` result
 when a scenario selects them.
@@ -305,69 +309,21 @@ workaround to their generic families. Cross-project image families require the
 narrow image-project grant for the provisioner GSA; do not broaden portal or
 launcher identities.
 
-The Polaris host's `polaris_range_bootstrap` step fetches a smoketests tarball
-from `gs://$POLARIS_TESTS_BUCKET/$POLARIS_TESTS_KEY` (default
-`polaris/tests/polaris-tests.tar.gz`). Build it from the in-repo tests tree and
-upload it before launching a range:
-`tar czf polaris-tests.tar.gz -C scenario-dev/polaris tests` then
-`gcloud storage cp polaris-tests.tar.gz gs://<assets-bucket>/polaris/tests/polaris-tests.tar.gz`.
-
 Images are native GCE images referenced by family:
 `projects/<project>/global/images/family/shifter-<type>`. Unlike the GDC path
 there is no qcow2 export or CDI import.
 
 ## Service accounts
 
-For the default same-project range cell, Terraform (`modules/portal/iam`)
-creates both range service accounts, grants their roles, and grants the
-provisioner workload SA the access it needs to drive them: `roles/compute.admin`
-on the range-cell project (create the range VPC, subnets, firewall, Cloud NAT,
-and instances), `roles/iam.serviceAccountUser` on the host SA (attach it to
-guests) and the Vertex SA, and `roles/iam.serviceAccountKeyAdmin` on the Vertex
-SA (mint per-range keys). The two emails are exposed as the
-`range_host_service_account_email` / `range_vertex_service_account_email`
-Terraform outputs; set `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` /
-`GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` to those values (a cross-project range
-cell, `GCP_RANGE_CELL_PROJECT_ID`, provisions its own SAs in that project and
-grants the provisioner the equivalent roles there; follow-up tracked in #1509).
+Native range guests receive no platform cloud identity. Exact preconfigured
+machine-image profiles may use the bounded range-host identity pool selected by
+the range allocation slot. Pool identities have no roles by default; they are
+host-infrastructure identities, not per-range model authorization.
 
-The service account categories:
-
-- **Host SA** (`GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`): attached to range hosts
-  whose approved profile uses the deployment-wide host identity. Grant logging
-  write and monitoring write, plus (for Polaris)
-  `roles/storage.objectViewer` on the assets bucket so the range host can fetch
-  the smoketest tarball (`AGENT_STORAGE_BUCKET`). The host also reads its own
-  per-range Vertex key from Secret Manager, but you do not grant that at the
-  project level: the provisioner binds `roles/secretmanager.secretAccessor` for
-  this SA on each `shifter-range-<N>-vertex-key` secret at mint time and drops it
-  with the secret at teardown, so the host never sees the platform secrets
-  (`app`, `db`, `guacamole-*`).
-
-  The guest VM is created with the `cloud-platform` OAuth scope
-  (`GCERangeCellConfig.service_account_scopes`); scope is a coarse legacy gate,
-  so these IAM roles are the real access control. `cloud-platform` is required,
-  not just convenient: Secret Manager has no narrower OAuth scope, so a
-  narrow logging/monitoring scope makes both the Storage and Secret Manager
-  reads fail with a generic 403 regardless of IAM.
-- **Preconfigured host pool** (`GCP_RANGE_HOST_IDENTITY_POOL_SIZE`): optional
-  bounded pool of `sh-range-host-<slot>` service accounts. Set the Terraform
-  `range_host_identity_pool_size` and runtime value to the same count.
-  Terraform grants the provisioner `serviceAccountUser` on each specific pool
-  member. The range allocation index is deterministically sharded across this
-  pool, so the count bounds identities rather than concurrent ranges. Pool
-  members have no roles by default; grant only common host-infrastructure
-  access required by the approved machine image. They are not range-isolation
-  principals.
-- **Vertex SA** (`GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL`): the identity whose
-  short-lived, per-range key the a14-kali agent uses for Vertex AI. Grant only
-  `roles/aiplatform.user`. The participant container is blocked from the
-  metadata server and reads the key from Secret Manager (see
-  `shifter/engine/provisioner/gcp_range_vertex_creds.py`).
-
-These are independent inputs. In an account that requires it, both variables may
-name the same service account; nothing in the render or provisioner assumes they
-differ.
+New ranges no longer mint provider service-account keys or copy a shared model
+key into guests. Legacy key revocation remains part of teardown. Model access
+must use the broker contract in ADR-059; adapter compatibility does not establish
+that the broker lifecycle or a particular provider has been qualified.
 
 ## Baking a new pre-promoted DC image
 
@@ -392,81 +348,16 @@ by nothing:
   pre-promoted DC's AD identity; the provisioner instead gets SSH to the DC from
   the guest metadata startup script (host key + `administrators_authorized_keys`).
 
-Each DC image is a **profile** var-file in `shifter/packer/gcp/dc-profiles/`. The
-profile sets the domain, NetBIOS name, AD-content seed, and purpose (which names
-the image family `shifter-<purpose>-dc`). To add a DC for a new domain:
+The generic template requires an explicitly selected profile containing the DNS
+name, NetBIOS name, image purpose and content seed path. The checked-in example
+profile documents these inputs; there is no private default. Core's image build
+workflow rejects missing or unknown profiles before cloud authentication.
 
-1. Copy `dc-profiles/example.pkrvars.hcl` to `dc-profiles/<name>.pkrvars.hcl` and
-   set `dc_image_purpose`, `dc_domain_name`, `dc_netbios_name`, and
-   `dc_content_script`.
-2. Add the AD-content seed script the profile points at (path relative to
-   `shifter/packer/gcp`). It creates the scenario's OUs/users/groups/SPNs and
-   accepts a `-DnsForwarder` parameter; the Polaris one is
-   `scripts/polaris-aws-range/a2_setup.ps1`.
-3. Run the **Packer GCE Image Build** workflow with `image_type=dc-prebaked` and
-   `dc_profile=<name>`. It publishes image family `shifter-<purpose>-dc`.
-4. Point the consuming scenario at that family. The scenario's `dc_config`
-   `domain_name` must match the baked domain, because setup verifies the
-   already-promoted DC against it (it never promotes).
-
-The `polaris` profile reproduces the Polaris `shifter-polaris-dc`
-(`BOREAS.LOCAL`) image and is the default.
-
-## Baking the polaris-vm host image (compose stack)
-
-The Polaris range host (`shifter-polaris-vm`) is a Debian Docker host that boots
-the **prebaked** Polaris docker-compose stack (~17 containers including the
-participant `a14-kali`). Genuine dynamic realization is separate future work; for
-now the stack is baked into the image so time-to-serve is a range launch, not a
-full container build. `host-setup.sh` and the sibling stack-verification
-provisioner fetch the stack tarball from GCS at bake time, verify the declared
-digest, build/pull the images, and start the full compose stack before image
-capture. The range bootstrap then only rewrites the DC IP and per-range keys in
-`docker-compose.override.yml` and force-recreates the range-specific services
-(`dns`, `a14-kali`, and `a9-splice`).
-
-All 17 compose services must exist in the captured image. Baking only the images
-is insufficient: `restart: unless-stopped` has no container to restart on first
-range boot, and the targeted runtime bootstrap will start only the three
-services whose environment changes per range.
-
-Any service pulled from a registry must be pinned by image digest in the Compose
-stack; local tags are accepted only for services built from the checksum-bound
-stack context. The bake refuses privileged/host-namespace services, dangerous
-capabilities, sensitive host binds, or a metadata-isolation rule that cannot be
-installed and verified before service entrypoints execute.
-
-The compose stack lives outside this repo (the AWS polaris-vm AMI is baked from
-the same external stack), so the GCE bake fetches it from GCS:
-
-1. **Get the stack tarball.** It is the assembled `scenario-dev/polaris/build/`
-   tree (a `docker-compose.yml` plus each service's local build context). It is
-   platform-neutral: every service is a local `docker build` (no registry/ECR or
-   cloud-specific references), so the GCS copy is the same content as the AWS S3
-   build tarball (`s3://shifter-polaris-bake-<env>-<acct>/polaris/build-*.tar.gz`).
-2. **Pack it for GCP's layout.** `host-setup.sh` extracts *into*
-   `.../scenario-dev/polaris/build` and expects `docker-compose.yml` at the
-   tarball root, so pack the *contents* of `build/` at the root
-   (`cd build && tar czf polaris-stack.tar.gz .`), not the `scenario-dev/...`
-   prefix the AWS tarball uses.
-3. **Upload** to `gs://<GCP_POLARIS_STACK_BUCKET>/polaris/stack/polaris-stack.tar.gz`
-   (the default `POLARIS_STACK_KEY`), and grant the packer builder SA
-   `roles/storage.objectViewer` on the bucket.
-4. **Set the `GCP_POLARIS_STACK_BUCKET` repository variable** to that bucket
-   (see `docs/dev/deploy-secrets.md`). The build exports it as
-   `PKR_VAR_polaris_stack_bucket`; empty leaves the host range-ready without the
-   stack baked.
-5. **Run the Packer GCE Image Build** workflow with `image_type=polaris-vm`. It
-   publishes image family `shifter-polaris-vm`, which `GCP_RANGE_KALI_IMAGE`
-   points at (the Polaris host uses the kali/attacker profile).
-
-`DC_DOMAIN_PASSWORD` is provisioned automatically: Terraform seeds a
-`dc-domain-password` Secret Manager secret and `render_runtime_env` emits
-`DC_DOMAIN_PASSWORD_SECRET_ID`, which the entrypoint resolves and `ecs.py`
-passes into the provisioner Job. The provisioner authenticates to the prebaked
-DC over SSH (injected key, not a password) and its `set_admin_password` step
-resets the domain Administrator password to `DC_DOMAIN_PASSWORD` per range, so
-the value baked by `a2_setup.ps1` does not need to match.
+Pack-specific profiles, content seeds, container stacks and image recipes belong
+in the pack owner's repository and build pipeline. Publish their exact image
+identities through the supported image/preparation contract. Do not add a pack
+name to core workflow choices or dispatch on an image alias in the provisioner.
+The consuming scenario's domain intent must match the baked image identity.
 
 ## NGFW
 

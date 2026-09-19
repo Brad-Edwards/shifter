@@ -149,11 +149,11 @@ def _assert_raes_adapter_supports(backend_admission: BackendAdmission | None) ->
     closed here -- before reservation and dispatch -- rather than binding ``gdc``
     and then running the hard-coded GCE adapter.
     """
-    if backend_admission is None or backend_admission.backend == _RAES_REALIZED_BACKEND:
+    if backend_admission is None or backend_admission.backend in {_RAES_REALIZED_BACKEND, "ec2"}:
         return
     raise CMSError(
         f"RAES-native provisioning has no realization adapter for range backend "
-        f"'{backend_admission.backend}'; only the GCE VM range-cell backend is implemented.",
+        f"'{backend_admission.backend}'; the GCE and EC2 VM range-cell backends are implemented.",
         details={"code": "unsupported-capability"},
     )
 
@@ -195,6 +195,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     enforced_deadline: datetime | None = None,
     model_admission_subject: OwnedReference | None = None,
     model_launch_scope: ModelLaunchScope | None = None,
+    model_sources: dict | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -212,6 +213,10 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
     source = _load_raes_source_or_raise(scenario)
+    if source.organization_uuid is not None:
+        from cms.scenarios.registry import check_scenario_access
+
+        check_scenario_access(scenario, user)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
@@ -232,6 +237,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
             range_source=range_source.value,
             range_spec=None,
             model_launch_scope=model_launch_scope.model_dump(mode="json") if model_launch_scope else None,
+            model_sources=model_sources or {},
             model_package_digest=source.package_digest,
             expires_at=lease.expires_at,
             maximum_expires_at=lease.maximum_expires_at,
@@ -249,6 +255,12 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
 
     request_id = uuid4()
     workspace_id = resolve_launch_workspace(user, workspace_uuid)
+    if source.organization_uuid is not None:
+        from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+        authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+        if authorization.organization_uuid != source.organization_uuid:
+            raise CMSError("The pack is unavailable in this workspace")
     admit_workspace_launch(
         workspace_id=workspace_id,
         user=user,
@@ -260,6 +272,30 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     from cms.services._range_workspace import resolve_effective_egress_mode
 
     egress_mode = resolve_effective_egress_mode(workspace_id)
+    from shared.range_instantiation_policy import assert_range_backend_egress_supported
+
+    try:
+        assert_range_backend_egress_supported(backend_admission.backend if backend_admission else None, egress_mode)
+    except ValueError as exc:
+        raise CMSError(str(exc)) from exc
+
+    from django.conf import settings
+
+    from cms.services._model_source_selection import resolve_launch_sources
+    from shared.model_access import ContractError
+    from shared.model_access.sources import ModelSourceSelection
+    from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthorizationError
+
+    try:
+        model_sources = ModelSourceSelection.model_validate(model_sources or {}).model_dump(mode="json")
+        resolve_launch_sources(
+            user, workspace_id, model_sources, catalog=getattr(settings, "MODEL_ACCESS_CATALOG", None)
+        )
+    except (ValueError, ContractError, WorkspaceAuthorizationError, OrganizationAuthorizationError):
+        raise CMSError(
+            "Selected model sources are unavailable. Refresh the selection and try again.",
+            details={"code": "model-source-unavailable"},
+        ) from None
 
     # PLAT-202: required model access is a fail-closed admission decision enforced
     # here, before any dispatch (cold, warm-claim, or non-user), so every launch
@@ -298,6 +334,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
             request_id=request_id,
             enforced_deadline=enforced_deadline,
             model_launch_scope=model_launch_scope,
+            model_sources=model_sources,
         )
     )
     if claimed_request_id is not None:
@@ -349,6 +386,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
     workspace_uuid: str | UUID | None = None,
     model_admission_subject: OwnedReference | None = None,
     model_launch_scope: ModelLaunchScope | None = None,
+    model_sources: dict | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
@@ -371,6 +409,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
             workspace_uuid=workspace_uuid,
             model_admission_subject=model_admission_subject,
             model_launch_scope=model_launch_scope,
+            model_sources=model_sources,
         ),
     )
 
@@ -403,4 +442,5 @@ def dispatch_range_launch(
         enforced_deadline=options.remote_access_teardown_at,
         model_admission_subject=options.model_admission_subject,
         model_launch_scope=options.model_launch_scope,
+        model_sources=options.model_sources,
     )

@@ -23,22 +23,22 @@ on:
           - kali
           - windows
           - dc
-          - polaris-vm
           - dc-prebaked
       environment:
         description: 'GCP environment to build in'
         required: true
         type: choice
         options:
-          - dev
-          - proof
+          - gcp-dev
           - nazgul
-        default: dev
+          - orthanc
+          - sauron
+        default: gcp-dev
       dc_profile:
         description: 'Pre-promoted DC profile (dc-profiles/<name>.pkrvars.hcl); only used when image_type=dc-prebaked'
         required: false
         type: string
-        default: polaris
+        default: ''
 
 permissions:
   contents: read
@@ -47,7 +47,10 @@ jobs:
   build:
     name: Build ${{ inputs.image_type }} GCE image in ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    environment: gcp-build-${{ inputs.environment }}
+    # The gcp-dev tenant's purpose Environments keep their historical short
+    # suffix (gcp-build-dev), so map the gcp-dev tenant name back to `dev` here;
+    # every other tenant uses its own name verbatim (gcp-build-<tenant>).
+    environment: gcp-build-${{ inputs.environment == 'gcp-dev' && 'dev' || inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -77,6 +80,15 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+
+      - name: Validate DC profile
+        run: |
+          if [[ "$IMAGE_TYPE" == "dc-prebaked" ]]; then
+            if [[ ! "$DC_PROFILE" =~ ^[a-z0-9][a-z0-9-]*$ ]] || [[ ! -f "gcp/dc-profiles/${DC_PROFILE}.pkrvars.hcl" ]]; then
+              echo "::error::dc-prebaked requires an existing, explicitly selected DC profile."
+              exit 1
+            fi
+          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -122,16 +134,6 @@ jobs:
           GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
           GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
           GCP_PACKER_BUILD_SERVICE_ACCOUNT: ${{ secrets.GCP_PACKER_BUILD_SERVICE_ACCOUNT }}
-          # GCS bucket holding the polaris compose-stack tarball (polaris-vm build
-          # only). host-setup.sh fetches gs://<bucket>/<POLARIS_STACK_KEY> and
-          # bakes the stack in. The stack is MANDATORY for a promotable polaris-vm
-          # image and is verified against GCP_POLARIS_STACK_SHA256.
-          GCP_POLARIS_STACK_BUCKET: ${{ vars.GCP_POLARIS_STACK_BUCKET }}
-          # Required content digest of the compose-stack tarball; the build fails
-          # on mismatch so a mutable GCS key cannot change what is baked.
-          GCP_POLARIS_STACK_SHA256: ${{ vars.GCP_POLARIS_STACK_SHA256 }}
-          # Optional immutable GCS object generation to pin the exact tarball.
-          GCP_POLARIS_STACK_GENERATION: ${{ vars.GCP_POLARIS_STACK_GENERATION }}
         run: |
           if [ -z "${GCP_PROJECT_ID}" ]; then
             echo "::error::Required secret GCP_PROJECT_ID is not set. See docs/dev/deploy-secrets.md."
@@ -154,9 +156,6 @@ jobs:
             echo "PKR_VAR_source_revision=${GITHUB_SHA}"
             echo "PKR_VAR_machine_type=${MACHINE_TYPE}"
             echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
-            echo "PKR_VAR_polaris_stack_bucket=${GCP_POLARIS_STACK_BUCKET}"
-            echo "PKR_VAR_polaris_stack_sha256=${GCP_POLARIS_STACK_SHA256}"
-            echo "PKR_VAR_polaris_stack_generation=${GCP_POLARIS_STACK_GENERATION}"
           } >> "$GITHUB_ENV"
           # Kali has no public GCP image; the kali builder instead converts the
           # debian-12 GCE base into Kali Rolling in its first provisioning script

@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 6.0"
+    }
     random = {
       source  = "hashicorp/random"
       version = "~> 3.0"
@@ -18,6 +22,11 @@ terraform {
 }
 
 provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+provider "google-beta" {
   project = var.project_id
   region  = var.region
 }
@@ -96,6 +105,7 @@ module "platform_core" {
   cloud_sql_disk_size_gb             = var.cloud_sql_disk_size_gb
   cloud_sql_database_name            = var.cloud_sql_database_name
   cloud_sql_user_name                = var.cloud_sql_user_name
+  cloud_sql_deletion_protection      = var.cloud_sql_deletion_protection
   redis_tier                         = var.redis_tier
   redis_memory_size_gb               = var.redis_memory_size_gb
   public_hostname                    = var.public_hostname

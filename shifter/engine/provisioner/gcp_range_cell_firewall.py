@@ -6,7 +6,7 @@ import ipaddress
 import os
 
 from config import GCERangeCellConfig
-from gcp_range_cell_model_broker import admitted_broker_destination
+from gcp_range_cell_model_broker import admitted_broker_destination, broker_firewall_name
 from gcp_range_cell_naming import _network_tag, _short_resource_name
 from gcp_range_cell_types import (
     DEFAULT_GCE_EGRESS_POLICY,
@@ -212,6 +212,7 @@ def _boundary_ingress_rules(
     access_network_cidrs: list[str],
     portal_network_cidrs: list[str],
     config: GCERangeCellConfig,
+    instances: list[InstancePlan],
 ) -> list[FirewallPlan]:
     """Render participant-access and management ingress from platform networks."""
     rules: list[FirewallPlan] = []
@@ -238,11 +239,15 @@ def _boundary_ingress_rules(
     # participant SSH.
     if portal_network_cidrs:
         # Management-only ingress: native-guest host SSH (:22) and the Docker-host
-        # management sshd port (Polaris host, whose Kali container binds :22),
+        # management sshd port (when a participant container binds :22),
         # sourced from the provisioner/management range only.
         mgmt_ports = ["22"]
         if str(config.host_mgmt_ssh_port) not in mgmt_ports:
             mgmt_ports.append(str(config.host_mgmt_ssh_port))
+        for instance in instances:
+            port = str(instance["ssh_port"])
+            if port not in mgmt_ports:
+                mgmt_ports.append(port)
         rules.append(_management_rule(range_id, range_tag, portal_network_cidrs, mgmt_ports))
     return rules
 
@@ -303,12 +308,9 @@ def _egress_rules(
             }
         )
     if config.private_google_access:
-        # Couple Private Google Access with its egress hole automatically: with
-        # PGA the range VPC resolves *.googleapis.com to the private VIP and
-        # routes it internally, but the per-range egress-deny still blocks it
-        # without this allow. Guests reach Vertex AI (a14-kali agent), Cloud
-        # Storage (smoketest tarball), and Secret Manager (per-range Vertex key)
-        # over HTTPS to the VIP only, staying off the general internet.
+        # Private Google Access needs an explicit TLS route through egress deny.
+        # This network capability supplies no guest credentials. Model access
+        # uses the separately admitted broker endpoint and enrollment contract.
         rules.append(
             {
                 "name": _short_resource_name("shifter-r", range_id, "egress-googleapis"),
@@ -442,7 +444,11 @@ def build_firewall_plan(
         denied_networks,
     )
     firewalls = _subnet_ingress_rules(range_id, subnet_plans)
-    firewalls.extend(_boundary_ingress_rules(range_id, range_tag, access_network_cidrs, portal_network_cidrs, config))
+    firewalls.extend(
+        _boundary_ingress_rules(
+            range_id, range_tag, access_network_cidrs, portal_network_cidrs, config, instance_plans or []
+        )
+    )
     firewalls.extend(
         _egress_rules(
             range_id,
@@ -459,7 +465,7 @@ def build_firewall_plan(
     if broker_destination is not None:
         firewalls.append(
             {
-                "name": _short_resource_name("shifter-r", range_id, "egress-model-broker"),
+                "name": broker_firewall_name(range_id),
                 "direction": "EGRESS",
                 "priority": 900,
                 "target_tags": [range_tag],

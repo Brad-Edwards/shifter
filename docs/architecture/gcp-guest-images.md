@@ -116,10 +116,9 @@ per-role **policy** minimum boot-disk size (not the actual source-image size)
 before any Compute Engine call so a malformed value fails fast instead of after
 a create attempt.
 
-Scenario-host families such as `shifter-polaris-vm` are native GCE artifacts
-consumed directly by this backend. They are not automatically GDC-exportable
-Linux roles. Per-instance selection among Kali-role scenario hosts occurs at
-the GCE image-profile seam rather than by changing the global role default.
+Pack-owned images are built and qualified by their authors, then consumed through
+explicit image profiles. Core's workflow choices contain only platform base
+images; adding a pack never adds an image-name dispatch branch.
 
 An **immutable candidate image is the unit of validation and promotion**; a GCE
 image family is a mutable deployment channel, not evidence that a particular
@@ -137,9 +136,7 @@ packer-gcp-promote.yml  promote  → bind candidate ID to run/attempt/artifact,
    disposable VM with the runtime range-cell posture (**no external IP**, IAP
    subnet, Shielded VM, project SSH keys blocked) and reboots it once. Evidence
    is gathered **by the runner over an IAP tunnel**, not self-reported by the
-   guest: for Linux/polaris-vm the runner SSH-executes the check script (guest
-   agent, host sshd management port, Docker, baked compose config/images, and
-   that every declared compose service has a **running** container) and gates on
+   guest: for Linux the runner SSH-executes the guest-agent health check and gates on
    its exit code; for a pre-promoted DC the runner probes AD over LDAP (an
    anonymous rootDSE query proving AD DS is serving the **expected forest**, with
    **no first-boot promotion**). The candidate boots with **no service account
@@ -149,7 +146,7 @@ packer-gcp-promote.yml  promote  → bind candidate ID to run/attempt/artifact,
    workflow uploads one versioned, bounded evidence artifact, then labels the
    exact candidate with its numeric image ID plus exact run, attempt, artifact,
    and revision locators; the VM is always deleted. Only image types with
-   a matching validator are selectable (generic Linux, `polaris-vm`,
+   a matching validator are selectable (generic Linux,
    `dc-prebaked`); the sysprepped `windows` and first-boot-promotion `dc` images
    are excluded. Per-container runtime health and seeded AD content that depend
    on per-range credentials are a runtime/range-smoke concern, not part of this
@@ -162,29 +159,6 @@ packer-gcp-promote.yml  promote  → bind candidate ID to run/attempt/artifact,
    It never re-resolves "newest in the dev family" at promotion time, and a
    failed copy cannot advance the family channel.
 
-### polaris-vm range host (fail-closed compose stack)
-
-The Polaris range host is a Debian Docker host image (`polaris-vm.pkr.hcl`)
-running the polaris docker-compose stack. The stack lives outside this repo, so
-`host-setup.sh` fetches it from GCS at bake time. For a promotable image the
-stack is **mandatory** and verified: the build fails on a missing stack, a
-`POLARIS_STACK_SHA256` checksum mismatch, an invalid compose config, a failed
-build/pull, or a missing image. Set `GCP_POLARIS_STACK_SHA256` (and, optionally,
-`GCP_POLARIS_STACK_GENERATION` to pin the immutable object version).
-Registry-backed services must use `image@sha256:<digest>`; mutable registry tags
-are rejected. Before the stack starts, the bake rejects privileged/host-namespace
-services and sensitive host binds, then blocks GCE metadata from both host and
-Docker-forwarded traffic so workload entrypoints cannot use the builder identity.
-
-The bake must also start the full compose stack before image capture. A
-`polaris-vm` image that contains all 17 service images but no created containers
-does not satisfy the range contract: the runtime bootstrap only rewrites the
-per-range override and recreates `dns`, `a14-kali`, and `a9-splice`; the other
-target containers depend on the prebaked compose state and
-`restart: unless-stopped`. Candidate validation only observes the already-created
-containers on first boot and after reset; it must not run `docker compose up`
-and make an incomplete candidate appear valid.
-
 ### Pre-promoted DC (`dc-prebaked`) vs. generic Windows/DC
 
 The `windows` and `dc` images are **sysprepped** (GCESysprep), so their
@@ -193,7 +167,7 @@ build-time WinRM credential is discarded by sysprep. The pre-promoted
 generalize a promoted domain controller—so it needs deliberate credential
 hygiene rather than relying on sysprep:
 
-- The identical `BOREAS.LOCAL` machine/domain identity across ranges is
+- The identical authored machine/domain identity across ranges is
   intentional (isolated, identical ranges) and is preserved.
 - The DSRM secret is **generated per build** and injected as a sensitive Packer
   variable; there is no committed default DSRM password in the release contract.
@@ -210,14 +184,14 @@ The candidate-boot validation subsystem (`packer-gcp-validate.yml` and
 workflow, and script **shape** (`packer validate`, `actionlint`, `shellcheck`,
 and the structural and behavioral unit tests). Its live behaviour is GCP-only
 and is not exercised until an operator dispatches the workflow against a real
-project: the IAP tunnel to the candidate VM, the runner's SSH to the polaris-vm
-management port (2222), and the DC LDAP rootDSE probe.
+project: the IAP tunnel to the candidate VM, the runner's SSH session, and
+the DC LDAP rootDSE probe.
 
 Treat the **first `packer-gcp-validate.yml` run per environment** as the smoke
 test for that live path, and confirm:
 
 - `start-iap-tunnel` reaches the candidate on the SSH port (22 for generic
-  Linux, the configured management port for polaris-vm) and on 389 for a DC.
+  Linux) and on 389 for a DC.
 - The injected instance SSH key lets the runner reach the guest as the
   `validator` user (project SSH keys are blocked, so an instance key is used).
 - `ldapsearch` on the runner returns the expected forest rootDSE for a
@@ -242,7 +216,7 @@ guest-content validation follow-up.
 Build + export one guest (Actions → "Packer GCE Image Build" → pick type/env, or):
 
 ```bash
-gh workflow run packer-gcp.yml -f image_type=ubuntu -f environment=dev
+gh workflow run packer-gcp.yml -f image_type=ubuntu -f environment=gcp-dev
 ```
 
 After all four guests (`ubuntu`, `kali`, `windows`, `dc`) are built and

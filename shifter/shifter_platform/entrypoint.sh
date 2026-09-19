@@ -114,6 +114,27 @@ print(key + '=' * padding)
     echo "Secrets loaded successfully"
 fi
 
+# The GCP provisioner launcher remains a normal Django worker and therefore
+# keeps the portal runtime connection above. It additionally hydrates the
+# narrower database identity that it projects into ephemeral provisioner Jobs.
+# Only the launcher KSA may read this Secret Manager bundle.
+if [[ "${SHIFTER_PROVISIONER_LAUNCHER:-false}" == "true" ]]; then
+    : "${PROVISIONER_DB_SECRET_ID:?PROVISIONER_DB_SECRET_ID is required for the provisioner launcher}"
+    PROVISIONER_DB_SECRET=$(fetch_runtime_secret "$PROVISIONER_DB_SECRET_ID")
+
+    PROVISIONER_DB_HOST=$(echo "$PROVISIONER_DB_SECRET" | python -c "import sys, json; print(json.load(sys.stdin)['host'])")
+    export PROVISIONER_DB_HOST
+    PROVISIONER_DB_PORT=$(echo "$PROVISIONER_DB_SECRET" | python -c "import sys, json; print(json.load(sys.stdin)['port'])")
+    export PROVISIONER_DB_PORT
+    PROVISIONER_DB_NAME=$(echo "$PROVISIONER_DB_SECRET" | python -c "import sys, json; print(json.load(sys.stdin)['dbname'])")
+    export PROVISIONER_DB_NAME
+    PROVISIONER_DB_USER=$(echo "$PROVISIONER_DB_SECRET" | python -c "import sys, json; print(json.load(sys.stdin)['username'])")
+    export PROVISIONER_DB_USER
+    PROVISIONER_DB_PASSWORD=$(echo "$PROVISIONER_DB_SECRET" | python -c "import sys, json; print(json.load(sys.stdin)['password'])")
+    export PROVISIONER_DB_PASSWORD
+    unset PROVISIONER_DB_SECRET
+fi
+
 # Fetch the prebaked DC Administrator password if provided. Guarded
 # independently of the DB/app outer block so deployments that supply
 # DC_DOMAIN_PASSWORD_SECRET_ARN without DB_SECRET_ID / APP_SECRET_ID
@@ -236,7 +257,7 @@ fi
 # settings to Uvicorn's defaults. `tests/test_asgi_worker_smoke.py` pins both
 # the import contract and the keepalive in CI.
 if [[ $# -gt 0 ]]; then
-    echo "Running: $@"
+    echo "Running: $*"
     exec "$@"
 else
     echo "Starting gunicorn (uvicorn workers)..."

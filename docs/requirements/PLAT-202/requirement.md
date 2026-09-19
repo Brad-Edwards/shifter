@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: SHOULD
 wave: 2
 created_at: 2026-04-16T22:49:32.549002Z
-updated_at: 2026-09-17T00:00:00Z
+updated_at: 2026-09-18T00:00:00Z
 ---
 
 # PLAT-202: Per-Range LLM Access Management
@@ -15,9 +15,11 @@ updated_at: 2026-09-17T00:00:00Z
 
 The platform shall provision per-range access to external LLM and agentic-tool APIs, with shardable allocation across models, clouds, and accounts. Shard assignment, credential plumbing, and endpoint routing shall be a first-class platform capability rather than an out-of-band operator script. Shard strategy shall be configurable per scenario or per event, informed by event capacity declarations (CTF-908) and planned by capacity-aware provisioning (PLAT-201).
 
+Tenant administrators shall manage source configurations and write-only provider credentials from the tenant UI. Authorized scenario users, existing-range administrators and CTF organizers shall select or mix approved sources with explicit weights while preserving source-use authority, shared and per-range limits, immutable prices and outstanding accounting. Source placement shall be independent of compute hosting: the platform's own GCP project is permitted alongside external projects, accounts and providers. Source changes shall compare revisions, fence old grants and retain liabilities without automatically replaying potentially billed requests.
+
 ## Rationale
 
-Scenarios increasingly assume agentic tooling inside participant ranges (for example Claude Code inside Kali). At Ottawa BSides this was handled by an SSM fan-out script (scripts/polaris-aws-range/apply_kali_bedrock_shard.py) that sharded credentials across AWS accounts and Bedrock inference profiles based on user_id % 8. That pattern is brittle: every capacity shift, model availability change, or account reshuffle requires a new bespoke script. Moving the capability into the platform lets scenario authors express "this range needs agentic-model access" and have the platform handle allocation.
+Scenario authors need a provider-neutral way to request model access. The platform owns allocation, policy, accounting and revocation through the model broker; executable adapters consume scoped guest enrollment without receiving provider credentials.
 
 ## Traceability
 
@@ -131,6 +133,8 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → CONFIG `shifter/installation/published_contract/model-access-policy.v2.schema.json`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_model_allocation.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_cohort_capacity.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_weighted_capacity.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation_authority.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation_launch.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation_lifecycle.py`
@@ -170,3 +174,105 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_request_accounting.py`
 - TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_request_lifecycle.py`
 - TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_request_accounting_postgres.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2243` (Tenant model sources across scenario, range and event flows)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/source-management.md`
+- IMPLEMENTS → CONFIG `platform/charts/shifter/templates/model-provider-egress.yaml`
+- IMPLEMENTS → CONFIG `platform/terraform/modules/portal/eks/model_sources.tf`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/api/model_source_options.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/api/model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/api/range_model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/migrations/0050_range_model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/migrations/0051_live_model_source_status.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_model_source_selection.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_range_model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/migrations/0059_event_model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/event/model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/migrations/0081_model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/migrations/0082_model_policy_transition.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_credential_transition.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_policy_transition.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_source_control.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_source_observations.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/api/model-sources.ts`
+- TESTS → TEST `shifter/shifter_platform/frontend/src/components/ModelSourcePicker.test.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/components/ModelSourcePicker.tsx`
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/administer/ModelSourceForm.test.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/administer/ModelSourceForm.tsx`
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/administer/ModelSourcesPage.test.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/administer/ModelSourcesPage.tsx`
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/administer/RangeModelSources.test.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/administer/RangeModelSources.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/administer/SourceUserPicker.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/egress.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/egress_proxy.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/openai_messages.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/api/closed_serializer.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/api/model_sources.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/api/strict_json.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/cloud/owned_secrets.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/catalog_v4.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/source_catalog.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/source_credentials.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/sources.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_launch_source_choices.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_model_source_options.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_model_sources.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_policy_transition.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_source_control.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_sources.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_sources_postgres.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/cloud/test_owned_model_secrets.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_broker_egress.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_source_catalog.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_source_configuration.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_source_credentials.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_source_selection.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_stored_provider_credentials.py`
+- IMPLEMENTS → DOCUMENTATION `docs/features/model-access.md`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/api/urls.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/models/range.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/__init__.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_range_launch_common.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_retry_safe_launch.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/cms/services/_warm_pool_claim.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/config/api_bootstrap.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/api/organizer/events.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/api/serializers/organizer.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/bridges.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/event/_crud.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/event/_update.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/model_access_control/schemas.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/model_access_control/server.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/__init__.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_model_credentials.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/models/_range.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/__init__.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_allocation_selection.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/engine/services/_model_credentials.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/app/nav.ts`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/ctf/admin/EventFormPage.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/ctf/admin/eventFormState.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/mission-control/RangeLaunchPage.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/router.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/mission_control/api/_retry_launch.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/mission_control/api/ranges.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/mission_control/api/serializers.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/control.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/provider_credentials.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/provider_usage.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/providers.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/model_broker/server.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/cloud/aws/secrets.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/cloud/gcp/secrets.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/cloud/types.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/aws_session.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/provider_runtime.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_event_workspace_scope.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_broker_listener.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_broker_providers.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/test_bootstrap_api.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/workspaces/services/__init__.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/workspaces/services/_organization.py`

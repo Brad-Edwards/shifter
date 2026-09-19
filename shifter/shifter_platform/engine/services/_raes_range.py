@@ -25,7 +25,7 @@ from shared.raes.participant_access import ParticipantAccessBinding
 
 from ._common import _persist_task_arn
 from ._range_backend_binding import (
-    assert_backend_supports_egress_none,
+    assert_backend_supports_egress,
     backend_binding_fields,
     egress_binding_fields,
     require_workspace_binding,
@@ -34,10 +34,16 @@ from ._range_backend_binding import (
     verify_existing_workspace_binding,
 )
 from ._range_placement import select_placement_zone
+from ._runtime_plugin_bindings import (
+    persist_runtime_plugin_pin,
+    resolve_runtime_plugin_pin,
+    retained_runtime_plugin_pin,
+)
 
 if TYPE_CHECKING:
     from engine.models import Range
     from shared.range_instantiation_policy import BackendAdmission
+    from shared.runtime_plugin_binding import RuntimePluginScope
 
 __all__ = ["RaesRangeRef", "RangeBindings", "create_raes_range", "dispatch_created_raes_range"]
 
@@ -66,6 +72,7 @@ class RangeBindings:
     delivery: tuple[DeliveryBinding, ...] = ()
     participant_access: tuple[ParticipantAccessBinding, ...] = ()
     artifact: tuple[ArtifactBinding, ...] = ()
+    runtime_plugin_scope: RuntimePluginScope | None = None
     # CMS may finish downward authorization after Range creation signals, then
     # dispatch in the same enclosing transaction. No worker sees a partial launch.
     defer_dispatch: bool = False
@@ -137,15 +144,22 @@ def create_raes_range(
         verify_existing_workspace_binding(existing, request_uuid, workspace_id)
         verify_existing_egress_binding(existing, request_uuid, egress_mode)
         _verify_existing_participant_access(existing, bindings.participant_access)
+        _verify_existing_plugin_scope(existing, bindings.runtime_plugin_scope)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
 
     binding_fields = backend_binding_fields(backend_admission)
     egress_fields = egress_binding_fields(egress_mode)
-    assert_backend_supports_egress_none(binding_fields.get("range_backend"), egress_fields["egress_mode"])
+    assert_backend_supports_egress(binding_fields.get("range_backend"), egress_fields["egress_mode"])
     user_model = get_user_model()
     with transaction.atomic():
+        scope = bindings.runtime_plugin_scope
+        pin = (
+            resolve_runtime_plugin_pin(scope, compiled_plan, backend=str(binding_fields.get("range_backend") or ""))
+            if scope
+            else None
+        )
         user = user_model.objects.get(id=user_id)
         request = Request.objects.create(request_id=request_uuid, request_type=RequestType.RANGE.value, user=user)
         subnet_index = Range.allocate_subnet_index()
@@ -161,17 +175,31 @@ def create_raes_range(
             status=Range.Status.PROVISIONING,
             subnet_index=subnet_index,
             placement_zone=placement_zone,
+            resource_generation=uuid4() if binding_fields.get("range_backend") == "ec2" else None,
             range_config=compiled_plan,
             workspace_id=workspace_id,
             **binding_fields,
             **egress_fields,
         )
         _persist_range_bindings(range_obj, bindings)
+        persist_runtime_plugin_pin(range_obj, pin)
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
     if bindings.defer_dispatch:
         return RaesRangeRef(str(request_uuid), str(range_obj.uuid), range_obj.status, True)
     return dispatch_created_raes_range(request_uuid)
+
+
+def _verify_existing_plugin_scope(existing: Range, scope: RuntimePluginScope | None) -> None:
+    """Reject replay that changes the administrator-selected tenant or pack revision."""
+    pin = retained_runtime_plugin_pin(existing)
+    if pin is not None and (
+        scope is None
+        or pin.organization_uuid != scope.organization_uuid
+        or pin.pack_digest != scope.pack_digest
+        or pin.pack_id != scope.pack_id
+    ):
+        raise ValueError("Range replay cannot change its runtime plugin pack identity")
 
 
 def dispatch_created_raes_range(request_uuid: UUID) -> RaesRangeRef:
@@ -247,6 +275,8 @@ def _persist_range_bindings(range_obj: Range, bindings: RangeBindings) -> None:
             machine_type=binding.machine_type,
             disk_size_gb=binding.disk_size_gb,
             disk_type=binding.disk_type,
+            management_ssh_port=binding.management_ssh_port,
+            management_ssh_username=binding.management_ssh_username,
             binding_version=1,
         )
         for binding in bindings.artifact

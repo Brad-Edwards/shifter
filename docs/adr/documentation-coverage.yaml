@@ -10,17 +10,6 @@
       "technical_docs": ["technical/platform_infrastructure/gcp-event-capacity.md"]
     },
     {
-      "id": "external-deployment-inventory",
-      "title": "External deployment inventory and GCP bootstrap",
-      "requirement": "PLAT-005",
-      "user_docs": [
-        "dev/gcp-inventory-bootstrap.md"
-      ],
-      "technical_docs": [
-        "architecture/deployment-inventory-contract.md"
-      ]
-    },
-    {
       "id": "tenant-artifact-preparation",
       "title": "In-tenant artifact preparation and private adapters",
       "requirement": "GEN-001",
@@ -145,6 +134,13 @@
       "requirement": "GEN-001",
       "user_docs": ["how-to/aws-ecs-to-eks-migration.md", "ops/portal-eks-operations.md"],
       "technical_docs": ["technical/platform_infrastructure/aws-eks-bundle.md"]
+    },
+    {
+      "id": "tenant-model-sources",
+      "title": "Tenant model sources and range routing",
+      "requirement": "PLAT-202",
+      "user_docs": ["features/model-access.md"],
+      "technical_docs": ["architecture/model-access/source-management.md"]
     }
   ]
 }

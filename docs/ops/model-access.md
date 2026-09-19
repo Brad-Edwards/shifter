@@ -336,3 +336,43 @@ must show that allowed operations worked before negative results are credited.
 Independent provider readback is required; a script's success exit or a mock
 is not cloud evidence. Feed the qualified GCP slice to #2091 and keep each
 future provider/tool profile's evidence separate.
+
+## Broker execution configuration
+
+GCP deployments configure `settings.model_broker_runtime` separately from
+`settings.model_broker` infrastructure. Execution settings contain a
+`provider_inventory` (`model-broker-providers/v1`), `fingerprint_secret_name`,
+`fingerprint_key_version`, and optionally `fingerprint_previous_secret_name`.
+They contain only non-secret bindings and Kubernetes Secret names. They do not
+enter Terraform state. The fingerprint Secret's `key` entry contains 32–64 random
+bytes; the optional retained-key Secret's `keys.json` maps previous versions to
+base64-encoded keys. Retain old versions across the request deduplication window;
+missing versions reject retries instead of admitting duplicate paid requests.
+
+Each inventory target binds an enabled catalog shard's ID, provider, region,
+model and credential reference to an approved invocation principal and a
+conservative `context_window_tokens`. Vertex targets also specify their project
+and explicit token-count geography. Projection rejects principals that differ
+from applied Terraform identities. Provider credentials are obtained by workload
+identity and never supplied in this configuration.
+
+Activation requires an enabled v3 catalog with input/output prices and a zero-cost
+`request` component for token counting. The [v3 example](../architecture/model-access/example-policy.v3.json)
+is synthetic and disabled: replace its model, quota, price and identity values
+with approved deployment data before use. Infrastructure can remain installed
+with model access disabled; both executable Deployments then have zero replicas.
+The broker and provisioner use different authenticated control audiences. Only
+provisioner Jobs may reach the enrollment control endpoint alongside the broker;
+plugin workers receive neither control authority nor enrollment credentials.
+
+Local rendering and transport tests do not establish live model/client
+compatibility. AWS deployment wiring and guest delivery must be qualified
+before advertising operational support on either cloud.
+
+`settings.model_broker_runtime.guest_trust_ca_pem` supplies the public PEM CA used
+by the enrollment control and guest broker listeners. It must match the existing
+TLS trust ConfigMap. The deploy renderers encode this public certificate and
+fixed private HTTPS coordinates in the runtime ConfigMap, which the provisioner
+Job admission policy matches exactly. No CA private key belongs in root config.
+Leaving this value empty prevents mapped guest enrollment before cloud mutation.
+The broker/control TLS Secrets and public trust ConfigMap remain deployment-owned.

@@ -151,13 +151,14 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 |---|---|---|---|
 | `GCP_PROJECT_ID` | secret | yes | The Google Cloud project the platform deploys to. |
 | `SHIFTER_CONFIG_GCP_DEV` | secret | yes | Full validated deployment `shifter.yaml`. It is the sole source of `dynamic_secret_project_id`, exact provisioner static-secret refs, and range egress policy for deploy and destroy. |
+| `SHIFTER_CONFIG_OVERLAY_JSON` | variable | no | Optional bounded JSON overlay for `settings.model_access`, `settings.model_broker`, and `settings.model_broker_runtime`. A reviewed `platform/deploy/gcp/<environment>/model-broker-overlay.template.json` takes precedence when present; the workflow binds its project and public CA, then applies it only to ephemeral configuration files. Arbitrary settings, root keys, and secrets are rejected. |
 | `GCP_REGION` | variable | no | Default `us-central1`. |
 | `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (for example, `shifter.your-domain.example`). |
 | `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN` | secret | yes | Identity Platform beforeCreate allow-list; the bootstrap operator must end with `@<this>` for sign-in to succeed. |
 | `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal containing only connected RFC1918 networks. Use `[]` for the normal Connect Gateway path; public operator egress CIDRs are invalid for the private endpoint. |
 | `GCP_DEPLOY_SERVICE_ACCOUNT` | secret | yes | Purpose-scoped WIF service account for deploy and post-deploy smoke. |
 | `GCP_RELEASE_SCAN_SERVICE_ACCOUNT` | secret | yes | Purpose-scoped WIF service account for the isolated exact-digest image scan. Store it only in `gcp-release-scan-dev`; it has repository-scoped Artifact Registry read and create-only access under the private bucket's `release-scans/` prefix, but no deployment or runtime-secret authority. |
-| `GCP_DESTROY_SERVICE_ACCOUNT` | secret | destroy | Purpose-scoped WIF service account for `gcp-dev-destroy.yml`. Store it only in `gcp-dev-destroy`. |
+| `GCP_DESTROY_SERVICE_ACCOUNT` | secret | destroy | Purpose-scoped WIF service account for the GCP Environment Destroy workflow (`gcp-dev-destroy.yml`). Store each tenant's destroy identity only in its own `<environment>-destroy` Environment (for gcp-dev, `gcp-dev-destroy`). |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
 | `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | yes | First Identity Platform operator, elevated in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set to deliberately skip operator creation (the skip is logged). |
 | `GCP_BOOTSTRAP_ADMIN_PASSWORD` | secret | yes | Initial password for the bootstrap operator (rotated by TOTP enrollment on first sign-in). Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true`. |
@@ -165,6 +166,20 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | secret | no | Comma-separated list of emails elevated to Django `is_staff` on first sign-in. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | secret | no | Comma-separated list of emails elevated to `is_superuser`. |
 | `SMOKE_TEST_USER_EMAIL` | secret | no | Post-deploy smoke user for the advisory `post-deploy-smoke` job. Same contract as AWS dev smoke; see [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+
+The prepare job scopes its shared preflight to the deployment Environment. The
+exact-release scanner validates `GCP_RELEASE_SCAN_SERVICE_ACCOUNT` and its WIF
+provider inside the separate `gcp-release-scan-<deployment>` Environment, so
+the scanner identity never has to be copied into the deploy Environment.
+
+`gcp-dev-destroy.yml` runs in its own `gcp-dev-destroy` Environment and renders
+the same ephemeral tfvars the deploy does, so that Environment needs the **full
+render-input set**, not just the destroy identity: `GCP_DESTROY_SERVICE_ACCOUNT`,
+`GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_PROJECT_ID`, `GCP_PUBLIC_HOSTNAME`,
+`GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`, `GCP_MASTER_AUTHORIZED_CIDRS`, and
+`SHIFTER_CONFIG_GCP_DEV` (secrets) plus `GCP_REGION` (variable). Provision these
+when standing up the tenant; an empty `gcp-dev-destroy` Environment fails teardown
+at `Ensure GCP auth is configured` (#2258).
 
 `SHIFTER_CONFIG_GCP_DEV` is also required by both deploy and destroy. Its GCP
 settings must include `dynamic_secret_project_id`; no separate GitHub variable
@@ -182,7 +197,6 @@ settings:
     GDC_ACCESS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-access
     GDC_VM_IMAGE_GCS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-vm-image-gcs
     GDC_VMSERIES_IMAGE_GCS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-vm-image-gcs
-    GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID: projects/vertex-project/secrets/shared-vertex-key
 ```
 
 Omit unused keys. Values are secret references, never payloads, and must identify
@@ -308,6 +322,7 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 
 | Name | Type | Required | Purpose |
 |------|------|----------|---------|
+| `GCP_PROJECT_ID` | secret | build, validate | The Google Cloud project the image is built and validated in. `packer-gcp.yml` and `packer-gcp-validate.yml` fail loud (`Required secret GCP_PROJECT_ID is not set`) if it is unset. Set it in **each** `gcp-build-<env>` and `gcp-validate-<env>` Environment (same value as that deployment's `GCP_PROJECT_ID`); the packer Environments are distinct from the deploy Environment, so setting it only on the deploy Environment is not enough. |
 | `GCP_PACKER_ZONE` | variable | no | Build zone. Defaults to `${GCP_REGION}-a`. |
 | `GCP_PACKER_NETWORK` | variable | no | Builder VPC network. Default `default`. |
 | `GCP_PACKER_SUBNETWORK` | variable | no | Builder subnetwork. Default `default`. |
@@ -318,9 +333,6 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
 | `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
-| `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image. **Required for a promotable `polaris-vm`:** the build fails if the stack is absent. Add the bucket name to the identity root's `build_read_bucket_names`; Terraform grants the build SA bucket-scoped `roles/storage.objectViewer`. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
-| `GCP_POLARIS_STACK_SHA256` | variable | polaris-vm | Required sha256 digest of the compose-stack tarball; the `polaris-vm` build verifies the fetched tarball and fails on mismatch, so a mutable GCS key cannot change what is baked. |
-| `GCP_POLARIS_STACK_GENERATION` | variable | no | Optional GCS object generation to pin the exact immutable tarball version (`gs://bucket/key#generation`). |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
@@ -696,18 +708,21 @@ fall back to the code defaults in `config.py`. See
 | `GCP_RANGE_LINUX_IMAGE` | yes | Full image or family URL for the default unkeyed Linux/host profile. |
 | `GCP_RANGE_DC_IMAGE` | yes | Default unkeyed Windows domain-controller image, pre-promoted at bake time. Baked per-domain from `dc-prebaked.pkr.hcl` into family `shifter-<purpose>-dc` (see "Baking a new pre-promoted DC image" in `docs/dev/gcp-range-cell-deploy.md`). |
 | `DC_DOMAIN_PASSWORD` | DC scenarios | **Sensitive.** Domain Administrator password the provisioner sets on the pre-promoted DC (`set_admin_password`). Must match the password baked into the DC image by `a2_setup.ps1` at bake time (its `-AdminPassword` default). Provide via the GCP deploy config secret so it is rendered into the runtime env and forwarded to the provisioner job (`_GCP_PROVISIONER_ENV_KEYS`); if unset, DC setup fails setting the admin password. |
-| `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed Polaris hosts use the structured map below. |
-| `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image for non-Polaris scenarios. |
+| `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed guests use the structured map below. |
+| `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image. |
 | `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile. Normal images use `source_image`, sizing, disk policy, and a typed capability. Preconfigured hosts use an exact `source_machine_image`, machine type, host login, participant container/account, the closed `participant-readiness/v1` contract, and a lowercase SHA-256 readiness-manifest digest. Any profile may opt into public TCP 80/443 with `allow_public_web_egress` (default false). Maximum 32,768 bytes and 64 entries. Unknown keys, unsupported capabilities, and malformed profiles fail before cloud mutation. Use an Actions environment secret when resource names or logical selectors are confidential; the deploy workflow prefers that secret over the repository variable. The value is runtime configuration, not a credential, and is emitted into the private platform ConfigMap. See `docs/dev/gcp-range-cell-deploy.md`. |
-| `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | yes | Service account attached to range guests. Minimal scope: logging and monitoring write. |
+| `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | ranges | Keyless range host identity attached to range guests for default-on model access (ADR-064): a predict-only Vertex role plus host telemetry, delivered via Workload Identity with no key material. When the model broker is the guest path (`MODEL_BROKER_GUEST_VIP` set) guests stay identity-less instead. |
 | `GCP_RANGE_HOST_IDENTITY_POOL_SIZE` | machine-image hosts | Number of Terraform-created `sh-range-host-<slot>` identities. Must equal `range_host_identity_pool_size`; zero disables preconfigured machine-image hosts. |
-| `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` | Polaris | Service account whose per-range key the a14-kali agent uses for Vertex AI. Leave empty to disable per-range Vertex credentials. |
-| `GCP_RANGE_VERTEX_PROJECT_ID` | no | Vertex project. Defaults to `GCP_RANGE_CELL_PROJECT_ID`, then the control-plane project. |
-| `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach Vertex AI and Cloud Storage over Private Google Access. |
+| `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach approved Google APIs (including Vertex for default-on model access) over Private Google Access. |
 
-The host and Vertex service accounts are **independent** inputs. Accounts that
-require it may point both at the same service account; the render and the
-provisioner never assume they differ.
+By default (ADR-064) range guests hold a keyless, predict-only Vertex identity via
+Workload Identity so they can reach models directly; enabling a specific model in
+the provider console is the only manual step. When the ADR-059 broker is enabled
+it becomes the guest model path and guests stay identity-less, with an admitted
+allocation and trusted one-use enrollment. The legacy invocation service account,
+its provisioner key-admin grants and per-range keys stay removed on Terraform
+apply; revoke externally managed shared keys through their owning deployment
+before declaring migration complete.
 
 ## Local development
 

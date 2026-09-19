@@ -253,7 +253,8 @@ def _matching_bindings(
                 pool=_pinned_pool(record.pool, revision.pool_routing_revision),
                 profile=_pinned_profile(revision, binding),
                 membership_revision=projection.membership_revision,
-                membership_fresh=projection.is_fresh(now) and revision.catalog_digest == catalog.digest,
+                membership_fresh=projection.is_fresh(now)
+                and revision.catalog_digest == catalog.authority_catalog_digest,
                 matched_reason=binding.selector.kind.value,
             )
         )
@@ -288,10 +289,33 @@ def _fresh_until(
     return min(boundaries)
 
 
+def _require_source_fences(request: ModelAllocationRequest, catalog: ModelAccessCatalog) -> None:
+    """Every usable external source needs an exact current authority revision."""
+    bindings = getattr(catalog, "source_bindings", ())
+    eligible = {
+        sid
+        for alias in catalog.aliases
+        if alias.profile_id == request.need.profile_id
+        for sid in alias.eligible_shard_ids
+    }
+    expected = {
+        (item.authority_ref.owner, item.authority_ref.reference): item.authority_revision
+        for item in request.authority_revisions
+    }
+    for binding in bindings:
+        if (
+            binding.source_id is not None
+            and binding.shard_id in eligible
+            and expected.get(("engine", f"model-source:{binding.source_id}")) != binding.source_revision
+        ):
+            raise ContractError(_AUTHORITY_UNAVAILABLE)
+
+
 def locked_policy(
     request: ModelAllocationRequest, catalog: ModelAccessCatalog
 ) -> tuple[EffectivePolicy, list[SharingAuthorityFence], dict[str, object]]:
     """Prove membership or nonmembership, then call the one pure compiler."""
+    _require_source_fences(request, catalog)
     publication = lock_policy_publication(request.deployment_id)
     rows = _projections(request.deployment_id)
     fences = [publication, *_lock_expected_fences(request, rows)]

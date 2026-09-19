@@ -115,6 +115,40 @@ def test_settle_charges_actual_and_releases_unused():
     assert _concurrency().active_leases == 0
 
 
+def test_source_price_is_used_for_both_hold_and_settlement():
+    """The selected provider's immutable price survives later source changes."""
+    from copy import deepcopy
+
+    from shared.model_access import seal_catalog
+
+    allocation = make_reservable_allocation()
+    payload = deepcopy(allocation.snapshot["catalog"])
+    payload["contract_version"] = "model-access-policy/v4"
+    selected_price = deepcopy(payload["price_schedules"][0])
+    selected_price["price_schedule_id"] = "selected-source-price"
+    selected_price["prices"][0]["price_micro_units"] = 7_000_000
+    payload["price_schedules"].append(selected_price)
+    source_id = uuid4()
+    payload["shards"][0]["credential_ref"] = {"owner": "broker", "reference": f"source:{source_id}:2"}
+    payload["source_bindings"] = [
+        {
+            "shard_id": "vertex-primary",
+            "source_id": str(source_id),
+            "source_revision": 2,
+            "credential_revision": 2,
+            "price_schedule_id": "selected-source-price",
+        }
+    ]
+    allocation.snapshot["catalog"] = seal_catalog(payload).model_dump(mode="json")
+    allocation.save(update_fields=["snapshot"])
+    outcome = _reserve(allocation)
+    assert outcome.canonical_request_cost == 7000
+    open_dispatch(request_uuid=outcome.request_uuid)
+    assert settle_request(request_uuid=outcome.request_uuid, usage=_usage(500)) == 3500
+    assert _spend().spent == 3500
+    assert _spend().reserved == 0
+
+
 def test_settle_is_idempotent():
     allocation = make_reservable_allocation()
     outcome = _reserve(allocation)
@@ -375,3 +409,100 @@ def test_close_expired_revocations_transitions_to_revoked():
     closed = close_expired_revocations(now=datetime.now(UTC) + timedelta(seconds=30))
     assert closed == 1
     assert ModelDispatchLease.objects.get(reservation=reservation).transport_status == "revoked"
+
+
+@pytest.mark.parametrize("operation", ["dispatch", "check", "renew"])
+def test_allocation_expiry_fences_every_transport_lease(operation):
+    from engine.services import check_dispatch_lease
+
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    lease = None
+    if operation != "dispatch":
+        lease = open_dispatch(request_uuid=outcome.request_uuid)
+    allocation.deadline = datetime.now(UTC) - timedelta(seconds=1)
+    allocation.save(update_fields=["deadline"])
+    with pytest.raises(ContractError, match=r"request\.allocation_expired"):
+        if operation == "dispatch":
+            open_dispatch(request_uuid=outcome.request_uuid)
+        elif operation == "check":
+            check_dispatch_lease(request_uuid=outcome.request_uuid, dispatch_token=lease.dispatch_token)
+        else:
+            renew_continuation_lease(request_uuid=outcome.request_uuid)
+
+
+def test_settlement_after_conservative_charge_adjusts_instead_of_double_charging():
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    open_dispatch(request_uuid=outcome.request_uuid)
+    charge_unknown(request_uuid=outcome.request_uuid, uncertainty_reason="timeout", horizon_seconds=0)
+    reconcile_model_requests(now=datetime.now(UTC) + timedelta(seconds=1))
+    assert _spend().spent == 3000
+    assert settle_request(request_uuid=outcome.request_uuid, usage=_usage(500)) == 1500
+    assert _spend().spent == 1500
+    assert settle_request(request_uuid=outcome.request_uuid, usage=_usage(500)) == 1500
+    assert _spend().spent == 1500
+
+
+@pytest.mark.parametrize("usage", [ProviderUsage(items=()), _usage(0, verified=False)])
+def test_unverified_late_evidence_cannot_refund_conservative_charge(usage):
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    open_dispatch(request_uuid=outcome.request_uuid)
+    charge_unknown(request_uuid=outcome.request_uuid, uncertainty_reason="timeout", horizon_seconds=0)
+    reconcile_model_requests(now=datetime.now(UTC) + timedelta(seconds=1))
+    with pytest.raises(ContractError, match=r"request\.usage_incomplete"):
+        apply_late_evidence(request_uuid=outcome.request_uuid, usage=usage)
+    assert _spend().spent == 3000
+
+
+def test_missing_usage_component_cannot_release_a_hold():
+    from shared.model_access import BillingAmount, BillingBound
+
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    # Preserve a second admitted component to demonstrate missing usage denial.
+    reservation = ModelRequestReservation.objects.get(request_uuid=outcome.request_uuid)
+    reservation.billing_bound = BillingBound(
+        amounts=(
+            BillingAmount(component="input_tokens", units=1000, maximum_charge_micro_units=0),
+            BillingAmount(component="output_tokens", units=1000, maximum_charge_micro_units=0),
+        )
+    ).model_dump(mode="json")
+    reservation.save(update_fields=["billing_bound"])
+    with pytest.raises(ContractError, match=r"request\.usage_incomplete"):
+        settle_request(request_uuid=outcome.request_uuid, usage=_usage(500))
+    assert _spend().reserved == 3000
+    assert _spend().spent == 0
+
+
+def test_usage_above_bound_is_not_silently_clipped():
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    with pytest.raises(ContractError, match=r"request\.usage_exceeds_bound"):
+        settle_request(request_uuid=outcome.request_uuid, usage=_usage(2000))
+    assert _spend().reserved == 3000
+
+
+def test_crash_before_dispatch_releases_hold_but_preserves_rate_count():
+    from engine.services import reconcile_expired_dispatches
+
+    allocation = make_reservable_allocation()
+    _reserve(allocation)
+    assert reconcile_expired_dispatches(now=datetime.now(UTC) + timedelta(seconds=121)) == 1
+    assert _spend().reserved == 0
+    assert _concurrency().active_leases == 0
+    assert ModelBudgetAccount.objects.get(account_ref="deployment-rate").requests == 1
+    allocation.refresh_from_db()
+    assert allocation.unresolved_liabilities == 0
+
+
+def test_continuation_cannot_extend_request_hard_deadline():
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)
+    open_dispatch(request_uuid=outcome.request_uuid)
+    ModelRequestReservation.objects.filter(request_uuid=outcome.request_uuid).update(
+        created_at=datetime.now(UTC) - timedelta(seconds=121),
+    )
+    with pytest.raises(ContractError, match=r"request\.deadline_expired"):
+        renew_continuation_lease(request_uuid=outcome.request_uuid)

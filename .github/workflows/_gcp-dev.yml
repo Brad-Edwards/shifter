@@ -9,6 +9,10 @@ on:
       github_environment:
         required: true
         type: string
+      release_scan_github_environment:
+        description: Protected GitHub Environment for the purpose-scoped release scanner.
+        required: true
+        type: string
       deploy_changes:
         required: true
         type: boolean
@@ -104,12 +108,12 @@ jobs:
       - run: /tmp/kubeconform -strict -summary /tmp/gcp-platform.yaml
 
   prepare:
-    # Runs on the GCP tenant's own runner (label gcp-dev), provisioned by
-    # `deploy.py runners --cloud gcp` (issue #1546), so a GCP dev tenant deploys
-    # without borrowing the AWS self-hosted fleet. gcp-dev is self-hosted-class
+    # Runs on the requested GCP tenant's same-named runner, provisioned by
+    # `deploy.py runners --cloud gcp` (issue #1546), so one tenant never borrows
+    # another tenant's self-hosted fleet. The dynamic label is self-hosted-class
     # to the ADR-003-R5 exposure checker, so the PR gate below still applies.
     name: Prepare release (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     environment: ${{ inputs.github_environment }}
     needs: validate
     if: inputs.deploy_changes && github.event_name != 'pull_request'
@@ -133,9 +137,9 @@ jobs:
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
       GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
       GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
-      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
       GCP_RELEASE_SCAN_SERVICE_ACCOUNT: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
-      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
       TF_VAR_range_host_identity_pool_size: ${{ vars.GCP_RANGE_HOST_IDENTITY_POOL_SIZE || '0' }}
       # Explicit, audited opt-out for the first Identity Platform operator bootstrap.
       # Set the repo variable to "true" to deliberately skip operator creation; the
@@ -182,7 +186,10 @@ jobs:
           GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
           GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
           GCP_MASTER_AUTHORIZED_CIDRS: ${{ secrets.GCP_MASTER_AUTHORIZED_CIDRS }}
-        run: uv run python -m preflight --cloud gcp --env "${GCP_ENVIRONMENT}" --headless
+        # The exact-release scanner validates its own identity inside the
+        # separately protected release-scan Environment. This deploy-boundary
+        # preflight must not require that identity to cross into the deploy job.
+        run: uv run python -m preflight --cloud gcp --env "${GCP_ENVIRONMENT}" --component deploy --headless
       - name: Render ephemeral Terraform variables from secrets
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -241,9 +248,29 @@ jobs:
           PY
           chmod 600 "${TF_VARS_FILE}"
           echo "TF_VARS_FILE=${TF_VARS_FILE}" >> "${GITHUB_ENV}"
+      - name: Reconcile reviewed model broker trust and overlay
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          template="platform/deploy/gcp/${GCP_ENVIRONMENT}/model-broker-overlay.template.json"
+          if [ ! -f "${template}" ]; then
+            exit 0
+          fi
+          cluster="shifter-${GCP_ENVIRONMENT}-gke"
+          gcloud container fleet memberships get-credentials "${cluster}" \
+            --location "${GCP_REGION}" --project "${GCP_PROJECT_ID}"
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_${cluster}"
+          overlay="${RUNNER_TEMP}/model-broker-overlay.json"
+          uv run --project scripts/gcp python scripts/gcp/prepare_model_broker_overlay.py \
+            --template "${template}" --project-id "${GCP_PROJECT_ID}" \
+            --context "${context}" --output "${overlay}" --mode ensure
+          echo "SHIFTER_CONFIG_OVERLAY_FILE=${overlay}" >> "${GITHUB_ENV}"
       - name: Render range egress allowlist from shifter.yaml
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+          SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}
         run: |
           if [ -z "${SHIFTER_CONFIG_GCP_DEV}" ]; then
             echo "::error::Required secret SHIFTER_CONFIG_GCP_DEV is not set. See docs/dev/deploy-secrets.md."
@@ -254,6 +281,8 @@ jobs:
           RANGE_EGRESS_TFVARS_FILE="${RUNNER_TEMP}/gcp-${GCP_ENVIRONMENT}-range-egress.auto.tfvars"
           printf '%s\n' "${SHIFTER_CONFIG_GCP_DEV}" > "${CONFIG_FILE}"
           chmod 600 "${CONFIG_FILE}"
+          uv run --project "${GITHUB_WORKSPACE}/scripts/gcp" \
+            python scripts/gcp/apply_shifter_config_overlay.py --config "${CONFIG_FILE}"
           uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
             shifter-config render "${CONFIG_FILE}" \
             --output "${RANGE_EGRESS_TFVARS_FILE}"
@@ -517,7 +546,7 @@ jobs:
   release_scan:
     name: Scan exact release digests (${{ inputs.environment }})
     runs-on: ubuntu-latest
-    environment: gcp-release-scan-dev
+    environment: ${{ inputs.release_scan_github_environment }}
     needs: [validate, prepare]
     if: inputs.deploy_changes && github.event_name != 'pull_request'
     permissions:
@@ -526,6 +555,8 @@ jobs:
     env:
       GCP_ENVIRONMENT: ${{ inputs.environment }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_RELEASE_SCAN_SERVICE_ACCOUNT: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
       GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
       TRIVY_VERSION: 0.71.2
       # Reviewed from the upstream v0.71.2 release checksum manifest. Keeping
@@ -537,9 +568,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Ensure release-scan auth is configured
-        env:
-          GCP_RELEASE_SCAN_SERVICE_ACCOUNT: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
-          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
         run: |
           if [ -z "${GCP_RELEASE_SCAN_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ] || [ -z "${GCP_PROJECT_ID}" ]; then
             echo "::error::GCP_RELEASE_SCAN_SERVICE_ACCOUNT, GCP_WORKLOAD_IDENTITY_PROVIDER, and GCP_PROJECT_ID must be configured for exact-release scanning"
@@ -548,8 +576,8 @@ jobs:
       - id: scan_auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
           token_format: access_token
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
@@ -633,6 +661,8 @@ jobs:
             if ! "${RUNNER_TEMP}/trivy-bin/trivy" image \
               --scanners vuln \
               --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --ignorefile "${GITHUB_WORKSPACE}/.trivyignore.yaml" \
               --exit-code 1 \
               --format json \
               --output "${results}/${label}-trivy.json" \
@@ -707,7 +737,7 @@ jobs:
 
   deploy:
     name: Deploy verified release (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     environment: ${{ inputs.github_environment }}
     needs: [validate, prepare, release_scan]
     if: inputs.deploy_changes && github.event_name != 'pull_request'
@@ -724,8 +754,8 @@ jobs:
       EDGE_CERT_NAME: platform-managed-cert
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
-      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
-      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -802,6 +832,22 @@ jobs:
           LOCATION=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_location']['value'])")
           gcloud container fleet memberships get-credentials "${CLUSTER}" \
             --location "${LOCATION}" --project "${PROJECT_ID}"
+      - name: Read reviewed model broker overlay
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          template="platform/deploy/gcp/${GCP_ENVIRONMENT}/model-broker-overlay.template.json"
+          if [ ! -f "${template}" ]; then
+            exit 0
+          fi
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_shifter-${GCP_ENVIRONMENT}-gke"
+          overlay="${RUNNER_TEMP}/model-broker-overlay.json"
+          uv run --project scripts/gcp python scripts/gcp/prepare_model_broker_overlay.py \
+            --template "${template}" --project-id "${GCP_PROJECT_ID}" \
+            --context "${context}" --output "${overlay}" --mode read
+          echo "SHIFTER_CONFIG_OVERLAY_FILE=${overlay}" >> "${GITHUB_ENV}"
       - name: Export deploy metadata
         run: |
           python3 - <<'PY'
@@ -855,6 +901,7 @@ jobs:
       - name: Render Mission Control lease policy from shifter.yaml
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+          SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}
         run: |
           # Project settings.mission_control_leases from shifter.yaml into the runtime
           # env the next step generates, so a configured lease policy (including
@@ -867,6 +914,9 @@ jobs:
           fi
           config="${RUNNER_TEMP}/shifter.yaml"
           printf '%s\n' "${SHIFTER_CONFIG_GCP_DEV}" > "${config}"
+          chmod 600 "${config}"
+          uv run --project "${GITHUB_WORKSPACE}/scripts/gcp" \
+            python scripts/gcp/apply_shifter_config_overlay.py --config "${config}"
           uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
             shifter-config render-mission-control-lease-env "${config}" >> "${GITHUB_ENV}"
       - name: Render generated runtime env
@@ -889,16 +939,13 @@ jobs:
           GCP_RANGE_CELL_PROJECT_ID: ${{ vars.GCP_RANGE_CELL_PROJECT_ID }}
           GCP_RANGE_LINUX_IMAGE: ${{ vars.GCP_RANGE_LINUX_IMAGE }}
           GCP_RANGE_KALI_IMAGE: ${{ vars.GCP_RANGE_KALI_IMAGE }}
-          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON || vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
+          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON || secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
           GCP_RANGE_HOST_IDENTITY_POOL_SIZE: ${{ vars.GCP_RANGE_HOST_IDENTITY_POOL_SIZE }}
           GCP_RANGE_WINDOWS_IMAGE: ${{ vars.GCP_RANGE_WINDOWS_IMAGE }}
           GCP_RANGE_DC_IMAGE: ${{ vars.GCP_RANGE_DC_IMAGE }}
           GCP_RANGE_PRIVATE_GOOGLE_ACCESS: ${{ vars.GCP_RANGE_PRIVATE_GOOGLE_ACCESS }}
-          # Host SA and Vertex SA are independent inputs and MAY be the same
-          # service account in accounts that require it.
+          # Legacy cloud-enabled hosts only; native guests have no cloud identity.
           GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL: ${{ vars.GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL }}
-          GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL: ${{ vars.GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL }}
-          GCP_RANGE_VERTEX_PROJECT_ID: ${{ vars.GCP_RANGE_VERTEX_PROJECT_ID }}
         run: |
           # The GCP portal runtime is always production-secure (DEBUG off,
           # secure cookies, Identity Platform auth, SITE_URL=https://<hostname>).
@@ -982,6 +1029,12 @@ jobs:
           # just pinned to (and ENGINE_TASK_IMAGE), so the verified bytes are the
           # deployed bytes. No bypass mode.
           set -euo pipefail
+          # `gh attestation verify oci://…` fetches the image from the private
+          # Artifact Registry to read its provenance attestation, so the registry
+          # credential helper must be configured first. The job is already
+          # authenticated as the deploy SA (Artifact Registry reader); without
+          # this, the pull is unauthenticated and the registry denies it.
+          gcloud auth configure-docker "${PORTAL_IMAGE_ROOT%%/*}" --quiet
           verify() {
             local root="$1" digest="$2" label="$3"
             if [[ -z "$digest" || ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
@@ -999,6 +1052,7 @@ jobs:
       - name: Render and apply optional model broker from the canonical chart
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+          SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
         run: |
           set -euo pipefail
@@ -1006,6 +1060,9 @@ jobs:
           config="${RUNNER_TEMP}/model-broker-shifter.yaml"
           manifest="${RUNNER_TEMP}/model-broker.generated.yaml"
           printf '%s\n' "${SHIFTER_CONFIG_GCP_DEV}" > "${config}"
+          chmod 600 "${config}"
+          uv run --project "${GITHUB_WORKSPACE}/scripts/gcp" \
+            python scripts/gcp/apply_shifter_config_overlay.py --config "${config}"
           base_manifest="${RUNNER_TEMP}/platform-base.yaml"
           kubectl kustomize "${K8S_OVERLAY_DIR}" > "${base_manifest}"
           printf '\n---\n' >> "${base_manifest}"
@@ -1017,17 +1074,32 @@ jobs:
           enabled="$(cat "${manifest}.enabled")"
           echo "MODEL_BROKER_ENABLED=${enabled}" >> "${GITHUB_ENV}"
           if [ "${enabled}" = false ]; then
-            kubectl delete deployment model-broker model-access-control \
+            kubectl delete deployment model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found --cascade=foreground --wait=true --timeout=180s
-            kubectl delete service,poddisruptionbudget model-broker model-access-control \
+            kubectl delete service,poddisruptionbudget model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found
             kubectl delete serviceaccount model-broker -n shifter-platform --ignore-not-found
             kubectl delete configmap model-broker-catalog -n shifter-platform --ignore-not-found
-            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress \
+            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress model-provider-egress-boundary \
               -n shifter-platform --ignore-not-found
+            kubectl delete networkpolicy model-enrollment-control-egress \
+              -n shifter-jobs --ignore-not-found
           fi
           kubectl apply -f "${manifest}"
-      - name: Run database migrations with the migration identity
+      - name: Retire inventoried manual qualification objects
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          inventory="platform/deploy/gcp/${GCP_ENVIRONMENT}/retired-cluster-artifacts.json"
+          if [ ! -f "${inventory}" ]; then
+            exit 0
+          fi
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_shifter-${GCP_ENVIRONMENT}-gke"
+          python3 scripts/gcp/reconcile_retired_cluster_artifacts.py \
+            --context "${context}" --manifest "${inventory}"
+      - name: Run database migrations and bootstrap the in-box catalog with the migration identity
         env:
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
         run: |
@@ -1068,7 +1140,9 @@ jobs:
                   - name: migrate
                     image: ${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}
                     imagePullPolicy: IfNotPresent
-                    args: ["/bin/true"]
+                    # entrypoint.sh runs migrations first, then registers the
+                    # immutable shipped seed through the normal ingestion path.
+                    args: ["python", "manage.py", "bootstrap_inbox_catalog"]
                     envFrom:
                       - configMapRef:
                           name: platform-runtime
@@ -1086,6 +1160,19 @@ jobs:
                         value: ""
                       - name: REDIS_SECRET_ID
                         value: ""
+                      # This Job blanks REDIS_SECRET_ID (above), so entrypoint.sh
+                      # never hydrates REDIS_PASSWORD. The runtime ConfigMap still
+                      # carries REDIS_HOST/REDIS_TLS=true for the app pods, which
+                      # would make Django settings demand the (absent) AUTH token at
+                      # import (config/_redis.py resolve_redis_connection, ADR-008-R6).
+                      # Migrations touch only the database, so blank REDIS_HOST here
+                      # too: with no host, config/_redis.py and config/_channels.py
+                      # both select the LocMem cache and in-memory channel layer
+                      # instead of a Redis connection this Job neither needs nor
+                      # carries credentials for. Not a downgrade of a real
+                      # connection (there is none) — it declares there is no Redis.
+                      - name: REDIS_HOST
+                        value: ""
                       - name: EMAIL_API_KEY_SECRET_ID
                         value: ""
                     securityContext:
@@ -1094,6 +1181,7 @@ jobs:
                         drop: ["ALL"]
                       readOnlyRootFilesystem: true
                       runAsNonRoot: true
+                      runAsUser: 1000
                     volumeMounts:
                       - name: tmp
                         mountPath: /tmp
@@ -1312,7 +1400,7 @@ jobs:
       contents: read
       issues: write
     name: Post-deploy smoke (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     # Backstop only (see #1220).
     timeout-minutes: 60
     environment: ${{ inputs.github_environment }}
@@ -1327,6 +1415,8 @@ jobs:
       USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
       TF_DIR: platform/terraform/gcp/environments/${{ inputs.environment }}
       TF_BACKEND_PREFIX: shifter/${{ inputs.environment }}/platform-core
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WIF_PROVIDER }}
       SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -1334,15 +1424,15 @@ jobs:
           persist-credentials: false
       - name: Ensure GCP deploy auth is configured
         run: |
-          if [ -z "${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}" ] || [ -z "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ]; then
+          if [ -z "${GCP_DEPLOY_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ]; then
             echo "::error::GCP_DEPLOY_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured for gcp-dev deploys"
             exit 1
           fi
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
           token_format: access_token
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:

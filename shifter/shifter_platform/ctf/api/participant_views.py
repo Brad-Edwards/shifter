@@ -223,7 +223,7 @@ class ParticipantProfileView(APIView):
             )
         except CTFValidationError as exc:
             return api_error_response(
-                code="invalid", message=str(exc), status_code=status.HTTP_400_BAD_REQUEST, request=request
+                code="invalid", message=exc.message, status_code=status.HTTP_400_BAD_REQUEST, request=request
             )
         return Response(ParticipantProfileSerializer(projections.participant_profile(updated)).data)
 
@@ -254,7 +254,7 @@ class ParticipantUsernameSelfView(APIView):
             )
         except CTFValidationError as exc:
             return api_error_response(
-                code="invalid", message=str(exc), status_code=status.HTTP_400_BAD_REQUEST, request=request
+                code="invalid", message=exc.message, status_code=status.HTTP_400_BAD_REQUEST, request=request
             )
         return Response(ParticipantProfileSerializer(projections.participant_profile(updated)).data)
 

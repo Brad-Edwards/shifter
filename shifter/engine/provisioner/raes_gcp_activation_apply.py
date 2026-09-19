@@ -19,7 +19,9 @@ from raes_gcp_apply import (
     _realize_directory,
 )
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
+from raes_guest_plan import assert_management_login_separate
 from raes_operating_system import validate_operating_systems
+from raes_participant_host_keys import observe_participant_host_keys
 from raes_plan import RaesPlan, RaesPlanNode
 from raes_snapshot import snapshot_resources
 
@@ -51,6 +53,8 @@ def realize_existing_cell(
             allocated_network_cidrs=runtime.allocated_network_cidrs,
         ),
     )
+    for instance in plan["instances"]:
+        assert_management_login_separate(raes_plan, instance["uuid"].rsplit("#", 1)[0], instance["host_ssh_username"])
     outputs = _provision_raes_resources(
         plan,
         runtime,
@@ -67,6 +71,7 @@ def realize_existing_cell(
     )
     verified.update(item.address for item in raes_plan.content if item.source_name)
     verified.update(feature.address for feature in raes_plan.features)
+    observe_participant_host_keys(outputs)
     verified.update(runtime.composition_verifier(raes_plan, outputs))
     operating_systems = runtime.operating_system_observer(raes_plan, outputs)
     validate_operating_systems(raes_plan, operating_systems)

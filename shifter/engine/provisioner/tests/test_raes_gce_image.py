@@ -12,7 +12,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from raes_gce_image import RaesGceImageError, resolve_gce_image
+from shared.runtime_plugin_binding import RuntimeTargetImageProfile
+
+from raes_gce_image import RaesGceImageError, resolve_gce_image, resolve_gce_image_from_runtime_profile
 from raes_plan import RaesPlanImage, RaesPlanNode
 
 
@@ -40,6 +42,67 @@ def _candidate(version: str, image_ref: str, **extra) -> dict:
 
 
 class TestRegistryResolution:
+    def test_adapter_target_profile_is_a_first_class_image_source(self):
+        runtime = RuntimeTargetImageProfile(
+            provider="gcp",
+            image_kind="machine-image",
+            image_ref="projects/example/global/machineImages/nested-host-v1",
+            machine_type="e2-standard-8",
+            bootstrap_capability="preconfigured-machine-host",
+            management_ssh_username="host-admin",
+            participant_container_name="participant-desktop",
+            participant_username="student",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
+        assert profile.source_machine_image == runtime.image_ref
+        assert profile.machine_type == "e2-standard-8"
+
+    def test_adapter_target_profile_preserves_prepromoted_directory_contract(self):
+        runtime = RuntimeTargetImageProfile(
+            provider="gcp",
+            image_ref="projects/example/global/images/directory-v1",
+            bootstrap_capability="prepromoted-domain-controller",
+            domain_dns_name="example.test",
+            domain_netbios_name="EXAMPLE",
+        )
+        profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
+        assert profile.source_image == runtime.image_ref
+        assert profile.bootstrap_capability == "prepromoted-domain-controller"
+        assert profile.domain_dns_name == "example.test"
+        assert profile.domain_netbios_name == "EXAMPLE"
+
+    def test_machine_host_profile_is_resolved_from_tenant_registry(self):
+        node = _node(image=RaesPlanImage(name="nested-host"))
+        candidate = _candidate("", "projects/example/global/machineImages/nested-host-v1")
+        candidate.update(
+            {
+                "image_kind": "machine-image",
+                "bootstrap_capability": "preconfigured-machine-host",
+                "management_ssh_username": "host-admin",
+                "participant_container_name": "participant-desktop",
+                "participant_username": "student",
+                "participant_readiness_contract": "participant-readiness/v1",
+                "participant_readiness_manifest_sha256": "a" * 64,
+            }
+        )
+        profile = resolve_gce_image(node, [candidate])
+        assert profile.source_image == ""
+        assert profile.source_machine_image.endswith("/machineImages/nested-host-v1")
+        assert profile.bootstrap_capability == "preconfigured-machine-host"
+        assert profile.participant_container_name == "participant-desktop"
+        assert profile.host_ssh_username == "host-admin"
+
+    @pytest.mark.parametrize("image", [None, RaesPlanImage(name="container-host")])
+    def test_registry_management_port_is_preserved(self, image):
+        candidate = _candidate("", "projects/x/global/images/container-host")
+        candidate["management_ssh_port"] = 2222
+        candidate["management_ssh_username"] = "image-admin"
+        profile = resolve_gce_image(_node(image=image), [candidate])
+        assert profile.host_ssh_port == 2222
+        assert profile.host_ssh_username == "image-admin"
+
     def test_exact_version_uses_registry_image_and_sizing(self):
         node = _node(image=RaesPlanImage(name="kali", version="2024.1"))
         candidates = [

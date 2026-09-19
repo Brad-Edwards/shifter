@@ -101,6 +101,7 @@ class WarmClaimRequest:
     #: resolved only after a warm generation is claimed inside this transaction.
     enforced_deadline: datetime | None = None
     model_launch_scope: ModelLaunchScope | None = None
+    model_sources: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -236,6 +237,20 @@ def _run_atomic_claim(request: WarmClaimRequest, candidates: list[tuple[str, str
     return outcome
 
 
+def _can_claim_base_range(request: WarmClaimRequest) -> bool:
+    """Require workspace authority and cold admission for any adapter binding."""
+    # Warm compatibility currently describes the base realization only. A pack
+    # with any plugin selection (including disabled/retired) must go through cold
+    # admission; otherwise a ready base image could silently skip its adapter.
+    from engine.services import has_runtime_plugin_binding
+    from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+    authorization = authorize_bound_workspace(request.user, request.workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+    if authorization.organization_uuid is None:
+        return False
+    return not has_runtime_plugin_binding(authorization.organization_uuid, request.scenario)
+
+
 def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | None = None) -> UUID | None:
     """Attempt to claim a compatible ready warm generation for this launch.
 
@@ -247,7 +262,7 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     from shared.warm_pool.metrics import CLAIM_HIT, emit_claim_outcome
 
     candidates = _resolve_claim_candidates(request, override)
-    if not candidates:
+    if not candidates or not _can_claim_base_range(request):
         return None
     outcome = _run_atomic_claim(request, candidates)
     if outcome is None:
@@ -279,7 +294,8 @@ def _admit_claim_models(
     instance.model_launch_scope = (
         request.model_launch_scope.model_dump(mode="json") if request.model_launch_scope else None
     )
-    instance.save(update_fields=["model_launch_scope"])
+    instance.model_sources = request.model_sources or {}
+    instance.save(update_fields=["model_launch_scope", "model_sources"])
     (view,) = resolve_model_access_range_views(request_uuids=(generation.request_id,))
     prepare_model_access_for_dispatch(generation.request_id, range_id=view.range_uuid, renew=True)
     enqueue_range_activation(generation.request_id)

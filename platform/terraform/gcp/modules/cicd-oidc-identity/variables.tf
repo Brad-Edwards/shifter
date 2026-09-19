@@ -46,7 +46,7 @@ variable "build_roles" {
 }
 
 variable "build_read_bucket_names" {
-  description = "Existing input buckets the Packer build identity may read, such as the Polaris stack bucket."
+  description = "Existing platform image input buckets the Packer build identity may read."
   type        = set(string)
   default     = []
 }
@@ -162,6 +162,12 @@ variable "destroy_roles" {
     "roles/monitoring.editor",
     "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
+    # Teardown must DELETE the dynamic-secret custom role definitions (portal/iam:
+    # shifterDynamicSecretCreator / shifterDynamicSecretLifecycle) and the packer
+    # image-export custom role. projectIamAdmin manages IAM bindings, not iam.roles.*
+    # on custom-role definitions, so destroy fails with IAM_PERMISSION_DENIED reading
+    # projects/<p>/roles/<custom>. Mirrors the deploy_roles grant above (#2258, #2228).
+    "roles/iam.roleAdmin",
   ]
 }
 

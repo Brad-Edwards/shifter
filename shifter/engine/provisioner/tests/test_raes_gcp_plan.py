@@ -7,7 +7,6 @@ image profile, neutral labels only), and fail-loud placement errors. The image
 resolver is injected (pure), so no registry/DB is touched.
 """
 
-import dataclasses
 import sys
 from pathlib import Path
 
@@ -16,7 +15,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
-    GCE_BOOTSTRAP_POLARIS_HOST,
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_PARTICIPANT_READINESS_CONTRACT_V1,
     GCERangeCellConfig,
@@ -30,7 +28,13 @@ from raes_identity import RESERVED_MANAGEMENT_LOGIN
 from raes_plan import RaesPlan, RaesPlanAcl, RaesPlanImage, RaesPlanNetwork, RaesPlanNode, RaesPlanServicePort
 
 
-def _config(*, network_mode: str = "vpc-per-range", network_id: str = "") -> GCERangeCellConfig:
+def _config(
+    *,
+    network_mode: str = "vpc-per-range",
+    network_id: str = "",
+    service_account_email: str = "",
+    model_broker_vip: str = "",
+) -> GCERangeCellConfig:
     return GCERangeCellConfig(
         project_id="proj-1",
         region="us-east1",
@@ -38,6 +42,8 @@ def _config(*, network_mode: str = "vpc-per-range", network_id: str = "") -> GCE
         network_mode=network_mode,
         network_id=network_id,
         portal_network_cidrs=("203.0.113.0/24",),
+        service_account_email=service_account_email,
+        model_broker_vip=model_broker_vip,
     )
 
 
@@ -81,6 +87,16 @@ def _resolver(profile: GCERangeImageProfile | None = None):
 
 
 class TestNetworkMode:
+    def test_management_ssh_port_reaches_instance_and_management_firewall(self):
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/container-host", host_ssh_port=2222, host_ssh_username="image-admin"
+        )
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), _config())
+        assert plan["instances"][0]["ssh_port"] == 2222
+        assert plan["instances"][0]["host_ssh_username"] == "image-admin"
+        management = [rule for rule in plan["firewalls"] if rule["priority"] == 900]
+        assert any("2222" in entry.get("ports", []) for rule in management for entry in rule.get("allowed", []))
+
     def test_vpc_per_range_manages_its_own_network(self):
         plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config())
         assert plan["manage_network"] is True
@@ -385,7 +401,23 @@ class TestInstances:
         assert instance["role"] == "raes-node"
         assert instance["os_type"] == "linux"
         assert instance["profile"].source_image == "projects/x/global/images/kali-1"
+        # No range host identity configured -> nothing to attach.
         assert instance["attach_service_account"] is False
+
+    def test_range_host_identity_attaches_by_default_for_model_access(self):
+        """ADR-064: guests get the keyless range host identity by default so they reach Vertex."""
+        config = _config(service_account_email="sh-range-host@proj-1.iam.gserviceaccount.com")
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
+        assert plan["instances"][0]["attach_service_account"] is True
+
+    def test_broker_active_leaves_guests_identity_less(self):
+        """ADR-059/ADR-064: when the broker is the model path, guests hold no cloud identity."""
+        config = _config(
+            service_account_email="sh-range-host@proj-1.iam.gserviceaccount.com",
+            model_broker_vip="10.60.0.10",
+        )
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
+        assert plan["instances"][0]["attach_service_account"] is False
 
     def test_count_fans_out_to_distinct_instances_and_ips(self):
         node = _node(count=3)
@@ -416,22 +448,6 @@ class TestInstances:
         assert instance["host_ssh_username"] == "raes"
         assert instance["ssh_port"] == 22
 
-    def test_polaris_docker_host_is_driven_on_the_configured_mgmt_channel(self):
-        """The pre-baked Docker host's management sshd is ubuntu@mgmt-port, not raes@22.
-
-        :22 belongs to the published container, so guest setup must target the
-        host mgmt port sourced from config -- proven by a non-default port.
-        """
-        profile = GCERangeImageProfile(
-            source_image="projects/x/global/images/polaris-vm",
-            bootstrap_capability=GCE_BOOTSTRAP_POLARIS_HOST,
-        )
-        config = dataclasses.replace(_config(), host_mgmt_ssh_port=2200)
-        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), config)
-        instance = plan["instances"][0]
-        assert instance["host_ssh_username"] == "ubuntu"
-        assert instance["ssh_port"] == 2200
-
     def test_prepromoted_dc_is_driven_as_windows_administrator(self):
         """A promoted DC has no local SAM, so raes@22 is refused.
 
@@ -439,7 +455,7 @@ class TestInstances:
         the Windows boot script's administrators_authorized_keys.
         """
         profile = GCERangeImageProfile(
-            source_image="projects/x/global/images/polaris-dc",
+            source_image="projects/x/global/images/directory-server",
             bootstrap_capability="prepromoted-domain-controller",
         )
         plan = build_raes_range_cell_plan(
@@ -448,11 +464,10 @@ class TestInstances:
         instance = plan["instances"][0]
         assert instance["host_ssh_username"] == "Administrator"
         assert instance["ssh_port"] == 22
-        # The DC holds no attached identity; only the polaris docker-host does.
+        # Authored guests hold no attached cloud identity.
         assert instance["attach_service_account"] is False
 
-    def test_preconfigured_machine_host_is_rejected_before_raes_realization(self):
-        """RAES cannot publish READY without the participant image canary."""
+    def test_preconfigured_machine_host_carries_participant_readiness(self):
         profile = GCERangeImageProfile(
             source_machine_image="projects/proj-1/global/machineImages/participant-v1",
             bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
@@ -466,8 +481,12 @@ class TestInstances:
         resolver = _resolver(profile)
         config = _config()
 
-        with pytest.raises(RaesGcePlanError, match="participant readiness"):
-            build_raes_range_cell_plan("req-1", 7, plan, resolver, config)
+        rendered = build_raes_range_cell_plan("req-1", 7, plan, resolver, config)
+        instance = rendered["instances"][0]
+        assert instance["profile"].source_machine_image.endswith("/machineImages/participant-v1")
+        assert instance["ssh_username"] == "analyst"
+        assert instance["host_ssh_username"] == "operator"
+        assert instance["attach_service_account"] is False
 
 
 class TestPlacementErrors:

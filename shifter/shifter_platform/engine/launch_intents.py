@@ -383,6 +383,9 @@ def _materialize_operation_input(payload: dict[str, object], operation_id: UUID)
         contract_version=envelope["contract_version"],
         envelope=envelope,
     )
+    from engine.services._runtime_plugin_operations import queue_runtime_plugin_plans
+
+    queue_runtime_plugin_plans(envelope)
 
 
 def _assert_stored_intent_matches(payload: dict[str, object], operation_id: UUID) -> None:

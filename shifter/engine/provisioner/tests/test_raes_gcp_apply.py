@@ -17,11 +17,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import raes_gcp_polaris
 from config import GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
-from gcp_range_cell_credentials import GCEVertexCredentialOps
 from raes_account_credentials import RaesAccountCredentialOps, install_instance_account_credentials
 from raes_active_directory import RaesDirectorySecretOps
 from raes_gcp_apply import (
@@ -80,6 +78,22 @@ def _resolver(node):
     return GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1")
 
 
+@pytest.mark.parametrize("phase", ["runtime_plugin", "model_enrollment"])
+def test_plugin_failure_enters_resource_and_secret_cleanup_before_readiness(phase):
+    from runtime_plugin_execution import RuntimePluginExecutionError
+
+    clients = _clients(exists=True)
+    secrets, secret_calls = _secret_ops()
+    plugin = MagicMock(side_effect=RuntimePluginExecutionError("Runtime plugin guest execution failed"))
+    composition = MagicMock()
+    options = _apply_options(_config(), clients, secrets, **{phase: plugin}, composition_verifier=composition)
+    with pytest.raises(RuntimePluginExecutionError):
+        apply_raes_range_cell("req-plugin", 7, _plan(), _resolver, options)
+    assert clients.instances.delete.call_count == 2
+    assert secret_calls.delete_ssh.call_count == 2
+    composition.assert_not_called()
+
+
 def _clients(*, exists: bool = False, instance_insert_error: Exception | None = None) -> SimpleNamespace:
     def get_side_effect(**_kwargs):
         if exists:
@@ -121,14 +135,6 @@ def _secret_ops() -> tuple[RaesGceSecretOps, SimpleNamespace]:
     return RaesGceSecretOps(ensure_ssh=mocks.ensure_ssh, delete_ssh=mocks.delete_ssh), mocks
 
 
-def _vertex_ops() -> tuple[GCEVertexCredentialOps, SimpleNamespace]:
-    mocks = SimpleNamespace(
-        ensure=MagicMock(return_value="projects/proj-1/secrets/shifter-range-7-vertex-key"),
-        delete=MagicMock(),
-    )
-    return GCEVertexCredentialOps(ensure=mocks.ensure, delete=mocks.delete), mocks
-
-
 def _apply_options(
     config: GCERangeCellConfig,
     clients: SimpleNamespace,
@@ -136,7 +142,6 @@ def _apply_options(
     **overrides,
 ) -> RaesGceApplyOptions:
     """Build injectable RAES apply options for fake-GCP tests."""
-    overrides.setdefault("vertex_ops", _vertex_ops()[0])
     overrides.setdefault(
         "composition_verifier",
         lambda plan, _outputs: frozenset(
@@ -180,6 +185,27 @@ def test_missing_guest_os_evidence_fails_apply_and_cleans_up():
     # This fake reports every resource absent on readback. Cleanup must still
     # revisit both guests; absent resources need no delete call.
     assert clients.instances.get.call_count == 4
+
+
+def test_enrolled_guest_gets_exact_broker_firewall_before_enrollment():
+    clients = _clients()
+    secrets, _ = _secret_ops()
+    cfg = replace(_config(), model_broker_vip="10.20.0.9")
+
+    def enroll(_plan, _outputs):
+        rules = [call.kwargs["firewall_resource"] for call in clients.firewalls.insert.call_args_list]
+        broker = [rule for rule in rules if rule.get("destination_ranges") == ["10.20.0.9/32"]]
+        assert len(broker) == 1
+        assert broker[0]["allowed"] == [{"I_p_protocol": "tcp", "ports": ["443"]}]
+
+    options = _apply_options(
+        cfg,
+        clients,
+        secrets,
+        model_enrollment=enroll,
+        model_broker={"contract_version": "model-broker-egress/v1", "vip": "10.20.0.9", "port": 443},
+    )
+    apply_raes_range_cell("req-broker", 7, _plan(), _resolver, options)
 
 
 def _account_secret_ops() -> tuple[RaesAccountCredentialOps, SimpleNamespace]:
@@ -280,38 +306,6 @@ def _plan_with_domain(*, include_local: bool = False) -> RaesPlan:
         accounts=(authority, service, *((local_operator,) if include_local else ())),
         domains=(domain,),
     )
-
-
-class TestVertexCredential:
-    def test_mints_per_range_vertex_key_and_persists_ref_when_configured(self):
-        """Polaris' in-container agent needs a per-range Vertex key.
-
-        When a Vertex SA is configured, the apply mints the key (granting the
-        attached range-cell SA secretAccessor) and persists the ref on every
-        instance output, mirroring the legacy scenario path.
-        """
-        clients = _clients()
-        secret_ops, _ = _secret_ops()
-        vertex_ops, vertex_mocks = _vertex_ops()
-        config = replace(_config(), vertex_service_account_email="vertex@proj-1.iam.gserviceaccount.com")
-        output = apply_raes_range_cell(
-            "req-1", 7, _plan(), _resolver, _apply_options(config, clients, secret_ops, vertex_ops=vertex_ops)
-        )
-        vertex_mocks.ensure.assert_called_once_with(
-            7, "vertex@proj-1.iam.gserviceaccount.com", "proj-1", "host@proj-1.iam.gserviceaccount.com"
-        )
-        for instance in output["instances"]:
-            assert instance["gcp_vertex_secret_ref"] == "projects/proj-1/secrets/shifter-range-7-vertex-key"
-
-    def test_no_vertex_key_when_tenant_configures_no_vertex_sa(self):
-        clients = _clients()
-        secret_ops, _ = _secret_ops()
-        vertex_ops, vertex_mocks = _vertex_ops()
-        # Default _config() has no vertex_service_account_email.
-        apply_raes_range_cell(
-            "req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops, vertex_ops=vertex_ops)
-        )
-        vertex_mocks.ensure.assert_not_called()
 
 
 class TestApply:
@@ -851,6 +845,30 @@ def test_normal_apply_path_realizes_both_account_auth_methods_without_output_exp
     assert "projects/proj-1/secrets/password" not in repr(output)
 
 
+def test_participant_projection_uses_only_the_selected_verified_account():
+    from raes_access import RealizedAccessBinding
+    from raes_gcp_apply import _publish_participant_access
+
+    output = {
+        "public_key": "management-public-key",
+        "_verified_account_public_keys": {"account.selected": "participant-key", "account.other": "other-key"},
+    }
+    binding = RealizedAccessBinding("node.web", "ssh", "account.selected", "participant", "key")
+    _publish_participant_access(output, (binding,), {"account.selected": "participant-secret-ref"})
+    assert output["participant_ssh_public_key"] == "participant-key"
+    assert output["ssh_key_secret_arn"] == "participant-secret-ref"
+    assert "_verified_account_public_keys" not in output
+    assert "other-key" not in repr(output)
+
+
+def test_undeclared_account_public_keys_are_not_published():
+    from raes_gcp_apply import _publish_participant_access
+
+    output = {"public_key": "management-public-key", "_verified_account_public_keys": {"account.other": "other-key"}}
+    _publish_participant_access(output, (), {"account.other": "other-secret-ref"})
+    assert output == {"public_key": "management-public-key"}
+
+
 class TestAccountCredentialIntegration:
     def test_installs_each_target_account_on_every_concrete_node_instance(self):
         account = RaesPlanAccount(
@@ -1003,9 +1021,7 @@ class TestServiceFirewallLifecycle:
             "req-1",
             7,
             _plan_with_service(),
-            RaesGceDestroyOptions(
-                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
-            ),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
         )
         deleted = {call.kwargs.get("firewall") for call in clients.firewalls.delete.call_args_list}
         assert service_names[0] in deleted
@@ -1016,12 +1032,7 @@ class TestDestroy:
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
         destroy_raes_range_cell(
-            "req-1",
-            7,
-            _plan(),
-            RaesGceDestroyOptions(
-                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
-            ),
+            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops)
         )
 
         assert clients.instances.delete.call_count == 2
@@ -1045,7 +1056,6 @@ class TestDestroy:
                 config=_config("shared-vpc"),
                 clients=clients,
                 secret_ops=secret_ops,
-                vertex_ops=_vertex_ops()[0],
                 allocated_network_cidrs=(("net.lan", "10.90.1.0/24"),),
             ),
         )
@@ -1065,7 +1075,6 @@ class TestDestroy:
                 config=_config(),
                 clients=clients,
                 secret_ops=ssh_ops,
-                vertex_ops=_vertex_ops()[0],
                 account_secret_ops=account_ops,
             ),
         )
@@ -1089,9 +1098,7 @@ class TestDestroy:
             "req-1",
             7,
             _plan_with_content(content),
-            RaesGceDestroyOptions(
-                config=_config(), clients=clients, secret_ops=secret_ops, vertex_ops=_vertex_ops()[0]
-            ),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
         )
 
         assert clients.instances.delete.call_count == 1
@@ -1129,6 +1136,39 @@ def _access_transport(channel: str = "ssh") -> dict:
 
 class TestParticipantAccessRealization:
     """A declared endpoint reaches the output only with a verified credential (#1710)."""
+
+    @pytest.mark.parametrize("warm", [False, True])
+    def test_participant_identity_readback_failure_prevents_readiness(self, monkeypatch, warm):
+        from raes_gcp_apply import realize_access_on_existing_cell
+
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        account_ops, _ = _account_secret_ops()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            account_secret_ops=account_ops,
+            credential_installer=lambda **_kwargs: {"acct.analyst": "projects/proj-1/secrets/analyst-key"},
+        )
+        context = MagicMock()
+        context.wait_for_ready.return_value = True
+        context.executor.run_command.return_value = CommandResult(False, 1, "", "")
+        from raes_participant_host_keys import observe_participant_host_keys
+
+        def observe(instances):
+            observe_participant_host_keys(instances, execution_builder=lambda *_args, **_kwargs: context)
+
+        module = "raes_gcp_activation_apply" if warm else "raes_gcp_apply"
+        monkeypatch.setattr(f"{module}.observe_participant_host_keys", observe, raising=False)
+        apply = realize_access_on_existing_cell if warm else apply_raes_range_cell
+
+        def resolver(node):
+            return replace(_resolver(node), host_ssh_port=2222)
+
+        with pytest.raises(ValueError, match="identity readback failed"):
+            apply("req-1", 7, _access_plan(), resolver, options, access_bindings=[_access_transport()])
+        context.close.assert_called_once()
 
     def test_declared_ssh_publishes_the_account_credential_reference(self):
         clients = _clients()
@@ -1200,68 +1240,3 @@ class TestParticipantAccessRealization:
         instance = output["instances"][0]
         assert instance["participant_access_channels"] == []
         assert instance["ssh_key_secret_arn"] == ""
-
-
-class TestPolarisPostProvision:
-    """RAES-path polaris post-provision (BigRAE): reuse the reviewed
-    PolarisRangeBootstrapPlan on a polaris-docker-host guest, keyed off the
-    profile bootstrap capability, with the DC IP taken from the peer instance."""
-
-    @staticmethod
-    def _outputs():
-        return [
-            {
-                "instance_id": "kali-vm",
-                "private_ip": "10.50.0.10",
-                "public_key": "ssh-ed25519 AAAATEST",
-                "gcp_bootstrap_capability": "polaris-docker-host",
-            },
-            {
-                "instance_id": "dc-vm",
-                "private_ip": "10.50.0.11",
-                "public_key": "",
-                "gcp_bootstrap_capability": "prepromoted-domain-controller",
-            },
-        ]
-
-    def test_runs_bootstrap_on_polaris_host_with_peer_dc_ip(self, monkeypatch):
-        boot = MagicMock()
-        password = MagicMock()
-        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", boot)
-        monkeypatch.setattr(raes_gcp_polaris, "_set_attacker_container_password_after_bootstrap", password)
-
-        raes_gcp_polaris._run_polaris_post_provision(self._outputs(), range_id=7)
-
-        boot.assert_called_once()
-        assert boot.call_args.kwargs["instance_id"] == "kali-vm"
-        assert boot.call_args.kwargs["dc_ip"] == "10.50.0.11"
-        assert boot.call_args.kwargs["public_key"] == "ssh-ed25519 AAAATEST"
-        assert boot.call_args.kwargs["range_id"] == 7
-        password.assert_called_once()
-        assert password.call_args.kwargs["container_name"] == "a14-kali"
-
-    def test_noop_for_a_range_with_no_polaris_host(self, monkeypatch):
-        boot = MagicMock()
-        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", boot)
-
-        raes_gcp_polaris._run_polaris_post_provision(
-            [{"instance_id": "u", "gcp_bootstrap_capability": "standard"}], range_id=1
-        )
-
-        boot.assert_not_called()
-
-    def test_polaris_host_without_a_dc_peer_fails_closed(self, monkeypatch):
-        monkeypatch.setattr(raes_gcp_polaris, "_run_polaris_range_bootstrap", MagicMock())
-
-        with pytest.raises(RaesGcePlanError):
-            raes_gcp_polaris._run_polaris_post_provision(
-                [
-                    {
-                        "instance_id": "kali-vm",
-                        "private_ip": "10.50.0.10",
-                        "public_key": "k",
-                        "gcp_bootstrap_capability": "polaris-docker-host",
-                    }
-                ],
-                range_id=1,
-            )

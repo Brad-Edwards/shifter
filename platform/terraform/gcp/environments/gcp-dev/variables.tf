@@ -31,7 +31,6 @@ variable "provisioner_static_secret_refs" {
       "GDC_VM_IMAGE_GCS_SECRET_ID",
       "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
       "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-      "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
     ]))) == 0
     error_message = "provisioner_static_secret_refs contains an unsupported runtime key."
   }
@@ -200,6 +199,12 @@ variable "cloud_sql_user_name" {
   description = "Application PostgreSQL username for the control plane."
   type        = string
   default     = "shifter"
+}
+
+variable "cloud_sql_deletion_protection" {
+  description = "Enable Cloud SQL deletion protection on the platform instance. Default true. The gcp-dev-destroy workflow renders this false into an ephemeral tfvars so terraform destroy can delete the instance; without this variable being declared and wired to module.platform_core, that override is an undeclared-variable no-op and destroy fails with 'deletion_protection is set to true' (#2258)."
+  type        = bool
+  default     = true
 }
 
 variable "redis_tier" {

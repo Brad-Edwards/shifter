@@ -1,17 +1,22 @@
 ---
 name: aws-tenant-standup
-description: Stand up or rebuild an AWS Shifter tenant end to end (teardown, bootstrap, secrets, image bakes, deploy via the real deploy.yml dispatch, health check, base-range smoke, and a POLARIS range walkthrough). AWS only. Use when asked to rebuild, redeploy, or stand up an AWS tenant such as proof or aws-dev from a clean state.
+description: Stand up or rebuild an AWS Shifter tenant end to end (teardown, bootstrap, secrets, base-image bakes, deploy via deploy.yml, health checks, and a base-range smoke). Private scenario validation belongs to the separately installed pack and adapter. AWS only.
 ---
 
 # AWS tenant standup and rebuild (AWS only)
 
 This skill drives a full AWS Shifter tenant from a clean (or dirty) account to a
-healthy, verified tenant with a live POLARIS range. It exists so a fresh session
+healthy, verified tenant with a successful base-range smoke. It exists so a fresh session
 does not repeat the deploy-docs archaeology and does not re-hit the
 fresh-environment gotchas already fixed on `dev`. GCP is out of scope.
 
 ## Ground rules
 
+- Private packs are optional external installations, never a prerequisite for a
+  Shifter standup. Their images, credentials, walkthroughs, and validation stay
+  in their owning repositories. Do not copy private names or evidence into
+  public issues, PRs, reviews, or deployment reports. Use synthetic reproductions
+  when a private adapter exposes a core defect.
 - All Shifter AWS resources live in `us-east-2` unless the operator says otherwise.
 - The canonical GitHub repository is `Brad-Edwards/shifter` (see `AGENTS.md`).
 - Never add AI or Claude attribution to any commit, PR, issue, or file.
@@ -89,7 +94,8 @@ Follow `docs/dev/aws-teardown-runbook.md`. Key points learned in practice:
   environment tag). Run it to catch anything Terraform missed.
 - If `mode=preserve-amis`: before teardown, capture the AMI ids you will reuse
   (`ec2_ami_id`, `ctfd_ami_id` in the portal overlay; the `/shifter/ami/*` SSM
-  parameters; `polaris-vm` and `polaris-dc`; `shifter/packer/dc-amis.json`).
+  parameters; `shifter/packer/dc-amis.json`). Inventory any separately installed
+  adapter's artifacts through its private operator runbook.
   Do not deregister those AMIs, and skip Phase 3.
 
 ## Phase 2: bootstrap and secrets
@@ -104,8 +110,8 @@ Follow `docs/dev/aws-teardown-runbook.md`. Key points learned in practice:
 
 ## Phase 3: image bakes (skip when preserving AMIs)
 
-Bake base images (kali, ubuntu, windows, dc) and the POLARIS images
-(`polaris-vm`, `polaris-dc`) via `packer.yml`.
+Bake base images (kali, ubuntu, windows, dc) via `packer.yml`. External adapters
+own their image builds and independently registered artifacts.
 
 - Bakes need per-account `PACKER_VERIFY_{SUBNET,SG,INSTANCE_PROFILE}_ID_<ENV>`
   variables plus a `<env>.pkrvars.hcl`, both derived from the freshly rebuilt
@@ -153,47 +159,26 @@ created by a migration, so on a fresh DB the migrate must run with
 
 Run the post-deploy smoke against a base range to prove provisioning works end to
 end. See `scripts/post_deploy_smoke/README.md` for the entrypoint. This exercises
-subnet allocation, guest launch, and bootstrap. Do this before POLARIS to avoid
-range contention.
+subnet allocation, guest launch, and bootstrap. Complete this before any optional
+external pack validation to avoid range contention.
 
-## Phase 7: POLARIS range walkthrough
+## Phase 7: optional external pack validation
 
-Provision a POLARIS range and confirm it reaches READY.
-
-1. Provision via the portal Django shell over SSM. Get the portal instance,
-   `docker exec` the portal container, re-export the app environment from
-   `/proc/1/environ` (the shell needs `DJANGO_SECRET_KEY` and friends), then call
-   `cms_create_range(user, 'polaris', {}, False)`.
-2. Poll the range status to READY or FAILED. The provisioner launches as an ECS
-   task off the latest ACTIVE `<env>-portal-pulumi-provisioner` task definition.
-3. On READY, confirm: two guests running (kali attacker on `polaris-vm`, dc01 on
-   `polaris-dc`), the DC promoted (`boreas.local`), the full container stack up on
-   the kali host (17 containers including `a14-kali`, the Bedrock agent), and the
-   agent verify checks pass (identity via credential_process plus regional STS,
-   and a Bedrock `invoke-model`).
-
-POLARIS Bedrock requirements:
-
-- The account must have Bedrock model access for the configured agent models.
-  Verify with an actual `bedrock-runtime invoke-model`, not
-  `list-foundation-models` (the latter shows region availability, not account
-  access). See `reference_proof_bedrock_model_access` in operator notes: the
-  proof account can invoke only `sonnet-4-6`; all haiku variants are Marketplace
-  gated.
-- The `aws_polaris_agent_*` variables must be set in the portal overlay and the
-  `TF_VARS_<ENV>_PORTAL` secret. Empty values make POLARIS fail at variable
-  build. Point both the main and small models at a model the account can invoke.
+Only when requested, install the content pack and its approved executable adapter
+independently through their supported runtime boundaries. Follow the pack owner's
+private validation and cleanup runbook. Confirm the installed versions and
+readiness privately; do not reproduce guest topology, answers, image aliases,
+credentials, or private operational evidence in Shifter metadata.
 
 ## Phase 8: report and DNS handoff
 
 Report the outcome and the DNS records the operator must set in Cloudflare (DNS
 is external; the agent does not hold those credentials):
 
-- `<env>.shifter.keplerops.com` CNAME to the portal ALB DNS name.
-- `polaris.keplerops.com` A record to the CTFd EIP.
+- The configured portal domain's CNAME to the portal ALB DNS name.
 
-Note that a running POLARIS range costs money until it is destroyed. State
-clearly whether the range was left running.
+Record external pack DNS changes only in its private operator record. State
+clearly whether any validation range was left running and who owns its cleanup.
 
 ## Known pitfalls (already fixed on dev; verify, do not re-hit)
 
@@ -204,16 +189,9 @@ rediscovering the failure.
 - Provisioner image must copy the whole `shared` package, not a subset, or range
   provisioning fails with `ModuleNotFoundError: shared.range_instantiation_policy`
   (issue #1678). Broke all range provisioning in every environment.
-- The CI permissions boundary must carry the per-range POLARIS agent carve-out
-  and the IAM read permissions the provider needs after role creation
-  (`iam:ListAttachedRolePolicies`, `iam:ListInstanceProfilesForRole`)
-  (issue #1683, fixes #1681).
 - First-deploy migrate race: the deploy waits for an in-service ASG instance
   before migrating (issue #1677). If it still fails, run the manual migrate from
   Phase 4.
-- POLARIS agent verify runs host-side because the a14-kali container has no `aws`
-  CLI, and the container aws-config needs `sts_regional_endpoints = regional`
-  plus an STS host pin (issue #1688).
 - Environment parity: a new import-time environment variable must be added to
   `user_data.sh`, the portal SSM parameters, and `deploy_portal.sh` common env,
   or a fresh AWS deploy fails at migrate.
@@ -224,6 +202,7 @@ rediscovering the failure.
 
 - Track phases with a task list and give the operator running status. Do not run
   the whole thing silently in a subagent.
-- File an issue for every new bug found, fix the root cause, and PR it to `dev`.
+- File core defects using synthetic reproduction evidence, fix the root cause,
+  and PR it to `dev`. File adapter defects in the private owning repository.
 - Keep a durable scratch record of parameters, decisions, resource ids, and PRs
   so the run survives a context reset.

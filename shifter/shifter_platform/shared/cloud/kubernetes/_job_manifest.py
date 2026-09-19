@@ -207,6 +207,8 @@ def _build_job(
 
     if profile.service_account_name:
         pod_spec_kwargs["service_account_name"] = profile.service_account_name
+    if profile.runtime_class_name:
+        pod_spec_kwargs["runtime_class_name"] = profile.runtime_class_name
     if profile.image_pull_secrets:
         pod_spec_kwargs["image_pull_secrets"] = [
             _api_call(client, "V1LocalObjectReference", name=name) for name in profile.image_pull_secrets

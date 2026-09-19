@@ -60,6 +60,7 @@ _RELEASE_DEPLOYMENTS: dict[str, str] = {
 _BROKER_CONTAINERS = {
     "model-broker": {"model-broker": "portal"},
     "model-access-control": {"model-access-control": "portal"},
+    "model-provider-egress": {"provider-egress": "portal"},
 }
 
 
@@ -188,9 +189,13 @@ def _verify_pod_containers(
         image_name = expected_containers[container_name]
         image = expected[image_name]
         exact_reference = f"{image['root']}@{image['digest']}"
-        status_image = str(container.get("image", ""))
         runtime_image = _runtime_reference(str(container.get("imageID", "")))
-        if status_image != exact_reference or runtime_image != exact_reference:
+        # ``ContainerStatus.image`` is runtime-dependent display data. GKE's
+        # containerd reports the local image config digest there even when the
+        # pod was declared and pulled by an exact registry digest. The pod spec
+        # above and the pullable ``imageID`` below are the two identity-bearing
+        # fields, so require both of those exact references.
+        if runtime_image != exact_reference:
             raise ValueError(
                 f"pod {pod_name} container {container_name} does not run its exact approved image identity"
             )

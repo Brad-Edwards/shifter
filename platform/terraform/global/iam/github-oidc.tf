@@ -318,7 +318,6 @@ resource "aws_iam_policy" "ci_role_permissions_boundary" {
         # place as defense-in-depth. These are namespace exceptions to a deny,
         # not grants; the provisioner identity policy remains the allow boundary.
         NotResource = [
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent",
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-vpn-gateway",
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/shifter-${var.environment}-*-vpn-gateway"
         ]
@@ -337,22 +336,6 @@ resource "aws_iam_policy" "ci_role_permissions_boundary" {
             ]
           }
         }
-      },
-      {
-        # Defense-in-depth for the polaris-agent namespace carve-out above. The
-        # per-range polaris agent role (#1377) is created by the provisioner with
-        # THIS boundary attached (enforced by the provisioner identity policy's
-        # iam:PermissionsBoundary condition), so its effective permissions stay
-        # capped even if its inline policy were broad. Explicitly deny stripping
-        # or swapping that boundary on the agent roles so the cap can never be
-        # removed after creation.
-        Sid    = "DenyPolarisAgentBoundaryTamper"
-        Effect = "Deny"
-        Action = [
-          "iam:PutRolePermissionsBoundary",
-          "iam:DeleteRolePermissionsBoundary"
-        ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent"
       },
       {
         # The VPN role and instance-profile namespaces are excluded from the
@@ -392,13 +375,6 @@ resource "aws_iam_policy" "compute" {
         Resource = "*"
       },
       {
-        # Packer's amazon-ebs SSM communicator (ssh_interface = "session_manager",
-        # used by the no-inbound polaris-vm scenario bake) opens an
-        # SSH-over-SSM tunnel to the EC2 builder via the AWS-StartSSHSession
-        # document. The management policy's SSMRunCommand grant covers SendCommand
-        # but not StartSession, so the scenario bakes fail with AccessDenied
-        # without this. Lives in the compute policy (it targets EC2 build hosts)
-        # to keep the management managed-policy under the 6144-char limit (#254).
         Sid    = "SSMSessionManagerForPackerBuilds"
         Effect = "Allow"
         Action = [
@@ -796,23 +772,6 @@ resource "aws_iam_policy" "data" {
           "arn:aws:s3:::shifter-infra-*/*",
           "arn:aws:s3:::shifter-*-infra-*",
           "arn:aws:s3:::shifter-*-infra-*/*"
-        ]
-      },
-      {
-        Sid    = "S3BakeBucketsRead"
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket",
-          "s3:GetObject"
-        ]
-        # Scenario bake buckets (e.g. shifter-polaris-bake-<account>). The
-        # polaris bake verifies the operator-uploaded build tarball exists
-        # before standing up a golden range. Read-only: the operator uploads
-        # the tarball out of band and the Packer builder profile performs the
-        # digest-verified download.
-        Resource = [
-          "arn:aws:s3:::shifter-*-bake-*",
-          "arn:aws:s3:::shifter-*-bake-*/*"
         ]
       },
       {
@@ -1348,10 +1307,6 @@ resource "aws_iam_policy" "management" {
           "ssm:GetParameter",
           "ssm:GetParameters"
         ]
-        # AWS-owned PUBLIC parameters (no account in the ARN) used to resolve
-        # current base AMIs at build time - e.g. the Canonical Ubuntu and
-        # Amazon Linux AMI-ID parameters the Polaris golden range reads.
-        # Read-only; scoped to /aws/service/*.
         Resource = [
           "arn:aws:ssm:${var.aws_region}::parameter/aws/service/*"
         ]

@@ -147,6 +147,67 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     assert "PASSWORD=" not in rendered
 
 
+def _broker_intent():
+    return {
+        "enabled": True,
+        "hostname": "models.example.test",
+        "admitted_subnets": ["10.50.1.0/24"],
+        "tls_secret_name": "broker-tls",
+        "control_tls_secret_name": "control-tls",
+        "trust_configmap_name": "model-ca",
+        "invocation_models": {"primary": "anthropic.example-model-v1:0"},
+    }
+
+
+def _standby_broker_config():
+    config = _config()
+    config.settings["model_broker"] = _broker_intent()
+    catalog_path = Path(__file__).resolve().parents[3] / "docs/architecture/model-access/example-policy.v3.json"
+    config.settings["model_access"] = {"enabled": False, "catalog": json.loads(catalog_path.read_text())}
+    return config
+
+
+def test_renderer_binds_applied_broker_to_platform_roles_and_endpoints():
+    config = _standby_broker_config()
+    outputs = _terraform_outputs()
+    outputs["model_broker"] = {
+        "value": {
+            **_broker_intent(),
+            "role_arn": "arn:aws:iam::123456789012:role/model-broker",
+            "provisioner_subject": outputs["workload_role_arns"]["value"]["provisioner"],
+            "region": "us-east-2",
+            "invocation_roles": {"primary": "arn:aws:iam::123456789012:role/model-invoke"},
+            "target_group_arn": (
+                "arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/models/0123456789abcdef"
+            ),
+            "vpc_id": "vpc-" + "1" * 17,
+            "endpoint_cidrs": ["10.42.0.10/32"],
+            "guest_endpoint_cidrs": ["10.42.0.25/32"],
+            "health_check_cidrs": ["10.42.0.0/20"],
+        }
+    }
+    values = aws_eks.render_aws_values(config, outputs, _images())
+    assert values["modelBroker"]["enabled"] is True
+    assert values["modelBroker"]["control_env"]["MODEL_ACCESS_ENABLED"] == "false"
+    assert "10.42.0.10/32" in values["network"]["providerApiCidrs"]
+    assert values["runtimeEnv"]["MODEL_BROKER_GUEST_URL"] == ""
+    outputs["model_broker"]["value"]["provisioner_subject"] = "arn:aws:iam::123456789012:role/unrelated"
+    with pytest.raises(ValueError, match="enrollment identity differs"):
+        aws_eks.render_aws_values(config, outputs, _images())
+
+
+def test_protected_input_cannot_silently_disable_requested_broker(tmp_path):
+    path = tmp_path / "eks.tfvars.json"
+    payload = _terraform_inputs()
+    path.write_text(json.dumps(payload))
+    config = _standby_broker_config()
+    with pytest.raises(ValueError, match="broker input differs"):
+        aws_eks._validate_terraform_inputs(path, config, allowed_roots=(tmp_path,))
+    payload["model_broker"] = _broker_intent()
+    path.write_text(json.dumps(payload))
+    assert aws_eks._validate_terraform_inputs(path, config, allowed_roots=(tmp_path,)) == path
+
+
 def test_render_values_rejects_incomplete_runtime_contract():
     outputs = _terraform_outputs()
     outputs["runtime_env"]["value"].pop("OIDC_ISSUER_URL")

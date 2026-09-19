@@ -77,6 +77,8 @@ class RequestIdempotency:
 
     caller_key_hmac: str | None = None
     prior_caller_key_hmacs: tuple[str, ...] = ()
+    prior_intent_fingerprint_hmacs: tuple[str, ...] = ()
+    retained_key_versions: tuple[str, ...] = ()
     key_version: str | None = None
     intent_fingerprint_hmac: str | None = None
     intent_contract_version: str | None = None
@@ -117,7 +119,9 @@ def reserve_request(
         catalog, effective = _load_snapshot(allocation)
         if logical_alias not in allocation.alias_shards:
             raise ContractError("request.alias_unavailable")
-        spend_currency, upper_charge = _conservative_charge(catalog, logical_alias, billing_bound, moment, effective)
+        spend_currency, upper_charge = _conservative_charge(
+            catalog, logical_alias, billing_bound, moment, effective, allocation.alias_shards[logical_alias]
+        )
 
         existing = _replay(allocation, grant_epoch, idem)
         if existing is not None:
@@ -148,6 +152,7 @@ def reserve_request(
             reservation_vector={ref: held for ref, _account, held, _dim, _rev in vector},
             billed_components=sorted({amount.component.value for amount in billing_bound.amounts}),
             canonical_request_cost=upper_charge,
+            billing_bound=billing_bound.model_dump(mode="json"),
         )
         for _ref, account, held, dimension, revision in vector:
             ModelBudgetPosting.objects.create(
@@ -198,9 +203,14 @@ def _recheck_authority(allocation: ModelAllocation) -> None:
     """Fail closed when any pinned sharing-authority fence revision has advanced."""
     from engine.models import ModelAllocationAuthority
 
-    pins = ModelAllocationAuthority.objects.filter(allocation=allocation).select_for_update().order_by("fence_id")
+    # The already-locked grant is the request-side serialization point. Owner
+    # mutations hold their authority fence and revoke this grant in the same
+    # transaction. Locking that fence here would invert fence -> grant ordering
+    # and deadlock. A committed revocation cannot pass the grant check; a pending
+    # mutation serializes after this admission when our grant lock is released.
+    pins = ModelAllocationAuthority.objects.filter(allocation=allocation).order_by("fence_id")
     for pin in pins.select_related("fence"):
-        if pin.fence.authority_revision != pin.revision:
+        if pin.fence.authority_revision != pin.revision or pin.fence.state != "allowed":
             raise ContractError("request.authority_changed")
 
 
@@ -223,30 +233,25 @@ def _conservative_charge(
     billing_bound: BillingBound,
     moment: datetime,
     effective: EffectivePolicy,
+    shard_id: str,
 ) -> tuple[str, int]:
     """Sum ceil(units * price / denominator) from the immutable price snapshot.
 
     Returns the schedule currency alongside the integer micro-unit charge so the
     caller can prove every spend account shares that currency before any hold.
     """
-    schedule = _priced_schedule(catalog, logical_alias, moment)
+    schedule = _priced_schedule(catalog, logical_alias, moment, shard_id)
     prices: dict[BillingComponent, Price] = {price.component: price for price in schedule.prices}
     total = _sum_billing_components(billing_bound, prices)
     _assert_within_grant_bound(total, schedule.currency.value, effective)
     return schedule.currency.value, total
 
 
-def _priced_schedule(catalog: ModelAccessCatalogV3, logical_alias: str, moment: datetime) -> PriceSchedule:
-    """Resolve the alias's immutable, unexpired price schedule from the snapshot."""
-    alias = next((item for item in catalog.aliases if item.logical_alias == logical_alias), None)
-    if alias is None:
-        raise ContractError("request.alias_unavailable")
-    schedule = next(
-        (item for item in catalog.price_schedules if item.price_schedule_id == alias.price_schedule_id),
-        None,
-    )
-    if schedule is None:
-        raise ContractError("request.price_unavailable")
+def _priced_schedule(
+    catalog: ModelAccessCatalogV3, logical_alias: str, moment: datetime, shard_id: str
+) -> PriceSchedule:
+    """Resolve the selected source's immutable, unexpired price snapshot."""
+    schedule = catalog.price_for_alias(logical_alias, shard_id)
     if schedule.valid_until <= moment:
         raise ContractError("request.price_expired")
     return schedule
@@ -418,9 +423,20 @@ def _replay(
     from engine.models import ModelRequestReservation
 
     if not idempotency.caller_key_hmac:
-        # No idempotency key: always a new invocation.
+        # No idempotency key means this is always a new invocation.
         return None
-    candidates = [digest for digest in (idempotency.caller_key_hmac, *idempotency.prior_caller_key_hmacs) if digest]
+    versions = set(
+        ModelRequestReservation.objects.filter(
+            allocation=allocation,
+            grant_epoch=grant_epoch,
+            operation_id=allocation.operation_id,
+        )
+        .exclude(caller_key_hmac="")
+        .values_list("key_version", flat=True)
+    )
+    if versions - {idempotency.key_version or "", *idempotency.retained_key_versions}:
+        raise ContractError("request.retry_key_rotation_unavailable")
+    candidates = [hmac for hmac in (idempotency.caller_key_hmac, *idempotency.prior_caller_key_hmacs) if hmac]
     existing = (
         ModelRequestReservation.objects.select_for_update()
         .filter(
@@ -433,7 +449,10 @@ def _replay(
     )
     if existing is None:
         return None
-    if existing.intent_fingerprint_hmac != (idempotency.intent_fingerprint_hmac or ""):
+    if existing.intent_fingerprint_hmac not in {
+        idempotency.intent_fingerprint_hmac or "",
+        *idempotency.prior_intent_fingerprint_hmacs,
+    }:
         raise ContractError("request.intent_conflict")
     if existing.state != "settled":
         raise ContractError("request.in_progress_or_unknown")

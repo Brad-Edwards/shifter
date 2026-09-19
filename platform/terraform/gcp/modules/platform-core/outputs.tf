@@ -199,11 +199,6 @@ output "range_host_service_account_email" {
   value       = module.portal_iam.range_host_service_account_email
 }
 
-output "range_vertex_service_account_email" {
-  description = "Email of the GCE range Vertex service account (per-range key minting)."
-  value       = module.portal_iam.range_vertex_service_account_email
-}
-
 output "workload_identity_pool" {
   description = "GKE Workload Identity pool."
   value       = module.portal_gke.workload_identity_pool

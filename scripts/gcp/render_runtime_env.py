@@ -92,14 +92,7 @@ _GCE_RANGE_ENV_KEYS = (
     "GCP_RANGE_EGRESS_ALLOW_CIDRS",
     "GCP_RANGE_PRIVATE_GOOGLE_ACCESS",
     "GCP_RANGE_HOST_MGMT_SSH_PORT",
-    "GCP_RANGE_VERTEX_PROJECT_ID",
-    "GCP_RANGE_VERTEX_REGION",
-    "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
     "GCP_RANGE_PREPROVISIONED_FIREWALLS",
-    "GCP_RANGE_KALI_ANTHROPIC_MODEL",
-    "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
-    "POLARIS_TESTS_BUCKET",
-    "POLARIS_TESTS_KEY",
 )
 
 _PROVISIONER_STATIC_SECRET_KEYS = frozenset(
@@ -108,7 +101,6 @@ _PROVISIONER_STATIC_SECRET_KEYS = frozenset(
         "GDC_VM_IMAGE_GCS_SECRET_ID",
         "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
         "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
     }
 )
 _FULL_SECRET_REF_RE = re.compile(r"^projects/[^/]+/secrets/[^/]+$")
@@ -418,6 +410,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "QUEUE_MC_CONSUMER_ID": subscriptions["mc"],
         "QUEUE_MC_PUBLISHER_ID": topic_id,
         "DB_SECRET_ID": secret_ids["db"],
+        "PROVISIONER_DB_SECRET_ID": secret_ids["db-provisioner"],
         "DB_MIGRATION_SECRET_ID": secret_ids["db-migration"],
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
@@ -442,6 +435,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         # DB_PASSWORD is Secret-backed; name/user are plain connection metadata.
         "DB_NAME": database["database_name"],
         "DB_USER": database["user_name"],
+        "PROVISIONER_DB_USER": database["provisioner_user_name"],
         "AUDIT_DEPLOYMENT_SCOPE": f"gcp:{real_project}",
         "SKIP_MIGRATIONS": "1",
         # Redis host/port are non-secret and ride in the runtime ConfigMap.
@@ -539,6 +533,12 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values.update(_email_runtime_values(outputs))
     values.update(_optional_gce_range_values())
     values.update(_ctf_content_runtime_values(outputs))
+    # Populated from validated broker projection after this common renderer;
+    # empty values revoke stale coordinates when the broker is disabled.
+    values["MODEL_BROKER_GUEST_URL"] = ""
+    values["MODEL_BROKER_GUEST_VIP"] = ""
+    values["MODEL_ENROLLMENT_CONTROL_URL"] = ""
+    values["MODEL_ENROLLMENT_CA_PEM_B64"] = ""
     values.update(_model_access_runtime_values())
     values.update(_mission_control_lease_runtime_values())
     # These references originate in the same validated shifter.yaml map that

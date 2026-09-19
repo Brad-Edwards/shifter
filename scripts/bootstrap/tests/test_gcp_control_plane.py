@@ -77,6 +77,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
             "value": {
                 "app": f"projects/{project_id}/secrets/shifter-gcp-dev-app",
                 "db": f"projects/{project_id}/secrets/shifter-gcp-dev-db",
+                "db-provisioner": f"projects/{project_id}/secrets/shifter-gcp-dev-db-provisioner",
                 "db-migration": f"projects/{project_id}/secrets/shifter-gcp-dev-db-migration",
                 "guacamole-db": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-db",
                 "guacamole-json-auth": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-json-auth",
@@ -101,6 +102,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "port": 5432,
                 "database_name": "shifter",
                 "user_name": "portal_runtime",
+                "provisioner_user_name": "provisioner_runtime",
             }
         },
         # ADR-008-R6 (#963): Memorystore runs with TLS on the GCP runtime,
@@ -126,6 +128,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
         "portal_network_cidrs": {"value": ["10.46.0.0/20"]},
         "access_network_cidrs": {"value": ["10.47.0.0/20"]},
         "gke_services_cidr": {"value": "10.48.0.0/20"},
+        "gke_master_ipv4_cidr": {"value": "172.16.0.0/28"},
         "workload_service_accounts": {
             "value": {
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
@@ -1062,6 +1065,17 @@ class TestGdcControlPlaneHelmValues:
         temp_dir = next(item for item in container["env"] if item["name"] == "TMPDIR")["value"]
         assert temp_dir == "/var/run/shifter-migrate"
         assert container["volumeMounts"] == [{"name": "tmp", "mountPath": temp_dir}]
+        # The portal image's USER is the name appuser (uid 1000); pair
+        # runAsNonRoot with the numeric uid so the kubelet can verify non-root
+        # (parity with the CI _gcp-dev.yml migrate Job; #2244).
+        assert container["securityContext"]["runAsNonRoot"] is True
+        assert container["securityContext"]["runAsUser"] == 1000
+        # DB-only Job: REDIS_SECRET_ID is blank (no REDIS_PASSWORD hydration), so
+        # REDIS_HOST must also be blank or Django fails closed at import (#2245).
+        redis_secret = next(item for item in container["env"] if item["name"] == "REDIS_SECRET_ID")
+        assert redis_secret["value"] == ""
+        redis_host = next(item for item in container["env"] if item["name"] == "REDIS_HOST")
+        assert redis_host["value"] == ""
         assert container["image"] == values["images"]["platform"]
         assert (
             values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]
@@ -1090,7 +1104,7 @@ class TestGdcControlPlaneHelmValues:
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
             "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32"],
-            "kubernetesApiCidrs": ["10.48.0.0/20"],
+            "kubernetesApiCidrs": ["10.48.0.0/20", "172.16.0.0/28"],
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
             "rangeAccessCidrs": ["10.50.0.0/16"],
@@ -1377,7 +1391,11 @@ class TestGdcControlPlaneHelmChart:
         assert "runAsGroup: 1000" in output
         assert "runAsUser: 1001" in output
         assert "runAsGroup: 1001" in output
-        assert "kind: Namespace" not in output
+        import yaml
+
+        namespaces = [doc for doc in yaml.safe_load_all(output) if doc and doc["kind"] == "Namespace"]
+        assert [doc["metadata"]["name"] for doc in namespaces] == ["shifter-plugins"]
+        assert namespaces[0]["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
         assert "kind: BackendConfig" in output
         assert "kind: NetworkPolicy" in output
         assert "name: default-deny-platform" in output
