@@ -1955,9 +1955,9 @@ class TestGcpPlatformCoreContracts:
 
         assert 'resource "google_service_account_iam_member" "workload_identity"' in module_main
         assert 'role               = "roles/iam.workloadIdentityUser"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/portal]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/workers]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-jobs/provisioner]"' in module_main
 
     def test_workers_have_pubsub_publish_and_subscribe_permissions(self):
         """The shared workers service account must publish as well as consume Pub/Sub events."""
