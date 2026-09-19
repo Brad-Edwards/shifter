@@ -15,7 +15,7 @@ _ALLOWED_HOSTS = frozenset(
     {"api.openai.com", "api.anthropic.com", "openrouter.ai", "oauth2.googleapis.com", "iamcredentials.googleapis.com"}
 )
 _CLOUD_HOST = re.compile(
-    r"(?:[a-z][a-z0-9-]{1,62}-aiplatform\.googleapis\.com|"
+    r"(?:[a-z][a-z0-9-]{1,62}-aiplatform\.googleapis\.com|aiplatform\.(?:us|eu)\.rep\.googleapis\.com|"
     r"(?:sts|bedrock-runtime)\.[a-z]{2}(?:-gov)?-[a-z]+-\d\.amazonaws\.com)"
 )
 _MAX_CONNECTIONS = 256

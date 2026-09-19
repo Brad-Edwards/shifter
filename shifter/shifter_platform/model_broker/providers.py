@@ -347,6 +347,11 @@ class MessagesProvider(ModelProviderAdapter):
 def _vertex_request(target: ProviderTarget, payload: JsonObject, *, count_only: bool) -> str:
     """Bind a Vertex request to its configured region, project and publisher model."""
     region = target.count_region if count_only else target.region
+    hostname = (
+        f"aiplatform.{region}.rep.googleapis.com"
+        if region in {"us", "eu"}
+        else f"{region}-aiplatform.googleapis.com"
+    )
     model = "count-tokens" if count_only else target.model.rsplit("/", 1)[1]
     method = "streamRawPredict" if payload.get("stream") else "rawPredict"
     if count_only:
@@ -354,7 +359,7 @@ def _vertex_request(target: ProviderTarget, payload: JsonObject, *, count_only: 
     else:
         payload["anthropic_version"] = "vertex-2023-10-16"
     return (
-        f"https://{region}-aiplatform.googleapis.com/v1/projects/{target.project}/locations/{region}"
+        f"https://{hostname}/v1/projects/{target.project}/locations/{region}"
         f"/publishers/anthropic/models/{model}:{method}"
     )
 
