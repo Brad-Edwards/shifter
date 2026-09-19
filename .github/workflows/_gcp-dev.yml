@@ -108,12 +108,12 @@ jobs:
       - run: /tmp/kubeconform -strict -summary /tmp/gcp-platform.yaml
 
   prepare:
-    # Runs on the GCP tenant's own runner (label gcp-dev), provisioned by
-    # `deploy.py runners --cloud gcp` (issue #1546), so a GCP dev tenant deploys
-    # without borrowing the AWS self-hosted fleet. gcp-dev is self-hosted-class
+    # Runs on the requested GCP tenant's same-named runner, provisioned by
+    # `deploy.py runners --cloud gcp` (issue #1546), so one tenant never borrows
+    # another tenant's self-hosted fleet. The dynamic label is self-hosted-class
     # to the ADR-003-R5 exposure checker, so the PR gate below still applies.
     name: Prepare release (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     environment: ${{ inputs.github_environment }}
     needs: validate
     if: inputs.deploy_changes && github.event_name != 'pull_request'
@@ -715,7 +715,7 @@ jobs:
 
   deploy:
     name: Deploy verified release (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     environment: ${{ inputs.github_environment }}
     needs: [validate, prepare, release_scan]
     if: inputs.deploy_changes && github.event_name != 'pull_request'
@@ -1028,19 +1028,19 @@ jobs:
           enabled="$(cat "${manifest}.enabled")"
           echo "MODEL_BROKER_ENABLED=${enabled}" >> "${GITHUB_ENV}"
           if [ "${enabled}" = false ]; then
-            kubectl delete deployment model-broker model-access-control \
+            kubectl delete deployment model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found --cascade=foreground --wait=true --timeout=180s
-            kubectl delete service,poddisruptionbudget model-broker model-access-control \
+            kubectl delete service,poddisruptionbudget model-broker model-access-control model-provider-egress \
               -n shifter-platform --ignore-not-found
             kubectl delete serviceaccount model-broker -n shifter-platform --ignore-not-found
             kubectl delete configmap model-broker-catalog -n shifter-platform --ignore-not-found
-            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress \
+            kubectl delete networkpolicy model-broker-boundary model-access-control-ingress model-provider-egress-boundary \
               -n shifter-platform --ignore-not-found
             kubectl delete networkpolicy model-enrollment-control-egress \
               -n shifter-jobs --ignore-not-found
           fi
           kubectl apply -f "${manifest}"
-      - name: Run database migrations with the migration identity
+      - name: Run database migrations and bootstrap the in-box catalog with the migration identity
         env:
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
         run: |
@@ -1081,7 +1081,9 @@ jobs:
                   - name: migrate
                     image: ${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}
                     imagePullPolicy: IfNotPresent
-                    args: ["/bin/true"]
+                    # entrypoint.sh runs migrations first, then registers the
+                    # immutable shipped seed through the normal ingestion path.
+                    args: ["python", "manage.py", "bootstrap_inbox_catalog"]
                     envFrom:
                       - configMapRef:
                           name: platform-runtime
@@ -1339,7 +1341,7 @@ jobs:
       contents: read
       issues: write
     name: Post-deploy smoke (${{ inputs.environment }})
-    runs-on: gcp-dev
+    runs-on: ${{ inputs.environment }}
     # Backstop only (see #1220).
     timeout-minutes: 60
     environment: ${{ inputs.github_environment }}

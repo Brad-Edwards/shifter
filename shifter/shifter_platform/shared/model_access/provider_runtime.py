@@ -7,12 +7,18 @@ from pydantic import Field, model_validator
 from shared.model_access import ContractError
 from shared.model_access.core_models import ClosedModel, Identifier, ModelShard
 
+ProviderKind = Literal["vertex-v1", "bedrock-v1", "anthropic-v1", "openai-v1", "openrouter-v1"]
+AuthenticationKind = Literal["workload-identity", "stored-credential"]
+
 
 class ProviderTarget(ClosedModel):
     """Explicit approved transport, principal and conservative model context bound."""
 
     shard_id: Identifier
-    provider: Literal["vertex-v1", "bedrock-v1"]
+    provider: ProviderKind
+    authentication: AuthenticationKind = Field(
+        default="workload-identity", exclude_if=lambda value: value == "workload-identity"
+    )
     region: Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{1,62}[a-z0-9]$")]
     model: Annotated[str, Field(pattern=r"^[a-zA-Z0-9@.:/-]{1,256}$")]
     credential_reference: Annotated[str, Field(max_length=256)]
@@ -27,16 +33,16 @@ class ProviderTarget(ClosedModel):
     def validate_identity(self) -> Self:
         import re
 
-        if self.provider == "vertex-v1":
-            if not self.project or self.count_region not in {"us", "eu", "asia-southeast1"}:
-                raise ValueError("Vertex requires approved project and count geography")
-            if not re.fullmatch(
-                r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(self.project) + r"\.iam\.gserviceaccount\.com",
-                self.principal,
-            ):
-                raise ValueError("Vertex principal must belong to the approved project")
-            if not re.fullmatch(r"publishers/anthropic/models/[a-z0-9@-]+", self.model):
-                raise ValueError("Vertex requires a pinned Anthropic publisher model")
+        if self.authentication == "stored-credential" and not re.fullmatch(
+            r"source:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}:[1-9]\d{0,9}",
+            self.credential_reference,
+            flags=re.ASCII,
+        ):
+            raise ValueError("stored credentials require an owned source revision")
+        if self.provider in {"anthropic-v1", "openai-v1", "openrouter-v1"}:
+            self._validate_direct_identity()
+        elif self.provider == "vertex-v1":
+            self._validate_vertex_identity()
         elif (
             self.project
             or self.count_region
@@ -44,6 +50,27 @@ class ProviderTarget(ClosedModel):
         ):
             raise ValueError("Bedrock requires an approved invocation role")
         return self
+
+    def _validate_direct_identity(self) -> None:
+        """Direct provider keys carry no cloud identity or caller-selected geography."""
+        if self.region != "provider-managed":
+            raise ValueError("direct provider origins require provider-managed geography")
+        if self.authentication != "stored-credential" or self.project or self.principal or self.count_region:
+            raise ValueError("direct providers require a stored credential without a cloud principal")
+
+    def _validate_vertex_identity(self) -> None:
+        """Validate the approved project, service account, and publisher model."""
+        import re
+
+        if not self.project or self.count_region not in {"us", "eu", "asia-southeast1"}:
+            raise ValueError("Vertex requires approved project and count geography")
+        if not re.fullmatch(
+            r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(self.project) + r"\.iam\.gserviceaccount\.com",
+            self.principal,
+        ):
+            raise ValueError("Vertex principal must belong to the approved project")
+        if not re.fullmatch(r"publishers/anthropic/models/[a-z0-9@-]+", self.model):
+            raise ValueError("Vertex requires a pinned Anthropic publisher model")
 
     def bind(self, shard: ModelShard) -> Self:
         if (
@@ -68,4 +95,25 @@ class ProviderInventory(ClosedModel):
     def unique_targets(self) -> Self:
         if len({target.shard_id for target in self.targets}) != len(self.targets):
             raise ValueError("duplicate provider target")
+        return self
+
+
+class SourceExecutionProjection(ClosedModel):
+    """Ephemeral private-control reply; never a participant-facing contract."""
+
+    target: ProviderTarget
+    credential: Annotated[str, Field(max_length=32768, repr=False)]
+    upstream_provider: Annotated[str, Field(max_length=128)] = ""
+
+    @model_validator(mode="after")
+    def validate_credential(self) -> Self:
+        from shared.model_access.messages import strict_json
+        from shared.model_access.source_credentials import parse_source_credential
+
+        if self.target.authentication == "stored-credential":
+            parse_source_credential(self.target.provider, strict_json(self.credential.encode(), limit=32768))
+        elif self.credential:
+            raise ValueError("workload identity does not accept stored credentials")
+        if bool(self.upstream_provider) != (self.target.provider == "openrouter-v1"):
+            raise ValueError("routing provider must be explicit only for OpenRouter")
         return self

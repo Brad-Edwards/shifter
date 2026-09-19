@@ -17,6 +17,8 @@ deployment ranges. Shared resources do not require shared participant tokens.
 | Document | Purpose |
 | --- | --- |
 | [Architecture and contracts](architecture.md) | Ownership, configuration, allocation, API, persistence, protocol, lifecycle, and user flows. |
+| [Tenant source management](source-management.md) | Implemented source publication, credentials, provider routing and live range transitions. |
+| [Tenant source-management preflight](source-management-preflight-2243.md) | #2243 tenant authority, provider/hosting separation, write-only credentials, live-edit accounting and whole-repository validation boundaries. |
 | [Configurable sharing](sharing.md) | Which ranges share which resources, membership modes, overlapping policies, pooled accounting and management examples. |
 | [Sharing authority preflight](sharing-authority-preflight-2140.md) | M20 owner-resolution, transactional fence, mutation-path, validation and security guardrails. |
 | [Allocation preflight](allocation-preflight-2120.md) | M03 transaction, shared-quota locking, pending-grant, lifecycle and cross-cutting validation guardrails. |
@@ -34,7 +36,7 @@ deployment ranges. Shared resources do not require shared participant tokens.
 | [ADR-059](../../adr/059-range-model-access-broker.md) | Broker and authority decision. |
 | [ADR-060](../../adr/060-model-access-allocation-accounting.md) | Allocation and mandatory accounting decision. |
 | [ADR-061](../../adr/061-model-access-operations-qualification.md) | Revocation, operation, and qualification decision. |
-| [Planned user experience](../../features/model-access.md) | What organizers, participants, and operators will see. |
+| [Tenant user guide](../../features/model-access.md) | What organizers, participants, and operators will see. |
 
 ## Scope and support claims
 

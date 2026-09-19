@@ -112,6 +112,11 @@ class TestSelfHostedClassLabels(unittest.TestCase):
         self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": "gcp-dev"}))
         self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": ["gcp-dev"]}))
 
+    def test_dynamic_gcp_tenant_label_is_recognized_as_self_hosted_class(self):
+        selector = "${{ inputs.environment }}"
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": selector}))
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": [selector]}))
+
     def test_github_hosted_label_is_not_self_hosted(self):
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": "ubuntu-latest"}))
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": ["ubuntu-latest"]}))
@@ -629,6 +634,11 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertNotIn("GCP_DEPLOY_SERVICE_ACCOUNT", scan_env)
         self.assertNotIn("GCP_BOOTSTRAP_ADMIN_PASSWORD", scan_env)
         self.assertIn("TRIVY_ARCHIVE_SHA256", workflow)
+
+    def test_gcp_mutating_jobs_run_on_the_requested_tenant(self):
+        jobs = ADR_GUARD._dw_jobs(_load("_gcp-dev.yml"), "_gcp-dev.yml")
+        for job_id in ("prepare", "deploy", "post-deploy-smoke"):
+            self.assertEqual(jobs[job_id]["runs-on"], "${{ inputs.environment }}")
 
     def test_raw_release_evidence_is_not_uploaded_as_an_actions_artifact(self):
         for workflow_name in (

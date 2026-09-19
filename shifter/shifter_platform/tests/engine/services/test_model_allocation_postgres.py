@@ -53,6 +53,28 @@ def test_shared_first_use_commits_one_assignment_and_parent(django_user_model):
     assert ModelCapacityReservation.objects.get().consumed == 8000
 
 
+def test_weighted_cohort_first_use_reserves_both_accounts_once(django_user_model):
+    from .test_model_weighted_capacity import cohort_inputs
+
+    catalog, requests, observations = cohort_inputs(django_user_model)
+    results = _race([(catalog, request, observations) for request in requests[:4]])
+    assert all(isinstance(item, ModelAllocation) for item in results), results
+    assert sorted(ModelCapacityReservation.objects.values_list("amount", "consumed")) == [(8000, 8000), (8000, 8000)]
+
+
+def test_competing_weighted_cohorts_cannot_reserve_the_same_account_shares(django_user_model):
+    from uuid import uuid4
+
+    from .test_model_weighted_capacity import cohort_inputs
+
+    catalog, requests, observations = cohort_inputs(django_user_model)
+    other_event = requests[1].model_copy(update={"scope_id": uuid4()})
+    results = _race([(catalog, request, observations) for request in (requests[0], other_event)])
+    assert sum(isinstance(item, ModelAllocation) for item in results) == 1
+    assert results.count("allocation.capacity_unavailable") == 1
+    assert sorted(ModelCapacityReservation.objects.values_list("amount", flat=True)) == [8000, 8000]
+
+
 def test_adjacent_windows_do_not_double_count_headroom(django_user_model):
     catalog, first, observations = allocation_inputs(django_user_model)
     _, second, _ = allocation_inputs(django_user_model)

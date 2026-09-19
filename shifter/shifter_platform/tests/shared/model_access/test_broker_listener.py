@@ -162,3 +162,23 @@ async def test_private_control_is_not_a_participant_route():
         result = await client.post("/control/v1/enroll", headers=_HEADERS, json={})
     assert result.status_code != 200
     assert control.calls == []
+
+
+async def test_source_projection_is_private_and_required_before_reservation():
+    control, provider = ControlPort(deny="source"), ProviderPort()
+    shard = control.authority.aliases["coding-main"]
+    control.authority.aliases["coding-main"] = shard.model_copy(
+        update={
+            "credential_ref": shard.credential_ref.model_copy(
+                update={"reference": "source:00000000-0000-0000-0000-000000000001:1"}
+            )
+        }
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app(control, provider)), base_url="https://broker.invalid"
+    ) as client:
+        result = await client.post("/v1/messages", headers=_HEADERS, json=_BODY)
+    assert result.status_code != 200
+    assert [action for action, _ in control.calls] == ["authenticate", "source"]
+    assert control.calls[-1][1] == {"token": _TOKEN, "transport_peer": "127.0.0.1", "logical_alias": "coding-main"}
+    assert provider.invocations == 0

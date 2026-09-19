@@ -101,6 +101,7 @@ class WarmClaimRequest:
     #: resolved only after a warm generation is claimed inside this transaction.
     enforced_deadline: datetime | None = None
     model_launch_scope: ModelLaunchScope | None = None
+    model_sources: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -293,7 +294,8 @@ def _admit_claim_models(
     instance.model_launch_scope = (
         request.model_launch_scope.model_dump(mode="json") if request.model_launch_scope else None
     )
-    instance.save(update_fields=["model_launch_scope"])
+    instance.model_sources = request.model_sources or {}
+    instance.save(update_fields=["model_launch_scope", "model_sources"])
     (view,) = resolve_model_access_range_views(request_uuids=(generation.request_id,))
     prepare_model_access_for_dispatch(generation.request_id, range_id=view.range_uuid, renew=True)
     enqueue_range_activation(generation.request_id)

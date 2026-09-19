@@ -312,6 +312,7 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 
 | Name | Type | Required | Purpose |
 |------|------|----------|---------|
+| `GCP_PROJECT_ID` | secret | build, validate | The Google Cloud project the image is built and validated in. `packer-gcp.yml` and `packer-gcp-validate.yml` fail loud (`Required secret GCP_PROJECT_ID is not set`) if it is unset. Set it in **each** `gcp-build-<env>` and `gcp-validate-<env>` Environment (same value as that deployment's `GCP_PROJECT_ID`); the packer Environments are distinct from the deploy Environment, so setting it only on the deploy Environment is not enough. |
 | `GCP_PACKER_ZONE` | variable | no | Build zone. Defaults to `${GCP_REGION}-a`. |
 | `GCP_PACKER_NETWORK` | variable | no | Builder VPC network. Default `default`. |
 | `GCP_PACKER_SUBNETWORK` | variable | no | Builder subnetwork. Default `default`. |
@@ -700,15 +701,18 @@ fall back to the code defaults in `config.py`. See
 | `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed guests use the structured map below. |
 | `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image. |
 | `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile. Normal images use `source_image`, sizing, disk policy, and a typed capability. Preconfigured hosts use an exact `source_machine_image`, machine type, host login, participant container/account, the closed `participant-readiness/v1` contract, and a lowercase SHA-256 readiness-manifest digest. Any profile may opt into public TCP 80/443 with `allow_public_web_egress` (default false). Maximum 32,768 bytes and 64 entries. Unknown keys, unsupported capabilities, and malformed profiles fail before cloud mutation. Use an Actions environment secret when resource names or logical selectors are confidential; the deploy workflow prefers that secret over the repository variable. The value is runtime configuration, not a credential, and is emitted into the private platform ConfigMap. See `docs/dev/gcp-range-cell-deploy.md`. |
-| `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | legacy hosts | Identity for an explicitly selected cloud-enabled host capability. Native guests have no attached service account. |
+| `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | ranges | Keyless range host identity attached to range guests for default-on model access (ADR-064): a predict-only Vertex role plus host telemetry, delivered via Workload Identity with no key material. When the model broker is the guest path (`MODEL_BROKER_GUEST_VIP` set) guests stay identity-less instead. |
 | `GCP_RANGE_HOST_IDENTITY_POOL_SIZE` | machine-image hosts | Number of Terraform-created `sh-range-host-<slot>` identities. Must equal `range_host_identity_pool_size`; zero disables preconfigured machine-image hosts. |
-| `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach approved Google APIs over Private Google Access. Model inference uses the private broker. |
+| `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach approved Google APIs (including Vertex for default-on model access) over Private Google Access. |
 
-Native guests carry no provider identity. Participant model access requires the
-deployment broker, an admitted allocation and trusted one-use guest enrollment.
-The legacy invocation service account and provisioner key-admin grants are
-removed on Terraform apply. Revoke externally managed shared keys through their
-owning deployment before declaring migration complete.
+By default (ADR-064) range guests hold a keyless, predict-only Vertex identity via
+Workload Identity so they can reach models directly; enabling a specific model in
+the provider console is the only manual step. When the ADR-059 broker is enabled
+it becomes the guest model path and guests stay identity-less, with an admitted
+allocation and trusted one-use enrollment. The legacy invocation service account,
+its provisioner key-admin grants and per-range keys stay removed on Terraform
+apply; revoke externally managed shared keys through their owning deployment
+before declaring migration complete.
 
 ## Local development
 

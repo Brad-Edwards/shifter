@@ -17,6 +17,7 @@ import yaml
 from django.contrib.auth import get_user_model
 
 from cms.exceptions import CMSError
+from cms.management.commands.bootstrap_inbox_catalog import SYSTEM_ACTOR_USERNAME
 from cms.models import RaesPackageSource
 from cms.scenarios.inbox import SHIPPED_INBOX_MANIFEST, load_inbox_manifest, register_inbox_packs
 from cms.scenarios.pack_validation import PackDigestError, pack_digest
@@ -170,6 +171,30 @@ class TestRegisterInboxPacks:
 
 
 class TestBootstrapCommand:
+    def test_command_uses_bounded_non_login_system_actor_when_omitted(self, monkeypatch):
+        from django.conf import settings
+        from django.core.management import call_command
+
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(SHIPPED_INBOX_MANIFEST.parents[3]))
+
+        call_command("bootstrap_inbox_catalog")
+
+        actor = User.objects.get(username=SYSTEM_ACTOR_USERNAME)
+        assert actor.email == ""
+        assert actor.is_active is True
+        assert actor.is_staff is True
+        assert actor.is_superuser is False
+        assert actor.has_usable_password() is False
+        assert RaesPackageSource.objects.filter(scenario_id="smoke-linux", registered_by=actor).exists()
+
+    def test_command_rejects_a_conflicting_system_actor(self):
+        from django.core.management import CommandError, call_command
+
+        User.objects.create_user(username=SYSTEM_ACTOR_USERNAME, password="usable", is_staff=True)
+
+        with pytest.raises(CommandError, match="system actor conflicts"):
+            call_command("bootstrap_inbox_catalog")
+
     def test_shipped_upgrade_replaces_only_the_declared_previous_digest(self, admin_actor, monkeypatch):
         from django.conf import settings
         from django.core.management import CommandError, call_command

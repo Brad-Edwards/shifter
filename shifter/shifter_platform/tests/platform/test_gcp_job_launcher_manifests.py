@@ -187,7 +187,8 @@ def _semantic_policy_allows(
         for container in job.get("spec", {}).get("template", {}).get("spec", {}).get("containers", []):
             for entry in container.get("env", []):
                 if "value" in entry:
-                    parameter_data[entry["name"]] = entry["value"]
+                    parameter_name = "PROVISIONER_DB_USER" if entry["name"] == "DB_USER" else entry["name"]
+                    parameter_data[parameter_name] = entry["value"]
     base_activation = {
         "object": json_to_cel(job),
         "request": json_to_cel({"userInfo": {"username": username}}),
@@ -275,7 +276,7 @@ def _canonical_admission_job() -> dict[str, Any]:
                                 {"name": "DB_HOST", "value": "10.40.0.10"},
                                 {"name": "DB_PORT", "value": "5432"},
                                 {"name": "DB_NAME", "value": "shifter"},
-                                {"name": "DB_USER", "value": "shifter"},
+                                {"name": "DB_USER", "value": "provisioner_runtime"},
                                 {
                                     "name": "DB_PASSWORD",
                                     "valueFrom": {
@@ -318,6 +319,9 @@ def _malformed_admission_job(canonical: dict[str, Any], mutation: str) -> dict[s
         "image-pull-policy": lambda: container.__setitem__("imagePullPolicy", "IfNotPresent"),
         "literal-tamper": lambda: next(entry for entry in env if entry["name"] == "ENVIRONMENT").__setitem__(
             "value", "attacker"
+        ),
+        "database-user": lambda: next(entry for entry in env if entry["name"] == "DB_USER").__setitem__(
+            "value", "portal_runtime"
         ),
         "missing-required": lambda: env.remove(next(entry for entry in env if entry["name"] == "DB_USER")),
         "parallelism": lambda: job["spec"].__setitem__("parallelism", 10),
@@ -492,6 +496,13 @@ def test_aws_admission_policy_binds_aws_task_runner_and_env_contract() -> None:
     assert "shifter.dev/task-runner'] == 'gcp'" not in expressions
 
 
+def test_aws_launcher_does_not_enable_gcp_database_hydration() -> None:
+    launcher = _deployments(_load_helm_documents_aws())["worker-provisioner-launcher"]
+    container = _deployment_pod_spec(launcher)["containers"][0]
+
+    assert "SHIFTER_PROVISIONER_LAUNCHER" not in {entry["name"] for entry in container.get("env", [])}
+
+
 def test_helm_admission_principal_tracks_launcher_identity_values() -> None:
     helm = shutil.which("helm")
     if helm is None:
@@ -562,7 +573,7 @@ def test_admission_policy_semantically_denies_spoofed_and_malformed_launches(loa
         "DB_HOST": "10.40.0.10",
         "DB_PORT": "5432",
         "DB_NAME": "shifter",
-        "DB_USER": "shifter",
+        "PROVISIONER_DB_USER": "provisioner_runtime",
     }
 
     assert _semantic_policy_allows(policy, PROVISIONER_LAUNCHER_USERNAME, canonical, image, parameter_data=parameters)
@@ -588,6 +599,7 @@ def test_admission_policy_semantically_denies_spoofed_and_malformed_launches(loa
         "task-identity",
         "image-pull-policy",
         "literal-tamper",
+        "database-user",
         "missing-required",
         "parallelism",
         "volume",
@@ -681,6 +693,8 @@ def test_only_gcp_job_launchers_mount_service_account_tokens(
     for deployment_name, service_account_name in JOB_LAUNCHER_DEPLOYMENTS.items():
         pod_spec = _deployment_pod_spec(deployments[deployment_name])
         assert pod_spec["serviceAccountName"] == service_account_name
+        container = pod_spec["containers"][0]
+        assert {entry["name"]: entry["value"] for entry in container["env"]} == {"SHIFTER_PROVISIONER_LAUNCHER": "true"}
         assert pod_spec["automountServiceAccountToken"] is True, (
             f"{source_name} {deployment_name} must mount its service account token "
             "so GCP task launching can use in-cluster Kubernetes auth"

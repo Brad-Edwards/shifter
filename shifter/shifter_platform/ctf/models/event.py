@@ -96,6 +96,9 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         blank=True,
         help_text="Organizer-authored shared-resource demand hints declared to the engine (CTF-908)",
     )
+    model_sources = models.JSONField(default=dict, blank=True)
+    model_source_actor_id = models.PositiveIntegerField(null=True, blank=True)
+    model_source_revision = models.PositiveIntegerField(default=0)
     model_demand = models.JSONField(
         default=list,
         blank=True,

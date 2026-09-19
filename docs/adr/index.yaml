@@ -121,7 +121,7 @@
       },
       {
         "id": "ADR-003-R6",
-        "description": "After successful dev portal deploy verification, provider-specific reusable deploy workflows may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes the shared run_post_deploy_smoke manage command through the provider's portal-exec transport. The job must remain dev-only (`inputs.is_dev` or the provider-equivalent dev-environment gate), continue-on-error so deploy success is not blocked, request `issues: write` only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. AWS keeps its existing `scripts/smoke-test.sh` -> `scripts/portal_deploy/portal_deploy.py run-manage-on-portal` SSM transport, and long-running AWS portal-manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit `aws ssm wait command-executed` waiter. The shared smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED. Provider parity must reuse the shared smoke command/variant contract rather than forking smoke lifecycle logic by cloud.",
+        "description": "After successful dev portal deploy verification, provider-specific reusable deploy workflows may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes the shared run_post_deploy_smoke manage command through the provider's bounded command transport. The job must remain dev-only (`inputs.is_dev` or the provider-equivalent dev-environment gate), continue-on-error so deploy success is not blocked, request `issues: write` only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. AWS keeps its existing `scripts/smoke-test.sh` -> `scripts/portal_deploy/portal_deploy.py run-manage-on-portal` SSM transport, and long-running AWS portal-manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit `aws ssm wait command-executed` waiter. GCP uses a short-lived Job rendered from the live digest-pinned portal template instead of streaming kubectl exec through Connect Gateway; the Job must retain the portal entrypoint, service account, access-pool placement and runtime configuration, avoid the portal Service selector, inject the smoke identity through a temporary Secret reference, and remove both Job and Secret on exit. The GCP migration Job idempotently registers the immutable shipped smoke seed through the uniform ingestion service before rollout using a fixed non-login system actor whose bounded identity fails closed on drift. The shared smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED. Provider parity must reuse the shared smoke command/variant contract rather than forking smoke lifecycle logic by cloud.",
         "checks": [
           "deploy-verification-fail-loud",
           "deploy-workflow-runner-exposure"
@@ -136,7 +136,7 @@
       },
       {
         "id": "ADR-003-R5",
-        "description": "Deploy workflows must keep pull_request events on GitHub-hosted PR validation only. Jobs that can reach self-hosted deploy runners, assume deploy roles, push ECR images, mutate infrastructure, or restart runtime services must be gated to trusted push/workflow_dispatch runs and bind a separate GitHub Environment name such as aws-dev, aws-prod, gcp-dev, or nazgul. GCP manual dispatches must route each allowlisted deployment name to the same-named Terraform root and protected deploy Environment so the workflow identity satisfies the environment-bound trust condition, while exact-release scanning binds its separate purpose-scoped gcp-release-scan-* Environment. GCP reusable jobs consume the external-inventory contract's non-secret GCP_WIF_PROVIDER and GCP_SERVICE_ACCOUNT Environment variables, with the legacy purpose-named secret inputs retained only as a compatibility fallback. Deploy preflight validates only credentials owned by the deploy Environment; the release-scan job validates its scanner identity after entering the separate scanner Environment. AWS ECR repositories are immutable; AWS deploy consumers use repo@sha256 image digests instead of mutable latest/short-SHA image identity. The deploy-workflow-runner-exposure check enforces the pull_request half by evaluating each reusable workflow's self-hosted job if-expression for a pull_request event and requiring it to fail closed (semantic evaluation, not substring matching).",
+        "description": "Deploy workflows must keep pull_request events on GitHub-hosted PR validation only. Jobs that can reach self-hosted deploy runners, assume deploy roles, push ECR images, mutate infrastructure, or restart runtime services must be gated to trusted push/workflow_dispatch runs and bind a separate GitHub Environment name such as aws-dev, aws-prod, gcp-dev, or nazgul. GCP manual dispatches must route each allowlisted deployment name to the same-named Terraform root, protected deploy Environment, and self-hosted runner label so the workflow identity satisfies the environment-bound trust condition without borrowing another tenant's runner, while exact-release scanning binds its separate purpose-scoped gcp-release-scan-* Environment. GCP reusable jobs consume the external-inventory contract's non-secret GCP_WIF_PROVIDER and GCP_SERVICE_ACCOUNT Environment variables, with the legacy purpose-named secret inputs retained only as a compatibility fallback. Deploy preflight validates only credentials owned by the deploy Environment; the release-scan job validates its scanner identity after entering the separate scanner Environment. AWS ECR repositories are immutable; AWS deploy consumers use repo@sha256 image digests instead of mutable latest/short-SHA image identity. The deploy-workflow-runner-exposure check enforces the pull_request half by evaluating each reusable workflow's self-hosted job if-expression for a pull_request event and requiring it to fail closed (semantic evaluation, not substring matching).",
         "checks": [
           "deploy-workflow-runner-exposure"
         ]
@@ -550,6 +550,11 @@
         "id": "ADR-008-R9",
         "description": "A service account attached to a participant-controllable GCE guest or range host must not have project-wide Cloud Storage access. OAuth cloud-platform scope and container metadata blocking are not authorization boundaries for a root-on-host attacker. Exact host bootstrap artifacts use the existing provisioner signed-delivery boundary; Terraform guards and effective-permission tests reject project storage grants for attachable range-host identities. Recorded by the architecture preflight for #1644.",
         "checks": []
+      },
+      {
+        "id": "ADR-008-R10",
+        "description": "Ephemeral GCP provisioner Jobs must authenticate to PostgreSQL as the dedicated provisioner_runtime login, inheriting only the reviewed provisioner_lambda capability role. The credential bundle is a named Secret Manager resource readable only by the provisioner-launcher workload identity; portal runtime credentials must not be projected into provisioner Jobs. The launcher must fail closed when the dedicated bundle is missing, and admission must bind the Job's DB_USER to the generated PROVISIONER_DB_USER runtime parameter.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -562,6 +567,9 @@
       "scripts/bootstrap/deploy.py",
       "scripts/gcp/render_runtime_env.py",
       "platform/terraform/gcp/modules/platform-core/main.tf",
+      "platform/terraform/gcp/modules/portal/cloud-sql/main.tf",
+      "platform/terraform/gcp/modules/portal/iam/main.tf",
+      "platform/k8s/gcp/base/validatingadmissionpolicy-provisioner-jobs.yaml",
       "platform/terraform/gcp/modules/platform-core/variables.tf",
       "platform/terraform/gcp/environments/gcp-dev/terraform.tfvars",
       "platform/charts/shifter/templates/portal-backendconfig.yaml",
@@ -3862,7 +3870,7 @@
       },
       {
         "id": "ADR-059-R3",
-        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and deployment-selected provider destinations. GCP preserves the no-service-account guest default and exact range network boundaries. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback. AWS packaging uses exact-subject broker IRSA, separate regional invocation roles, private STS/Bedrock endpoints and a private TLS-pass-through NLB preserving actual guest peers over direct VPC peering; offline packaging tests do not establish live AWS qualification.",
+        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and approved provider destinations. Per ADR-064, GCP range guests receive a keyless predict-only Vertex model identity by default, or stay identity-less when the broker is the guest model path; exact range network boundaries are preserved. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Under #2243, platform-project Vertex is valid with distinct broker/invocation principals and exact-target IAM; provider/authentication selection is independent of compute hosting. Tenant source and write-only credential management uses Engine publication with separate source-use authority, revision fencing and retained accounting. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback. AWS packaging uses exact-subject broker IRSA, separate regional invocation roles, private STS/Bedrock endpoints and a private TLS-pass-through NLB preserving actual guest peers over direct VPC peering; offline packaging tests do not establish live AWS qualification.",
         "checks": []
       }
     ],
@@ -3871,6 +3879,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/059-range-model-access-broker.md",
+      "docs/architecture/model-access/source-management-preflight-2243.md",
       "docs/architecture/model-access/gcp-packaging.md",
       "scripts/check_tf_gcp_iam_resource_scope/test_model_broker_scope.py",
       "platform/charts/shifter/tests/test_model_broker.py",
@@ -3879,6 +3888,37 @@
       "docs/architecture/model-access/security.md",
       "docs/architecture/model-access/delivery.md",
       "docs/architecture/native-ec2-runtime.md"
+    ]
+  },
+  {
+    "id": "ADR-064",
+    "title": "Range guests get default-on, keyless model access (supersedes ADR-059 no-service-account guest default)",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Restores default-on, keyless range model access removed by the ADR-059 direct guest-credential retirement, without reintroducing guest-held keys. GCP range guests receive a predict-only Vertex invocation identity (aiplatform.endpoints.predict) in the platform project attached via Workload Identity with no key material, decoupled from whether a scenario declares a model need; aiplatform.googleapis.com is enabled by default and per-model provider-console enablement is the only manual step. AWS mirrors this with default-on Bedrock invoke on the range instance role, delivered separately. Direct default-on access and the ADR-059 broker are mutually exclusive per range: when MODEL_BROKER_GUEST_VIP is set guests stay identity-less and model access crosses the broker only. This supersedes ADR-059-R3's no-service-account guest default for GCP. Direct-path invocations are not subject to broker request/spend/rate enforcement, which remains the reason to enable the broker.",
+    "rules": [
+      {
+        "id": "ADR-064-R1",
+        "description": "Range guests receive a keyless model-invocation identity by default, independent of scenario model-need. On GCP the range host service account carries a predict-only Vertex custom role (aiplatform.endpoints.predict) in the platform project and is attached to guests via Workload Identity with no key material minted or delivered; aiplatform.googleapis.com is enabled by default. On AWS the range instance role carries default-on Bedrock invoke. Only per-model provider-console enablement remains manual. The identity is least privilege: it never grants cloud management, project storage, secrets, another range, or the portal API.",
+        "checks": []
+      },
+      {
+        "id": "ADR-064-R2",
+        "description": "Direct default-on model access and the ADR-059 broker are mutually exclusive per range. When the broker is the guest model path (MODEL_BROKER_GUEST_VIP set) the provisioner leaves guests identity-less, preserving the broker's source-preserving keyless isolated egress; the keyless guest identity is attached only when no broker guest path is configured. Direct-path invocations bypass broker request/spend/rate enforcement by design.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2275",
+      "docs/adr/064-default-range-model-access.md",
+      "platform/terraform/gcp/modules/portal/iam/main.tf",
+      "platform/terraform/gcp/modules/platform-core/main.tf",
+      "shifter/engine/provisioner/raes_gcp_plan.py",
+      "shifter/engine/provisioner/gcp_range_cell_scenario.py",
+      "shifter/engine/provisioner/tests/test_raes_gcp_plan.py",
+      "scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py"
     ]
   },
   {

@@ -18,7 +18,10 @@ def _rank(
     group: AllocationGroup | None = None,
 ) -> list[ModelShard]:
     """Rank eligible shards under the catalog's declared strategy."""
-    if request.demand.allowed_strategy != alias.strategy:
+    if catalog.contract_version == "model-access-policy/v4":
+        if alias.strategy not in request.need.allowed_strategies:
+            raise ContractError("allocation.strategy_not_allowed")
+    elif request.demand.allowed_strategy != alias.strategy:
         raise ContractError("allocation.strategy_not_allowed")
     candidates = [item for item in catalog.shards if item.shard_id in alias.eligible_shard_ids]
     if alias.strategy is AllocationStrategy.FIXED_V1:

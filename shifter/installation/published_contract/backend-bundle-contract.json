@@ -1749,6 +1749,15 @@
             "additionalProperties": false,
             "description": "Explicit approved transport, principal and conservative model context bound.",
             "properties": {
+              "authentication": {
+                "default": "workload-identity",
+                "enum": [
+                  "workload-identity",
+                  "stored-credential"
+                ],
+                "title": "Authentication",
+                "type": "string"
+              },
               "context_window_tokens": {
                 "maximum": 2000000,
                 "minimum": 1,
@@ -1785,7 +1794,10 @@
               "provider": {
                 "enum": [
                   "vertex-v1",
-                  "bedrock-v1"
+                  "bedrock-v1",
+                  "anthropic-v1",
+                  "openai-v1",
+                  "openrouter-v1"
                 ],
                 "title": "Provider",
                 "type": "string"
@@ -2122,6 +2134,18 @@
           "destination": "runtime-env",
           "kind": "runtime-env",
           "name": "MODEL_BROKER_TLS_KEY",
+          "owner": "canonical model broker Helm projection",
+          "process_roles": [
+            "model-broker"
+          ],
+          "sensitivity": "public",
+          "source": "validated deployment transport and mounted catalog identity"
+        },
+        {
+          "description": "Broker-only configuration or mounted-file path; never a credential value.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "MODEL_PROVIDER_PROXY",
           "owner": "canonical model broker Helm projection",
           "process_roles": [
             "model-broker"
@@ -2785,6 +2809,32 @@
             "portal",
             "worker",
             "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Reference to the PROVISIONER_DB_SECRET_ID secret in the platform runtime environment; the process fetches the value from Google Secret Manager at startup (entrypoint.sh) — a reference only, the secret value stays in Secret Manager.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PROVISIONER_DB_SECRET_ID",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "secret-reference",
+          "source": "a Google Secret Manager reference rendered from the Terraform runtime_secret_ids output"
+        },
+        {
+          "description": "Public GCP runtime configuration value (PROVISIONER_DB_USER) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PROVISIONER_DB_USER",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"
@@ -3965,6 +4015,15 @@
             "additionalProperties": false,
             "description": "Explicit approved transport, principal and conservative model context bound.",
             "properties": {
+              "authentication": {
+                "default": "workload-identity",
+                "enum": [
+                  "workload-identity",
+                  "stored-credential"
+                ],
+                "title": "Authentication",
+                "type": "string"
+              },
               "context_window_tokens": {
                 "maximum": 2000000,
                 "minimum": 1,
@@ -4001,7 +4060,10 @@
               "provider": {
                 "enum": [
                   "vertex-v1",
-                  "bedrock-v1"
+                  "bedrock-v1",
+                  "anthropic-v1",
+                  "openai-v1",
+                  "openrouter-v1"
                 ],
                 "title": "Provider",
                 "type": "string"
