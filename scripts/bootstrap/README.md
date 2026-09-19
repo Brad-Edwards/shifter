@@ -313,6 +313,16 @@ unless each runner is online with the expected label.
 ```
 
 ### Bootstrap a Repeatable GDC VM Runtime Cluster
+
+When operator credentials and runtime inputs have been explicitly supplied in
+the process environment, set `SHIFTER_BOOTSTRAP_ENV_SOURCE=process`. The GCP
+bootstrap then uses only those process values for operator/runtime environment
+resolution and does not discover additional credential files or sibling
+checkout inputs. The explicitly selected root config and Terraform overlay
+remain separate deployment inputs. The default `files` mode preserves the
+file-backed operator workflow within the selected checkout only; sibling
+checkouts are never searched. Unknown modes fail closed.
+
 ```bash
 ./scripts/bootstrap/deploy.py gdc-bootstrap --project-id prod-rwctxzl6shxk --cluster-id cluster1
 ```
