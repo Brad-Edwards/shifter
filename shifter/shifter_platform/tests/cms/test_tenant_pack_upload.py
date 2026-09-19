@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from cms.models import RaesPackageSource
+from cms.models import RaesPackageSource, ScenarioModelNeeds
 from cms.scenarios.registry import check_scenario_access, list_all_scenarios
 from engine.models import Range, RuntimePluginInstallation, RuntimePluginInvocation
 from tests.cms.test_runtime_plugins import tenant as tenant
@@ -92,6 +92,47 @@ def test_admin_installs_validated_pack_without_staff_or_executable_side_effects(
 
     with _trusted_scenario_path(source) as (path, _):
         assert path is not None and path.is_file()
+
+
+def test_pack_model_need_is_digest_bound_during_tenant_install(upload):
+    from tests.cms.conftest import write_pack_content_manifest
+
+    client, organization, root, _storage = upload
+    (root / "model-needs.json").write_text(
+        """{
+          "contract_version": "model-access-pack/v1",
+          "needs": {
+            "participant": {
+              "workload_role": "participant",
+              "profile_id": "coding",
+              "required": true,
+              "required_capabilities": ["messages"],
+              "allowed_capabilities": ["messages"],
+              "allowed_strategies": ["fixed-v1"],
+              "data_regions": ["us-central1"],
+              "limits": {
+                "max_request_seconds": 120,
+                "max_request_bytes": 1000000,
+                "max_input_tokens": 8000,
+                "max_output_tokens": 2000,
+                "max_requests_per_window": 60,
+                "request_window_seconds": 60,
+                "max_spend_micro_units": 5000000,
+                "currency": "USD",
+                "max_concurrent_requests": 2
+              }
+            }
+          }
+        }""",
+        encoding="utf-8",
+    )
+    write_pack_content_manifest(root, root.name)
+    response = _post(client, organization, root)
+    assert response.status_code == 201, response.data
+    source = RaesPackageSource.objects.get()
+    overlay = ScenarioModelNeeds.objects.get(scenario_id=source.scenario_id)
+    assert overlay.authored_package_digest == source.package_digest
+    assert overlay.needs["participant"]["scenario_digest"] == source.package_digest
 
 
 def test_identical_pack_names_have_independent_tenant_catalog_identities(upload, tenant):

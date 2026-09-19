@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
+const MACHINE_IMAGE_KIND = "machine-image";
+
 /**
  * Tenant/operator surface for the RAES image registry (#1566): register a
  * mapping from an authored RAES `source` (name + optional version) to a concrete
@@ -71,11 +73,16 @@ function RegisterForm() {
     sourceName: useId(),
     sourceVersion: useId(),
     imageRef: useId(),
+    imageKind: useId(),
     machineType: useId(),
     diskSizeGb: useId(),
     diskType: useId(),
     managementPort: useId(),
     managementUser: useId(),
+    participantContainer: useId(),
+    participantUser: useId(),
+    readinessContract: useId(),
+    readinessDigest: useId(),
     notes: useId(),
   };
   const register = useRegisterRaesImageMapping();
@@ -84,11 +91,16 @@ function RegisterForm() {
   const [sourceName, setSourceName] = useState("");
   const [sourceVersion, setSourceVersion] = useState("");
   const [imageRef, setImageRef] = useState("");
+  const [imageKind, setImageKind] = useState<"image" | "machine-image">("image");
   const [machineType, setMachineType] = useState("");
   const [diskSizeGb, setDiskSizeGb] = useState("");
   const [diskType, setDiskType] = useState("");
   const [managementUser, setManagementUser] = useState("");
   const [managementPort, setManagementPort] = useState("22");
+  const [participantContainer, setParticipantContainer] = useState("");
+  const [participantUser, setParticipantUser] = useState("");
+  const [readinessContract, setReadinessContract] = useState("participant-readiness/v1");
+  const [readinessDigest, setReadinessDigest] = useState("");
   const [notes, setNotes] = useState("");
 
   const serverError = describeMutationError(
@@ -110,6 +122,12 @@ function RegisterForm() {
         disk_type: diskType,
         management_ssh_port: Number(managementPort),
         management_ssh_username: managementUser,
+        image_kind: imageKind,
+        bootstrap_capability: imageKind === MACHINE_IMAGE_KIND ? "preconfigured-machine-host" : "standard",
+        participant_container_name: imageKind === MACHINE_IMAGE_KIND ? participantContainer : "",
+        participant_username: imageKind === MACHINE_IMAGE_KIND ? participantUser : "",
+        participant_readiness_contract: imageKind === MACHINE_IMAGE_KIND ? readinessContract : "",
+        participant_readiness_manifest_sha256: imageKind === MACHINE_IMAGE_KIND ? readinessDigest : "",
         enabled: true,
         notes,
         // This form registers a legacy alias-only mapping; portable RAES artifact
@@ -127,11 +145,16 @@ function RegisterForm() {
           setSourceName("");
           setSourceVersion("");
           setImageRef("");
+          setImageKind("image");
           setMachineType("");
           setDiskSizeGb("");
           setDiskType("");
           setManagementPort("22");
           setManagementUser("");
+          setParticipantContainer("");
+          setParticipantUser("");
+          setReadinessContract("participant-readiness/v1");
+          setReadinessDigest("");
           setNotes("");
         },
       },
@@ -187,12 +210,24 @@ function RegisterForm() {
             />
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor={ids.imageKind}>Image type</Label>
+            <Select value={imageKind} onValueChange={(value) => setImageKind(value as "image" | "machine-image")}>
+              <SelectTrigger id={ids.imageKind} className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="image">Boot image</SelectItem>
+                <SelectItem value={MACHINE_IMAGE_KIND}>Preconfigured machine host</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor={ids.imageRef}>Image ref</Label>
             <Input
               id={ids.imageRef}
               value={imageRef}
               onChange={(event) => setImageRef(event.target.value)}
-              placeholder="projects/x/global/images/alpine-3-19"
+              placeholder={imageKind === MACHINE_IMAGE_KIND
+                ? "projects/x/global/machineImages/training-host"
+                : "projects/x/global/images/alpine-3-19"}
               required
             />
           </div>
@@ -205,6 +240,27 @@ function RegisterForm() {
               placeholder="Optional (backend default when blank)"
             />
           </div>
+          {imageKind === MACHINE_IMAGE_KIND ? <>
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.participantContainer}>Participant container</Label>
+              <Input id={ids.participantContainer} value={participantContainer} maxLength={128} required
+                onChange={(event) => setParticipantContainer(event.target.value)} placeholder="participant-desktop" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.participantUser}>Participant username</Label>
+              <Input id={ids.participantUser} value={participantUser} maxLength={32} required
+                onChange={(event) => setParticipantUser(event.target.value)} placeholder="student" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.readinessContract}>Readiness contract</Label>
+              <Input id={ids.readinessContract} value={readinessContract} readOnly />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.readinessDigest}>Readiness manifest SHA-256</Label>
+              <Input id={ids.readinessDigest} value={readinessDigest} minLength={64} maxLength={64} required
+                onChange={(event) => setReadinessDigest(event.target.value)} placeholder="64 lowercase hex characters" />
+            </div>
+          </> : null}
           <div className="space-y-1.5">
             <Label htmlFor={ids.diskSizeGb}>Disk size (GB)</Label>
             <Input
@@ -322,7 +378,7 @@ function MappingsTable({
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead>Mapping</TableHead>
-          <TableHead>Image ref</TableHead>
+          <TableHead>Image</TableHead>
           <TableHead>Management SSH port</TableHead>
           <TableHead className="w-[120px]">Status</TableHead>
           {canAuthor ? (
@@ -363,7 +419,8 @@ function MappingRow({
         {row.provider}:{row.source_name}@{version}
       </TableCell>
       <TableCell className="font-mono text-xs break-all">
-        {row.image_ref}
+        <span className="block">{row.image_ref}</span>
+        <span className="text-muted-foreground">{row.image_kind === MACHINE_IMAGE_KIND ? "Machine host" : "Boot image"}</span>
       </TableCell>
       <TableCell>
         {row.management_ssh_username || "Default"}:{row.management_ssh_port}

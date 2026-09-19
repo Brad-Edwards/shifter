@@ -17566,6 +17566,14 @@
           "text"
         ]
       },
+      "ImageKindEnum": {
+        "enum": [
+          "image",
+          "machine-image"
+        ],
+        "type": "string",
+        "description": "* `image` - image\n* `machine-image` - machine-image"
+      },
       "InstancePresentation": {
         "type": "object",
         "description": "Response-only projection of ``shared.schemas.InstanceContext``.",
@@ -17999,7 +18007,7 @@
             "maxLength": 100
           },
           "provider": {
-            "$ref": "#/components/schemas/ProviderEnum"
+            "$ref": "#/components/schemas/ModelSourceConfigurationProviderEnum"
           },
           "authentication": {
             "$ref": "#/components/schemas/AuthenticationEnum"
@@ -18093,6 +18101,17 @@
           "region",
           "tokens_per_minute"
         ]
+      },
+      "ModelSourceConfigurationProviderEnum": {
+        "enum": [
+          "vertex-v1",
+          "bedrock-v1",
+          "anthropic-v1",
+          "openai-v1",
+          "openrouter-v1"
+        ],
+        "type": "string",
+        "description": "* `vertex-v1` - vertex-v1\n* `bedrock-v1` - bedrock-v1\n* `anthropic-v1` - anthropic-v1\n* `openai-v1` - openai-v1\n* `openrouter-v1` - openrouter-v1"
       },
       "ModelSourcePage": {
         "type": "object",
@@ -20489,17 +20508,6 @@
           "workspace_uuid"
         ]
       },
-      "ProviderEnum": {
-        "enum": [
-          "vertex-v1",
-          "bedrock-v1",
-          "anthropic-v1",
-          "openai-v1",
-          "openrouter-v1"
-        ],
-        "type": "string",
-        "description": "* `vertex-v1` - vertex-v1\n* `bedrock-v1` - bedrock-v1\n* `anthropic-v1` - anthropic-v1\n* `openai-v1` - openai-v1\n* `openrouter-v1` - openrouter-v1"
-      },
       "PublicRegistrationDisposition": {
         "type": "object",
         "description": "Closed organizer decision vocabulary.",
@@ -20792,6 +20800,39 @@
             "minimum": 1,
             "default": 22
           },
+          "image_kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageKindEnum"
+              }
+            ],
+            "default": "image"
+          },
+          "bootstrap_capability": {
+            "type": "string",
+            "default": "standard",
+            "maxLength": 64
+          },
+          "participant_container_name": {
+            "type": "string",
+            "default": "",
+            "maxLength": 128
+          },
+          "participant_username": {
+            "type": "string",
+            "default": "",
+            "maxLength": 32
+          },
+          "participant_readiness_contract": {
+            "type": "string",
+            "default": "",
+            "maxLength": 64
+          },
+          "participant_readiness_manifest_sha256": {
+            "type": "string",
+            "default": "",
+            "maxLength": 64
+          },
           "enabled": {
             "type": "boolean",
             "default": true
@@ -20882,6 +20923,30 @@
             "type": "integer",
             "readOnly": true
           },
+          "image_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "bootstrap_capability": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_container_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_username": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_readiness_contract": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_readiness_manifest_sha256": {
+            "type": "string",
+            "readOnly": true
+          },
           "enabled": {
             "type": "boolean",
             "readOnly": true
@@ -20929,11 +20994,13 @@
           "artifact_digest",
           "artifact_id",
           "artifact_version",
+          "bootstrap_capability",
           "created_at",
           "disk_size_gb",
           "disk_type",
           "enabled",
           "id",
+          "image_kind",
           "image_ref",
           "integrity_ref",
           "machine_type",
@@ -20941,6 +21008,10 @@
           "management_ssh_username",
           "media_type",
           "notes",
+          "participant_container_name",
+          "participant_readiness_contract",
+          "participant_readiness_manifest_sha256",
+          "participant_username",
           "provenance_ref",
           "provider",
           "source_name",
@@ -22015,6 +22086,12 @@
               "type": "string",
               "maxLength": 8192
             }
+          },
+          "image_profiles": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RuntimeTargetImageProfile"
+            }
           }
         },
         "required": [
@@ -22264,6 +22341,101 @@
         ],
         "type": "string",
         "description": "* `checking` - checking\n* `ready` - ready\n* `failed` - failed\n* `disabled` - disabled\n* `retired` - retired"
+      },
+      "RuntimeTargetImageProfile": {
+        "type": "object",
+        "description": "Closed provider image profile selected for one adapter target.",
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/RuntimeTargetImageProfileProviderEnum"
+          },
+          "image_kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageKindEnum"
+              }
+            ],
+            "default": "image"
+          },
+          "image_ref": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "machine_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "maximum": 16384,
+            "minimum": 1,
+            "nullable": true
+          },
+          "disk_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "bootstrap_capability": {
+            "type": "string",
+            "default": "standard",
+            "maxLength": 64
+          },
+          "management_ssh_username": {
+            "type": "string",
+            "default": "",
+            "maxLength": 32
+          },
+          "management_ssh_port": {
+            "type": "integer",
+            "maximum": 65535,
+            "minimum": 1,
+            "default": 22
+          },
+          "participant_container_name": {
+            "type": "string",
+            "default": "",
+            "maxLength": 128
+          },
+          "participant_username": {
+            "type": "string",
+            "default": "",
+            "maxLength": 32
+          },
+          "participant_readiness_contract": {
+            "type": "string",
+            "default": "",
+            "maxLength": 64
+          },
+          "participant_readiness_manifest_sha256": {
+            "type": "string",
+            "default": "",
+            "maxLength": 64
+          },
+          "domain_dns_name": {
+            "type": "string",
+            "default": "",
+            "maxLength": 253
+          },
+          "domain_netbios_name": {
+            "type": "string",
+            "default": "",
+            "maxLength": 15
+          }
+        },
+        "required": [
+          "image_ref",
+          "provider"
+        ]
+      },
+      "RuntimeTargetImageProfileProviderEnum": {
+        "enum": [
+          "gcp",
+          "aws"
+        ],
+        "type": "string",
+        "description": "* `gcp` - gcp\n* `aws` - aws"
       },
       "ScenarioDetail": {
         "type": "object",

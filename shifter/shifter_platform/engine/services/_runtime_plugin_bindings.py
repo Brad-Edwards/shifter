@@ -143,7 +143,9 @@ def has_runtime_plugin_binding(organization_uuid: UUID, pack_id: str) -> bool:
     ).exists()
 
 
-def resolve_runtime_plugin_pin(scope: RuntimePluginScope, plan: dict[str, Any]) -> RuntimePluginPin | None:
+def resolve_runtime_plugin_pin(
+    scope: RuntimePluginScope, plan: dict[str, Any], *, backend: str | None = None
+) -> RuntimePluginPin | None:
     """Resolve under the installation lock held through range creation.
 
     Called only with the CMS launch boundary's authorized organization, verified
@@ -186,6 +188,8 @@ def resolve_runtime_plugin_pin(scope: RuntimePluginScope, plan: dict[str, Any]) 
             bindings=binding.bindings,
         )
         pin.bindings.validate_plan(plan)
+        if backend is not None:
+            pin.bindings.validate_provider(backend)
         return pin
     except ValueError:
         raise ValidationError("The installed plugin does not match this pack's compiled guests") from None
@@ -216,6 +220,8 @@ def retained_runtime_plugin_pin(target: Range) -> RuntimePluginPin | None:
         if pin.digest != row.pin_digest or pin.installation_id != row.installation_id:
             raise ValueError("Stored pin identity mismatch")
         pin.bindings.validate_plan(target.range_config)
+        if target.range_backend:
+            pin.bindings.validate_provider(str(target.range_backend))
         return pin
     except ValueError:
         raise ValidationError("The range's runtime plugin binding is invalid") from None
@@ -223,13 +229,14 @@ def retained_runtime_plugin_pin(target: Range) -> RuntimePluginPin | None:
 
 def _view(row: RuntimePluginPackBinding) -> RuntimePluginPackView:
     """Project a stored pack binding and current installation state."""
+    bindings = PluginTargetBindings.model_validate(row.bindings).model_dump(mode="json")
     return RuntimePluginPackView(
         row.id,
         row.organization_uuid,
         row.pack_id,
         row.pack_digest,
         row.installation_id,
-        row.bindings,
+        bindings,
         row.enabled,
         row.installation.state,
     )

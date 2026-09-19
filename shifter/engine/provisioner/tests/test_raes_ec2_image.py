@@ -3,6 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
+from shared.runtime_plugin_binding import RuntimeTargetImageProfile
 
 from raes_ec2_image import Ec2ImageError, resolve_ec2_image, verify_ec2_image
 from raes_plan import RaesPlanImage, RaesPlanNode
@@ -69,6 +70,18 @@ def test_pinned_registry_image_keeps_management_transport_and_source_identity():
     assert actual.root_device == "/dev/sda1"
     assert actual.disk_size_gb >= 30
     assert actual.image_id == profile.image_id
+
+
+def test_adapter_target_profile_selects_an_exact_ami():
+    runtime = RuntimeTargetImageProfile(
+        provider="aws",
+        image_ref="ami-0123456789abcdef0",
+        machine_type="m7i.large",
+        management_ssh_username="host-admin",
+    )
+    profile = resolve_ec2_image(node(), [], runtime_profile=runtime)
+    assert profile.image_id == runtime.image_ref
+    assert profile.management_ssh_username == "host-admin"
 
 
 @pytest.mark.parametrize(

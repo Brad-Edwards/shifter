@@ -151,6 +151,7 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 |---|---|---|---|
 | `GCP_PROJECT_ID` | secret | yes | The Google Cloud project the platform deploys to. |
 | `SHIFTER_CONFIG_GCP_DEV` | secret | yes | Full validated deployment `shifter.yaml`. It is the sole source of `dynamic_secret_project_id`, exact provisioner static-secret refs, and range egress policy for deploy and destroy. |
+| `SHIFTER_CONFIG_OVERLAY_JSON` | variable | no | Optional bounded JSON overlay for `settings.model_access`, `settings.model_broker`, and `settings.model_broker_runtime`. A reviewed `platform/deploy/gcp/<environment>/model-broker-overlay.template.json` takes precedence when present; the workflow binds its project and public CA, then applies it only to ephemeral configuration files. Arbitrary settings, root keys, and secrets are rejected. |
 | `GCP_REGION` | variable | no | Default `us-central1`. |
 | `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (for example, `shifter.your-domain.example`). |
 | `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN` | secret | yes | Identity Platform beforeCreate allow-list; the bootstrap operator must end with `@<this>` for sign-in to succeed. |

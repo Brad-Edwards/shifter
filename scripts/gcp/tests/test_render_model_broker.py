@@ -141,7 +141,21 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
         "spec": {
             "template": {
                 "metadata": {"annotations": {"checksum/runtime-config": "empty"}},
-                "spec": {"containers": [{"name": "model-access-control"}]},
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "model-access-control",
+                            "env": [
+                                {"name": "MODEL_ACCESS_ENABLED", "value": "true"},
+                                {
+                                    "name": "MODEL_ACCESS_CATALOG_PATH",
+                                    "value": "/etc/shifter/model-access/catalog.json",
+                                },
+                                {"name": "MODEL_ACCESS_CATALOG_DIGEST", "value": "old"},
+                            ],
+                        }
+                    ]
+                },
             }
         },
     }
@@ -153,7 +167,7 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     }
     versions = []
     for value in ("old", "new", "new"):
-        runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] = value
+        control["spec"]["template"]["spec"]["containers"][0]["env"][2]["value"] = value
         combined = list(
             yaml.safe_load_all(
                 module.combine_resources(
@@ -196,6 +210,15 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
         doc for doc in combined if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "platform-runtime"
     )
     assert applied_runtime["data"]["MODEL_BROKER_GUEST_VIP"] == "10.40.0.25"
+    assert applied_runtime["data"]["MODEL_ACCESS_ENABLED"] == "true"
+    assert applied_runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] == "new"
+    applied_worker = next(
+        doc for doc in combined if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "worker-engine"
+    )
+    assert any(
+        mount["mountPath"] == "/etc/shifter/model-access"
+        for mount in applied_worker["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
+    )
     assert versions[0] != versions[1]
     assert versions[1] == versions[2]
 
