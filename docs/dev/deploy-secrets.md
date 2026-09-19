@@ -312,6 +312,13 @@ workload bindings.
 
 ## GCP Packer image builds
 
+Fresh projects without a default or platform VPC use the optional image network
+from `deploy.py gcp-foundation` (see `scripts/bootstrap/README.md`). Set its
+network/subnet outputs in the build and validation Environments as
+`GCP_PACKER_NETWORK` and `GCP_PACKER_SUBNETWORK`; set
+`GCP_PACKER_USE_INTERNAL_IP=true` for builds. These values are variables, not
+secrets. Identity outputs remain in their matching purpose Environments.
+
 Consumed by `.github/workflows/packer-gcp.yml` (build),
 `.github/workflows/packer-gcp-validate.yml` (validate), and
 `.github/workflows/packer-gcp-promote.yml` (promote). Builds run on
@@ -332,7 +339,8 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
-| `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
+| `GCP_RANGE_BACKEND` | variable | no | Set `gce` in the build Environment for native GCE deployments. This skips the GDC-only qcow2 export; the exact image build evidence remains mandatory. Unset retains the legacy export behavior. |
+| `GCP_GDC_VM_IMAGE_BUCKET` | variable | for GDC export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset when `GCP_RANGE_BACKEND` is not `gce`. See `docs/architecture/gcp-guest-images.md`. |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;

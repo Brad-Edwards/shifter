@@ -129,6 +129,30 @@ the substrate, then deploy. The maintained end-to-end walkthrough is the GCP
 Deployment section of
 `docs/technical/dev/setup.md`.
 
+For a fresh project, copy `gcp-foundation.example.tfvars.json` to an
+operator-owned file outside the repository. Supply the project ID and number,
+numeric GitHub repository and owner IDs, bucket names, and exact purpose
+Environment/branch/workflow tuples. Obtain IDs with `gcloud projects describe`
+and `gh api repos/<owner>/<repo>`; bootstrap verifies them before writes. Keep
+image build and validation on protected `dev`/`main` refs. Deploy and destroy
+use the selected tenant branch. No secret payload belongs in this file.
+
+```bash
+./scripts/bootstrap/deploy.py gcp-foundation --inputs /path/to/foundation.tfvars.json --dry-run
+./scripts/bootstrap/deploy.py gcp-foundation --inputs /path/to/foundation.tfvars.json --yes
+```
+
+This enables the foundation APIs, creates the private versioned state bucket,
+and applies the independently owned `cicd-oidc` root from a saved plan under
+operator credentials. The evidence bucket has an irreversible 90-day retention
+lock. `enable_image_build_network=true` creates a foundation-owned custom VPC,
+private subnet, Cloud NAT, and IAP-only build/validation ingress before any
+platform deployment. It has no peering to runner or runtime networks. Publish
+its network/subnet outputs as `GCP_PACKER_NETWORK` / `GCP_PACKER_SUBNETWORK` in
+the build and validate Environments, and set `GCP_PACKER_USE_INTERNAL_IP=true`
+in the build Environment. Existing foundations keep this network disabled by
+default; their state addresses and existing image network remain unchanged.
+
 1. Create the GCP project and enable the required APIs.
 2. Apply the foundational OIDC/WIF identity root
    (`platform/terraform/gcp/global/cicd-oidc`) to create the GitHub Actions
