@@ -445,8 +445,12 @@ resource "google_service_account_iam_member" "provisioner_sign_blob" {
   member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
 
-# Legacy cloud-enabled host identity. Native guests do not receive cloud
-# service accounts; all participant model access crosses the dedicated broker.
+# Range host identity attached to range guests for default-on, keyless model
+# access (ADR-064). It carries a predict-only Vertex invocation role in the
+# platform project (same-project default) plus host telemetry, and never holds a
+# provider key. When the ADR-059 broker is enabled the provisioner leaves guests
+# identity-less and participant model access crosses the broker instead; the two
+# modes are mutually exclusive per range.
 resource "google_service_account" "range_host" {
   project      = var.project_id
   account_id   = "${replace(var.name_prefix, "-", "")}-range-host"
@@ -464,8 +468,25 @@ resource "google_project_iam_member" "range_host_roles" {
   member  = "serviceAccount:${google_service_account.range_host.email}"
 }
 
-# The provisioner may attach the legacy host identity only when required by
-# the explicitly selected host capability. It cannot mint provider keys.
+# Predict-only Vertex invocation for range guests (ADR-064). Least privilege:
+# the range host may call approved publisher models and nothing else, keylessly
+# via Workload Identity. Enabling a specific model (e.g. Claude in Vertex Model
+# Garden) remains a provider-console step, matching the AWS Bedrock posture.
+resource "google_project_iam_custom_role" "range_model_invoke" {
+  project     = var.project_id
+  role_id     = "shifterRangeModelInvoke"
+  title       = "Shifter range model invocation"
+  permissions = ["aiplatform.endpoints.predict"]
+}
+
+resource "google_project_iam_member" "range_host_model_invoke" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.range_model_invoke.name
+  member  = "serviceAccount:${google_service_account.range_host.email}"
+}
+
+# The provisioner attaches the range host identity to range guests
+# (actAs -> serviceAccountUser). It cannot mint provider keys.
 resource "google_service_account_iam_member" "provisioner_range_host_user" {
   service_account_id = google_service_account.range_host.name
   role               = "roles/iam.serviceAccountUser"

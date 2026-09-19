@@ -6,6 +6,12 @@ Proposed for [#681](https://github.com/Brad-Edwards/shifter/issues/681),
 PLAT-202, 2026-09-06. This is an implementation decision for review; it does
 not advertise an installed capability or qualified provider.
 
+The "no-service-account guest default" for GCP (ADR-059-R3) is superseded by
+[ADR-064](064-default-range-model-access.md): range guests receive a keyless,
+predict-only Vertex model identity by default, or stay identity-less when the
+broker is the guest model path. The rest of this ADR — the broker, its
+ownership, allocation, accounting and enforcement — is unaffected.
+
 ## Context
 
 Participant root must be an assumed adversary under ADR-056. The existing
@@ -83,7 +89,7 @@ entry and grant. The detailed contracts are in the
 | Alternative | Disposition |
 | --- | --- |
 | Provider keys delivered directly to guests, including per-range keys on a shared principal | Reject direct guest authority: application enforcement is bypassable. Sharing a broker-held provider identity remains supported under ADR-060. |
-| Per-range provider principal with direct tokens | Useful defense for legacy access, but insufficient for mandatory request/spend enforcement outside the broker. |
+| Per-range provider principal with direct tokens | Revived, keyless, as the default-on baseline under [ADR-064](064-default-range-model-access.md) (Workload Identity, no key material); still insufficient for mandatory request/spend enforcement, which is why the broker remains and is mutually exclusive with it per range. |
 | A gateway product as the authority and billing database | Reject a second authority. A future transport library may be adopted after protocol, dependency, and security review; it cannot own grants or budgets. |
 | In-process proxy on the public portal listener | Reject: streaming load and participant HTTP parsing enlarge the portal exposure and failure domain. |
 | Mandatory service mesh | Not selected. Dedicated TLS and authenticated service calls satisfy this seam; ADR-057 remains in force. |
@@ -131,6 +137,11 @@ provider-key references and direct-model runtime configuration. Teardown retains
 deletion of range-owned legacy Secret Manager copies without reading their
 payloads or retaining provider IAM. Externally managed shared keys require
 owner revocation during migration; deleting a stored copy does not revoke a key.
+
+[ADR-064](064-default-range-model-access.md) later restores a default-on,
+keyless range model identity (a predict-only Vertex role attached via Workload
+Identity, with no key material and no key-admin grant). The key retirement above
+therefore stands: reachability returns without reintroducing guest-held keys.
 
 The runtime enrollment path carries the deployment-verified private broker VIP
 through the provisioner environment allowlist into the RAES firewall capability.
