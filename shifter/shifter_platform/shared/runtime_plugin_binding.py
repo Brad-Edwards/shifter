@@ -54,6 +54,7 @@ class RuntimeTargetImageProfile(ClosedModel):
 
     @model_validator(mode="after")
     def validate_provider_profile(self) -> Self:
+        """Reject provider image details that cannot be realized safely."""
         if self.machine_type and not _MACHINE_TYPE.fullmatch(self.machine_type):
             raise ValueError("image profile machine type is invalid")
         for value in (self.management_ssh_username, self.participant_username):
@@ -67,6 +68,7 @@ class RuntimeTargetImageProfile(ClosedModel):
 
 
 def _participant_profile(profile: RuntimeTargetImageProfile) -> tuple[str, str, str, str]:
+    """Collect the fields required to access and verify a participant host."""
     return (
         profile.participant_container_name,
         profile.participant_username,
@@ -76,6 +78,7 @@ def _participant_profile(profile: RuntimeTargetImageProfile) -> tuple[str, str, 
 
 
 def _domain_profile(profile: RuntimeTargetImageProfile) -> tuple[str, str]:
+    """Collect the DNS and NetBIOS names for a prepromoted domain image."""
     return (profile.domain_dns_name, profile.domain_netbios_name)
 
 
@@ -93,6 +96,7 @@ def _validate_aws_image_profile(profile: RuntimeTargetImageProfile) -> None:
 
 
 def _validate_gcp_image_profile(profile: RuntimeTargetImageProfile) -> None:
+    """Validate the selected GCP boot or machine-host image profile."""
     participant = _participant_profile(profile)
     domain = _domain_profile(profile)
     if profile.image_kind == "image":
@@ -119,6 +123,7 @@ def _validate_gcp_boot_image_profile(
     participant: tuple[str, str, str, str],
     domain: tuple[str, str],
 ) -> None:
+    """Require a concrete GCP boot image and compatible bootstrap fields."""
     if not _GCE_IMAGE_REF.fullmatch(profile.image_ref):
         raise ValueError("GCP image profiles require an exact Compute Engine image resource")
     if any(participant):

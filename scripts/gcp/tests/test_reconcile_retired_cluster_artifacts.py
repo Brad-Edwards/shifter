@@ -49,3 +49,22 @@ def test_retirement_refuses_to_delete_an_active_job_identity(tmp_path, monkeypat
     monkeypatch.setattr(MODULE, "_kubectl", lambda *_args, **_kwargs: True)
     with pytest.raises(ValueError, match="still present"):
         MODULE.reconcile("context", _manifest(tmp_path))
+
+
+def test_retirement_skips_annotation_that_is_already_absent(tmp_path, monkeypatch):
+    manifest = json.loads(_manifest(tmp_path).read_text(encoding="utf-8"))
+    manifest["deployment_annotations"] = [
+        {"namespace": "platform", "name": "worker", "annotation": "kubectl.kubernetes.io/restartedAt"}
+    ]
+    path = tmp_path / "retired.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    calls = []
+
+    def fake_kubectl(*args, may_be_absent=False):
+        calls.append(args)
+        return not (args[2:4] == ("get", "job") and may_be_absent)
+
+    monkeypatch.setattr(MODULE, "_kubectl", fake_kubectl)
+    monkeypatch.setattr(MODULE, "_has_deployment_annotation", lambda *_args: False)
+    MODULE.reconcile("context", path)
+    assert all("annotate" not in args for args in calls)

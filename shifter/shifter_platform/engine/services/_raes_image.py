@@ -321,33 +321,7 @@ def _validate_runtime_profile(
         if any(participant_fields):
             raise RaesImageMappingError("participant host fields require image_kind 'machine-image'")
     else:
-        if provider != "gce":
-            raise RaesImageMappingError("machine-image mappings currently require provider 'gce'")
-        if not _MACHINE_IMAGE_REF.fullmatch(image_ref):
-            raise RaesImageMappingError(
-                "machine-image image_ref must be an exact 'projects/<project>/global/machineImages/<name>' resource"
-            )
-        if bootstrap != _PRECONFIGURED_MACHINE_HOST:
-            raise RaesImageMappingError(
-                "machine-image mappings require bootstrap_capability 'preconfigured-machine-host'"
-            )
-        if not management_user:
-            raise RaesImageMappingError("machine-image mappings require management_ssh_username")
-        if not all(participant_fields):
-            raise RaesImageMappingError(
-                "machine-image mappings require participant container, username, "
-                "readiness contract, and manifest digest"
-            )
-        if not _CONTAINER_NAME.fullmatch(container):
-            raise RaesImageMappingError("participant_container_name is invalid")
-        try:
-            validate_management_ssh_username(participant_user)
-        except ValueError:
-            raise RaesImageMappingError("participant_username must be a local OS username") from None
-        if readiness_contract != _READINESS_CONTRACT:
-            raise RaesImageMappingError(f"participant_readiness_contract must be '{_READINESS_CONTRACT}'")
-        if not re.fullmatch(r"[0-9a-f]{64}", readiness_sha):
-            raise RaesImageMappingError("participant_readiness_manifest_sha256 must be a lowercase SHA-256 digest")
+        _validate_machine_image_fields(provider, image_ref, bootstrap, management_user, participant_fields)
     return {
         "image_kind": image_kind,
         "bootstrap_capability": bootstrap,
@@ -356,6 +330,41 @@ def _validate_runtime_profile(
         "participant_readiness_contract": readiness_contract,
         "participant_readiness_manifest_sha256": readiness_sha,
     }
+
+
+def _validate_machine_image_fields(
+    provider: str,
+    image_ref: str,
+    bootstrap: str,
+    management_user: str,
+    participant_fields: tuple[str, str, str, str],
+) -> None:
+    """Require the provider and complete participant-host readiness contract."""
+    container, participant_user, readiness_contract, readiness_sha = participant_fields
+    if provider != "gce":
+        raise RaesImageMappingError("machine-image mappings currently require provider 'gce'")
+    if not _MACHINE_IMAGE_REF.fullmatch(image_ref):
+        raise RaesImageMappingError(
+            "machine-image image_ref must be an exact 'projects/<project>/global/machineImages/<name>' resource"
+        )
+    if bootstrap != _PRECONFIGURED_MACHINE_HOST:
+        raise RaesImageMappingError("machine-image mappings require bootstrap_capability 'preconfigured-machine-host'")
+    if not management_user:
+        raise RaesImageMappingError("machine-image mappings require management_ssh_username")
+    if not all(participant_fields):
+        raise RaesImageMappingError(
+            "machine-image mappings require participant container, username, readiness contract, and manifest digest"
+        )
+    if not _CONTAINER_NAME.fullmatch(container):
+        raise RaesImageMappingError("participant_container_name is invalid")
+    try:
+        validate_management_ssh_username(participant_user)
+    except ValueError:
+        raise RaesImageMappingError("participant_username must be a local OS username") from None
+    if readiness_contract != _READINESS_CONTRACT:
+        raise RaesImageMappingError(f"participant_readiness_contract must be '{_READINESS_CONTRACT}'")
+    if not re.fullmatch(r"[0-9a-f]{64}", readiness_sha):
+        raise RaesImageMappingError("participant_readiness_manifest_sha256 must be a lowercase SHA-256 digest")
 
 
 def _stripped(value: str | None) -> str:

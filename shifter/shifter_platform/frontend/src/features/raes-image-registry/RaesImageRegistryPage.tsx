@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
+const MACHINE_IMAGE_KIND = "machine-image";
+
 /**
  * Tenant/operator surface for the RAES image registry (#1566): register a
  * mapping from an authored RAES `source` (name + optional version) to a concrete
@@ -121,11 +123,11 @@ function RegisterForm() {
         management_ssh_port: Number(managementPort),
         management_ssh_username: managementUser,
         image_kind: imageKind,
-        bootstrap_capability: imageKind === "machine-image" ? "preconfigured-machine-host" : "standard",
-        participant_container_name: imageKind === "machine-image" ? participantContainer : "",
-        participant_username: imageKind === "machine-image" ? participantUser : "",
-        participant_readiness_contract: imageKind === "machine-image" ? readinessContract : "",
-        participant_readiness_manifest_sha256: imageKind === "machine-image" ? readinessDigest : "",
+        bootstrap_capability: imageKind === MACHINE_IMAGE_KIND ? "preconfigured-machine-host" : "standard",
+        participant_container_name: imageKind === MACHINE_IMAGE_KIND ? participantContainer : "",
+        participant_username: imageKind === MACHINE_IMAGE_KIND ? participantUser : "",
+        participant_readiness_contract: imageKind === MACHINE_IMAGE_KIND ? readinessContract : "",
+        participant_readiness_manifest_sha256: imageKind === MACHINE_IMAGE_KIND ? readinessDigest : "",
         enabled: true,
         notes,
         // This form registers a legacy alias-only mapping; portable RAES artifact
@@ -213,7 +215,7 @@ function RegisterForm() {
               <SelectTrigger id={ids.imageKind} className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="image">Boot image</SelectItem>
-                <SelectItem value="machine-image">Preconfigured machine host</SelectItem>
+                <SelectItem value={MACHINE_IMAGE_KIND}>Preconfigured machine host</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -223,7 +225,7 @@ function RegisterForm() {
               id={ids.imageRef}
               value={imageRef}
               onChange={(event) => setImageRef(event.target.value)}
-              placeholder={imageKind === "machine-image"
+              placeholder={imageKind === MACHINE_IMAGE_KIND
                 ? "projects/x/global/machineImages/training-host"
                 : "projects/x/global/images/alpine-3-19"}
               required
@@ -238,7 +240,7 @@ function RegisterForm() {
               placeholder="Optional (backend default when blank)"
             />
           </div>
-          {imageKind === "machine-image" ? <>
+          {imageKind === MACHINE_IMAGE_KIND ? <>
             <div className="space-y-1.5">
               <Label htmlFor={ids.participantContainer}>Participant container</Label>
               <Input id={ids.participantContainer} value={participantContainer} maxLength={128} required
@@ -418,7 +420,7 @@ function MappingRow({
       </TableCell>
       <TableCell className="font-mono text-xs break-all">
         <span className="block">{row.image_ref}</span>
-        <span className="text-muted-foreground">{row.image_kind === "machine-image" ? "Machine host" : "Boot image"}</span>
+        <span className="text-muted-foreground">{row.image_kind === MACHINE_IMAGE_KIND ? "Machine host" : "Boot image"}</span>
       </TableCell>
       <TableCell>
         {row.management_ssh_username || "Default"}:{row.management_ssh_port}
