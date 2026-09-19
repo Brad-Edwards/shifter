@@ -1993,7 +1993,7 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                             "name": "migrate",
                             "image": platform_image,
                             "imagePullPolicy": "IfNotPresent",
-                            "args": ["/bin/true"],
+                            "args": ["python", "manage.py", "bootstrap_inbox_catalog"],
                             "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
                             "env": [
                                 {

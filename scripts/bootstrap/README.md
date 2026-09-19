@@ -206,8 +206,9 @@ default; their state addresses and existing image network remain unchanged.
 5. Bootstrap the GDC/GKE substrate and control plane with `gdc-bootstrap` (see
    the command below). It applies the GCP Terraform (GKE, Cloud SQL,
    Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
-   Helm values from Terraform outputs and Secret Manager, and installs the
-   Shifter Helm release.
+   Helm values from Terraform outputs and Secret Manager, migrates the database
+   and registers the shipped scenario catalog, then installs the Shifter Helm
+   release. Catalog registration uses the same idempotent command as deploy CI.
 6. Subsequent deploys run through CI as a manual dispatch:
    `gh workflow run deploy.yml --ref <branch> -f environment=gcp-dev` (see the
    CI/CD trigger matrix in `docs/technical/dev/ci-cd.md`). Branch names no longer
