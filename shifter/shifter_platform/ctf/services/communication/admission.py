@@ -158,6 +158,33 @@ def _live_actor(user_id: int) -> User:
     return user
 
 
+def _assert_target_set(campaign: CommunicationCampaign, target_events: list[CTFEvent]) -> None:
+    """Reject empty, deleted, cross-workspace or incomplete target sets."""
+    if not target_events or any(
+        event.workspace_id != campaign.workspace_id or event.deleted_at is not None for event in target_events
+    ):
+        raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_TARGET_DENIED")
+    if not campaign._state.adding and len(target_events) != campaign.target_event_links.count():
+        raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_TARGET_DENIED")
+
+
+def _authorize_token(actor: AdmissionActor, required_scope: str) -> None:
+    """Lock and validate the original token-owner pair and exact scope."""
+    if actor.token_id is not None:
+        token = ApiToken.objects.select_for_update().filter(pk=actor.token_id).first()
+        if (
+            token is None
+            or actor.user_id is None
+            or token.created_by_id != actor.user_id
+            or not token.is_active
+            or not token.has_eligible_owner
+            or not has_scope(token.scopes, required_scope)
+            or actor.system
+            or actor.allow_early_release
+        ):
+            raise CTFCommunicationError("Communication token is not authorized", code="CTF_COMMUNICATION_TOKEN_DENIED")
+
+
 def reauthorize(
     campaign: CommunicationCampaign,
     target_events: list[CTFEvent],
@@ -176,30 +203,13 @@ def reauthorize(
     transaction finishes. Raises ``CTFCommunicationError`` on any denial and
     returns ``None`` when admission may proceed.
     """
-    if not target_events or any(
-        event.workspace_id != campaign.workspace_id or event.deleted_at is not None for event in target_events
-    ):
-        raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_TARGET_DENIED")
-    if not campaign._state.adding and len(target_events) != campaign.target_event_links.count():
-        raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_TARGET_DENIED")
+    _assert_target_set(campaign, target_events)
     if actor.system and actor.token_id is None:
         return
     if actor.user_id is None:
         raise CTFCommunicationError("A communication actor is required", code="CTF_COMMUNICATION_ACTOR_REQUIRED")
     user = _live_actor(actor.user_id)
-    if actor.token_id is not None:
-        token = ApiToken.objects.select_for_update().filter(pk=actor.token_id).first()
-        if (
-            token is None
-            or actor.user_id is None
-            or token.created_by_id != actor.user_id
-            or not token.is_active
-            or not token.has_eligible_owner
-            or not has_scope(token.scopes, required_scope)
-            or actor.system
-            or actor.allow_early_release
-        ):
-            raise CTFCommunicationError("Communication token is not authorized", code="CTF_COMMUNICATION_TOKEN_DENIED")
+    _authorize_token(actor, required_scope)
     try:
         workspace_services.authorize_launch_workspace_locked(
             user, campaign.workspace_id, workspace_services.WorkspaceOperation.USE_CTF_COMMUNICATIONS
@@ -217,7 +227,7 @@ def reauthorize(
                 code="CTF_COMMUNICATION_EVENT_DENIED",
             )
         if audit_authority and required_scope == CTF_COMMUNICATION_WRITE:
-            from ctf.services.audit import audit_communication_authority
+            from ctf.services.communication.audit import audit_communication_authority
 
             audit_communication_authority(
                 event_id=event.pk,

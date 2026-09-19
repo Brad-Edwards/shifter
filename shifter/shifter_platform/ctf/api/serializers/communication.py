@@ -11,6 +11,8 @@ recipient list.
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.conf import settings
 from rest_framework import serializers
 
@@ -29,6 +31,8 @@ from ctf.exceptions import CTFCommunicationError
 from ctf.models import CommunicationCampaign
 from shared.api.closed_serializer import ClosedSerializer
 from shared.api.strict_json import ClosedJSONParser
+
+INVALID_VALUE = "Invalid value."
 
 
 class CommunicationInboxItemSerializer(serializers.Serializer):
@@ -91,14 +95,14 @@ class CommunicationAudienceSerializer(ClosedSerializer):
         child=serializers.UUIDField(), min_length=1, max_length=MAX_AUDIENCE_IDS, required=False
     )
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         normalized = {
             key: [str(v) for v in value] if isinstance(value, list) else value for key, value in attrs.items()
         }
         try:
             return validate_audience_spec(normalized)
         except CTFCommunicationError:
-            raise serializers.ValidationError("Invalid value.") from None
+            raise serializers.ValidationError(INVALID_VALUE) from None
 
 
 class CommunicationTriggerSerializer(ClosedSerializer):
@@ -110,11 +114,11 @@ class CommunicationTriggerSerializer(ClosedSerializer):
     declaration_ref = serializers.CharField(max_length=MAX_REF_CHARS, required=False)
     occurrence_ref = serializers.CharField(max_length=MAX_REF_CHARS, required=False)
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         try:
             return validate_trigger_spec(attrs)
         except CTFCommunicationError:
-            raise serializers.ValidationError("Invalid value.") from None
+            raise serializers.ValidationError(INVALID_VALUE) from None
 
 
 class CommunicationRevisionSerializer(ClosedSerializer):
@@ -123,14 +127,14 @@ class CommunicationRevisionSerializer(ClosedSerializer):
     subject = serializers.CharField(max_length=MAX_SUBJECT_CODEPOINTS, trim_whitespace=False)
     body = serializers.CharField(max_length=MAX_BODY_BYTES, allow_blank=True, trim_whitespace=False)
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         try:
             content = validate_message_content(
                 {key: attrs[key] for key in ("subject", "body")},
                 allowed_link_hosts=settings.CTF_COMMUNICATION_ALLOWED_LINK_HOSTS,
             )
         except CTFCommunicationError:
-            raise serializers.ValidationError("Invalid value.") from None
+            raise serializers.ValidationError(INVALID_VALUE) from None
         return {**attrs, "subject": content["subject"], "body": content["body"]}
 
 

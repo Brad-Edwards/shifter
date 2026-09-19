@@ -7,7 +7,8 @@ send-invitations action.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from drf_spectacular.utils import extend_schema
 from rest_framework.request import Request
@@ -37,15 +38,9 @@ from shared.audit import AuditAction
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from ctf.models import CTFEmailTemplate, CTFEvent, CTFNotification
+    from ctf.models import CTFEmailTemplate, CTFEvent
 
 logger = logging.getLogger(__name__)
-
-
-def _dispatch_notification_send(notif: CTFNotification) -> None:
-    from ctf.services.notification._scheduled import retired_write
-
-    retired_write()
 
 
 def _email_template_payload(template: CTFEmailTemplate) -> dict[str, object]:
@@ -89,7 +84,7 @@ class SendLoginInfoView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(exclude=True)
-    def post(self, request, **kwargs):
+    def post(self, request: Request, **kwargs: Any) -> Response:
         from ctf.api.retired_notifications import retired_notification_response
 
         return retired_notification_response(request)
@@ -131,7 +126,7 @@ class NotificationListView(APIView):
         return Response({"notifications": data, "total": total})
 
     @extend_schema(exclude=True)
-    def post(self, request, **kwargs):
+    def post(self, request: Request, **kwargs: Any) -> Response:
         from ctf.api.retired_notifications import retired_notification_response
 
         return retired_notification_response(request)
@@ -144,7 +139,7 @@ class NotificationCancelScheduleView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(exclude=True)
-    def post(self, request, **kwargs):
+    def post(self, request: Request, **kwargs: Any) -> Response:
         from ctf.api.retired_notifications import retired_notification_response
 
         return retired_notification_response(request)
@@ -157,7 +152,7 @@ class NotificationSendView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(exclude=True)
-    def post(self, request, **kwargs):
+    def post(self, request: Request, **kwargs: Any) -> Response:
         from ctf.api.retired_notifications import retired_notification_response
 
         return retired_notification_response(request)

@@ -1020,7 +1020,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        /** @description Project a campaign only after complete-target authorization. */
         get: operations["ctf_communications_retrieve"];
         put?: never;
         post?: never;
@@ -1039,7 +1039,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        /** @description Cancel unclaimed work for an authorized campaign. */
         post: operations["ctf_communications_cancel_create"];
         delete?: never;
         options?: never;
@@ -1056,7 +1056,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        /** @description Accept a release or schedule declaration through the ledger. */
         post: operations["ctf_communications_release_create"];
         delete?: never;
         options?: never;
@@ -1073,7 +1073,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        /** @description Append validated content to an authorized draft campaign. */
         post: operations["ctf_communications_revisions_create"];
         delete?: never;
         options?: never;
@@ -1748,6 +1748,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List retained messages for the current participant and event. */
         get: operations["ctf_communication_inbox_list"];
         put?: never;
         post?: never;
@@ -1764,6 +1765,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Fetch one message within the authorized participant inbox. */
         get: operations["ctf_me_events_communications_retrieve"];
         put?: never;
         post?: never;
@@ -1782,6 +1784,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Record acknowledgement under the pinned message policy. */
         post: operations["ctf_me_events_communications_acknowledge_create"];
         delete?: never;
         options?: never;
@@ -1798,6 +1801,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Record an explicit, idempotent read interaction. */
         post: operations["ctf_me_events_communications_read_create"];
         delete?: never;
         options?: never;
@@ -4395,6 +4399,7 @@ export interface components {
          * @enum {string}
          */
         ImageKindEnum: "image" | "machine-image";
+        /** @description Project one inbox page and its continuation offset. */
         InboxPage: {
             results: components["schemas"]["CommunicationInboxItem"][];
             next_offset: number | null;

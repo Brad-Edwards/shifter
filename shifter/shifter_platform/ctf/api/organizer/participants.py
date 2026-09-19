@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from django.utils.decorators import method_decorator
 from django.views.decorators.debug import sensitive_post_parameters
@@ -224,7 +225,7 @@ class ParticipantResendLoginInfoView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(exclude=True)
-    def post(self, request, participant_id):
+    def post(self, request: Request, participant_id: UUID) -> Response:
         from ctf.api.retired_notifications import retired_notification_response
 
         return retired_notification_response(request)

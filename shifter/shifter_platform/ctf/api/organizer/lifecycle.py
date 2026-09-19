@@ -9,7 +9,9 @@ owner and full co-organizers hold it; moderators and judges do not (#1922).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from drf_spectacular.utils import extend_schema
 from rest_framework.request import Request
@@ -38,6 +40,7 @@ from ctf.api.serializers import (
     ScheduledTaskSerializer,
 )
 from ctf.enums import EventCapability
+from ctf.models import CTFScheduledTask
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -97,7 +100,7 @@ def _task_payload(task: CTFScheduledTask) -> dict[str, object]:
     }
 
 
-def _visible_tasks(request, event_id):
+def _visible_tasks(request: Request, event_id: UUID) -> Iterator[dict[str, object]]:
     """Communication task visibility includes every campaign target's authority."""
     from uuid import UUID
 

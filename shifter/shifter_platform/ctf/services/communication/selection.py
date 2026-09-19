@@ -1,13 +1,16 @@
 """Apply complete-target visibility before counting or paging campaign results."""
 
-from django.db.models import Exists, OuterRef
+from __future__ import annotations
+
+from django.contrib.auth.models import AnonymousUser, User
+from django.db.models import Exists, OuterRef, QuerySet
 
 from ctf.enums import EventCapability
 from ctf.models import CommunicationCampaign, CommunicationTargetEvent
 from ctf.services.authorization import events_with_capability
 
 
-def visible_campaigns(actor, *, workspace_id):
+def visible_campaigns(actor: User | AnonymousUser, *, workspace_id: int) -> QuerySet[CommunicationCampaign]:
     """Return only campaigns whose entire persisted target set is accessible.
 
     The caller still rechecks live actor/token/workspace authority before emitting

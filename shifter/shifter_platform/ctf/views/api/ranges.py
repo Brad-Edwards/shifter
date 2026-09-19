@@ -358,6 +358,8 @@ def api_provision_event_spares(request: HttpRequest, event_id: UUID) -> JsonResp
 @ctf_organizer_required
 @require_POST
 def api_send_invitations(request: HttpRequest, event_id: UUID) -> JsonResponse:
+    """Reject the retired bulk invitation write surface."""
+
     from ctf.api.retired_notifications import retired_notification_response
 
     response = retired_notification_response(request)

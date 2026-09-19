@@ -259,6 +259,8 @@ def _resend_invite_response(participant_id: UUID) -> JsonResponse:
 @ctf_organizer_required
 @require_POST
 def api_participant_resend_invite(request: HttpRequest, participant_id: UUID) -> JsonResponse:
+    """Reject retired login-information resend requests."""
+
     from ctf.api.retired_notifications import retired_notification_response
 
     response = retired_notification_response(request)

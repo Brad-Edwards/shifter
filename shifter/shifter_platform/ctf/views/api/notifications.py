@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 
     from ctf.models import (
         CTFEvent,
-        CTFNotification,
     )
 
 from ctf.views._access import (
@@ -35,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 def _handle_notification_announce_post(request: HttpRequest, event: CTFEvent) -> JsonResponse:
+    """Reject the legacy announcement write surface."""
+
     from ctf.api.retired_notifications import retired_notification_response
 
     response = retired_notification_response(request)
@@ -87,13 +88,9 @@ def _notification_error_response(
     return JsonResponse({"error": json_message}, status=status)
 
 
-def _dispatch_notification_send(notif: CTFNotification) -> None:
-    from ctf.services.notification._scheduled import retired_write
+def _send_notification_response(request: HttpRequest) -> HttpResponse:
+    """Return the retirement envelope for legacy send requests."""
 
-    retired_write()
-
-
-def _send_notification_response(request: HttpRequest, notif: CTFNotification) -> HttpResponse:
     from ctf.api.retired_notifications import retired_notification_response
 
     response = retired_notification_response(request)
@@ -120,7 +117,7 @@ def api_notification_send(request: HttpRequest, notification_id: UUID) -> HttpRe
             request, "Forbidden: You do not have access to this event", "Forbidden", 403
         )
 
-    return _send_notification_response(request, notif)
+    return _send_notification_response(request)
 
 
 def _handle_get_email_template(event: CTFEvent, notification_type: str) -> JsonResponse:

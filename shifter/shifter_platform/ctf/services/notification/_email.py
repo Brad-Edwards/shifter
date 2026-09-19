@@ -11,6 +11,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from ctf.services.notification._scheduled import retired_write
+
+_send_email = retired_write
+
 if TYPE_CHECKING:
     from ctf.models import CTFEvent
 
@@ -25,18 +29,6 @@ def _build_ctf_login_url() -> str:
     path = reverse("ctf:ctf_login")
     base = (getattr(settings, "SITE_URL", "") or "").rstrip("/")
     return f"{base}{path}"
-
-
-def _send_email(
-    recipient: str,
-    subject: str,
-    html_content: str,
-    text_content: str,
-) -> None:
-    """Legacy transport dispatch is retired; the ledger owns delivery."""
-    from ctf.services.notification._scheduled import retired_write
-
-    retired_write()
 
 
 def _render_email(

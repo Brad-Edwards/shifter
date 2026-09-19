@@ -27,6 +27,8 @@ import enum
 import logging
 from typing import TYPE_CHECKING
 
+from django.db.models import QuerySet
+
 from ctf.exceptions import CTFPermissionError
 
 if TYPE_CHECKING:
@@ -128,7 +130,7 @@ def resolve_event_authority(
     return source
 
 
-def events_with_capability(actor: Actor, *, capability: str):
+def events_with_capability(actor: Actor, *, capability: str) -> QuerySet[CTFEvent]:
     """Query equivalent of event authority for collections before pagination."""
     from django.db.models import Q
 

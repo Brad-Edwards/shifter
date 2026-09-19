@@ -1,9 +1,13 @@
 """Retired legacy write entry points; retained imports cannot bypass the ledger."""
 
+from __future__ import annotations
+
+from typing import Any, NoReturn
+
 from ctf.exceptions import CTFCommunicationError
 
 
-def retired_write(*args, **kwargs):
+def retired_write(*args: Any, **kwargs: Any) -> NoReturn:
     """Fail closed for stale callers, including scheduler dispatch."""
     raise CTFCommunicationError("Legacy notification writes are retired", code="CTF_COMMUNICATION_RETIRED")
 

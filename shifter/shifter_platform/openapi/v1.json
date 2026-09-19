@@ -4936,7 +4936,7 @@
     "/api/v1/ctf/communications/{campaign_id}/": {
       "get": {
         "operationId": "ctf_communications_retrieve",
-        "description": "Bearer-first auth, closed JSON and canonical domain error translation.",
+        "description": "Project a campaign only after complete-target authorization.",
         "parameters": [
           {
             "in": "path",
@@ -5049,7 +5049,7 @@
     "/api/v1/ctf/communications/{campaign_id}/cancel/": {
       "post": {
         "operationId": "ctf_communications_cancel_create",
-        "description": "Bearer-first auth, closed JSON and canonical domain error translation.",
+        "description": "Cancel unclaimed work for an authorized campaign.",
         "parameters": [
           {
             "in": "path",
@@ -5171,7 +5171,7 @@
     "/api/v1/ctf/communications/{campaign_id}/release/": {
       "post": {
         "operationId": "ctf_communications_release_create",
-        "description": "Bearer-first auth, closed JSON and canonical domain error translation.",
+        "description": "Accept a release or schedule declaration through the ledger.",
         "parameters": [
           {
             "in": "path",
@@ -5294,7 +5294,7 @@
     "/api/v1/ctf/communications/{campaign_id}/revisions/": {
       "post": {
         "operationId": "ctf_communications_revisions_create",
-        "description": "Bearer-first auth, closed JSON and canonical domain error translation.",
+        "description": "Append validated content to an authorized draft campaign.",
         "parameters": [
           {
             "in": "path",
@@ -8552,6 +8552,7 @@
     "/api/v1/ctf/me/events/{event_id}/communications/": {
       "get": {
         "operationId": "ctf_communication_inbox_list",
+        "description": "List retained messages for the current participant and event.",
         "parameters": [
           {
             "in": "path",
@@ -8678,6 +8679,7 @@
     "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/": {
       "get": {
         "operationId": "ctf_me_events_communications_retrieve",
+        "description": "Fetch one message within the authorized participant inbox.",
         "parameters": [
           {
             "in": "path",
@@ -8793,6 +8795,7 @@
     "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/acknowledge/": {
       "post": {
         "operationId": "ctf_me_events_communications_acknowledge_create",
+        "description": "Record acknowledgement under the pinned message policy.",
         "parameters": [
           {
             "in": "path",
@@ -8917,6 +8920,7 @@
     "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/read/": {
       "post": {
         "operationId": "ctf_me_events_communications_read_create",
+        "description": "Record an explicit, idempotent read interaction.",
         "parameters": [
           {
             "in": "path",
@@ -19130,6 +19134,7 @@
       },
       "InboxPage": {
         "type": "object",
+        "description": "Project one inbox page and its continuation offset.",
         "properties": {
           "results": {
             "type": "array",

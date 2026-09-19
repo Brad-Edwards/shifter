@@ -4,6 +4,8 @@ import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-q
 import { apiFetch } from "./client";
 import type { components } from "./schema";
 
+const COMMUNICATION_QUERY_KEY = "ctf-communications";
+
 type Campaign = components["schemas"]["CommunicationCampaignSummary"];
 type Intent = components["schemas"]["CommunicationIntent"];
 type Input = { subject: string; body: string; scheduled_at?: string };
@@ -39,12 +41,12 @@ export function useAnnounceCtfNotification(eventId: string) {
   const pending = useRef<Pending["current"]>(null);
   return useMutation({
     mutationFn: (input: Input) => submitCommunication(eventId, input, pending),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["ctf-communications", eventId] }),
+    onSuccess: () => client.invalidateQueries({ queryKey: [COMMUNICATION_QUERY_KEY, eventId] }),
   });
 }
 
 export function useCtfCommunications(eventId: string) {
-  return useInfiniteQuery({ queryKey: ["ctf-communications", eventId], enabled: Boolean(eventId),
+  return useInfiniteQuery({ queryKey: [COMMUNICATION_QUERY_KEY, eventId], enabled: Boolean(eventId),
     initialPageParam: 0,
     getNextPageParam: (page: components["schemas"]["CampaignList"]) => page.next_offset ?? undefined,
     queryFn: async ({ pageParam }) => {
@@ -59,5 +61,5 @@ export function useCancelCtfCommunication(eventId: string) {
   const client = useQueryClient();
   return useMutation({ mutationFn: (campaignId: string) => apiFetch<Campaign>(
     `/ctf/communications/${campaignId}/cancel/`, { method: "POST", body: {} },
-  ), onSuccess: () => client.invalidateQueries({ queryKey: ["ctf-communications", eventId] }) });
+  ), onSuccess: () => client.invalidateQueries({ queryKey: [COMMUNICATION_QUERY_KEY, eventId] }) });
 }

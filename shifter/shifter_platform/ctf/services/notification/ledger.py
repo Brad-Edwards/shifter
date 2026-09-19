@@ -1,6 +1,8 @@
 """Server-authored non-secret notices use the existing scoped ledger."""
 
-from uuid import NAMESPACE_URL, uuid5
+from __future__ import annotations
+
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from django.db import transaction
 
@@ -11,7 +13,9 @@ from ctf.services.communication import AdmissionActor, CampaignDraft, create_cam
 from ctf.services.communication.adapters import registered_channels
 
 
-def stage_notice(event_id, *, kind, subject, body, occurrence, participant_id=None):
+def stage_notice(
+    event_id: UUID, *, kind: str, subject: str, body: str, occurrence: str, participant_id: UUID | None = None
+) -> dict[str, str]:
     """One stable campaign per trusted occurrence; unavailable email is never dispatched.
 
     The original event owner remains the live author, with the same workspace and
@@ -56,7 +60,9 @@ def stage_notice(event_id, *, kind, subject, body, occurrence, participant_id=No
         return {"campaign_id": str(campaign.pk), "intent_id": str(intent.pk), "outcome": "accepted"}
 
 
-def participant_notice(participant_id, *, kind, subject, body):
+def participant_notice(participant_id: UUID, *, kind: str, subject: str, body: str) -> dict[str, str]:
+    """Bind a lifecycle notice to its participant and range occurrence."""
+
     participant = CTFParticipant.objects.select_related("event").get(pk=participant_id)
     # Range generations distinguish later genuine notices; retries use the same key.
     return stage_notice(

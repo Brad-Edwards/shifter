@@ -1,5 +1,9 @@
 """Non-secret participant notices; legacy send writes are retired."""
 
+from __future__ import annotations
+
+from uuid import UUID
+
 from ctf.services.notification._scheduled import retired_write
 from ctf.services.notification.ledger import stage_notice
 
@@ -9,7 +13,9 @@ send_login_info = retired_write
 send_credentials = retired_write
 
 
-def send_reminder(event_id, hours_before=24):
+def send_reminder(event_id: UUID, hours_before: int = 24) -> dict[str, str]:
+    """Stage one non-secret reminder for the event start occurrence."""
+
     from ctf.models import CTFEvent
 
     event = CTFEvent.objects.get(pk=event_id)

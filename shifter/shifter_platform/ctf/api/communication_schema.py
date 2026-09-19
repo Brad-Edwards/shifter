@@ -1,5 +1,10 @@
 """Publish the same closed variants enforced by the communication validators."""
 
+from __future__ import annotations
+
+from collections.abc import Mapping, Set
+from typing import Any, Literal
+
 from drf_spectacular.plumbing import force_instance
 
 from ctf.api.serializers.communication import CommunicationAudienceSerializer, CommunicationTriggerSerializer
@@ -11,12 +16,14 @@ from shared.api.schema import ApiErrorSerializer, PlatformAutoSchema
 class CommunicationSchema(PlatformAutoSchema):
     """Keep bounds/fields serializer-derived and alternatives domain-derived."""
 
-    def _map_serializer(self, serializer, direction, bypass_extensions=False):
+    def _map_serializer(
+        self, serializer: Any, direction: Literal["request", "response"], bypass_extensions: bool = False
+    ) -> dict[str, Any]:
         instance = force_instance(serializer)
         schema = super()._map_serializer(instance, direction, bypass_extensions)
         if isinstance(instance, ClosedSerializer):
             schema["additionalProperties"] = False
-        variants = None
+        variants: Mapping[str, Set[str]] | None = None
         if isinstance(instance, CommunicationAudienceSerializer):
             variants = {kind: {field} for kind, field in AUDIENCE_ID_FIELDS.items()}
         elif isinstance(instance, CommunicationTriggerSerializer):
@@ -46,7 +53,7 @@ class CommunicationSchema(PlatformAutoSchema):
                         ids["minItems"] = 2
         return schema
 
-    def _add_error_responses(self, operation):
+    def _add_error_responses(self, operation: dict[str, Any]) -> None:
         """All communication errors use the same authored platform envelope."""
         super()._add_error_responses(operation)
         error_ref = self.resolve_serializer(ApiErrorSerializer, "response").ref
@@ -65,5 +72,5 @@ class CommunicationSchema(PlatformAutoSchema):
 class SessionCommunicationSchema(CommunicationSchema):
     """Retain only the registered cookie scheme for participant receipt APIs."""
 
-    def get_auth(self):
+    def get_auth(self) -> list[dict[str, Any]]:
         return [scheme for scheme in super().get_auth() if "cookieAuth" in scheme]

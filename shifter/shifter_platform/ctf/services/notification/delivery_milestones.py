@@ -1,9 +1,15 @@
 """Non-secret lifecycle notices submitted to the scoped ledger."""
 
+from __future__ import annotations
+
+from uuid import UUID
+
 from ctf.services.notification.ledger import participant_notice, stage_notice
 
 
-def send_cleanup_warning(event_id):
+def send_cleanup_warning(event_id: UUID) -> dict[str, str]:
+    """Stage the non-secret notice for the scheduled cleanup occurrence."""
+
     from ctf.models import CTFEvent
 
     event = CTFEvent.objects.get(pk=event_id)
@@ -16,7 +22,9 @@ def send_cleanup_warning(event_id):
     )
 
 
-def send_event_results(event_id):
+def send_event_results(event_id: UUID) -> dict[str, str]:
+    """Stage a notice that final event results are available."""
+
     return stage_notice(
         event_id,
         kind="results",
@@ -26,7 +34,9 @@ def send_event_results(event_id):
     )
 
 
-def send_range_ready(participant_id):
+def send_range_ready(participant_id: UUID) -> dict[str, str]:
+    """Stage a participant notice for the current range generation."""
+
     return participant_notice(
         participant_id,
         kind="range_ready",
@@ -35,7 +45,9 @@ def send_range_ready(participant_id):
     )
 
 
-def notify_participant_provision_failure(participant_id):
+def notify_participant_provision_failure(participant_id: UUID) -> dict[str, str]:
+    """Stage a non-secret participant provisioning failure notice."""
+
     return participant_notice(
         participant_id,
         kind="range_failure",

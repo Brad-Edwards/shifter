@@ -1,10 +1,16 @@
 """Scoped communication REST controllers; services own live policy and writes."""
 
-from datetime import datetime
+from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+from uuid import UUID
+
+from django.contrib.auth.models import User
 from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -57,16 +63,26 @@ class CampaignListSerializer(serializers.Serializer):
     next_offset = serializers.IntegerField(allow_null=True)
 
 
-def request_actor(request):
-    """Use the authenticated token principal independently of request.user."""
+def _request_user(request: Request) -> User:
+    """Resolve the effective principal or fail before using account authority."""
     user = active_actor_user(request)
+    if user is None:
+        raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_ACTOR_DENIED")
+    return user
+
+
+def request_actor(request: Request) -> AdmissionActor:
+    """Use the authenticated token principal independently of request.user."""
+    user = _request_user(request)
     token = request.auth if isinstance(request.auth, ApiToken) else None
     from shared.audit import get_request_id
 
     return AdmissionActor(user_id=user.pk, token_id=token.pk if token else None, request_id=get_request_id(request))
 
 
-def validate_query(request, serializer_class):
+def validate_query(request: Request, serializer_class: type[ClosedSerializer]) -> dict[str, Any]:
+    """Reject unknown or repeated query parameters before validation."""
+
     if any(len(request.query_params.getlist(key)) != 1 for key in request.query_params):
         raise serializers.ValidationError("Invalid value.")
     serializer = serializer_class(data=request.query_params.dict())
@@ -85,7 +101,7 @@ class CommunicationView(APIView):
     ]
     parser_classes = [CommunicationJSONParser]
 
-    def handle_exception(self, exc):
+    def handle_exception(self, exc: Exception) -> Response:
         if isinstance(exc, CTFError):
             return ctf_error_response(self.request, exc)
         if isinstance(exc, serializers.ValidationError):
@@ -94,7 +110,7 @@ class CommunicationView(APIView):
             return api_error_response(code="invalid", message="Invalid request", status_code=400, request=self.request)
         return super().handle_exception(exc)
 
-    def campaign(self, request, campaign_id):
+    def campaign(self, request: Request, campaign_id: UUID) -> CommunicationCampaign:
         campaign = CommunicationCampaign.objects.prefetch_related("target_events").filter(pk=campaign_id).first()
         if campaign is None:
             raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_NOT_FOUND")
@@ -108,7 +124,7 @@ class CommunicationView(APIView):
             )
         return campaign
 
-    def input(self, request, serializer_class):
+    def input(self, request: Request, serializer_class: type[ClosedSerializer]) -> dict[str, Any]:
         validate_query(request, CommunicationEmptySerializer)
         serializer = serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -121,16 +137,16 @@ class CommunicationListView(CommunicationView):
     @extend_schema(
         operation_id="ctf_communications_list", parameters=[CampaignQuerySerializer], responses=CampaignListSerializer
     )
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         query = validate_query(request, CampaignQuerySerializer)
         try:
             binding = ws.authorize_workspace(
-                active_actor_user(request), query["workspace_id"], ws.WorkspaceOperation.USE_CTF_COMMUNICATIONS
+                _request_user(request), query["workspace_id"], ws.WorkspaceOperation.USE_CTF_COMMUNICATIONS
             )
         except ws.WorkspaceAuthorizationError:
             raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_WORKSPACE_DENIED") from None
         start, limit = query["offset"], query["limit"]
-        queryset = visible_campaigns(active_actor_user(request), workspace_id=binding.workspace_id)
+        queryset = visible_campaigns(_request_user(request), workspace_id=binding.workspace_id)
         if "event_id" in query:
             queryset = queryset.filter(target_events__pk=query["event_id"])
         candidates = list(
@@ -154,12 +170,12 @@ class CommunicationListView(CommunicationView):
         )
 
     @extend_schema(request=CommunicationCreateSerializer, responses={201: CommunicationCampaignSummarySerializer})
-    def post(self, request):
+    def post(self, request: Request) -> Response:
         data = self.input(request, CommunicationCreateSerializer)
         workspace_id = data.pop("workspace_id")
         actor = request_actor(request)
         campaign = create_campaign(
-            active_actor_user(request),
+            _request_user(request),
             workspace_id,
             CampaignDraft(**data, origin="organizer_staff", actor_token_id=actor.token_id),
             actor=actor,
@@ -168,15 +184,19 @@ class CommunicationListView(CommunicationView):
 
 
 class CommunicationDetailView(CommunicationView):
+    """Project a campaign only after complete-target authorization."""
+
     @extend_schema(responses=CommunicationCampaignSummarySerializer)
-    def get(self, request, campaign_id):
+    def get(self, request: Request, campaign_id: UUID) -> Response:
         validate_query(request, CommunicationEmptySerializer)
         return Response(CommunicationCampaignSummarySerializer(self.campaign(request, campaign_id)).data)
 
 
 class CommunicationRevisionView(CommunicationView):
+    """Append validated content to an authorized draft campaign."""
+
     @extend_schema(request=CommunicationRevisionSerializer, responses={201: CommunicationCampaignSummarySerializer})
-    def post(self, request, campaign_id):
+    def post(self, request: Request, campaign_id: UUID) -> Response:
         data = self.input(request, CommunicationRevisionSerializer)
         campaign = self.campaign(request, campaign_id)
         revise_message(campaign, actor=request_actor(request), **data)
@@ -184,8 +204,10 @@ class CommunicationRevisionView(CommunicationView):
 
 
 class CommunicationReleaseView(CommunicationView):
+    """Accept a release or schedule declaration through the ledger."""
+
     @extend_schema(request=CommunicationReleaseSerializer, responses={202: CommunicationIntentSerializer})
-    def post(self, request, campaign_id):
+    def post(self, request: Request, campaign_id: UUID) -> Response:
         data = self.input(request, CommunicationReleaseSerializer)
         campaign = self.campaign(request, campaign_id)
         revision = None
@@ -209,8 +231,10 @@ class CommunicationReleaseView(CommunicationView):
 
 
 class CommunicationCancelView(CommunicationView):
+    """Cancel unclaimed work for an authorized campaign."""
+
     @extend_schema(request=CommunicationEmptySerializer, responses=CommunicationCampaignSummarySerializer)
-    def post(self, request, campaign_id):
+    def post(self, request: Request, campaign_id: UUID) -> Response:
         self.input(request, CommunicationEmptySerializer)
         campaign = self.campaign(request, campaign_id)
         cancel_campaign(campaign, actor=request_actor(request))

@@ -76,7 +76,9 @@ def _resolve_owned_event_or_404(request: HttpRequest, event_id: UUID) -> tuple[C
     return event, None
 
 
-def _handle_notification_create_post(request: HttpRequest, event: CTFEvent) -> HttpResponse:
+def _handle_notification_create_post() -> HttpResponse:
+    """Reject legacy form writes with the retirement status."""
+
     return HttpResponse("Legacy notification writes are retired. Use the communication API.", status=410)
 
 
@@ -95,7 +97,7 @@ def admin_notification_create(request: HttpRequest, event_id: UUID) -> HttpRespo
     assert event is not None
 
     if request.method == "POST":
-        return _handle_notification_create_post(request, event)
+        return _handle_notification_create_post()
 
     return render(
         request,

@@ -334,7 +334,7 @@ function NotificationsTab({ eventId }: Readonly<{ eventId: string }>) {
       {communications.isError ? <Alert variant="destructive"><AlertDescription>Could not load communications.</AlertDescription></Alert> : null}
       {communications.data?.pages.flatMap((page) => page.results).map((campaign) => <Card key={campaign.id}><CardContent className="flex items-center justify-between gap-4 p-4">
         <span>{campaign.title} — {campaign.status}</span>
-        {campaign.status !== "cancelled" ? <Button size="sm" variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate(campaign.id)}>Cancel unclaimed work</Button> : null}
+        {campaign.status === "cancelled" ? null : <Button size="sm" variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate(campaign.id)}>Cancel unclaimed work</Button>}
       </CardContent></Card>)}
       {cancel.isError ? <Alert variant="destructive"><AlertDescription>Could not cancel communication.</AlertDescription></Alert> : null}
       {communications.hasNextPage ? <Button disabled={communications.isFetchingNextPage} onClick={() => void communications.fetchNextPage()}>Load more communications</Button> : null}

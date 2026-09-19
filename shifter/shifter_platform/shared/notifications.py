@@ -286,7 +286,9 @@ def prune_expired_notifications() -> int:
     return deleted
 
 
-def authorized_notification_payload(user, notification: WebSocketNotification) -> dict[str, Any] | None:
+def authorized_notification_payload(
+    user: AbstractBaseUser | AnonymousUser, notification: WebSocketNotification
+) -> dict[str, Any] | None:
     """Recheck live topic policy and current projection for both replay and fan-out."""
     if not authorize_subscription(user, notification.topic):
         return None

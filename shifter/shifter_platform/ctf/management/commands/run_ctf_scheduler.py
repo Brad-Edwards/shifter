@@ -377,8 +377,7 @@ def _handle_send_notification(
     notification_id = (task.metadata or {}).get("notification_id")
     if not notification_id:
         raise ValueError(f"SEND_NOTIFICATION task {task.pk} has no notification_id")
-    sent = deliver_scheduled_notification(notification_id)
-    logger.info("SEND_NOTIFICATION %s delivered to %d recipients", notification_id, sent)
+    deliver_scheduled_notification(notification_id)
 
 
 def _handle_send_reminder(

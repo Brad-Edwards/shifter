@@ -5,22 +5,38 @@ installing the fence. Database locks cannot recall an already dispatched email.
 Email declarations remain staged without runnable work until an adapter exists.
 """
 
+from __future__ import annotations
+
+from uuid import UUID
+
 from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
 import workspaces.services as ws
 from ctf.exceptions import CTFCommunicationError
-from ctf.models import CommunicationCutover, CTFEvent, CTFNotification, CTFScheduledTask, LegacyCommunication
+from ctf.models import (
+    CommunicationCampaign,
+    CommunicationCutover,
+    CommunicationIntent,
+    CTFEvent,
+    CTFNotification,
+    CTFScheduledTask,
+    LegacyCommunication,
+)
 from ctf.services.communication import AdmissionActor, CampaignDraft, create_campaign, schedule_declaration
 from ctf.services.communication.adapters import registered_channels
 
 
-def _blocked():
+def _blocked() -> CTFCommunicationError:
+    """Build a bounded diagnostic requiring operator reconciliation."""
+
     return CTFCommunicationError("Legacy cutover requires reconciliation", code="CTF_COMMUNICATION_CUTOVER_BLOCKED")
 
 
-def _assert_quiescent():
+def _assert_quiescent() -> None:
+    """Reject unresolved sends or claimed tasks before transferring ownership."""
+
     if (
         CTFNotification.all_objects.filter(status="sending").exists()
         or CTFScheduledTask.all_objects.filter(status="running").exists()
@@ -28,7 +44,7 @@ def _assert_quiescent():
         raise _blocked()
 
 
-def start_cutover(*, legacy_producers_stopped: bool = False):
+def start_cutover(*, legacy_producers_stopped: bool = False) -> CommunicationCutover:
     """Record the operator's quiescence assertion and install durable writer fencing."""
     if not legacy_producers_stopped:
         raise _blocked()
@@ -41,7 +57,9 @@ def start_cutover(*, legacy_producers_stopped: bool = False):
         return CommunicationCutover.objects.get_or_create(pk=1, defaults={"fenced_at": timezone.now()})[0]
 
 
-def _draft(row):
+def _draft(row: CTFNotification) -> CommunicationCampaign:
+    """Convert a valid legacy declaration without changing its channel or author."""
+
     if (
         row.notification_type != "announcement"
         or row.recipient_filter not in {"participants", "all"}
@@ -82,6 +100,44 @@ def _draft(row):
     )
 
 
+def _validate_pending_task_ownership(row: CTFNotification, tasks: list[CTFScheduledTask]) -> None:
+    """Require one matching scheduled task or no task for an unpublished draft."""
+    if row.status == "scheduled" and (len(tasks) != 1 or tasks[0].scheduled_for != row.scheduled_at):
+        raise _blocked()
+    if row.status == "draft" and tasks:
+        raise _blocked()
+
+
+def _migrate_row(row: CTFNotification) -> None:
+    """Transfer one declaration and cancel its old tasks under the batch transaction."""
+    # Match the event-first lock order used by admission and deletion.
+    CTFEvent.all_objects.select_for_update().get(pk=row.event_id)
+    row = CTFNotification.all_objects.select_for_update().select_related("event", "created_by").get(pk=row.pk)
+    tasks = list(
+        CTFScheduledTask.all_objects.select_for_update().filter(
+            task_type__in=["send_notification", "send_reminder"],
+            metadata__notification_id=str(row.pk),
+            status__in=["pending", "running"],
+        )
+    )
+    if any(task.status == "running" or task.event_id != row.event_id for task in tasks):
+        raise _blocked()
+    if row.status in {"sent", "failed"}:
+        if tasks:
+            raise _blocked()
+        LegacyCommunication.objects.create(legacy=row, disposition="historical")
+        return
+    _validate_pending_task_ownership(row, tasks)
+    campaign = _draft(row)
+    LegacyCommunication.objects.create(
+        legacy=row,
+        campaign=campaign,
+        disposition="channel_unavailable" if "email" not in registered_channels() else "staged",
+    )
+    for task in tasks:
+        task.cancel_if_active()
+
+
 def migrate_legacy_batch(*, batch_size: int = 100) -> int:
     """Transfer a bounded batch atomically; retries skip committed mappings."""
     if not 1 <= batch_size <= 500:
@@ -92,39 +148,11 @@ def migrate_legacy_batch(*, batch_size: int = 100) -> int:
         _assert_quiescent()
         rows = list(CTFNotification.all_objects.filter(ledger_mapping__isnull=True).order_by("pk")[:batch_size])
         for row in rows:
-            # Match the event-first lock order used by admission and deletion.
-            CTFEvent.all_objects.select_for_update().get(pk=row.event_id)
-            row = CTFNotification.all_objects.select_for_update().select_related("event", "created_by").get(pk=row.pk)
-            tasks = list(
-                CTFScheduledTask.all_objects.select_for_update().filter(
-                    task_type__in=["send_notification", "send_reminder"],
-                    metadata__notification_id=str(row.pk),
-                    status__in=["pending", "running"],
-                )
-            )
-            if any(task.status == "running" or task.event_id != row.event_id for task in tasks):
-                raise _blocked()
-            if row.status in {"sent", "failed"}:
-                if tasks:
-                    raise _blocked()
-                LegacyCommunication.objects.create(legacy=row, disposition="historical")
-                continue
-            if row.status == "scheduled" and (len(tasks) != 1 or tasks[0].scheduled_for != row.scheduled_at):
-                raise _blocked()
-            if row.status == "draft" and tasks:
-                raise _blocked()
-            campaign = _draft(row)
-            LegacyCommunication.objects.create(
-                legacy=row,
-                campaign=campaign,
-                disposition="channel_unavailable" if "email" not in registered_channels() else "staged",
-            )
-            for task in tasks:
-                task.cancel_if_active()
+            _migrate_row(row)
         return len(rows)
 
 
-def activate_cutover():
+def activate_cutover() -> dict[str, bool | int]:
     """Activate only after every legacy row/task has an explicit disposition.
 
     Missing email transport stays a durable, visible dependency; it creates no
@@ -150,16 +178,17 @@ def activate_cutover():
         }
 
 
-def resume_migrated_schedule(mapping_id):
+def resume_migrated_schedule(mapping_id: UUID) -> CommunicationIntent:
     """Explicit, bounded dependency recovery; never revive the legacy sender."""
     with transaction.atomic():
         mapping = LegacyCommunication.objects.select_related("campaign", "legacy").get(pk=mapping_id)
         if not CommunicationCutover.objects.filter(pk=1, activated_at__isnull=False).exists():
             raise _blocked()
-        if "email" not in registered_channels() or mapping.campaign_id is None or mapping.legacy.scheduled_at is None:
+        campaign = mapping.campaign
+        if "email" not in registered_channels() or campaign is None or mapping.legacy.scheduled_at is None:
             raise _blocked()
         intent = schedule_declaration(
-            mapping.campaign,
+            campaign,
             due_at=mapping.legacy.scheduled_at,
             occurrence_key=f"legacy:{mapping.pk}",
             actor=AdmissionActor(user_id=mapping.legacy.created_by_id),
