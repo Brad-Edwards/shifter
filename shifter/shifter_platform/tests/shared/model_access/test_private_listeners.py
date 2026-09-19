@@ -11,6 +11,7 @@ from model_broker import __main__ as broker
 def listener(request, monkeypatch, settings):
     calls = []
     monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self: calls.append(vars(self.config)))
     monkeypatch.setattr(broker, "application_from_environment", lambda: object())
     settings.MODEL_ACCESS_ENABLED = True
     settings.MODEL_ACCESS_CATALOG = object()
@@ -18,6 +19,8 @@ def listener(request, monkeypatch, settings):
     monkeypatch.setenv("MODEL_CONTROL_AUDIENCE", "synthetic-control")
     monkeypatch.setenv("MODEL_CONTROL_BROKER_SUBJECT", "synthetic-broker")
     monkeypatch.setenv("MODEL_CONTROL_PROVISIONER_SUBJECT", "synthetic-provisioner")
+    monkeypatch.setenv("MODEL_CONTROL_BROKER_SUBJECT_ID", "123456789012345678901")
+    monkeypatch.setenv("MODEL_CONTROL_PROVISIONER_SUBJECT_ID", "123456789012345678902")
     prefix = "MODEL_BROKER" if request.param == "broker" else "MODEL_CONTROL"
     monkeypatch.setenv(f"{prefix}_TLS_CERT", "/synthetic/tls.crt")
     monkeypatch.setenv(f"{prefix}_TLS_KEY", "/synthetic/tls.key")
@@ -45,6 +48,6 @@ def test_listener_rejects_missing_or_nonprivate_binding(listener, monkeypatch, a
         monkeypatch.delenv(f"{prefix}_BIND_ADDRESS", raising=False)
     else:
         monkeypatch.setenv(f"{prefix}_BIND_ADDRESS", address)
-    with pytest.raises((KeyError, ValueError)):
+    with pytest.raises(SystemExit):
         main()
     assert not calls
