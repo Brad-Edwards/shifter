@@ -11,8 +11,11 @@ are checked before writes; targeted bootstrap tests and Terraform validation
 cover the first-project ordering (ADR-004 purpose separation; ADR-008 private
 operator access).
 Native GCE image builds explicitly select `GCP_RANGE_BACKEND=gce` to omit the
-GDC-only disk export dependency. Immutable GCE image evidence and the separate
-candidate-validation gate remain mandatory.
+GDC-only disk export dependency. Builds retain their immutable image evidence.
+Separate candidate qualification is optional and off by default for bootstrap
+and deployment; it runs only when an operator dispatches the validation workflow.
+Bootstrap requires the configured guest images to exist, not a qualification
+verdict. The separate image-promotion workflow retains its evidence requirements.
 
 SDK candidate distributions from pull-request CI include their SHA-256 checksums
 and are retained under a revision-specific artifact name for independent adapter
