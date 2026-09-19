@@ -734,7 +734,7 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertEqual(set(re.findall(r'"([\w-]+)"', match.group(1))), {"app", "db-migration"})
         self.assertRegex(
             self.text,
-            r'migrator\s*=\s*"serviceAccount:\$\{var\.project_id\}\.svc\.id\.goog'
+            r'migrator\s*=\s*"serviceAccount:\$\{var\.workload_identity_pool\}'
             r'\[shifter-platform/migrator\]"',
         )
 
