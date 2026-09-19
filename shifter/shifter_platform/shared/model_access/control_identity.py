@@ -156,7 +156,7 @@ def verify_google_control_assertion(
         if (
             not assertion.startswith("Bearer ")
             or len(assertion) > 16_384
-            or not re.fullmatch(r"[0-9]{10,32}", expected_subject_id)
+            or not re.fullmatch(r"\d{10,32}", expected_subject_id, flags=re.ASCII)
         ):
             raise ValueError
         claims = verify_oauth2_token(assertion[7:], request, audience=audience)

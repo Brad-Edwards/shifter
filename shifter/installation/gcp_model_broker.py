@@ -208,6 +208,29 @@ def _broker_catalog_projection(catalog_json: str, model_access_env: str) -> dict
     }
 
 
+def _active_broker_identity(output: dict[str, object]) -> dict[str, str]:
+    """Bind distinct applied GCP principals and immutable subject IDs."""
+    import re
+
+    subject = output.get("provisioner_subject", "")
+    platform_project = str(output["gsa"]).partition("@")[2]
+    if (
+        not isinstance(subject, str)
+        or not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(platform_project), subject)
+        or subject == output["gsa"]
+    ):
+        raise ValueError("active broker requires a distinct applied provisioner identity")
+    identities = {"provisioner_subject": subject}
+    for key in ("broker_subject_id", "provisioner_subject_id"):
+        value = output.get(key, "")
+        if not isinstance(value, str) or not re.fullmatch(r"\d{10,32}", value, flags=re.ASCII):
+            raise ValueError("active broker requires applied immutable subject IDs")
+        identities[key] = value
+    if identities["broker_subject_id"] == identities["provisioner_subject_id"]:
+        raise ValueError("broker and provisioner require distinct immutable subject IDs")
+    return identities
+
+
 def project_model_broker(
     output: object, *, catalog_json: str = "", model_access_env: str = "", runtime_settings: object = None
 ) -> dict[str, object]:
@@ -225,25 +248,9 @@ def project_model_broker(
     result.update(_broker_identity_inventory(output, settings))
     result.update(_broker_catalog_projection(catalog_json, model_access_env))
     if result["control_env"]["MODEL_ACCESS_ENABLED"] == "true":
-        import re
-
         from .model_broker_runtime import project_broker_runtime, project_enrollment_env
 
-        subject = output.get("provisioner_subject", "")
-        platform_project = str(output["gsa"]).partition("@")[2]
-        if (
-            not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(platform_project), subject)
-            or subject == output["gsa"]
-        ):
-            raise ValueError("active broker requires a distinct applied provisioner identity")
-        result["provisioner_subject"] = subject
-        for key in ("broker_subject_id", "provisioner_subject_id"):
-            value = output.get(key, "")
-            if not isinstance(value, str) or not re.fullmatch(r"[0-9]{10,32}", value):
-                raise ValueError("active broker requires applied immutable subject IDs")
-            result[key] = value
-        if result["broker_subject_id"] == result["provisioner_subject_id"]:
-            raise ValueError("broker and provisioner require distinct immutable subject IDs")
+        result.update(_active_broker_identity(output))
         result.update(
             project_broker_runtime(
                 runtime_settings, catalog_json=catalog_json, provider="gcp", model_identities=output["model_identities"]

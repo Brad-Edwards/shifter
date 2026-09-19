@@ -22,6 +22,25 @@ from .providers import ProviderRegistry
 _CREDENTIAL_UNAVAILABLE = "credential.unavailable"
 
 
+def _broker_error_status(code: str) -> int:
+    """Map closed participant errors to fixed transport statuses."""
+    if code in {"http.rate_limited", "credential.rate_limited"}:
+        return 429
+    if code == _CREDENTIAL_UNAVAILABLE:
+        return 401
+    return 409
+
+
+def _broker_route(scope: ASGIScope) -> tuple[str, bool]:
+    """Admit only the exact participant and access routes."""
+    path = scope["path"]
+    allowed = {"/v1/messages", "/v1/messages/count_tokens", "/v1/access/exchange", "/v1/access/refresh"}
+    models = scope["method"] == "GET" and path == "/v1/models"
+    if not models and (scope["method"] != "POST" or path not in allowed):
+        raise ContractError("broker.invalid_route")
+    return path, models
+
+
 class BrokerApplication:
     """No generic proxy, credential issuance or public control surface."""
 
@@ -78,14 +97,7 @@ class BrokerApplication:
                 # alone owns the absolute deadline once a response can start.
                 await self._post(scope, receive, send, started_at=started_at)
         except ContractError as exc:
-            status = (
-                429
-                if exc.code in {"http.rate_limited", "credential.rate_limited"}
-                else 401
-                if exc.code == _CREDENTIAL_UNAVAILABLE
-                else 409
-            )
-            await _error(send, status, "invalid_request_error", exc.code)
+            await _error(send, _broker_error_status(exc.code), "invalid_request_error", exc.code)
         except (ValueError, TimeoutError):
             await _error(send, 400, "invalid_request_error", "broker.invalid_request")
         except Exception:
@@ -104,11 +116,7 @@ class BrokerApplication:
         """Admit only JSON access and Messages operations on fixed routes."""
         if self.draining:
             raise ContractError("broker.draining")
-        path = scope["path"]
-        allowed = {"/v1/messages", "/v1/messages/count_tokens", "/v1/access/exchange", "/v1/access/refresh"}
-        models = scope["method"] == "GET" and path == "/v1/models"
-        if not models and (scope["method"] != "POST" or path not in allowed):
-            raise ContractError("broker.invalid_route")
+        path, models = _broker_route(scope)
         request_headers = headers(scope)
         peer = (scope.get("client") or ("",))[0]
         self.ingress_budget.consume(peer)
@@ -117,15 +125,15 @@ class BrokerApplication:
             return
         if request_headers.get("content-type", "").split(";")[0] != "application/json":
             raise ContractError("broker.invalid_content_type")
-        access = path.startswith("/v1/access/")
-        if access and ("authorization" in request_headers or "x-api-key" in request_headers):
-            raise ContractError(_CREDENTIAL_UNAVAILABLE)
-        raw = await body(receive, limit=4096 if access else MAX_MESSAGE_BYTES)
-        if access:
+        if path.startswith("/v1/access/"):
+            if "authorization" in request_headers or "x-api-key" in request_headers:
+                raise ContractError(_CREDENTIAL_UNAVAILABLE)
+            raw = await body(receive, limit=4096)
             await self._exchange(path, peer, raw, send)
-        else:
-            request = await self._authorize_message(path, peer, raw, request_headers, started_at=started_at)
-            await self._invoke(request, receive, send)
+            return
+        raw = await body(receive, limit=MAX_MESSAGE_BYTES)
+        request = await self._authorize_message(path, peer, raw, request_headers, started_at=started_at)
+        await self._invoke(request, receive, send)
 
     async def _invoke(self, request: BrokerRequest, receive: Receive, send: Send) -> None:
         """Resolve only this grant's fixed provider before invoking its budgeted call."""

@@ -20,6 +20,7 @@ class BoundedWork:
             raise ContractError("control.busy")
 
         def execute() -> Result:
+            """Release capacity only after the synchronous work ends."""
             try:
                 return function()
             finally:
@@ -32,7 +33,7 @@ class BoundedWork:
             raise
 
         def finished(completed: asyncio.Future[Result]) -> None:
-            # Retrieve failures after cancellation without logging their inputs.
+            """Retrieve failures after cancellation without logging inputs."""
             if not completed.cancelled():
                 completed.exception()
 

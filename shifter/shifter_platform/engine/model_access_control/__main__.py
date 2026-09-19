@@ -8,6 +8,25 @@ from uuid import UUID
 from shared.model_access.diagnostics import isolate_transport_diagnostics
 
 
+def _identity_configuration() -> tuple[str, str, str, str, str, str]:
+    """Reject incomplete or overlapping workload identities before serving."""
+    provider = os.environ.get("MODEL_CONTROL_PROVIDER", "gcp")
+    audience = os.environ["MODEL_CONTROL_AUDIENCE"]
+    broker = os.environ["MODEL_CONTROL_BROKER_SUBJECT"]
+    provisioner = os.environ["MODEL_CONTROL_PROVISIONER_SUBJECT"]
+    if not broker or not provisioner or broker == provisioner or provider not in {"aws", "gcp"}:
+        raise RuntimeError("model control requires distinct workload identities")
+    broker_id = os.environ.get("MODEL_CONTROL_BROKER_SUBJECT_ID", "")
+    provisioner_id = os.environ.get("MODEL_CONTROL_PROVISIONER_SUBJECT_ID", "")
+    if provider == "gcp" and (
+        not re.fullmatch(r"\d{10,32}", broker_id, flags=re.ASCII)
+        or not re.fullmatch(r"\d{10,32}", provisioner_id, flags=re.ASCII)
+        or broker_id == provisioner_id
+    ):
+        raise RuntimeError("model control requires distinct immutable workload subjects")
+    return provider, audience, broker, provisioner, broker_id, provisioner_id
+
+
 def main() -> None:
     """Keep rejected configuration and credential diagnostics off stderr."""
     isolate_transport_diagnostics()
@@ -38,20 +57,7 @@ def _main() -> None:
 
     if not settings.MODEL_ACCESS_ENABLED or settings.MODEL_ACCESS_CATALOG is None:
         raise RuntimeError("model control requires enabled model access")
-    provider = os.environ.get("MODEL_CONTROL_PROVIDER", "gcp")
-    audience = os.environ["MODEL_CONTROL_AUDIENCE"]
-    broker = os.environ["MODEL_CONTROL_BROKER_SUBJECT"]
-    provisioner = os.environ["MODEL_CONTROL_PROVISIONER_SUBJECT"]
-    if not broker or not provisioner or broker == provisioner or provider not in {"aws", "gcp"}:
-        raise RuntimeError("model control requires distinct workload identities")
-    broker_id = os.environ.get("MODEL_CONTROL_BROKER_SUBJECT_ID", "")
-    provisioner_id = os.environ.get("MODEL_CONTROL_PROVISIONER_SUBJECT_ID", "")
-    if provider == "gcp" and (
-        not re.fullmatch(r"[0-9]{10,32}", broker_id)
-        or not re.fullmatch(r"[0-9]{10,32}", provisioner_id)
-        or broker_id == provisioner_id
-    ):
-        raise RuntimeError("model control requires distinct immutable workload subjects")
+    provider, audience, broker, provisioner, broker_id, provisioner_id = _identity_configuration()
     session = requests.Session()
     session.trust_env = False
     google_request = Request(session=session)

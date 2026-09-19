@@ -13,6 +13,7 @@ from shared.model_access.provider_runtime import SourceExecutionProjection
 
 
 def _affirmative(value: bool) -> bool:
+    """Require an explicit positive acknowledgement for authority-bearing replies."""
     if not value:
         raise ValueError("control authority must be affirmative")
     return value

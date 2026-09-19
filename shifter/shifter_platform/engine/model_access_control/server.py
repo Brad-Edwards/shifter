@@ -39,6 +39,24 @@ from .work import ControlWork
 _INVALID_ROUTE = "control.invalid_route"
 
 
+def _control_error_status(code: str) -> int:
+    """Map closed control errors to fixed transport statuses."""
+    if code in {"control.unauthorized", "credential.unavailable"}:
+        return 401
+    if code == "control.busy":
+        return 503
+    return 409
+
+
+def _control_route(scope: ASGIScope) -> str:
+    """Accept only exact private POST routes."""
+    path = scope.get("path", "")
+    route = path.removeprefix("/control/v1/")
+    if scope["method"] != "POST" or route not in _HANDLERS or path != f"/control/v1/{route}":
+        raise ContractError(_INVALID_ROUTE)
+    return route
+
+
 class IdentityVerifier(Protocol):
     """Verify broker identity or the provisioner audience for one enrollment."""
 
@@ -62,14 +80,7 @@ class ControlApplication:
                 return
             await self._route(scope, receive, send)
         except ContractError as exc:
-            status = (
-                401
-                if exc.code in {"control.unauthorized", "credential.unavailable"}
-                else 503
-                if exc.code == "control.busy"
-                else 409
-            )
-            await json_response(send, status, {"error": exc.code})
+            await json_response(send, _control_error_status(exc.code), {"error": exc.code})
         except (ValueError, TimeoutError):
             await json_response(send, 400, {"error": "control.invalid_request"})
         except Exception:
@@ -90,10 +101,7 @@ class ControlApplication:
 
     async def _post(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
         """Validate a closed control request before authenticating its workload."""
-        path = scope.get("path", "")
-        route = path.removeprefix("/control/v1/")
-        if scope["method"] != "POST" or route not in _HANDLERS or path != f"/control/v1/{route}":
-            raise ContractError(_INVALID_ROUTE)
+        route = _control_route(scope)
         request_headers = headers(scope)
         if request_headers.get("content-type", "").split(";")[0] != "application/json":
             raise ContractError("control.invalid_content_type")
@@ -111,15 +119,16 @@ class ControlApplication:
                 ),
                 lifecycle=lifecycle,
             )
-            if route == "ready":
-                if payload:
-                    raise ValueError
-                result = {"ready": await self.work.run(self.ready, lifecycle=True, database=True)}
-            else:
-                result = await self.work.run(
-                    partial(self._dispatch, route, payload), lifecycle=lifecycle, database=True
-                )
+            result = await self._authorized_result(route, payload, lifecycle=lifecycle)
         await json_response(send, 200, result)
+
+    async def _authorized_result(self, route: str, payload: JsonObject, *, lifecycle: bool) -> JsonObject:
+        """Run a checked control action under its bounded worker lane."""
+        if route == "ready":
+            if payload:
+                raise ValueError
+            return {"ready": await self.work.run(self.ready, lifecycle=True, database=True)}
+        return await self.work.run(partial(self._dispatch, route, payload), lifecycle=lifecycle, database=True)
 
     @staticmethod
     def _dispatch(route: str, payload: JsonObject) -> JsonObject:

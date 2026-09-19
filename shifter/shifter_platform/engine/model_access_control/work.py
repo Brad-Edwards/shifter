@@ -15,7 +15,8 @@ _LIFECYCLE = BoundedWork(4, name="model-lease")
 class ControlWork:
     """No unbounded queue; lease/finalization work has independent capacity."""
 
-    async def run[Result](self, function: Callable[[], Result], *, lifecycle: bool, database: bool = False) -> Result:
+    @staticmethod
+    async def run[Result](function: Callable[[], Result], *, lifecycle: bool, database: bool = False) -> Result:
         work = _LIFECYCLE if lifecycle else _GENERAL
         return await work.run(lambda: _database_call(function) if database else function())
 
