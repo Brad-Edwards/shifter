@@ -67,7 +67,7 @@ def _mount_catalog_for_runtime_consumers(documents: list[dict], digest: str) -> 
                 mounts.append(
                     {"name": "model-access-catalog", "mountPath": "/etc/shifter/model-access", "readOnly": True}
                 )
-        template["metadata"].setdefault("annotations", {})["checksum/model-access-catalog"] = digest
+        template.setdefault("metadata", {}).setdefault("annotations", {})["checksum/model-access-catalog"] = digest
 
 
 def combine_resources(base: str, broker: str) -> str:
