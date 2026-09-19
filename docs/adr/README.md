@@ -2,6 +2,18 @@
 
 This directory holds the machine-readable part of ADR enforcement.
 
+The GCP `gcp-foundation` bootstrap applies the existing purpose-scoped identity
+root before runners, images, and platform infrastructure. Its optional private
+image-build VPC has no runtime/runner peering, admits builder and validator
+management only through IAP, and remains in the independent foundation state.
+The option defaults off for existing deployments. Target project/repository IDs
+are checked before writes; targeted bootstrap tests and Terraform validation
+cover the first-project ordering (ADR-004 purpose separation; ADR-008 private
+operator access).
+Native GCE image builds explicitly select `GCP_RANGE_BACKEND=gce` to omit the
+GDC-only disk export dependency. Immutable GCE image evidence and the separate
+candidate-validation gate remain mandatory.
+
 SDK candidate distributions from pull-request CI include their SHA-256 checksums
 and are retained under a revision-specific artifact name for independent adapter
 builds. Candidate retention grants no publishing authority. The provisional SDK

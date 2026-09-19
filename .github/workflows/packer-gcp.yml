@@ -294,7 +294,7 @@ jobs:
       # do not boot on GDC (firmware/drivers), and their GDC images come from the
       # native gdc-vm-images build, so skip the export for the Windows family.
       - name: Export image to GCS for the GDC VM Runtime
-        if: inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
+        if: vars.GCP_RANGE_BACKEND != 'gce' && inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
         working-directory: shifter/packer/gcp
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

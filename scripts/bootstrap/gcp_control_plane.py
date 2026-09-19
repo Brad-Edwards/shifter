@@ -329,10 +329,15 @@ def load_bootstrap_env_values(repo_root: Path | None = None, environment: str = 
     ``repo_root`` defaults to :func:`get_repo_root`; it is injectable so callers
     (and tests) can point the lookup at a specific checkout.
     """
+    source = os.environ.get("SHIFTER_BOOTSTRAP_ENV_SOURCE", "files")
+    if source not in {"files", "process"}:
+        raise ValueError("SHIFTER_BOOTSTRAP_ENV_SOURCE must be files or process")
+    if source == "process":
+        return dict(os.environ)
+
     repo_root = repo_root or get_repo_root()
     values: dict[str, str] = {}
-    for env_path in [repo_root / ".env", repo_root.parent / "shifter" / ".env"]:
-        values.update(parse_simple_env_file(env_path))
+    values.update(parse_simple_env_file(repo_root / ".env"))
     values.update(os.environ)
     values.update(_gcp_bootstrap_creds_from_tfvars(repo_root, environment))
     return values

@@ -2103,6 +2103,35 @@ class TestGcpBootstrapIdentityPlatform:
 
         assert values["GCP_BOOTSTRAP_ADMIN_PASSWORD"] == "from-overlay"
 
+    def test_process_bootstrap_source_never_reads_configuration_files(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "process")
+        monkeypatch.setenv("GCP_BOOTSTRAP_ADMIN_EMAIL", "operator@example.test")
+
+        def forbidden_read(*args, **kwargs):
+            raise AssertionError("Process-only bootstrap must not inspect files")
+
+        monkeypatch.setattr(Path, "read_text", forbidden_read)
+        monkeypatch.setattr(Path, "exists", forbidden_read)
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+        assert values["GCP_BOOTSTRAP_ADMIN_EMAIL"] == "operator@example.test"
+
+    def test_unknown_bootstrap_source_fails_closed(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "unknown")
+        with pytest.raises(ValueError, match="must be files or process"):
+            gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+
+    def test_file_bootstrap_source_ignores_sibling_checkout(self, tmp_path, monkeypatch):
+        root = tmp_path / "active"
+        sibling = tmp_path / "shifter"
+        root.mkdir()
+        sibling.mkdir()
+        (sibling / ".env").write_text("GCP_BOOTSTRAP_ADMIN_EMAIL=wrong@example.test\n")
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "files")
+        monkeypatch.delenv("GCP_BOOTSTRAP_ADMIN_EMAIL", raising=False)
+
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=root)
+        assert "GCP_BOOTSTRAP_ADMIN_EMAIL" not in values
+
     def test_resolve_gcp_bootstrap_operator_credentials_returns_none_when_missing(self):
         """Bootstrap should report no operator credentials when the env files do not provide them."""
         assert deploy.resolve_gcp_bootstrap_operator_credentials(env_values={}) is None
