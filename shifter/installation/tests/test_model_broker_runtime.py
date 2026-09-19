@@ -119,7 +119,7 @@ def test_unsupported_deployment_provider_cannot_activate_runtime(active_runtime)
         project(settings, catalog, provider="unknown")
 
 
-@pytest.mark.parametrize("subject", [None, "", "broker", "foreign", "valid"])
+@pytest.mark.parametrize("subject", [None, "", "broker", "foreign", "missing_id", "same_id", "valid"])
 def test_active_gcp_projection_binds_separate_platform_provisioner(active_runtime, subject):
     from installation.gcp_model_broker import project_model_broker
 
@@ -144,7 +144,14 @@ def test_active_gcp_projection_binds_separate_platform_provisioner(active_runtim
             "broker": output["gsa"],
             "foreign": "provisioner@foreign-example.iam.gserviceaccount.com",
             "valid": "provisioner@platform-example.iam.gserviceaccount.com",
+            "missing_id": "provisioner@platform-example.iam.gserviceaccount.com",
+            "same_id": "provisioner@platform-example.iam.gserviceaccount.com",
         }[subject]
+    if subject != "missing_id":
+        output["broker_subject_id"] = "123456789012345678901"
+        output["provisioner_subject_id"] = (
+            "123456789012345678902" if subject != "same_id" else output["broker_subject_id"]
+        )
     args = {
         "catalog_json": policy.model_dump_json(),
         "model_access_env": (
@@ -160,5 +167,5 @@ def test_active_gcp_projection_binds_separate_platform_provisioner(active_runtim
         assert json.loads(projected["providers_json"]) == settings["provider_inventory"]
         assert projected["enrollment_env"] == {}
     else:
-        with pytest.raises(ValueError, match="distinct applied provisioner identity"):
+        with pytest.raises(ValueError, match=r"subject|identity"):
             project_model_broker(output, **args)

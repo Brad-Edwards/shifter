@@ -68,7 +68,7 @@ class ApiTokenAuthentication(authentication.BaseAuthentication):
         if token.created_by_id and getattr(getattr(owner, "profile", None), "is_ctf_account", False):
             token.revoke()
             raise exceptions.AuthenticationFailed(_invalid_token_message())
-        if owner is None or not owner.is_active or getattr(getattr(owner, "profile", None), "deleted_at", None):
+        if not token.has_eligible_owner:
             raise exceptions.AuthenticationFailed(_invalid_token_message())
 
     def authenticate(self, request: Request) -> tuple[None, ApiToken] | None:

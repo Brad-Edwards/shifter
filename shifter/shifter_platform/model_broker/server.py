@@ -2,20 +2,43 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
+from datetime import UTC, datetime
 
 from shared.model_access import ContractError
 from shared.model_access.credentials import ModelAccessAuthorization
-from shared.model_access.http import ASGIScope, Receive, Send, body, headers, json_response
+from shared.model_access.diagnostics import isolate_transport_diagnostics
+from shared.model_access.http import ASGIScope, Receive, ResponseWriter, Send, body, headers, json_response
 from shared.model_access.messages import MAX_MESSAGE_BYTES, CountTokensRequest, JsonObject, parse_messages, strict_json
+from shared.model_access.traffic import TrafficBudget
 
 from .control import ControlClient
 from .execution import BrokerInvocation, BrokerRequest
 from .providers import ProviderRegistry
 
 _CREDENTIAL_UNAVAILABLE = "credential.unavailable"
+
+
+def _broker_error_status(code: str) -> int:
+    """Map closed participant errors to fixed transport statuses."""
+    if code in {"http.rate_limited", "credential.rate_limited"}:
+        return 429
+    if code == _CREDENTIAL_UNAVAILABLE:
+        return 401
+    return 409
+
+
+def _broker_route(scope: ASGIScope) -> tuple[str, bool]:
+    """Admit only the exact participant and access routes."""
+    path = scope["path"]
+    allowed = {"/v1/messages", "/v1/messages/count_tokens", "/v1/access/exchange", "/v1/access/refresh"}
+    models = scope["method"] == "GET" and path == "/v1/models"
+    if not models and (scope["method"] != "POST" or path not in allowed):
+        raise ContractError("broker.invalid_route")
+    return path, models
 
 
 class BrokerApplication:
@@ -30,6 +53,7 @@ class BrokerApplication:
         key_version: str,
         previous_keys: dict[str, bytes] | None = None,
     ) -> None:
+        isolate_transport_diagnostics()
         if len(fingerprint_key) < 32:
             raise ValueError("broker fingerprint key needs at least 256 bits")
         self.control = control
@@ -44,66 +68,105 @@ class BrokerApplication:
         ):
             raise ValueError("invalid retained broker fingerprint keys")
         self.draining = False
+        self.ingress_budget = TrafficBudget()
+        self.drain = asyncio.Event()
+
+    def begin_drain(self) -> None:
+        """Stop admission and wake every in-flight transport at signal receipt."""
+        self.draining = True
+        self.drain.set()
 
     async def __call__(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
         if scope["type"] == "lifespan":
             await self._lifespan(receive, send)
         elif scope["type"] == "http":
-            await self._http(scope, receive, send)
+            await self._http(scope, receive, ResponseWriter(send))
 
     async def _http(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
         """Map bounded routing failures to fixed participant-safe envelopes."""
+        started_at = asyncio.get_running_loop().time()
         try:
             path = scope.get("path", "")
             if scope.get("query_string"):
                 raise ContractError("broker.invalid_route")
             if scope["method"] == "GET" and path in {"/health/live", "/health/ready"}:
-                healthy = path.endswith("live") or not self.draining
+                healthy = path.endswith("live") or await self._ready()
                 await json_response(send, 200 if healthy else 503, {"ready": healthy})
             else:
-                await self._post(scope, receive, send)
+                # Upload and private calls each have bounded I/O. The invocation
+                # alone owns the absolute deadline once a response can start.
+                await self._post(scope, receive, send, started_at=started_at)
         except ContractError as exc:
-            status = 401 if exc.code == _CREDENTIAL_UNAVAILABLE else 409
-            await _error(send, status, "invalid_request_error", exc.code)
+            await _error(send, _broker_error_status(exc.code), "invalid_request_error", exc.code)
         except (ValueError, TimeoutError):
             await _error(send, 400, "invalid_request_error", "broker.invalid_request")
         except Exception:
             await _error(send, 503, "api_error", "broker.unavailable")
 
-    async def _post(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
+    async def _ready(self) -> bool:
+        """Readiness requires usable workload authority and a responsive Engine."""
+        if self.draining:
+            return False
+        try:
+            return (await self.control.call("ready", {})).get("ready") is True
+        except Exception:
+            return False
+
+    async def _post(self, scope: ASGIScope, receive: Receive, send: Send, *, started_at: float) -> None:
         """Admit only JSON access and Messages operations on fixed routes."""
         if self.draining:
             raise ContractError("broker.draining")
-        path = scope["path"]
-        allowed = {"/v1/messages", "/v1/messages/count_tokens", "/v1/access/exchange", "/v1/access/refresh"}
-        if scope["method"] != "POST" or path not in allowed:
-            raise ContractError("broker.invalid_route")
+        path, models = _broker_route(scope)
         request_headers = headers(scope)
+        peer = (scope.get("client") or ("",))[0]
+        self.ingress_budget.consume(peer)
+        if models:
+            await self._models(request_headers, peer, send)
+            return
         if request_headers.get("content-type", "").split(";")[0] != "application/json":
             raise ContractError("broker.invalid_content_type")
-        peer = (scope.get("client") or ("",))[0]
-        raw = await body(receive, limit=MAX_MESSAGE_BYTES)
         if path.startswith("/v1/access/"):
+            if "authorization" in request_headers or "x-api-key" in request_headers:
+                raise ContractError(_CREDENTIAL_UNAVAILABLE)
+            raw = await body(receive, limit=4096)
             await self._exchange(path, peer, raw, send)
-        else:
-            request = await self._authorize_message(path, peer, raw, request_headers)
+            return
+        raw = await body(receive, limit=MAX_MESSAGE_BYTES)
+        request = await self._authorize_message(path, peer, raw, request_headers, started_at=started_at)
+        await self._invoke(request, receive, send)
+
+    async def _invoke(self, request: BrokerRequest, receive: Receive, send: Send) -> None:
+        """Resolve only this grant's fixed provider before invoking its budgeted call."""
+        async with asyncio.timeout_at(request.deadline):
             shard = request.authority.aliases[request.message.model]
             if shard.credential_ref.reference.startswith("source:"):
                 projection = await self.control.call(
                     "source",
-                    {
-                        "token": request.token,
-                        "transport_peer": request.peer,
-                        "logical_alias": request.message.model,
-                    },
+                    {"token": request.token, "transport_peer": request.peer, "logical_alias": request.message.model},
                 )
                 provider = self.providers.build_projected(shard, request.authority.limits, projection)
             else:
                 provider = self.providers.build(shard, request.authority.limits)
-            await BrokerInvocation(self.control, provider, request, receive, send).run()
+        # End the resolution timer before installing the invocation's timer.
+        # Overlapping cancellation skips its bounded terminal error response.
+        await BrokerInvocation(self.control, provider, request, receive, send, drain=self.drain).run()
+
+    async def _models(self, request_headers: dict[str, str], peer: str, send: Send) -> None:
+        """List current logical aliases without exposing provider inventory."""
+        authority = ModelAccessAuthorization.model_validate(
+            await self.control.call("authenticate", {"token": self._token(request_headers), "transport_peer": peer})
+        )
+        await json_response(
+            send,
+            200,
+            {
+                "data": [{"id": alias, "type": "model", "display_name": alias} for alias in sorted(authority.aliases)],
+                "has_more": False,
+            },
+        )
 
     async def _authorize_message(
-        self, path: str, peer: str, raw: bytes, request_headers: dict[str, str]
+        self, path: str, peer: str, raw: bytes, request_headers: dict[str, str], *, started_at: float
     ) -> BrokerRequest:
         """Authenticate and enforce the logical model's declared capabilities."""
         if request_headers.get("anthropic-version") != "2023-06-01" or request_headers.get("anthropic-beta"):
@@ -126,6 +189,10 @@ class BrokerApplication:
             peer,
             count_only,
             self._retry_fields(request_headers, message, count_only=count_only),
+            min(
+                started_at + min(120, authority.limits.max_request_seconds),
+                asyncio.get_running_loop().time() + (authority.hard_expires_at - datetime.now(UTC)).total_seconds(),
+            ),
         )
 
     async def _lifespan(self, receive: Receive, send: Send) -> None:
@@ -134,7 +201,7 @@ class BrokerApplication:
             if event["type"] == "lifespan.startup":
                 await send({"type": "lifespan.startup.complete"})
             elif event["type"] == "lifespan.shutdown":
-                self.draining = True
+                self.begin_drain()
                 await self.control.close()
                 await self.providers.close()
                 await send({"type": "lifespan.shutdown.complete"})
@@ -144,7 +211,7 @@ class BrokerApplication:
     def _token(request_headers: dict[str, str]) -> str:
         api_key = request_headers.get("x-api-key", "")
         authorization = request_headers.get("authorization", "")
-        if api_key and authorization:
+        if "x-api-key" in request_headers and "authorization" in request_headers:
             raise ContractError(_CREDENTIAL_UNAVAILABLE)
         token = api_key or (authorization[7:] if authorization.startswith("Bearer ") else "")
         if len(token) != 80:
@@ -192,4 +259,8 @@ class BrokerApplication:
 
 async def _error(send: Send, status: int, category: str, message: str) -> None:
     """Emit the fixed Messages error envelope without exception diagnostics."""
-    await json_response(send, status, {"type": "error", "error": {"type": category, "message": message}})
+    from contextlib import suppress
+
+    with suppress(OSError, TimeoutError):
+        async with asyncio.timeout(1):
+            await json_response(send, status, {"type": "error", "error": {"type": category, "message": message}})

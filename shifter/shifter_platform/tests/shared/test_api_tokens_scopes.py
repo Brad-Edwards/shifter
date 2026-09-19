@@ -13,6 +13,12 @@ from shared.api_tokens import scopes
 
 
 class TestKnownScopes:
+    def test_communication_scopes_are_exact_and_independent(self):
+        read, write = "ctf:communication:read", "ctf:communication:write"
+        assert scopes.validate_scopes([read, write]) == [read, write]
+        assert not scopes.has_scope([write], read)
+        assert not scopes.has_scope(["ctf:event:write", "ctf:play:write"], write)
+
     def test_range_scopes_are_enforced_today(self):
         assert scopes.MISSION_CONTROL_RANGE_READ == "mission_control:range:read"
         assert scopes.MISSION_CONTROL_RANGE_WRITE == "mission_control:range:write"

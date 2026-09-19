@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from shared.model_access import ContractError
+from shared.model_access.control_wire import validate_control_reply
 from shared.model_access.messages import JsonObject, strict_json
 
 
@@ -43,7 +44,7 @@ class ControlClient:
         )
 
     async def call(self, route: str, payload: JsonObject) -> JsonObject:
-        if route not in {"authenticate", "source", "exchange", "refresh", "reserve", "advance", "finish"}:
+        if route not in {"ready", "authenticate", "source", "exchange", "refresh", "reserve", "advance", "finish"}:
             raise ContractError("control.invalid_route")
         try:
             async with asyncio.timeout(2):
@@ -51,7 +52,11 @@ class ControlClient:
                 async with self.client.stream(
                     "POST", f"{self.url}/control/v1/{route}", json=payload, headers={"authorization": assertion}
                 ) as response:
-                    return await _read_response(response)
+                    result = await _read_response(response)
+                    try:
+                        return validate_control_reply(route, payload, result)
+                    except (ValueError, TypeError, KeyError):
+                        raise ContractError("control.invalid_response") from None
         except (httpx.HTTPError, TimeoutError):
             raise ContractError("control.unavailable") from None
 
@@ -71,6 +76,7 @@ async def _read_response(response: httpx.Response) -> JsonObject:
         code = data.get("error", "")
         if not isinstance(code, str) or code not in {
             "credential.unavailable",
+            "credential.rate_limited",
             "request.budget_exceeded",
             "request.revoked",
             "request.intent_conflict",

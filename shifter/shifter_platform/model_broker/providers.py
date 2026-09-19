@@ -339,9 +339,11 @@ class MessagesProvider(ModelProviderAdapter):
         if self.target.provider == "openai-v1":
             from .openai_messages import responses_events
 
-            return responses_events(response.aiter_bytes(chunk_size=16_384), model=self.target.model)
+            return responses_events(response.aiter_bytes(), model=self.target.model)
         decoder = bedrock_events if self.target.provider == "bedrock-v1" else vertex_events
-        return decoder(response.aiter_bytes(chunk_size=16_384))
+        # Decoders bound individual events and the total stream. Do not coalesce
+        # small frames here: an idle provider must not delay a completed SSE event.
+        return decoder(response.aiter_bytes())
 
 
 def _vertex_request(target: ProviderTarget, payload: JsonObject, *, count_only: bool) -> str:

@@ -86,6 +86,55 @@ def aws_values():
     return values
 
 
+@pytest.mark.parametrize(
+    "identities", [None, ("123456789012345678901", "123456789012345678902")]
+)
+def test_active_control_pins_applied_immutable_google_subjects(tmp_path, identities):
+    values = enabled_values()
+    broker = values["modelBroker"]
+    catalog = json.loads(
+        (
+            CHART.parents[2] / "docs/architecture/model-access/example-policy.v3.json"
+        ).read_text()
+    )
+    catalog["enabled"] = True
+    broker.update(
+        {
+            "catalog_json": json.dumps(catalog),
+            "catalog_digest": catalog["digest"],
+            "provisioner_subject": "provisioner@platform-example.iam.gserviceaccount.com",
+            "providers_json": "{}",
+            "fingerprint_secret_name": "fingerprint-v1",
+            "fingerprint_key_version": "v1",
+        }
+    )
+    broker["control_env"].update(
+        MODEL_ACCESS_ENABLED="true", MODEL_ACCESS_CATALOG_DIGEST=catalog["digest"]
+    )
+    if identities:
+        broker.update(
+            broker_subject_id=identities[0], provisioner_subject_id=identities[1]
+        )
+    result = render(tmp_path, values)
+    if identities is None:
+        assert result.returncode != 0
+        return
+    assert result.returncode == 0, result.stderr
+    control = next(
+        doc
+        for doc in yaml.safe_load_all(result.stdout)
+        if doc
+        and doc["kind"] == "Deployment"
+        and doc["metadata"]["name"] == "model-access-control"
+    )
+    env = {
+        item["name"]: item.get("value")
+        for item in control["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert env["MODEL_CONTROL_BROKER_SUBJECT_ID"] == identities[0]
+    assert env["MODEL_CONTROL_PROVISIONER_SUBJECT_ID"] == identities[1]
+
+
 def test_aws_broker_uses_only_private_endpoints_and_exact_irsa(tmp_path):
     result = render(tmp_path, aws_values())
     assert result.returncode == 0, result.stderr
@@ -384,18 +433,51 @@ def test_provider_egress_has_no_workload_identity_or_additive_private_access(tmp
     result = render(tmp_path, values)
     assert result.returncode == 0, result.stderr
     docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
-    deployment = next(doc for doc in docs if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "model-provider-egress")
+    deployment = next(
+        doc
+        for doc in docs
+        if doc["kind"] == "Deployment"
+        and doc["metadata"]["name"] == "model-provider-egress"
+    )
     pod = deployment["spec"]["template"]
     assert "serviceAccountName" not in pod["spec"]
     assert pod["spec"]["automountServiceAccountToken"] is False
     container = pod["spec"]["containers"][0]
     assert "envFrom" not in container
     assert container["command"] == ["python", "-m", "model_broker.egress_proxy"]
-    policies = [doc for doc in docs if doc["kind"] == "NetworkPolicy" and doc["metadata"]["namespace"] == "shifter-platform"
-                and selected(doc["spec"]["podSelector"], pod["metadata"]["labels"])]
-    assert {p["metadata"]["name"] for p in policies} == {"default-deny-platform", "allow-platform-dns-egress", "model-provider-egress-boundary"}
-    boundary = next(p["spec"] for p in policies if p["metadata"]["name"] == "model-provider-egress-boundary")
-    assert boundary["ingress"] == [{"from": [{"podSelector": {"matchLabels": {"app.kubernetes.io/component": "model-broker"}}}],
-                                    "ports": [{"protocol": "TCP", "port": 3128}]}]
-    public = next(peer["ipBlock"] for rule in boundary["egress"] for peer in rule["to"] if "ipBlock" in peer)
+    policies = [
+        doc
+        for doc in docs
+        if doc["kind"] == "NetworkPolicy"
+        and doc["metadata"]["namespace"] == "shifter-platform"
+        and selected(doc["spec"]["podSelector"], pod["metadata"]["labels"])
+    ]
+    assert {p["metadata"]["name"] for p in policies} == {
+        "default-deny-platform",
+        "allow-platform-dns-egress",
+        "model-provider-egress-boundary",
+    }
+    boundary = next(
+        p["spec"]
+        for p in policies
+        if p["metadata"]["name"] == "model-provider-egress-boundary"
+    )
+    assert boundary["ingress"] == [
+        {
+            "from": [
+                {
+                    "podSelector": {
+                        "matchLabels": {"app.kubernetes.io/component": "model-broker"}
+                    }
+                }
+            ],
+            "ports": [{"protocol": "TCP", "port": 3128}],
+        }
+    ]
+    public = next(
+        peer["ipBlock"]
+        for rule in boundary["egress"]
+        for peer in rule["to"]
+        if "ipBlock" in peer
+    )
     assert {"10.0.0.0/8", "169.254.0.0/16", "127.0.0.0/8"} <= set(public["except"])

@@ -26,3 +26,14 @@ An API enables custom scoreboards, automated challenge deployment, integration w
 - DOCUMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/api/__init__.py` (CTF Views - API endpoints for CTF operations)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/api/serializers/communication.py` (Bounded read-only DRF projections for the participant inbox and organizer campaign summary (ADR-051, #2048))
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2048` (API contract for scoped communications: bounded serializers and the CTFError -> shared.api.errors mapping)
+
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/api/organizer/communication.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/api/communication_inbox.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/communication/admission.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/services/communication/cutover.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/api_tokens/scopes.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_rest.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_inbox.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_cutover.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_admission_postgres.py`
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2100`
