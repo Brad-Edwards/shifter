@@ -62,6 +62,38 @@ def test_admin_binds_an_installed_adapter_using_verified_guest_choices(pack_api)
     assert not Range.objects.exists()
 
 
+def test_admin_binds_a_provider_image_without_hosting_access(pack_api):
+    client, base, installed, source, _root = pack_api
+    target = client.get(base + "example/").json()["targets"][0]["address"]
+    response = client.post(
+        base + "example/",
+        {
+            "installation_id": str(installed.id),
+            "pack_digest": source.package_digest,
+            "bindings": {
+                "targets": {"server": target},
+                "image_profiles": {
+                    "server": {
+                        "provider": "gcp",
+                        "image_kind": "machine-image",
+                        "image_ref": "projects/example/global/machineImages/nested-host-v1",
+                        "machine_type": "e2-standard-8",
+                        "bootstrap_capability": "preconfigured-machine-host",
+                        "management_ssh_username": "host-admin",
+                        "participant_container_name": "participant-desktop",
+                        "participant_username": "student",
+                        "participant_readiness_contract": "participant-readiness/v1",
+                        "participant_readiness_manifest_sha256": "a" * 64,
+                    }
+                },
+            },
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["bindings"]["image_profiles"]["server"]["provider"] == "gcp"
+
+
 def test_pack_access_and_configuration_require_tenant_admin_even_for_staff(pack_api):
     client, base, installed, source, _root = pack_api
     outsider = User.objects.create_user(username="outsider-staff", is_staff=True)

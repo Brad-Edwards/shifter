@@ -104,6 +104,26 @@ def _raes_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, 
                 "disk_type": row.disk_type,
                 **({"management_ssh_port": row.management_ssh_port} if row.management_ssh_port != 22 else {}),
                 **({"management_ssh_username": row.management_ssh_username} if row.management_ssh_username else {}),
+                **({"image_kind": row.image_kind} if row.image_kind != "image" else {}),
+                **(
+                    {"bootstrap_capability": row.bootstrap_capability} if row.bootstrap_capability != "standard" else {}
+                ),
+                **(
+                    {"participant_container_name": row.participant_container_name}
+                    if row.participant_container_name
+                    else {}
+                ),
+                **({"participant_username": row.participant_username} if row.participant_username else {}),
+                **(
+                    {"participant_readiness_contract": row.participant_readiness_contract}
+                    if row.participant_readiness_contract
+                    else {}
+                ),
+                **(
+                    {"participant_readiness_manifest_sha256": row.participant_readiness_manifest_sha256}
+                    if row.participant_readiness_manifest_sha256
+                    else {}
+                ),
             }
         )
     return projected

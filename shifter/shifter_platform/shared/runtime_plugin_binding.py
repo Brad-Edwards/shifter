@@ -6,6 +6,7 @@ inside that plan. A retained pin remains usable for cleanup after registry edits
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID, uuid5
 
@@ -22,6 +23,96 @@ from shifter_adapter_sdk.runtime import (
     canonical_digest,
 )
 
+_GCE_IMAGE_REF = re.compile(r"^projects/[a-z0-9][-a-z0-9.:]*/global/images/[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$")
+_GCE_MACHINE_IMAGE_REF = re.compile(
+    r"^projects/[a-z0-9][-a-z0-9.:]*/global/machineImages/[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+)
+_AWS_AMI = re.compile(r"^ami-(?:[0-9a-f]{8}|[0-9a-f]{17})$")
+_MACHINE_TYPE = re.compile(r"^[a-z][a-z0-9-]{1,30}(?:\.[a-z0-9]{1,20})?$")
+_LOCAL_USER = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,31}$")
+_CONTAINER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
+class RuntimeTargetImageProfile(ClosedModel):
+    """Administrator-selected provider image for one adapter guest binding."""
+
+    provider: Literal["gcp", "aws"]
+    image_kind: Literal["image", "machine-image"] = "image"
+    image_ref: Annotated[str, Field(min_length=1, max_length=500)]
+    machine_type: Annotated[str, Field(max_length=100)] = ""
+    disk_size_gb: Annotated[int, Field(strict=True, ge=1, le=16_384)] | None = None
+    disk_type: Annotated[str, Field(max_length=100)] = ""
+    bootstrap_capability: Annotated[str, Field(max_length=64)] = "standard"
+    management_ssh_username: Annotated[str, Field(max_length=32)] = ""
+    management_ssh_port: Annotated[int, Field(strict=True, ge=1, le=65_535)] = 22
+    participant_container_name: Annotated[str, Field(max_length=128)] = ""
+    participant_username: Annotated[str, Field(max_length=32)] = ""
+    participant_readiness_contract: Annotated[str, Field(max_length=64)] = ""
+    participant_readiness_manifest_sha256: Annotated[str, Field(max_length=64)] = ""
+
+    @model_validator(mode="after")
+    def validate_provider_profile(self) -> Self:
+        if self.machine_type and not _MACHINE_TYPE.fullmatch(self.machine_type):
+            raise ValueError("image profile machine type is invalid")
+        for value in (self.management_ssh_username, self.participant_username):
+            if value and not _LOCAL_USER.fullmatch(value):
+                raise ValueError("image profile usernames must be local OS usernames")
+        if self.provider == "aws":
+            _validate_aws_image_profile(self)
+        else:
+            _validate_gcp_image_profile(self)
+        return self
+
+
+def _participant_profile(profile: RuntimeTargetImageProfile) -> tuple[str, str, str, str]:
+    return (
+        profile.participant_container_name,
+        profile.participant_username,
+        profile.participant_readiness_contract,
+        profile.participant_readiness_manifest_sha256,
+    )
+
+
+def _validate_aws_image_profile(profile: RuntimeTargetImageProfile) -> None:
+    if profile.image_kind != "image" or not _AWS_AMI.fullmatch(profile.image_ref):
+        raise ValueError("AWS image profiles require an exact AMI ID")
+    if profile.bootstrap_capability != "standard" or any(_participant_profile(profile)):
+        raise ValueError("AWS image profiles do not support machine-host fields")
+    if profile.disk_type and profile.disk_type not in {"gp2", "gp3"}:
+        raise ValueError("AWS image profile disk type is unsupported")
+
+
+def _validate_gcp_image_profile(profile: RuntimeTargetImageProfile) -> None:
+    participant = _participant_profile(profile)
+    if profile.image_kind == "image":
+        if not _GCE_IMAGE_REF.fullmatch(profile.image_ref):
+            raise ValueError("GCP image profiles require an exact Compute Engine image resource")
+        if any(participant):
+            raise ValueError("participant host fields require a GCP machine image")
+        if profile.bootstrap_capability != "standard":
+            raise ValueError("adapter-selected GCP boot images require the standard bootstrap capability")
+        if profile.disk_type and profile.disk_type not in {
+            "pd-standard",
+            "pd-balanced",
+            "pd-ssd",
+            "pd-extreme",
+            "hyperdisk-balanced",
+        }:
+            raise ValueError("GCP image profile disk type is unsupported")
+        return
+    if not _GCE_MACHINE_IMAGE_REF.fullmatch(profile.image_ref):
+        raise ValueError("GCP machine image profiles require an exact machine-image resource")
+    if profile.bootstrap_capability != "preconfigured-machine-host":
+        raise ValueError("GCP machine images require the preconfigured-machine-host capability")
+    if not profile.management_ssh_username or not all(participant):
+        raise ValueError("GCP machine images require complete host and participant readiness fields")
+    if not _CONTAINER.fullmatch(profile.participant_container_name):
+        raise ValueError("participant container name is invalid")
+    if profile.participant_readiness_contract != "participant-readiness/v1":
+        raise ValueError("participant readiness contract is unsupported")
+    if not re.fullmatch(r"[0-9a-f]{64}", profile.participant_readiness_manifest_sha256):
+        raise ValueError("participant readiness manifest digest is invalid")
+
 
 class PluginTargetBindings(ClosedModel):
     """The logical guest names requested by an installed plugin and exact nodes."""
@@ -35,12 +126,15 @@ class PluginTargetBindings(ClosedModel):
         max_length=64,
         repr=False,
     )
+    image_profiles: dict[Identifier, RuntimeTargetImageProfile] = Field(default_factory=dict, max_length=64)
 
     def validate_manifest(self, manifest: PluginManifest) -> None:
         if set(self.targets) != set(manifest.required_bindings):
             raise ValueError("Plugin target bindings do not match its declaration")
         if set(self.parameters) != set(manifest.required_parameters):
             raise ValueError("Plugin parameters do not match its declaration")
+        if not set(self.image_profiles).issubset(self.targets):
+            raise ValueError("Plugin image profiles must name declared target bindings")
 
     def validate_plan(self, plan: object) -> None:
         resources = plan.get("resources") if isinstance(plan, dict) else None
@@ -55,6 +149,25 @@ class PluginTargetBindings(ClosedModel):
                 payload.get("count") is not None and (type(payload["count"]) is not int or payload["count"] != 1)
             ):
                 raise ValueError("A plugin binding requires exactly one guest")
+
+    def image_profile_for(self, node_address: str) -> RuntimeTargetImageProfile | None:
+        """Return the administrator profile for the logical binding targeting a node."""
+        matches = [
+            self.image_profiles[name]
+            for name, address in self.targets.items()
+            if address == node_address and name in self.image_profiles
+        ]
+        if len(matches) > 1 and len({profile.model_dump_json() for profile in matches}) != 1:
+            raise ValueError("A guest cannot have conflicting adapter image profiles")
+        return matches[0] if matches else None
+
+    def validate_provider(self, backend: str) -> None:
+        """Require every selected image profile to match the admitted range backend."""
+        expected = {"gce": "gcp", "ec2": "aws"}.get(backend)
+        if self.image_profiles and (
+            expected is None or any(row.provider != expected for row in self.image_profiles.values())
+        ):
+            raise ValueError("Plugin image profile provider does not match the admitted range backend")
 
 
 class RuntimePluginScope(ClosedModel):

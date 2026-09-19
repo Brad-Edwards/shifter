@@ -48,9 +48,25 @@ describe("pack adapter assignments", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save assignment" }));
     await waitFor(() => expect(mockApi).toHaveBeenCalledWith(`${base}example/`, { method: "POST", body: {
       installation_id: adapter.id, pack_digest: digest, enabled: true,
-      bindings: { targets: { server: "node.web" }, parameters: { mode: "training" } },
+      bindings: { targets: { server: "node.web" }, parameters: { mode: "training" }, image_profiles: {} },
     } }));
     expect(await screen.findByText("Assignment saved. Existing ranges keep their original adapter.")).toBeInTheDocument();
+  });
+
+  it("lets an administrator bind a machine image and readiness contract", async () => {
+    renderRoute(<AdapterPackBindings organization="org-1" adapters={[adapter]} />);
+    await fillAssignment();
+    fireEvent.click(screen.getByLabelText("Use an administrator-selected provider image for server"));
+    fireEvent.change(screen.getByLabelText("Image type for server"), { target: { value: "machine-image" } });
+    fireEvent.change(screen.getByLabelText("Image reference for server"), {
+      target: { value: "projects/example/global/machineImages/nested-host-v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Machine type for server"), { target: { value: "e2-standard-8" } });
+    fireEvent.change(screen.getByLabelText("Management SSH username for server"), { target: { value: "host-admin" } });
+    fireEvent.change(screen.getByLabelText("Participant container for server"), { target: { value: "participant-desktop" } });
+    fireEvent.change(screen.getByLabelText("Participant username for server"), { target: { value: "student" } });
+    fireEvent.change(screen.getByLabelText("Readiness manifest SHA-256 for server"), { target: { value: "a".repeat(64) } });
+    expect(screen.getByRole("button", { name: "Review assignment" })).toBeEnabled();
   });
 
   it("keeps a rejected stale assignment open and shows the server's recovery message", async () => {

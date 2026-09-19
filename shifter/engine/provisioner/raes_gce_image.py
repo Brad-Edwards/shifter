@@ -37,6 +37,7 @@ from config import GCERangeImageProfile
 
 if TYPE_CHECKING:
     from shared.raes.artifact_binding import ArtifactBinding
+    from shared.runtime_plugin_binding import RuntimeTargetImageProfile
 
     from raes_plan import RaesPlanNode
 
@@ -73,6 +74,12 @@ def resolve_gce_image(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) 
             resolved.disk_type,
             resolved.management_ssh_port,
             resolved.management_ssh_username,
+            resolved.image_kind,
+            resolved.bootstrap_capability,
+            resolved.participant_container_name,
+            resolved.participant_username,
+            resolved.participant_readiness_contract,
+            resolved.participant_readiness_manifest_sha256,
         )
 
     if _is_concrete_gce_ref(image.name):
@@ -105,6 +112,29 @@ def resolve_gce_image_from_binding(node: RaesPlanNode, binding: ArtifactBinding)
     return replace(profile, source_image_id=binding.image_id)
 
 
+def resolve_gce_image_from_runtime_profile(
+    node: RaesPlanNode, profile: RuntimeTargetImageProfile
+) -> GCERangeImageProfile:
+    """Realize the tenant-admin image selected with an adapter target binding."""
+    if profile.provider != "gcp":
+        raise RaesGceImageError("adapter image profile provider does not match GCE realization")
+    return _profile(
+        node,
+        profile.image_ref,
+        profile.machine_type or None,
+        profile.disk_size_gb,
+        profile.disk_type or None,
+        profile.management_ssh_port,
+        profile.management_ssh_username,
+        profile.image_kind,
+        profile.bootstrap_capability,
+        profile.participant_container_name,
+        profile.participant_username,
+        profile.participant_readiness_contract,
+        profile.participant_readiness_manifest_sha256,
+    )
+
+
 def _resolve_base_os(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) -> GCERangeImageProfile:
     """Resolve a base OS image for a source-less node from its os_family.
 
@@ -125,6 +155,12 @@ def _resolve_base_os(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) -
             resolved.disk_type,
             resolved.management_ssh_port,
             resolved.management_ssh_username,
+            resolved.image_kind,
+            resolved.bootstrap_capability,
+            resolved.participant_container_name,
+            resolved.participant_username,
+            resolved.participant_readiness_contract,
+            resolved.participant_readiness_manifest_sha256,
         )
     os_family = node.os_family or "linux"
     raise RaesGceImageError(
@@ -140,15 +176,27 @@ def _profile(
     disk_type: str | None = None,
     management_ssh_port: int = 22,
     management_ssh_username: str = "",
+    image_kind: str = "image",
+    bootstrap_capability: str = "standard",
+    participant_container_name: str = "",
+    participant_username: str = "",
+    participant_readiness_contract: str = "",
+    participant_readiness_manifest_sha256: str = "",
 ) -> GCERangeImageProfile:
     """Build a GCERangeImageProfile, filling gaps from authored resources then defaults."""
     return GCERangeImageProfile(
-        source_image=source_image,
+        source_image=source_image if image_kind == "image" else "",
+        source_machine_image=source_image if image_kind == "machine-image" else "",
         machine_type=machine_type or _machine_type_from_resources(node) or _DEFAULT_MACHINE_TYPE,
         disk_size_gb=disk_size_gb or _DEFAULT_DISK_SIZE_GB,
         disk_type=disk_type or _DEFAULT_DISK_TYPE,
         host_ssh_port=management_ssh_port,
         host_ssh_username=management_ssh_username,
+        bootstrap_capability=bootstrap_capability,
+        participant_container_name=participant_container_name,
+        participant_username=participant_username,
+        participant_readiness_contract=participant_readiness_contract,
+        participant_readiness_manifest_sha256=participant_readiness_manifest_sha256,
     )
 
 

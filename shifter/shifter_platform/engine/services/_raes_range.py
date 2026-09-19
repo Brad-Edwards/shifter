@@ -155,7 +155,11 @@ def create_raes_range(
     user_model = get_user_model()
     with transaction.atomic():
         scope = bindings.runtime_plugin_scope
-        pin = resolve_runtime_plugin_pin(scope, compiled_plan) if scope else None
+        pin = (
+            resolve_runtime_plugin_pin(scope, compiled_plan, backend=str(binding_fields.get("range_backend") or ""))
+            if scope
+            else None
+        )
         user = user_model.objects.get(id=user_id)
         request = Request.objects.create(request_id=request_uuid, request_type=RequestType.RANGE.value, user=user)
         subnet_index = Range.allocate_subnet_index()

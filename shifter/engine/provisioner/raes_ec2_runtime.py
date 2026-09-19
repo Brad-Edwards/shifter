@@ -110,6 +110,11 @@ def provision_ec2_run(
             node,
             run.input.image_candidates_for("aws", name) if name else [],
             binding=run.input.artifact_binding_for(node.address),
+            runtime_profile=(
+                run.input.runtime_plugin.bindings.image_profile_for(node.address)
+                if run.input.runtime_plugin is not None
+                else None
+            ),
         )
 
     with _clients(scope) as (ec2, secrets):

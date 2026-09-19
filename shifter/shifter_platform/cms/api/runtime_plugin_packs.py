@@ -25,6 +25,24 @@ from .preparation_adapters import PreparationSerializer, preparation_request_aud
 from .runtime_plugins import _error
 
 
+class RuntimeTargetImageProfileSerializer(serializers.Serializer):
+    """Closed provider image profile selected for one adapter target."""
+
+    provider = serializers.ChoiceField(choices=("gcp", "aws"))
+    image_kind = serializers.ChoiceField(choices=("image", "machine-image"), default="image")
+    image_ref = serializers.CharField(max_length=500)
+    machine_type = serializers.CharField(max_length=100, allow_blank=True, default="")
+    disk_size_gb = serializers.IntegerField(min_value=1, max_value=16_384, allow_null=True, default=None)
+    disk_type = serializers.CharField(max_length=100, allow_blank=True, default="")
+    bootstrap_capability = serializers.CharField(max_length=64, default="standard")
+    management_ssh_username = serializers.CharField(max_length=32, allow_blank=True, default="")
+    management_ssh_port = serializers.IntegerField(min_value=1, max_value=65_535, default=22)
+    participant_container_name = serializers.CharField(max_length=128, allow_blank=True, default="")
+    participant_username = serializers.CharField(max_length=32, allow_blank=True, default="")
+    participant_readiness_contract = serializers.CharField(max_length=64, allow_blank=True, default="")
+    participant_readiness_manifest_sha256 = serializers.CharField(max_length=64, allow_blank=True, default="")
+
+
 class RuntimePluginBindingsSerializer(PreparationSerializer):
     """Guest target mappings and bounded adapter parameters."""
 
@@ -33,6 +51,7 @@ class RuntimePluginBindingsSerializer(PreparationSerializer):
         child=serializers.CharField(max_length=8192, allow_blank=True, trim_whitespace=False),
         default=dict,
     )
+    image_profiles = serializers.DictField(child=RuntimeTargetImageProfileSerializer(), default=dict)
 
 
 class RuntimePluginPackBindingSerializer(serializers.Serializer):

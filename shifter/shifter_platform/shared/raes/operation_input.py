@@ -150,6 +150,12 @@ _CANDIDATE_KEYS = frozenset(
         "disk_type",
         "management_ssh_port",
         "management_ssh_username",
+        "image_kind",
+        "bootstrap_capability",
+        "participant_container_name",
+        "participant_username",
+        "participant_readiness_contract",
+        "participant_readiness_manifest_sha256",
     }
 )
 
@@ -343,7 +349,21 @@ def _validated_candidate(raw: object, field: str) -> dict[str, Any]:
     """Return one registry candidate row closed on exactly the resolver's columns."""
     candidate = _require_mapping(raw, field)
     _require_exact_keys(
-        candidate, _CANDIDATE_KEYS, field, optional=frozenset({"management_ssh_port", "management_ssh_username"})
+        candidate,
+        _CANDIDATE_KEYS,
+        field,
+        optional=frozenset(
+            {
+                "management_ssh_port",
+                "management_ssh_username",
+                "image_kind",
+                "bootstrap_capability",
+                "participant_container_name",
+                "participant_username",
+                "participant_readiness_contract",
+                "participant_readiness_manifest_sha256",
+            }
+        ),
     )
     if "management_ssh_port" in candidate:
         try:
@@ -357,6 +377,24 @@ def _validated_candidate(raw: object, field: str) -> dict[str, Any]:
     image_ref = candidate["image_ref"]
     if not isinstance(image_ref, str) or not image_ref.strip():
         raise RaesOperationInputError(f"{field} image_ref is invalid")
+    image_kind = candidate.get("image_kind", "image")
+    bootstrap = candidate.get("bootstrap_capability", "standard")
+    participant_fields = (
+        candidate.get("participant_container_name", ""),
+        candidate.get("participant_username", ""),
+        candidate.get("participant_readiness_contract", ""),
+        candidate.get("participant_readiness_manifest_sha256", ""),
+    )
+    if image_kind not in {"image", "machine-image"}:
+        raise RaesOperationInputError(f"{field} image_kind is invalid")
+    if not isinstance(bootstrap, str) or not bootstrap:
+        raise RaesOperationInputError(f"{field} bootstrap_capability is invalid")
+    if not all(isinstance(value, str) for value in participant_fields):
+        raise RaesOperationInputError(f"{field} participant host fields are invalid")
+    if image_kind == "image" and any(participant_fields):
+        raise RaesOperationInputError(f"{field} participant host fields require a machine-image")
+    if image_kind == "machine-image" and not all(participant_fields):
+        raise RaesOperationInputError(f"{field} machine-image participant host fields are incomplete")
     return candidate
 
 
