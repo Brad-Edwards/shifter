@@ -755,7 +755,16 @@ def render_gcp_helm_values(
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
             "privateServiceCidrs": _gcp_private_service_cidrs(outputs),
-            "kubernetesApiCidrs": [str(_get_output_value(outputs, "gke_services_cidr")).strip()],
+            # Both the services CIDR (the kubernetes.default ClusterIP) and the
+            # GKE master CIDR: under Dataplane V2 the API ClusterIP (10.x.0.1)
+            # DNATs to the private control-plane endpoint in the master CIDR, so
+            # the launcher's egress must allow both or it cannot reach the API
+            # server to create the provisioner Job (mirrors the kustomize
+            # render_private_service_netpol.py launcher rule).
+            "kubernetesApiCidrs": [
+                str(_get_output_value(outputs, "gke_services_cidr")).strip(),
+                str(_get_output_value(outputs, "gke_master_ipv4_cidr")).strip(),
+            ],
             "rangeClusterApiCidrs": range_cluster_api_cidrs,
             "rangeClusterApiPort": int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
             "rangeAccessCidrs": range_access_cidrs,

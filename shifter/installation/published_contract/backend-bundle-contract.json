@@ -2814,6 +2814,32 @@
           "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
+          "description": "Reference to the PROVISIONER_DB_SECRET_ID secret in the platform runtime environment; the process fetches the value from Google Secret Manager at startup (entrypoint.sh) — a reference only, the secret value stays in Secret Manager.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PROVISIONER_DB_SECRET_ID",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "secret-reference",
+          "source": "a Google Secret Manager reference rendered from the Terraform runtime_secret_ids output"
+        },
+        {
+          "description": "Public GCP runtime configuration value (PROVISIONER_DB_USER) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "PROVISIONER_DB_USER",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public GCP runtime configuration value (QUEUE_CMS_CONSUMER_ID) emitted into the platform runtime environment.",
           "destination": "runtime-env",
           "kind": "runtime-env",
