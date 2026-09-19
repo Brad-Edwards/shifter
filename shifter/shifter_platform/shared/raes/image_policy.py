@@ -39,6 +39,12 @@ class ResolvedImage:
     disk_type: str | None = None
     management_ssh_port: int = 22
     management_ssh_username: str = ""
+    image_kind: str = "image"
+    bootstrap_capability: str = "standard"
+    participant_container_name: str = ""
+    participant_username: str = ""
+    participant_readiness_contract: str = ""
+    participant_readiness_manifest_sha256: str = ""
 
 
 #: Authored version sentinels meaning "unpinned / any" (raes defaults an
@@ -105,6 +111,12 @@ def _to_resolved(candidate: dict[str, Any]) -> ResolvedImage:
         disk_type=(candidate.get("disk_type") or "") or None,
         management_ssh_port=validate_management_ssh_port(candidate.get("management_ssh_port", 22)),
         management_ssh_username=validate_management_ssh_username(candidate.get("management_ssh_username", "")),
+        image_kind=str(candidate.get("image_kind", "image")),
+        bootstrap_capability=str(candidate.get("bootstrap_capability", "standard")),
+        participant_container_name=str(candidate.get("participant_container_name", "")),
+        participant_username=str(candidate.get("participant_username", "")),
+        participant_readiness_contract=str(candidate.get("participant_readiness_contract", "")),
+        participant_readiness_manifest_sha256=str(candidate.get("participant_readiness_manifest_sha256", "")),
     )
 
 

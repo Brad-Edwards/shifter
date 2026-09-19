@@ -467,8 +467,7 @@ class TestInstances:
         # Authored guests hold no attached cloud identity.
         assert instance["attach_service_account"] is False
 
-    def test_preconfigured_machine_host_is_rejected_before_raes_realization(self):
-        """RAES cannot publish READY without the participant image canary."""
+    def test_preconfigured_machine_host_carries_participant_readiness(self):
         profile = GCERangeImageProfile(
             source_machine_image="projects/proj-1/global/machineImages/participant-v1",
             bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
@@ -482,8 +481,12 @@ class TestInstances:
         resolver = _resolver(profile)
         config = _config()
 
-        with pytest.raises(RaesGcePlanError, match="participant readiness"):
-            build_raes_range_cell_plan("req-1", 7, plan, resolver, config)
+        rendered = build_raes_range_cell_plan("req-1", 7, plan, resolver, config)
+        instance = rendered["instances"][0]
+        assert instance["profile"].source_machine_image.endswith("/machineImages/participant-v1")
+        assert instance["ssh_username"] == "analyst"
+        assert instance["host_ssh_username"] == "operator"
+        assert instance["attach_service_account"] is False
 
 
 class TestPlacementErrors:

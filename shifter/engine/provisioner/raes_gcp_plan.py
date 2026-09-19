@@ -409,8 +409,6 @@ def _instance_plans_for_node(
     the channels bind to that instance without any fan-out choice.
     """
     profile = resolve_image(node)
-    if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
-        raise RaesGcePlanError("RAES GCE does not support preconfigured-machine-host participant readiness")
     # A promoted domain controller has no local SAM. Its existing domain
     # administrator receives the key through administrators_authorized_keys.
     host_ssh_username = profile.host_ssh_username or (
@@ -443,7 +441,11 @@ def _instance_plans_for_node(
                 "image_key": "",
                 "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
                 "source": {},
-                "ssh_username": _DEFAULT_SSH_USERNAME,
+                "ssh_username": (
+                    profile.participant_username
+                    if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
+                    else _DEFAULT_SSH_USERNAME
+                ),
                 "host_ssh_username": host_ssh_username,
                 "ssh_port": profile.host_ssh_port,
                 # The closed realized access binding the portal authorizes

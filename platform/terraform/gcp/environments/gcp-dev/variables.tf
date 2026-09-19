@@ -202,7 +202,7 @@ variable "cloud_sql_user_name" {
 }
 
 variable "cloud_sql_deletion_protection" {
-  description = "Enable Cloud SQL deletion protection on the platform instance. Default true; the GCP Environment Destroy workflow renders false so teardown is permitted (the platform database is durable control-plane state)."
+  description = "Enable Cloud SQL deletion protection on the platform instance. Default true. The gcp-dev-destroy workflow renders this false into an ephemeral tfvars so terraform destroy can delete the instance; without this variable being declared and wired to module.platform_core, that override is an undeclared-variable no-op and destroy fails with 'deletion_protection is set to true' (#2258)."
   type        = bool
   default     = true
 }

@@ -904,6 +904,11 @@ class TestGcpDeployPreflightInputs(unittest.TestCase):
         )
         self.assertIn("--component deploy", step.get("run", ""))
 
+    def test_non_secret_overlay_reaches_every_ephemeral_config_consumer(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}"), 3)
+        self.assertEqual(workflow.count("python scripts/gcp/apply_shifter_config_overlay.py --config"), 3)
+
 
 class TestRangePlacementSingleSource(unittest.TestCase):
     """#2029: multi-region range placement and per-region NAT consume ONE input.
