@@ -1060,6 +1060,9 @@ class TestGdcControlPlaneHelmValues:
         pod = job["spec"]["template"]["spec"]
         assert pod["serviceAccountName"] == "migrator"
         container = pod["containers"][0]
+        # Entrypoint migrates first; then register the shipped catalog through
+        # the same idempotent command used by the deploy workflow.
+        assert container["args"] == ["python", "manage.py", "bootstrap_inbox_catalog"]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
         temp_dir = next(item for item in container["env"] if item["name"] == "TMPDIR")["value"]
@@ -1952,9 +1955,9 @@ class TestGcpPlatformCoreContracts:
 
         assert 'resource "google_service_account_iam_member" "workload_identity"' in module_main
         assert 'role               = "roles/iam.workloadIdentityUser"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/portal]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/workers]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-jobs/provisioner]"' in module_main
 
     def test_workers_have_pubsub_publish_and_subscribe_permissions(self):
         """The shared workers service account must publish as well as consume Pub/Sub events."""
