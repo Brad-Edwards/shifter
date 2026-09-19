@@ -19,6 +19,7 @@ from shared.raes.image_policy import (
     validate_management_ssh_port,
     validate_management_ssh_username,
 )
+from shared.runtime_plugin_binding import RuntimeTargetImageProfile
 
 from raes_plan import RaesPlanNode
 
@@ -62,9 +63,10 @@ def resolve_ec2_image(
     candidates: Sequence[dict[str, Any]],
     *,
     binding: ArtifactBinding | None = None,
+    runtime_profile: RuntimeTargetImageProfile | None = None,
 ) -> Ec2ImageProfile:
     """Resolve a fenced artifact first, then exact registry pin, then concrete AMI."""
-    resolved = _resolve_source(node, candidates, binding)
+    resolved = _resolve_source(node, candidates, binding, runtime_profile)
     if not _AMI.fullmatch(resolved.image_ref):
         raise Ec2ImageError("EC2 realization requires an exact AMI ID")
     machine = resolved.machine_type or "m7i.large"
@@ -90,7 +92,10 @@ def resolve_ec2_image(
 
 
 def _resolve_source(
-    node: RaesPlanNode, candidates: Sequence[dict[str, Any]], binding: ArtifactBinding | None
+    node: RaesPlanNode,
+    candidates: Sequence[dict[str, Any]],
+    binding: ArtifactBinding | None,
+    runtime_profile: RuntimeTargetImageProfile | None,
 ) -> ResolvedImage:
     """Select the immutable artifact binding or exact authored registry candidate."""
     if binding is not None:
@@ -103,6 +108,17 @@ def _resolve_source(
             binding.disk_type or None,
             binding.management_ssh_port,
             binding.management_ssh_username,
+        )
+    elif runtime_profile is not None:
+        if runtime_profile.provider != "aws":
+            raise Ec2ImageError("adapter image profile provider does not match EC2 realization")
+        resolved = ResolvedImage(
+            runtime_profile.image_ref,
+            runtime_profile.machine_type or None,
+            runtime_profile.disk_size_gb,
+            runtime_profile.disk_type or None,
+            runtime_profile.management_ssh_port,
+            runtime_profile.management_ssh_username,
         )
     else:
         resolved = _registry_source(node, candidates)

@@ -13,10 +13,12 @@ participant container/account needed by the established setup and RDP broker
 paths. It does not add a scenario field, scenario-id branch, package executor,
 or new participant access channel.
 
-Machine-image profiles are deployment configuration. Their concrete image,
-container, account, and service-account values do not belong in catalog
-content. The legacy `ami_key` remains a logical selector resolved through the
-bounded backend-owned map established by #1761.
+Machine-image profiles are administrator-managed runtime configuration. Their
+concrete image, container, account, and service-account values do not belong in
+catalog content. Legacy ranges may still use the bounded deployment-owned map
+established by #1761. RAES pack launches use either the tenant image registry or
+an organization administrator's image profile stored with an adapter target;
+the latter is pinned with the adapter, pack digest, and range operation.
 
 ## Required Controls
 
@@ -54,7 +56,7 @@ bounded backend-owned map established by #1761.
 
 | Concern | Incumbent |
 | --- | --- |
-| Logical image selection | `GCERangeCellConfig.get_profile` and `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` from #1761 |
+| Logical image selection | Legacy keyed profiles, the tenant RAES image registry, and pinned adapter-target image profiles |
 | Scenario boundary | `gcp_range_cell_scenario` legacy compatibility adapter and digest-bound range-cell request |
 | Provider lifecycle | `gcp_range_cell_plan`, `gcp_range_cell_resources`, `gcp_range_cells`, and deterministic destroy |
 | Identity | ADR-008-R7's pre-created identity-pool precedent, with deterministic sharding for common host access |

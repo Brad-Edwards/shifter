@@ -4157,6 +4157,12 @@ export interface components {
             penalty?: number;
             order?: number;
         };
+        /**
+         * @description * `image` - image
+         *     * `machine-image` - machine-image
+         * @enum {string}
+         */
+        ImageKindEnum: "image" | "machine-image";
         /** @description Response-only projection of ``shared.schemas.InstanceContext``. */
         InstancePresentation: {
             uuid: string | null;
@@ -4319,7 +4325,7 @@ export interface components {
         /** @description Editable metadata; the service validates provider-specific combinations. */
         ModelSourceConfiguration: {
             name: string;
-            provider: components["schemas"]["ProviderEnum"];
+            provider: components["schemas"]["ModelSourceConfigurationProviderEnum"];
             authentication: components["schemas"]["AuthenticationEnum"];
             model: string;
             region: string;
@@ -4345,6 +4351,15 @@ export interface components {
             /** @default  */
             upstream_provider: string;
         };
+        /**
+         * @description * `vertex-v1` - vertex-v1
+         *     * `bedrock-v1` - bedrock-v1
+         *     * `anthropic-v1` - anthropic-v1
+         *     * `openai-v1` - openai-v1
+         *     * `openrouter-v1` - openrouter-v1
+         * @enum {string}
+         */
+        ModelSourceConfigurationProviderEnum: "vertex-v1" | "bedrock-v1" | "anthropic-v1" | "openai-v1" | "openrouter-v1";
         /** @description Collection of authorized source metadata. */
         ModelSourcePage: {
             results: components["schemas"]["ModelSourceView"][];
@@ -5089,15 +5104,6 @@ export interface components {
             readonly role: components["schemas"]["WorkspaceRoleEnum"];
             readonly capabilities: string[];
         };
-        /**
-         * @description * `vertex-v1` - vertex-v1
-         *     * `bedrock-v1` - bedrock-v1
-         *     * `anthropic-v1` - anthropic-v1
-         *     * `openai-v1` - openai-v1
-         *     * `openrouter-v1` - openrouter-v1
-         * @enum {string}
-         */
-        ProviderEnum: "vertex-v1" | "bedrock-v1" | "anthropic-v1" | "openai-v1" | "openrouter-v1";
         /** @description Closed organizer decision vocabulary. */
         PublicRegistrationDisposition: {
             action: components["schemas"]["PublicRegistrationDispositionActionEnum"];
@@ -5198,6 +5204,18 @@ export interface components {
             management_ssh_username: string;
             /** @default 22 */
             management_ssh_port: number;
+            /** @default image */
+            image_kind: components["schemas"]["ImageKindEnum"];
+            /** @default standard */
+            bootstrap_capability: string;
+            /** @default  */
+            participant_container_name: string;
+            /** @default  */
+            participant_username: string;
+            /** @default  */
+            participant_readiness_contract: string;
+            /** @default  */
+            participant_readiness_manifest_sha256: string;
             /** @default true */
             enabled: boolean;
             /** @default  */
@@ -5232,6 +5250,12 @@ export interface components {
             readonly disk_type: string;
             readonly management_ssh_username: string;
             readonly management_ssh_port: number;
+            readonly image_kind: string;
+            readonly bootstrap_capability: string;
+            readonly participant_container_name: string;
+            readonly participant_username: string;
+            readonly participant_readiness_contract: string;
+            readonly participant_readiness_manifest_sha256: string;
             readonly enabled: boolean;
             readonly notes: string;
             readonly artifact_id: string;
@@ -5633,6 +5657,9 @@ export interface components {
             parameters?: {
                 [key: string]: string;
             };
+            image_profiles?: {
+                [key: string]: components["schemas"]["RuntimeTargetImageProfile"];
+            };
         };
         /** @description A conforming adapter manifest and optional registry credentials. */
         RuntimePluginInstall: {
@@ -5713,6 +5740,38 @@ export interface components {
          * @enum {string}
          */
         RuntimePluginViewStateEnum: "checking" | "ready" | "failed" | "disabled" | "retired";
+        /** @description Closed provider image profile selected for one adapter target. */
+        RuntimeTargetImageProfile: {
+            provider: components["schemas"]["RuntimeTargetImageProfileProviderEnum"];
+            /** @default image */
+            image_kind: components["schemas"]["ImageKindEnum"];
+            image_ref: string;
+            /** @default  */
+            machine_type: string;
+            disk_size_gb?: number | null;
+            /** @default  */
+            disk_type: string;
+            /** @default standard */
+            bootstrap_capability: string;
+            /** @default  */
+            management_ssh_username: string;
+            /** @default 22 */
+            management_ssh_port: number;
+            /** @default  */
+            participant_container_name: string;
+            /** @default  */
+            participant_username: string;
+            /** @default  */
+            participant_readiness_contract: string;
+            /** @default  */
+            participant_readiness_manifest_sha256: string;
+        };
+        /**
+         * @description * `gcp` - gcp
+         *     * `aws` - aws
+         * @enum {string}
+         */
+        RuntimeTargetImageProfileProviderEnum: "gcp" | "aws";
         /** @description Read-only RAES package identity and availability for the SPA. */
         ScenarioDetail: {
             readonly id: string;

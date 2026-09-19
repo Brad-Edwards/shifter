@@ -33,6 +33,12 @@ _VIEW_FIELDS = {
     "disk_type",
     "management_ssh_port",
     "management_ssh_username",
+    "image_kind",
+    "bootstrap_capability",
+    "participant_container_name",
+    "participant_username",
+    "participant_readiness_contract",
+    "participant_readiness_manifest_sha256",
     "enabled",
     "notes",
     "artifact_id",
@@ -90,6 +96,28 @@ def _bearer(client: APIClient, raw: str) -> APIClient:
 
 
 class TestRegister:
+    def test_registers_preconfigured_machine_host_profile(self, api_client, threat_research_user):
+        api_client.force_authenticate(user=threat_research_user)
+        response = api_client.post(
+            LIST_CREATE_URL,
+            {
+                "provider": "gce",
+                "source_name": "nested-host",
+                "image_ref": "projects/example/global/machineImages/nested-host-v1",
+                "image_kind": "machine-image",
+                "bootstrap_capability": "preconfigured-machine-host",
+                "management_ssh_username": "host-admin",
+                "participant_container_name": "participant-desktop",
+                "participant_username": "student",
+                "participant_readiness_contract": "participant-readiness/v1",
+                "participant_readiness_manifest_sha256": "a" * 64,
+            },
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.json()["image_kind"] == "machine-image"
+        assert response.json()["participant_container_name"] == "participant-desktop"
+
     def test_management_port_survives_registration_and_list(self, api_client, staff_user):
         api_client.force_authenticate(user=staff_user)
         body = {

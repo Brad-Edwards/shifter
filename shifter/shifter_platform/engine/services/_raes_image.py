@@ -57,6 +57,12 @@ class RaesImageMappingOptions:
     disk_type: str = ""
     management_ssh_port: int = 22
     management_ssh_username: str = ""
+    image_kind: str = "image"
+    bootstrap_capability: str = "standard"
+    participant_container_name: str = ""
+    participant_username: str = ""
+    participant_readiness_contract: str = ""
+    participant_readiness_manifest_sha256: str = ""
     enabled: bool = True
     notes: str = ""
     artifact_id: str = ""
@@ -87,6 +93,12 @@ class RaesImageMappingView:
     disk_type: str
     management_ssh_port: int
     management_ssh_username: str
+    image_kind: str
+    bootstrap_capability: str
+    participant_container_name: str
+    participant_username: str
+    participant_readiness_contract: str
+    participant_readiness_manifest_sha256: str
     enabled: bool
     notes: str
     artifact_id: str
@@ -127,6 +139,9 @@ def upsert_raes_image_mapping(
     except ValueError as exc:
         raise RaesImageMappingError(str(exc)) from None
     portable = _validate_portable_identity(opts)
+    runtime_profile = _validate_runtime_profile(normalized_provider, ref, opts, management_user)
+    if runtime_profile["image_kind"] == "machine-image" and portable["artifact_digest"]:
+        raise RaesImageMappingError("machine-image mappings do not support portable artifact admission")
 
     mapping, _created = RaesImageMapping.objects.update_or_create(
         provider=normalized_provider,
@@ -138,6 +153,7 @@ def upsert_raes_image_mapping(
             "disk_size_gb": opts.disk_size_gb,
             "management_ssh_port": management_port,
             "management_ssh_username": management_user,
+            **runtime_profile,
             "disk_type": (opts.disk_type or "").strip(),
             "enabled": opts.enabled,
             "notes": opts.notes or "",
@@ -255,6 +271,12 @@ def _to_view(mapping: RaesImageMapping) -> RaesImageMappingView:
         disk_type=mapping.disk_type,
         management_ssh_port=mapping.management_ssh_port,
         management_ssh_username=mapping.management_ssh_username,
+        image_kind=mapping.image_kind,
+        bootstrap_capability=mapping.bootstrap_capability,
+        participant_container_name=mapping.participant_container_name,
+        participant_username=mapping.participant_username,
+        participant_readiness_contract=mapping.participant_readiness_contract,
+        participant_readiness_manifest_sha256=mapping.participant_readiness_manifest_sha256,
         enabled=mapping.enabled,
         notes=mapping.notes,
         artifact_id=mapping.artifact_id,
@@ -269,6 +291,71 @@ def _to_view(mapping: RaesImageMapping) -> RaesImageMappingView:
 
 
 _SHA256_DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
+_MACHINE_IMAGE_REF = re.compile(
+    r"^projects/[a-z0-9][-a-z0-9.:]*/global/machineImages/[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+)
+_CONTAINER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_READINESS_CONTRACT = "participant-readiness/v1"
+_PRECONFIGURED_MACHINE_HOST = "preconfigured-machine-host"
+
+
+def _validate_runtime_profile(
+    provider: str,
+    image_ref: str,
+    opts: RaesImageMappingOptions,
+    management_user: str,
+) -> dict[str, str]:
+    """Validate the optional provider realization profile stored with a mapping."""
+    image_kind = (opts.image_kind or "image").strip()
+    bootstrap = (opts.bootstrap_capability or "standard").strip()
+    container = (opts.participant_container_name or "").strip()
+    participant_user = (opts.participant_username or "").strip()
+    readiness_contract = (opts.participant_readiness_contract or "").strip()
+    readiness_sha = (opts.participant_readiness_manifest_sha256 or "").strip()
+    if image_kind not in {"image", "machine-image"}:
+        raise RaesImageMappingError("image_kind must be 'image' or 'machine-image'")
+    if not re.fullmatch(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?", bootstrap):
+        raise RaesImageMappingError("bootstrap_capability must be a lowercase logical capability")
+    participant_fields = (container, participant_user, readiness_contract, readiness_sha)
+    if image_kind == "image":
+        if any(participant_fields):
+            raise RaesImageMappingError("participant host fields require image_kind 'machine-image'")
+    else:
+        if provider != "gce":
+            raise RaesImageMappingError("machine-image mappings currently require provider 'gce'")
+        if not _MACHINE_IMAGE_REF.fullmatch(image_ref):
+            raise RaesImageMappingError(
+                "machine-image image_ref must be an exact 'projects/<project>/global/machineImages/<name>' resource"
+            )
+        if bootstrap != _PRECONFIGURED_MACHINE_HOST:
+            raise RaesImageMappingError(
+                "machine-image mappings require bootstrap_capability 'preconfigured-machine-host'"
+            )
+        if not management_user:
+            raise RaesImageMappingError("machine-image mappings require management_ssh_username")
+        if not all(participant_fields):
+            raise RaesImageMappingError(
+                "machine-image mappings require participant container, username, "
+                "readiness contract, and manifest digest"
+            )
+        if not _CONTAINER_NAME.fullmatch(container):
+            raise RaesImageMappingError("participant_container_name is invalid")
+        try:
+            validate_management_ssh_username(participant_user)
+        except ValueError:
+            raise RaesImageMappingError("participant_username must be a local OS username") from None
+        if readiness_contract != _READINESS_CONTRACT:
+            raise RaesImageMappingError(f"participant_readiness_contract must be '{_READINESS_CONTRACT}'")
+        if not re.fullmatch(r"[0-9a-f]{64}", readiness_sha):
+            raise RaesImageMappingError("participant_readiness_manifest_sha256 must be a lowercase SHA-256 digest")
+    return {
+        "image_kind": image_kind,
+        "bootstrap_capability": bootstrap,
+        "participant_container_name": container,
+        "participant_username": participant_user,
+        "participant_readiness_contract": readiness_contract,
+        "participant_readiness_manifest_sha256": readiness_sha,
+    }
 
 
 def _stripped(value: str | None) -> str:

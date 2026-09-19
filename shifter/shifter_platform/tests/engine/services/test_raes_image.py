@@ -69,6 +69,37 @@ class TestUpsert:
 
 
 class TestValidation:
+    def test_preconfigured_machine_host_profile_is_tenant_data(self):
+        mapping = upsert_raes_image_mapping(
+            provider="gce",
+            source_name="nested-host",
+            image_ref="projects/example/global/machineImages/nested-host-v1",
+            options=RaesImageMappingOptions(
+                image_kind="machine-image",
+                bootstrap_capability="preconfigured-machine-host",
+                management_ssh_username="host-admin",
+                participant_container_name="participant-desktop",
+                participant_username="student",
+                participant_readiness_contract="participant-readiness/v1",
+                participant_readiness_manifest_sha256="a" * 64,
+            ),
+        )
+        assert mapping.image_kind == "machine-image"
+        assert mapping.participant_readiness_manifest_sha256 == "a" * 64
+
+    def test_machine_host_requires_complete_readiness_profile(self):
+        with pytest.raises(RaesImageMappingError, match="require participant"):
+            upsert_raes_image_mapping(
+                provider="gce",
+                source_name="nested-host",
+                image_ref="projects/example/global/machineImages/nested-host-v1",
+                options=RaesImageMappingOptions(
+                    image_kind="machine-image",
+                    bootstrap_capability="preconfigured-machine-host",
+                    management_ssh_username="host-admin",
+                ),
+            )
+
     def test_rejects_unknown_provider(self):
         with pytest.raises(RaesImageMappingError):
             upsert_raes_image_mapping(provider="azure", source_name="kali", image_ref="img")
