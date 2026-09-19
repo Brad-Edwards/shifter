@@ -731,3 +731,6 @@ required when creating its disposable candidate and scanner VMs. SSH keys stay
 instance-local with project keys blocked; both VMs retain no service account,
 no OAuth scopes, and no external IP. This does not grant project metadata writes
 or service-account attachment permissions.
+The runner starts its IAP listener without a one-shot guest connection check;
+bounded SSH/LDAP probes still gate validation through first boot and reboot.
+An exited tunnel process fails promptly instead of consuming the boot timeout.
