@@ -165,8 +165,9 @@ backend support, required bindings, and authorization before cloud mutation.
 An administrator may bind an exact provider image profile to an adapter target.
 The profile is organization-owned runtime data stored with the pack assignment,
 then pinned with the adapter and pack digest for the range lifetime. GCP profiles
-accept exact image resources or the closed preconfigured-machine-host contract;
-AWS profiles accept exact AMI IDs. An authored portable artifact binding remains
+accept exact image resources with either standard or prepromoted-directory
+bootstrap metadata, or the closed preconfigured-machine-host contract. AWS
+profiles accept exact AMI IDs. An authored portable artifact binding remains
 authoritative when present, and the adapter worker never receives cloud image
 selection authority.
 Runtime hooks receive bounded, operation-scoped input and authorized guest or

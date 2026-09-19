@@ -5765,6 +5765,10 @@ export interface components {
             participant_readiness_contract: string;
             /** @default  */
             participant_readiness_manifest_sha256: string;
+            /** @default  */
+            domain_dns_name: string;
+            /** @default  */
+            domain_netbios_name: string;
         };
         /**
          * @description * `gcp` - gcp

@@ -81,12 +81,18 @@ const emptyImageProfile = (): AdapterTargetImageProfile => ({
   participant_username: "",
   participant_readiness_contract: "",
   participant_readiness_manifest_sha256: "",
+  domain_dns_name: "",
+  domain_netbios_name: "",
 });
 
 function validImageProfile(profile: AdapterTargetImageProfile): boolean {
   if (!profile.image_ref || profile.management_ssh_port < 1 || profile.management_ssh_port > 65535) return false;
   if (profile.provider === "aws") return profile.image_kind === "image" && /^ami-(?:[0-9a-f]{8}|[0-9a-f]{17})$/.test(profile.image_ref);
-  if (profile.image_kind === "image") return profile.bootstrap_capability === "standard";
+  if (profile.image_kind === "image") {
+    if (profile.bootstrap_capability === "standard") return !profile.domain_dns_name && !profile.domain_netbios_name;
+    return profile.bootstrap_capability === "prepromoted-domain-controller"
+      && Boolean(profile.domain_dns_name && profile.domain_netbios_name);
+  }
   return profile.bootstrap_capability === "preconfigured-machine-host"
     && Boolean(profile.management_ssh_username && profile.participant_container_name && profile.participant_username)
     && profile.participant_readiness_contract === "participant-readiness/v1"
@@ -188,7 +194,8 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
         <select id={`plugin-image-provider-${name}`} value={value.provider} className="block w-full rounded border bg-background p-2"
           onChange={(event) => update({ provider: event.target.value as "gcp" | "aws", image_kind: "image",
             bootstrap_capability: "standard", participant_container_name: "", participant_username: "",
-            participant_readiness_contract: "", participant_readiness_manifest_sha256: "" })}>
+            participant_readiness_contract: "", participant_readiness_manifest_sha256: "",
+            domain_dns_name: "", domain_netbios_name: "" })}>
           <option value="gcp">Google Cloud</option><option value="aws">AWS</option>
         </select>
       </div>
@@ -200,6 +207,7 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
             bootstrap_capability: machine ? "preconfigured-machine-host" : "standard",
             participant_readiness_contract: machine ? "participant-readiness/v1" : "",
             participant_container_name: "", participant_username: "", participant_readiness_manifest_sha256: "",
+            domain_dns_name: "", domain_netbios_name: "",
           }); }}>
           <option value="image">Boot image</option><option value="machine-image">Preconfigured machine host</option>
         </select>
@@ -218,6 +226,25 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
           onChange={(event) => update({ disk_size_gb: event.target.value ? Number(event.target.value) : null })} /></div>
       <ProfileInput id={`plugin-disk-type-${name}`} label={`Disk type for ${name}`} value={value.disk_type}
         onChange={(disk_type) => update({ disk_type })} />
+      {value.provider === "gcp" && value.image_kind === "image" ? <div className="space-y-1">
+        <Label htmlFor={`plugin-bootstrap-capability-${name}`}>Bootstrap capability for {name}</Label>
+        <select id={`plugin-bootstrap-capability-${name}`} value={value.bootstrap_capability}
+          className="block w-full rounded border bg-background p-2" onChange={(event) => update({
+            bootstrap_capability: event.target.value,
+            domain_dns_name: "",
+            domain_netbios_name: "",
+          })}>
+          <option value="standard">Standard image</option>
+          <option value="prepromoted-domain-controller">Prepromoted directory image</option>
+        </select>
+      </div> : null}
+      {value.provider === "gcp" && value.image_kind === "image"
+        && value.bootstrap_capability === "prepromoted-domain-controller" ? <>
+        <ProfileInput id={`plugin-domain-dns-${name}`} label={`Domain DNS name for ${name}`}
+          value={value.domain_dns_name} onChange={(domain_dns_name) => update({ domain_dns_name })} />
+        <ProfileInput id={`plugin-domain-netbios-${name}`} label={`Domain NetBIOS name for ${name}`}
+          value={value.domain_netbios_name} onChange={(domain_netbios_name) => update({ domain_netbios_name })} />
+      </> : null}
       {value.provider === "gcp" && value.image_kind === "machine-image" ? <>
         <ProfileInput id={`plugin-participant-container-${name}`} label={`Participant container for ${name}`}
           value={value.participant_container_name} onChange={(participant_container_name) => update({ participant_container_name })} />

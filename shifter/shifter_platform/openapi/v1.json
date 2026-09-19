@@ -22412,6 +22412,16 @@
             "type": "string",
             "default": "",
             "maxLength": 64
+          },
+          "domain_dns_name": {
+            "type": "string",
+            "default": "",
+            "maxLength": 253
+          },
+          "domain_netbios_name": {
+            "type": "string",
+            "default": "",
+            "maxLength": 15
           }
         },
         "required": [

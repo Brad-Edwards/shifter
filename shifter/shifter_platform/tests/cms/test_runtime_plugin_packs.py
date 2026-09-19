@@ -94,6 +94,38 @@ def test_admin_binds_a_provider_image_without_hosting_access(pack_api):
     assert response.json()["bindings"]["image_profiles"]["server"]["provider"] == "gcp"
 
 
+def test_admin_binds_a_prepromoted_directory_image(pack_api):
+    client, base, installed, source, _root = pack_api
+    target = client.get(base + "example/").json()["targets"][0]["address"]
+    response = client.post(
+        base + "example/",
+        {
+            "installation_id": str(installed.id),
+            "pack_digest": source.package_digest,
+            "bindings": {
+                "targets": {"server": target},
+                "image_profiles": {
+                    "server": {
+                        "provider": "gcp",
+                        "image_ref": "projects/example/global/images/directory-v1",
+                        "machine_type": "e2-standard-4",
+                        "disk_size_gb": 100,
+                        "disk_type": "pd-ssd",
+                        "bootstrap_capability": "prepromoted-domain-controller",
+                        "domain_dns_name": "example.test",
+                        "domain_netbios_name": "EXAMPLE",
+                    }
+                },
+            },
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    profile = response.json()["bindings"]["image_profiles"]["server"]
+    assert profile["bootstrap_capability"] == "prepromoted-domain-controller"
+    assert profile["domain_dns_name"] == "example.test"
+
+
 def test_pack_access_and_configuration_require_tenant_admin_even_for_staff(pack_api):
     client, base, installed, source, _root = pack_api
     outsider = User.objects.create_user(username="outsider-staff", is_staff=True)

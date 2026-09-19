@@ -49,6 +49,8 @@ class RuntimeTargetImageProfile(ClosedModel):
     participant_username: Annotated[str, Field(max_length=32)] = ""
     participant_readiness_contract: Annotated[str, Field(max_length=64)] = ""
     participant_readiness_manifest_sha256: Annotated[str, Field(max_length=64)] = ""
+    domain_dns_name: Annotated[str, Field(max_length=253)] = ""
+    domain_netbios_name: Annotated[str, Field(max_length=15)] = ""
 
     @model_validator(mode="after")
     def validate_provider_profile(self) -> Self:
@@ -73,10 +75,18 @@ def _participant_profile(profile: RuntimeTargetImageProfile) -> tuple[str, str, 
     )
 
 
+def _domain_profile(profile: RuntimeTargetImageProfile) -> tuple[str, str]:
+    return (profile.domain_dns_name, profile.domain_netbios_name)
+
+
 def _validate_aws_image_profile(profile: RuntimeTargetImageProfile) -> None:
     if profile.image_kind != "image" or not _AWS_AMI.fullmatch(profile.image_ref):
         raise ValueError("AWS image profiles require an exact AMI ID")
-    if profile.bootstrap_capability != "standard" or any(_participant_profile(profile)):
+    if (
+        profile.bootstrap_capability != "standard"
+        or any(_participant_profile(profile))
+        or any(_domain_profile(profile))
+    ):
         raise ValueError("AWS image profiles do not support machine-host fields")
     if profile.disk_type and profile.disk_type not in {"gp2", "gp3"}:
         raise ValueError("AWS image profile disk type is unsupported")
@@ -84,26 +94,16 @@ def _validate_aws_image_profile(profile: RuntimeTargetImageProfile) -> None:
 
 def _validate_gcp_image_profile(profile: RuntimeTargetImageProfile) -> None:
     participant = _participant_profile(profile)
+    domain = _domain_profile(profile)
     if profile.image_kind == "image":
-        if not _GCE_IMAGE_REF.fullmatch(profile.image_ref):
-            raise ValueError("GCP image profiles require an exact Compute Engine image resource")
-        if any(participant):
-            raise ValueError("participant host fields require a GCP machine image")
-        if profile.bootstrap_capability != "standard":
-            raise ValueError("adapter-selected GCP boot images require the standard bootstrap capability")
-        if profile.disk_type and profile.disk_type not in {
-            "pd-standard",
-            "pd-balanced",
-            "pd-ssd",
-            "pd-extreme",
-            "hyperdisk-balanced",
-        }:
-            raise ValueError("GCP image profile disk type is unsupported")
+        _validate_gcp_boot_image_profile(profile, participant, domain)
         return
     if not _GCE_MACHINE_IMAGE_REF.fullmatch(profile.image_ref):
         raise ValueError("GCP machine image profiles require an exact machine-image resource")
     if profile.bootstrap_capability != "preconfigured-machine-host":
         raise ValueError("GCP machine images require the preconfigured-machine-host capability")
+    if any(domain):
+        raise ValueError("GCP machine host images do not accept domain fields")
     if not profile.management_ssh_username or not all(participant):
         raise ValueError("GCP machine images require complete host and participant readiness fields")
     if not _CONTAINER.fullmatch(profile.participant_container_name):
@@ -112,6 +112,31 @@ def _validate_gcp_image_profile(profile: RuntimeTargetImageProfile) -> None:
         raise ValueError("participant readiness contract is unsupported")
     if not re.fullmatch(r"[0-9a-f]{64}", profile.participant_readiness_manifest_sha256):
         raise ValueError("participant readiness manifest digest is invalid")
+
+
+def _validate_gcp_boot_image_profile(
+    profile: RuntimeTargetImageProfile,
+    participant: tuple[str, str, str, str],
+    domain: tuple[str, str],
+) -> None:
+    if not _GCE_IMAGE_REF.fullmatch(profile.image_ref):
+        raise ValueError("GCP image profiles require an exact Compute Engine image resource")
+    if any(participant):
+        raise ValueError("participant host fields require a GCP machine image")
+    if profile.bootstrap_capability == "standard" and any(domain):
+        raise ValueError("standard GCP boot images do not accept domain fields")
+    if profile.bootstrap_capability == "prepromoted-domain-controller" and not all(domain):
+        raise ValueError("prepromoted GCP directory images require DNS and NetBIOS domain names")
+    if profile.bootstrap_capability not in {"standard", "prepromoted-domain-controller"}:
+        raise ValueError("adapter-selected GCP boot image capability is unsupported")
+    if profile.disk_type and profile.disk_type not in {
+        "pd-standard",
+        "pd-balanced",
+        "pd-ssd",
+        "pd-extreme",
+        "hyperdisk-balanced",
+    }:
+        raise ValueError("GCP image profile disk type is unsupported")
 
 
 class PluginTargetBindings(ClosedModel):

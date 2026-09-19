@@ -132,6 +132,8 @@ def resolve_gce_image_from_runtime_profile(
         profile.participant_username,
         profile.participant_readiness_contract,
         profile.participant_readiness_manifest_sha256,
+        domain_dns_name=profile.domain_dns_name,
+        domain_netbios_name=profile.domain_netbios_name,
     )
 
 
@@ -182,6 +184,8 @@ def _profile(
     participant_username: str = "",
     participant_readiness_contract: str = "",
     participant_readiness_manifest_sha256: str = "",
+    domain_dns_name: str = "",
+    domain_netbios_name: str = "",
 ) -> GCERangeImageProfile:
     """Build a GCERangeImageProfile, filling gaps from authored resources then defaults."""
     return GCERangeImageProfile(
@@ -197,6 +201,8 @@ def _profile(
         participant_username=participant_username,
         participant_readiness_contract=participant_readiness_contract,
         participant_readiness_manifest_sha256=participant_readiness_manifest_sha256,
+        domain_dns_name=domain_dns_name,
+        domain_netbios_name=domain_netbios_name,
     )
 
 

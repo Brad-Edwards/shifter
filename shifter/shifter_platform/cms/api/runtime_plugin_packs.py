@@ -41,6 +41,8 @@ class RuntimeTargetImageProfileSerializer(serializers.Serializer):
     participant_username = serializers.CharField(max_length=32, allow_blank=True, default="")
     participant_readiness_contract = serializers.CharField(max_length=64, allow_blank=True, default="")
     participant_readiness_manifest_sha256 = serializers.CharField(max_length=64, allow_blank=True, default="")
+    domain_dns_name = serializers.CharField(max_length=253, allow_blank=True, default="")
+    domain_netbios_name = serializers.CharField(max_length=15, allow_blank=True, default="")
 
 
 class RuntimePluginBindingsSerializer(PreparationSerializer):
