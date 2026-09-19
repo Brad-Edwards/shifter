@@ -20,7 +20,7 @@ def _check_name(value: object) -> str:
 
 
 def _kubectl(context: str, namespace: str, *args: str, may_be_absent: bool = False) -> bool:
-    result = subprocess.run(  # nosec B603 - fixed kubectl argv, no shell.
+    result = subprocess.run(  # nosec B603 B607 - fixed kubectl argv from the workflow toolchain; no shell.
         ["kubectl", "--context", context, "-n", namespace, *args],
         capture_output=True,
         text=True,
@@ -35,7 +35,7 @@ def _kubectl(context: str, namespace: str, *args: str, may_be_absent: bool = Fal
 
 def _has_deployment_annotation(context: str, namespace: str, name: str, annotation: str) -> bool:
     """Read the current Deployment before removing a one-time manual annotation."""
-    result = subprocess.run(  # nosec B603 - fixed kubectl argv, no shell.
+    result = subprocess.run(  # nosec B603 B607 - fixed kubectl argv from the workflow toolchain; no shell.
         ["kubectl", "--context", context, "-n", namespace, "get", "deployment", name, "-o", "json"],
         capture_output=True,
         text=True,

@@ -81,7 +81,7 @@ def _kubectl(context: str, *args: str, input_text: str | None = None) -> str:
 
 
 def _get_object(context: str, kind: str, name: str) -> dict[str, Any] | None:
-    result = subprocess.run(  # nosec B603 - fixed kubectl argv; no shell.
+    result = subprocess.run(  # nosec B603 B607 - fixed kubectl argv from the workflow toolchain; no shell.
         ["kubectl", "--context", context, "-n", NAMESPACE, "get", kind, name, "-o", "json"],
         capture_output=True,
         text=True,
