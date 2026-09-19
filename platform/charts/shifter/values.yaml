@@ -390,6 +390,8 @@ modelBroker:
   providers_json: ""
   enrollment_env: {}
   provisioner_subject: ""
+  broker_subject_id: ""
+  provisioner_subject_id: ""
   fingerprint_secret_name: ""
   fingerprint_key_version: ""
   fingerprint_previous_secret_name: ""

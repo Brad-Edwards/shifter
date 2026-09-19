@@ -48,6 +48,8 @@ def refresh_successor(token: str, peer: str, moment: datetime) -> ModelTokenPair
         admitted_subnets=subnets,
         enrollment_expires_at=moment,
         hard_expires_at=min(old.hard_expires_at, allocation.deadline),
+        rotation_window_started_at=old.rotation_window_started_at,
+        rotation_count=old.rotation_count,
     )
     old.refresh_hash = old.access_hash = old.enrollment_hash = ""
     old.save(update_fields=["refresh_hash", "access_hash", "enrollment_hash", "updated_at"])

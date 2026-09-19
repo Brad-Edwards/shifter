@@ -44,6 +44,8 @@
         "health_check_cidrs": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^[0-9.]+/[0-9]+$"}},
         "enrollment_env": {"type": "object", "additionalProperties": false, "properties": {"MODEL_BROKER_GUEST_URL": {"type": "string"}, "MODEL_BROKER_GUEST_VIP": {"type": "string"}, "MODEL_BROKER_GUEST_CIDRS": {"type": "string"}, "MODEL_ENROLLMENT_CONTROL_URL": {"type": "string"}, "MODEL_ENROLLMENT_CA_PEM_B64": {"type": "string"}}, "oneOf": [{"maxProperties": 0}, {"required": ["MODEL_BROKER_GUEST_URL", "MODEL_ENROLLMENT_CONTROL_URL", "MODEL_ENROLLMENT_CA_PEM_B64"]}]},
         "providers_json": {"type": "string"},
+        "broker_subject_id": {"type": "string", "pattern": "^([0-9]{10,32})?$"},
+        "provisioner_subject_id": {"type": "string", "pattern": "^([0-9]{10,32})?$"},
         "provisioner_subject": {"type": "string", "pattern": "^([a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com|arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9/+=,.@_-]+)?$"},
         "fingerprint_secret_name": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^$"},
         "fingerprint_key_version": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$|^$"},

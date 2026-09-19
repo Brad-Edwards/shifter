@@ -14,6 +14,8 @@ Detailed guides for each Shifter feature.
 - [CTF](ctf) - Capture-the-flag events with scored challenges and automated provisioning
 - [CTF Organizer Guide](ctf-organizer-guide) - Run guide with walkthroughs, hints, and timing
 
+- [Scoped CTF communications](ctf-communications.md) - REST authoring, session inbox and truthful acceptance
+
 ## Governance
 
 - [Workspace Membership](workspaces) - Manage workspace members and fixed roles

@@ -187,3 +187,7 @@ read API.
 - [Administrator audit and activity history](admin-audit-activity.md): the
   hardened `/api/v1/audit/` read API, its typed filters, and the staff-facing
   `/administer/audit` SPA surface.
+
+## Scoped communications
+
+- [Communication API and receipt boundaries](ctf-communications.md)

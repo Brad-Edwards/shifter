@@ -114,6 +114,14 @@ def _assert_release_allowed(campaign: CommunicationCampaign, target_events: list
     fresh query filtered to ``CANCELLED`` — is what makes the lock cover every live
     target, not only the already-cancelled ones.
     """
+    from ctf.models import CommunicationCutover, LegacyCommunication
+    from ctf.services.communication.adapters import registered_channels
+
+    if LegacyCommunication.objects.filter(campaign=campaign).exists():
+        if not CommunicationCutover.objects.filter(pk=1, activated_at__isnull=False).exists():
+            raise CTFCommunicationError("Cutover not active", code="CTF_COMMUNICATION_CUTOVER_BLOCKED")
+        if set(campaign.channels) - set(registered_channels()):
+            raise CTFCommunicationError("Channel unavailable", code="CTF_COMMUNICATION_CHANNEL_UNAVAILABLE")
     if campaign.status == CampaignStatus.CANCELLED.value:
         raise CTFCommunicationError("A cancelled campaign cannot be released", code="CTF_COMMUNICATION_CANCELLED")
     if any(event.status == EventStatus.CANCELLED.value for event in target_events):

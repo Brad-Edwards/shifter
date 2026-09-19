@@ -3,6 +3,13 @@
   "docs_root": "docs",
   "features": [
     {
+      "id": "ctf-communications",
+      "title": "Scoped CTF communications",
+      "requirement": "CTF-012",
+      "user_docs": ["features/ctf-communications.md"],
+      "technical_docs": ["technical/shifter_platform/ctf-communications.md"]
+    },
+    {
       "id": "gcp-shared-service-event-capacity",
       "title": "GCP shared-service event capacity profiles and gate",
       "requirement": "GEN-001",

@@ -42,6 +42,9 @@ SPECTACULAR_SETTINGS = {
     # generation; runtime routing is unaffected. See shared.api.schema.
     "PREPROCESSING_HOOKS": ["shared.api.schema.exclude_unpublished_endpoints"],
     "ENUM_NAME_OVERRIDES": {
+        "ParticipantPasswordKindEnum": ["generated", "set"],
+        "CommunicationAudienceKindEnum": "ctf.enums_communication.AudienceKind",
+        "CommunicationTriggerKindEnum": "ctf.enums_communication.TriggerKind",
         "ResourceStatusEnum": "mission_control.api.serializers.RESOURCE_STATUS_VALUES",
         "WorkspaceRoleEnum": "workspaces.roles.WorkspaceRole",
     },

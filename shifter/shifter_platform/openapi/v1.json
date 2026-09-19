@@ -4682,6 +4682,738 @@
         }
       }
     },
+    "/api/v1/ctf/communications/": {
+      "get": {
+        "operationId": "ctf_communications_list",
+        "description": "Create or list campaigns within one authorized workspace.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "ctf:communication:read"
+        ]
+      },
+      "post": {
+        "operationId": "ctf_communications_create",
+        "description": "Create or list campaigns within one authorized workspace.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationCampaignSummary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "ctf:communication:write"
+        ]
+      }
+    },
+    "/api/v1/ctf/communications/{campaign_id}/": {
+      "get": {
+        "operationId": "ctf_communications_retrieve",
+        "description": "Project a campaign only after complete-target authorization.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationCampaignSummary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "ctf:communication:read"
+        ]
+      }
+    },
+    "/api/v1/ctf/communications/{campaign_id}/cancel/": {
+      "post": {
+        "operationId": "ctf_communications_cancel_create",
+        "description": "Cancel unclaimed work for an authorized campaign.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationEmpty"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationCampaignSummary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "ctf:communication:write"
+        ]
+      }
+    },
+    "/api/v1/ctf/communications/{campaign_id}/release/": {
+      "post": {
+        "operationId": "ctf_communications_release_create",
+        "description": "Accept a release or schedule declaration through the ledger.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationRelease"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationIntent"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "ctf:communication:write"
+        ]
+      }
+    },
+    "/api/v1/ctf/communications/{campaign_id}/revisions/": {
+      "post": {
+        "operationId": "ctf_communications_revisions_create",
+        "description": "Append validated content to an authorized draft campaign.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationRevision"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationCampaignSummary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "ctf:communication:write"
+        ]
+      }
+    },
     "/api/v1/ctf/events/": {
       "get": {
         "operationId": "ctf_events_list",
@@ -5839,66 +6571,6 @@
         }
       }
     },
-    "/api/v1/ctf/events/{event_id}/invitations/send/": {
-      "post": {
-        "operationId": "ctf_events_invitations_send_create",
-        "description": "Rate-limit, enforce ownership, then queue the invitation emails.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "event_id",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "ctf"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SendLoginInfoResult"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        }
-      }
-    },
     "/api/v1/ctf/events/{event_id}/lifecycle/": {
       "post": {
         "operationId": "ctf_events_lifecycle_create",
@@ -6011,83 +6683,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotificationListResponse"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        }
-      },
-      "post": {
-        "operationId": "ctf_events_notifications_create",
-        "description": "Send an announcement to an owned event from the request body.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "event_id",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "ctf"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotificationAnnounceRequest"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/NotificationAnnounceRequest"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/NotificationAnnounceRequest"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotificationAnnounceResult"
                 }
               }
             },
@@ -7954,6 +8549,499 @@
         }
       }
     },
+    "/api/v1/ctf/me/events/{event_id}/communications/": {
+      "get": {
+        "operationId": "ctf_communication_inbox_list",
+        "description": "List retained messages for the current participant and event.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/": {
+      "get": {
+        "operationId": "ctf_me_events_communications_retrieve",
+        "description": "Fetch one message within the authorized participant inbox.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationInboxItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/acknowledge/": {
+      "post": {
+        "operationId": "ctf_me_events_communications_acknowledge_create",
+        "description": "Record acknowledgement under the pinned message policy.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationEmpty"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationInboxItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/read/": {
+      "post": {
+        "operationId": "ctf_me_events_communications_read_create",
+        "description": "Record an explicit, idempotent read interaction.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationEmpty"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationInboxItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request was throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ctf/me/pages/": {
       "get": {
         "operationId": "ctf_me_pages_retrieve",
@@ -8686,126 +9774,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ParticipantProfile"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        }
-      }
-    },
-    "/api/v1/ctf/notifications/{notification_id}/cancel-schedule/": {
-      "post": {
-        "operationId": "ctf_notifications_cancel_schedule_create",
-        "description": "Revert the notification to draft and cancel its scheduler task.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "notification_id",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "ctf"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotificationSendResult"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        }
-      }
-    },
-    "/api/v1/ctf/notifications/{notification_id}/send/": {
-      "post": {
-        "operationId": "ctf_notifications_send_create",
-        "description": "Resolve the notification, enforce ownership, then send it.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "notification_id",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "ctf"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotificationSendResult"
                 }
               }
             },
@@ -10023,67 +10991,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ParticipantDetail"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        }
-      }
-    },
-    "/api/v1/ctf/participants/{participant_id}/resend-invite/": {
-      "post": {
-        "operationId": "ctf_participants_resend_invite_create",
-        "description": "Rate-limit, enforce ownership, then resend non-secret login information.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "participant_id",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "ctf"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "deprecated": true,
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResendLoginInfoResult"
                 }
               }
             },
@@ -14950,6 +15857,15 @@
   },
   "components": {
     "schemas": {
+      "AcknowledgementPolicyEnum": {
+        "enum": [
+          "none",
+          "read",
+          "explicit"
+        ],
+        "type": "string",
+        "description": "* `none` - none\n* `read` - read\n* `explicit` - explicit"
+      },
       "ActorTypeEnum": {
         "enum": [
           "user",
@@ -15714,6 +16630,26 @@
           "username"
         ]
       },
+      "CampaignList": {
+        "type": "object",
+        "description": "A bounded page; offset advances across authorized workspace candidates.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunicationCampaignSummary"
+            }
+          },
+          "next_offset": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "next_offset",
+          "results"
+        ]
+      },
       "CatalogEntry": {
         "type": "object",
         "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\nEvery emitted entry is backed by a RAES package source.",
@@ -16240,6 +17176,14 @@
           "role"
         ]
       },
+      "ChannelsEnum": {
+        "enum": [
+          "in_app",
+          "email"
+        ],
+        "type": "string",
+        "description": "* `in_app` - in_app\n* `email` - email"
+      },
       "CleanupControlRequest": {
         "type": "object",
         "description": "Defer or cancel the pending automated range cleanup (CTF-1003).",
@@ -16280,6 +17224,620 @@
           "code",
           "detail"
         ]
+      },
+      "CommunicationAudience": {
+        "type": "object",
+        "description": "Closed audience variants; semantics remain in the domain contract.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/CommunicationAudienceKindEnum"
+          },
+          "participant_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 5000,
+            "minItems": 1
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 5000,
+            "minItems": 1
+          },
+          "event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 5000,
+            "minItems": 1
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "participant"
+                    ]
+                  }
+                ]
+              },
+              "participant_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maxItems": 1,
+                "minItems": 1
+              }
+            },
+            "required": [
+              "kind",
+              "participant_ids"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "participant_set"
+                    ]
+                  }
+                ]
+              },
+              "participant_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maxItems": 5000,
+                "minItems": 1
+              }
+            },
+            "required": [
+              "kind",
+              "participant_ids"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "team"
+                    ]
+                  }
+                ]
+              },
+              "team_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maxItems": 5000,
+                "minItems": 1
+              }
+            },
+            "required": [
+              "kind",
+              "team_ids"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "event"
+                    ]
+                  }
+                ]
+              },
+              "event_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maxItems": 1,
+                "minItems": 1
+              }
+            },
+            "required": [
+              "kind",
+              "event_ids"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "multi_event"
+                    ]
+                  }
+                ]
+              },
+              "event_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maxItems": 5000,
+                "minItems": 2
+              }
+            },
+            "required": [
+              "kind",
+              "event_ids"
+            ]
+          }
+        ]
+      },
+      "CommunicationAudienceKindEnum": {
+        "enum": [
+          "participant",
+          "participant_set",
+          "team",
+          "event",
+          "multi_event"
+        ],
+        "type": "string",
+        "description": "* `participant` - participant\n* `participant_set` - participant_set\n* `team` - team\n* `event` - event\n* `multi_event` - multi_event"
+      },
+      "CommunicationCampaignSummary": {
+        "type": "object",
+        "description": "Organizer-facing campaign summary; carries shape and counts, never recipients.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "title": {
+            "type": "string",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "origin": {
+            "type": "string",
+            "readOnly": true
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "acknowledgement_policy": {
+            "type": "string",
+            "readOnly": true
+          },
+          "target_event_count": {
+            "type": "integer",
+            "description": "Return the number of events the campaign targets (no identities exposed).",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "acknowledgement_policy",
+          "channels",
+          "created_at",
+          "id",
+          "origin",
+          "status",
+          "target_event_count",
+          "title"
+        ]
+      },
+      "CommunicationCreate": {
+        "type": "object",
+        "description": "Organizer authoring input; actor and provenance are always server derived.",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "target_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          },
+          "audience_spec": {
+            "$ref": "#/components/schemas/CommunicationAudience"
+          },
+          "trigger_spec": {
+            "$ref": "#/components/schemas/CommunicationTrigger"
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelsEnum"
+            },
+            "maxItems": 2,
+            "minItems": 1
+          },
+          "acknowledgement_policy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AcknowledgementPolicyEnum"
+              }
+            ],
+            "default": "none"
+          }
+        },
+        "required": [
+          "audience_spec",
+          "body",
+          "channels",
+          "subject",
+          "target_event_ids",
+          "title",
+          "trigger_spec",
+          "workspace_id"
+        ],
+        "additionalProperties": false
+      },
+      "CommunicationEmpty": {
+        "type": "object",
+        "description": "Actions with no caller-controlled state.",
+        "additionalProperties": false
+      },
+      "CommunicationInboxItem": {
+        "type": "object",
+        "description": "One inbox item for the requesting participant (never another's).\n\nBound to a ``RecipientSnapshot`` with its intent, revision, and receipt. The\nencrypted delivery coordinate, the participant email, and every other\nrecipient are intentionally absent from the declared fields.",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "subject": {
+            "type": "string",
+            "readOnly": true
+          },
+          "body": {
+            "type": "string",
+            "readOnly": true
+          },
+          "content_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "origin": {
+            "type": "string",
+            "readOnly": true
+          },
+          "acknowledgement_policy": {
+            "type": "string",
+            "readOnly": true
+          },
+          "read_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "acknowledged_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "acknowledged_at",
+          "acknowledgement_policy",
+          "body",
+          "content_profile",
+          "created_at",
+          "message_id",
+          "origin",
+          "read_at",
+          "subject"
+        ]
+      },
+      "CommunicationIntent": {
+        "type": "object",
+        "description": "Acceptance is distinct from channel delivery or participant interaction.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "released_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "due_at",
+          "id",
+          "released_at",
+          "status"
+        ]
+      },
+      "CommunicationRelease": {
+        "type": "object",
+        "description": "Stable occurrence identity; scheduling time comes from the pinned trigger.",
+        "properties": {
+          "occurrence_key": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+          },
+          "revision_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "occurrence_key"
+        ],
+        "additionalProperties": false
+      },
+      "CommunicationRevision": {
+        "type": "object",
+        "description": "Append-only content revision input.",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "body",
+          "subject"
+        ],
+        "additionalProperties": false
+      },
+      "CommunicationTrigger": {
+        "type": "object",
+        "description": "Typed trigger fields with UTC/reference rules delegated to the domain.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/CommunicationTriggerKindEnum"
+          },
+          "due_at": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "event_status": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "declaration_ref": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "occurrence_ref": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "manual"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "absolute_time"
+                    ]
+                  }
+                ]
+              },
+              "due_at": {
+                "type": "string",
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "kind",
+              "due_at"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "event_lifecycle"
+                    ]
+                  }
+                ]
+              },
+              "event_status": {
+                "type": "string",
+                "maxLength": 32
+              }
+            },
+            "required": [
+              "kind",
+              "event_status"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "raes_occurrence"
+                    ]
+                  }
+                ]
+              },
+              "declaration_ref": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "occurrence_ref": {
+                "type": "string",
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "kind",
+              "declaration_ref",
+              "occurrence_ref"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "enum": [
+                      "range_signal"
+                    ]
+                  }
+                ]
+              },
+              "declaration_ref": {
+                "type": "string",
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "kind",
+              "declaration_ref"
+            ]
+          }
+        ]
+      },
+      "CommunicationTriggerKindEnum": {
+        "enum": [
+          "manual",
+          "event_lifecycle",
+          "absolute_time",
+          "raes_occurrence",
+          "range_signal"
+        ],
+        "type": "string",
+        "description": "* `manual` - manual\n* `event_lifecycle` - event_lifecycle\n* `absolute_time` - absolute_time\n* `raes_occurrence` - raes_occurrence\n* `range_signal` - range_signal"
       },
       "ConnectionUrl": {
         "type": "object",
@@ -17574,6 +19132,26 @@
         "type": "string",
         "description": "* `image` - image\n* `machine-image` - machine-image"
       },
+      "InboxPage": {
+        "type": "object",
+        "description": "Project one inbox page and its continuation offset.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunicationInboxItem"
+            }
+          },
+          "next_offset": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "next_offset",
+          "results"
+        ]
+      },
       "InstancePresentation": {
         "type": "object",
         "description": "Response-only projection of ``shared.schemas.InstanceContext``.",
@@ -17640,14 +19218,6 @@
           "email",
           "role"
         ]
-      },
-      "KindEnum": {
-        "enum": [
-          "generated",
-          "set"
-        ],
-        "type": "string",
-        "description": "* `generated` - generated\n* `set` - set"
       },
       "LaunchRange": {
         "type": "object",
@@ -18387,53 +19957,6 @@
           "ngfws"
         ]
       },
-      "NotificationAnnounceRequest": {
-        "type": "object",
-        "description": "Request body for sending an announcement notification.\n\n``subject`` and ``body`` are blank-tolerant at this layer so the view can\napply the legacy strip-then-reject rule and return the exact ``Invalid\nnotification request.`` 400 envelope for an empty or whitespace-only value.",
-        "properties": {
-          "subject": {
-            "type": "string",
-            "default": ""
-          },
-          "body": {
-            "type": "string",
-            "default": ""
-          },
-          "scheduled_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          }
-        }
-      },
-      "NotificationAnnounceResult": {
-        "type": "object",
-        "description": "Result returned after creating and sending an announcement (201).",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "subject": {
-            "type": "string",
-            "readOnly": true
-          },
-          "status": {
-            "type": "string",
-            "readOnly": true
-          },
-          "sent_count": {
-            "type": "integer",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "id",
-          "sent_count",
-          "status",
-          "subject"
-        ]
-      },
       "NotificationListItem": {
         "type": "object",
         "description": "List projection of one notification for an event.",
@@ -18501,24 +20024,6 @@
         },
         "required": [
           "notifications"
-        ]
-      },
-      "NotificationSendResult": {
-        "type": "object",
-        "description": "Result returned after dispatching a notification to its recipients.",
-        "properties": {
-          "notification_id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "status": {
-            "type": "string",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "notification_id",
-          "status"
         ]
       },
       "NullEnum": {
@@ -19898,12 +21403,20 @@
           }
         }
       },
+      "ParticipantPasswordKindEnum": {
+        "enum": [
+          "generated",
+          "set"
+        ],
+        "type": "string",
+        "description": "* `generated` - generated\n* `set` - set"
+      },
       "ParticipantPasswordRequest": {
         "type": "object",
         "description": "Closed write-only request for generated or supplied issuance.",
         "properties": {
           "kind": {
-            "$ref": "#/components/schemas/KindEnum"
+            "$ref": "#/components/schemas/ParticipantPasswordKindEnum"
           },
           "password": {
             "type": "string",
@@ -19937,7 +21450,7 @@
           "kind": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/KindEnum"
+                "$ref": "#/components/schemas/ParticipantPasswordKindEnum"
               }
             ],
             "readOnly": true
@@ -21977,24 +23490,6 @@
           "maximum_days"
         ]
       },
-      "ResendLoginInfoResult": {
-        "type": "object",
-        "description": "Confirmation returned after resending non-secret login information.",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "id": {
-            "type": "string",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "id",
-          "success"
-        ]
-      },
       "ResetLeasePolicy": {
         "type": "object",
         "description": "Strict explicit reset command.",
@@ -22703,39 +24198,6 @@
           "participant_id",
           "participant_name",
           "timeline"
-        ]
-      },
-      "SendLoginInfoResult": {
-        "type": "object",
-        "description": "Result returned after queuing invitation emails for an event.",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "event_id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "total": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "sent": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "failed": {
-            "type": "integer",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "event_id",
-          "failed",
-          "sent",
-          "success",
-          "total"
         ]
       },
       "SetActiveRequest": {

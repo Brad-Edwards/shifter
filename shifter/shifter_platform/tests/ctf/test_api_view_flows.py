@@ -319,9 +319,9 @@ class TestParticipantManagementApi:
                 "api_participant_resend_invite",
                 kwargs={"participant_id": participant.id},
             )
-            assert delivered.wait(timeout=2), "background send never ran"
-        assert resp.status_code == 200
-        assert messages[0].to == ["resend@test.com"]
+            assert not delivered.is_set()
+        assert resp.status_code == 410
+        assert messages == []
 
     def test_assign_bracket_remove(self, authenticated_organizer_client: Client, ctf_participant: CTFParticipant):
         resp = _json(
@@ -376,7 +376,7 @@ class TestNotificationApi:
                 kwargs={"event_id": ctf_event.id},
                 body={"subject": "S", "body": "B"},
             )
-        assert resp.status_code == 201
+        assert resp.status_code == 410
 
     def test_list_post_missing(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
         resp = _json(
@@ -386,13 +386,13 @@ class TestNotificationApi:
             kwargs={"event_id": ctf_event.id},
             body={"subject": "", "body": ""},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 410
 
     def test_send_not_found(self, authenticated_organizer_client: Client):
         resp = _json(
             authenticated_organizer_client, "post", "api_notification_send", kwargs={"notification_id": uuid4()}
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 410
 
     def test_email_template_get_default(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
         resp = _json(
@@ -560,7 +560,7 @@ class TestRangeApi:
             resp = _json(
                 authenticated_organizer_client, "post", "api_send_invitations", kwargs={"event_id": ctf_event.id}
             )
-            assert delivered.wait(timeout=2), "background send never ran"
-        assert resp.status_code == 200
-        assert resp.json()["sent"] == 1
-        assert messages[0].to == ["invitee@test.com"]
+            assert not delivered.is_set()
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "ctf_notification_retired"
+        assert messages == []

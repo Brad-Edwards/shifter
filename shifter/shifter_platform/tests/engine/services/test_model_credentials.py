@@ -78,6 +78,20 @@ def test_refresh_rotates_both_tokens_and_preserves_hard_deadline(enrolled_alloca
     authenticate_model_access(token=second.access_token.get_secret_value(), transport_peer=_PEER)
 
 
+def test_authenticated_refresh_budget_preserves_current_pair_when_exhausted(enrolled_allocation):
+    moment = timezone.now()
+    pair = exchange(issue(enrolled_allocation))
+    for _ in range(59):
+        pair = refresh_model_access(token=pair.refresh_token.get_secret_value(), transport_peer=_PEER, now=moment)
+    with pytest.raises(ContractError, match=r"credential\.rate_limited"):
+        refresh_model_access(token=pair.refresh_token.get_secret_value(), transport_peer=_PEER, now=moment)
+    authenticate_model_access(token=pair.access_token.get_secret_value(), transport_peer=_PEER)
+    renewed = refresh_model_access(
+        token=pair.refresh_token.get_secret_value(), transport_peer=_PEER, now=moment + timedelta(seconds=61)
+    )
+    assert renewed.hard_expires_at == pair.hard_expires_at
+
+
 @pytest.mark.parametrize("peer", ["10.80.3.17", "127.0.0.1", "::ffff:10.80.2.17", "10.80.2.17, 10.80.3.17"])
 def test_foreign_peer_cannot_consume_enrollment(enrolled_allocation, peer):
     enrollment = issue(enrolled_allocation)
