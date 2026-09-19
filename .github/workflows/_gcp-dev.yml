@@ -248,6 +248,25 @@ jobs:
           PY
           chmod 600 "${TF_VARS_FILE}"
           echo "TF_VARS_FILE=${TF_VARS_FILE}" >> "${GITHUB_ENV}"
+      - name: Reconcile reviewed model broker trust and overlay
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          template="platform/deploy/gcp/${GCP_ENVIRONMENT}/model-broker-overlay.template.json"
+          if [ ! -f "${template}" ]; then
+            exit 0
+          fi
+          cluster="shifter-${GCP_ENVIRONMENT}-gke"
+          gcloud container fleet memberships get-credentials "${cluster}" \
+            --location "${GCP_REGION}" --project "${GCP_PROJECT_ID}"
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_${cluster}"
+          overlay="${RUNNER_TEMP}/model-broker-overlay.json"
+          uv run --project scripts/gcp python scripts/gcp/prepare_model_broker_overlay.py \
+            --template "${template}" --project-id "${GCP_PROJECT_ID}" \
+            --context "${context}" --output "${overlay}" --mode ensure
+          echo "SHIFTER_CONFIG_OVERLAY_FILE=${overlay}" >> "${GITHUB_ENV}"
       - name: Render range egress allowlist from shifter.yaml
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
@@ -813,6 +832,22 @@ jobs:
           LOCATION=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_location']['value'])")
           gcloud container fleet memberships get-credentials "${CLUSTER}" \
             --location "${LOCATION}" --project "${PROJECT_ID}"
+      - name: Read reviewed model broker overlay
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          template="platform/deploy/gcp/${GCP_ENVIRONMENT}/model-broker-overlay.template.json"
+          if [ ! -f "${template}" ]; then
+            exit 0
+          fi
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_shifter-${GCP_ENVIRONMENT}-gke"
+          overlay="${RUNNER_TEMP}/model-broker-overlay.json"
+          uv run --project scripts/gcp python scripts/gcp/prepare_model_broker_overlay.py \
+            --template "${template}" --project-id "${GCP_PROJECT_ID}" \
+            --context "${context}" --output "${overlay}" --mode read
+          echo "SHIFTER_CONFIG_OVERLAY_FILE=${overlay}" >> "${GITHUB_ENV}"
       - name: Export deploy metadata
         run: |
           python3 - <<'PY'
@@ -904,7 +939,7 @@ jobs:
           GCP_RANGE_CELL_PROJECT_ID: ${{ vars.GCP_RANGE_CELL_PROJECT_ID }}
           GCP_RANGE_LINUX_IMAGE: ${{ vars.GCP_RANGE_LINUX_IMAGE }}
           GCP_RANGE_KALI_IMAGE: ${{ vars.GCP_RANGE_KALI_IMAGE }}
-          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON || vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
+          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON || secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
           GCP_RANGE_HOST_IDENTITY_POOL_SIZE: ${{ vars.GCP_RANGE_HOST_IDENTITY_POOL_SIZE }}
           GCP_RANGE_WINDOWS_IMAGE: ${{ vars.GCP_RANGE_WINDOWS_IMAGE }}
           GCP_RANGE_DC_IMAGE: ${{ vars.GCP_RANGE_DC_IMAGE }}
@@ -1051,6 +1086,19 @@ jobs:
               -n shifter-jobs --ignore-not-found
           fi
           kubectl apply -f "${manifest}"
+      - name: Retire inventoried manual qualification objects
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          inventory="platform/deploy/gcp/${GCP_ENVIRONMENT}/retired-cluster-artifacts.json"
+          if [ ! -f "${inventory}" ]; then
+            exit 0
+          fi
+          context="connectgateway_${GCP_PROJECT_ID}_${GCP_REGION}_shifter-${GCP_ENVIRONMENT}-gke"
+          python3 scripts/gcp/reconcile_retired_cluster_artifacts.py \
+            --context "${context}" --manifest "${inventory}"
       - name: Run database migrations and bootstrap the in-box catalog with the migration identity
         env:
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}

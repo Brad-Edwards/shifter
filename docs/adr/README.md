@@ -657,6 +657,12 @@ control enrollment egress policy. Standby infrastructure renders zero broker and
 control replicas until model access is enabled; no executable deployment or cloud
 qualification is implied by rendering. See [model access operations](../ops/model-access.md).
 
+The GCP workflow reads a reviewed per-environment model overlay when present,
+verifies deploy-owned TLS resources, and projects the sealed catalog into every
+runtime ConfigMap consumer. `platform/deploy/gcp/**` is owned by the GCP scripts
+lint, SAST, and test quality unit; a template change therefore cannot bypass
+the production-path quality matrix.
+
 Guest model enrollment is projected as allocation/role/target identities alongside
 an immutable operation input. The tenant-approved adapter manifest declares role
 bindings; only Engine's admitted allocations can populate them. A trusted SSH

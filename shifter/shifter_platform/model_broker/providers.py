@@ -348,9 +348,7 @@ def _vertex_request(target: ProviderTarget, payload: JsonObject, *, count_only: 
     """Bind a Vertex request to its configured region, project and publisher model."""
     region = target.count_region if count_only else target.region
     hostname = (
-        f"aiplatform.{region}.rep.googleapis.com"
-        if region in {"us", "eu"}
-        else f"{region}-aiplatform.googleapis.com"
+        f"aiplatform.{region}.rep.googleapis.com" if region in {"us", "eu"} else f"{region}-aiplatform.googleapis.com"
     )
     model = "count-tokens" if count_only else target.model.rsplit("/", 1)[1]
     method = "streamRawPredict" if payload.get("stream") else "rawPredict"

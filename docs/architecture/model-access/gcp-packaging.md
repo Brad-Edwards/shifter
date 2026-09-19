@@ -57,6 +57,17 @@ wait for dependent pods before restoring application policies. The deployment's 
 restore its normal application policies. Changes in the chart therefore
 reach both deployment paths.
 
+For a tenant with a checked-in GCP model overlay template, the branch-dispatched
+workflow binds the deployment project and current public CA, seals the catalog
+digest, and applies that overlay in both the Terraform preparation and workload
+jobs. The environment variable overlay remains a fallback for deployments
+without a checked-in template. The compatibility renderer projects the enabled
+catalog path and digest into `platform-runtime` and mounts the catalog ConfigMap
+in every deployment that consumes that runtime ConfigMap. This keeps the portal,
+workers, and control service on the same catalog revision. The workflow also
+retires explicitly inventoried qualification objects only after their generated
+replacement policies are present.
+
 ## Process and credential inventory
 
 | Process | Image/entry | Configuration and credential authority |
@@ -144,17 +155,18 @@ withdrawal and the design's 120-second maximum admitted request, with time
 for settlement. M05 must stop admission on termination and fence continuation;
 probes must be provider-independent and never send paid prompts.
 
-The deployment operator owns a trusted certificate issuer and renewal job.
-Create distinct versioned Kubernetes TLS Secrets with approved SANs before
-rendering their names. Certificate values never enter Terraform state, chart
-values, ConfigMaps or evidence. Mounts omit `subPath`. Rotation creates a new
-Secret name and updates root intent, producing a checked/draining rollout;
-a mounted file update alone is not assumed to reload a TLS context. Maintain
-old/new CA overlap in guest and broker trust during CA rotation, alert before
-expiry, verify both replicas after rollout, and retain the old Secret until
-all old connections/pods drain. A failed rotation leaves admission disabled;
-never disable certificate verification. No service mesh or new issuer stack
-is required.
+The branch-dispatched prepare job owns the broker CA signer Secret, distinct
+versioned broker/control TLS Secrets, and public CA ConfigMap. On first adoption
+it replaces unmanaged preflight certificates. Later runs verify the existing
+signer and leaf keys, CA signatures, DNS/IP SANs, and at least 14 days of leaf
+validity; they fail rather than silently replacing a live certificate. The CA
+must have at least 30 days remaining. Private keys never enter Terraform state,
+chart values, ConfigMaps, or evidence; only the public CA enters the checked
+runtime overlay and trust ConfigMap. Mounts omit `subPath`. Before expiry,
+rotation requires reviewed versioned Secret names and root intent, a checked
+rollout, and old/new CA overlap for existing guests. Verify both replicas after
+rollout and retain the old Secret until old connections and pods drain. A failed
+rotation leaves admission disabled; never disable certificate verification.
 
 Use the [operator probes](../../ops/model-access-gcp-probes.md). Local tests
 exercise render/schema, IAM guard negatives, policy union, catalog binding,
