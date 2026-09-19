@@ -725,3 +725,14 @@ temporary-directory findings: broker/control sockets are private Kubernetes
 Services with mandatory TLS, workload authentication and enforced NetworkPolicy;
 the plugin `/tmp` is a per-pod, size-bounded memory volume, with host mounts denied.
 These scoped annotations retain those deployment controls and their contract tests.
+
+The GCP image validator's custom role includes instance metadata and label writes
+required when creating its disposable candidate and scanner VMs. SSH keys stay
+instance-local with project keys blocked; both VMs retain no service account,
+no OAuth scopes, and no external IP. This does not grant project metadata writes
+or service-account attachment permissions.
+Instance listing and Compute project readback support the existing gcloud
+IAP/SSH/SCP transport; the role retains no project metadata write permission.
+The runner starts its IAP listener without a one-shot guest connection check;
+bounded SSH/LDAP probes still gate validation through first boot and reboot.
+An exited tunnel process fails promptly instead of consuming the boot timeout.
