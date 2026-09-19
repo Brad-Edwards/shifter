@@ -21,9 +21,8 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # Export the platform's frozen lock to a hashed requirements.txt and install every
 # third-party dependency with hashes enforced and wheels only — no source builds, so no
 # setup scripts execute at install time (docker:S8541) and every version is locked and
-# integrity-checked (docker:S8544). requirements-gcp.lock is installed the same way and
-# is constrained to the frozen lock, so shared transitive deps stay at the locked
-# versions rather than an unpinned rebuild-time resolution.
+# integrity-checked (docker:S8544). Install requirements-gcp.lock in the same
+# resolution so a stale cloud pin cannot silently replace a platform dependency.
 # --no-config: requirements.txt / requirements-gcp.lock are already fully resolved
 # against the frozen lock (which incorporated [tool.uv].constraint-dependencies), so the
 # install must NOT re-read pyproject's unpinned [tool.uv] constraints — under
@@ -44,10 +43,7 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: --no-binary py-ubjson \
-        -r requirements.txt && \
-    uv pip install --system --no-cache --no-config \
-        --require-hashes --only-binary :all: \
-        -r requirements-gcp.lock
+        -r requirements.txt -r requirements-gcp.lock
 
 # Frontend build stage (ADR-029 / #1302). Builds the SPA bundle into the static
 # tree so collectstatic folds it into STATIC_ROOT. Node is a build-time-only
