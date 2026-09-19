@@ -45,7 +45,7 @@ class Migration(migrations.Migration):
     """Make portal_runtime a member of provisioner_lambda so the provisioner inherits its grants."""
 
     dependencies = [
-        ("engine", "0082_model_policy_transition"),
+        ("engine", "0084_reconcile_range_ngfw_instance_grant"),
         # portal_runtime is created by the mission_control runtime-user migration.
         ("mission_control", "0041_create_portal_runtime_user"),
     ]
