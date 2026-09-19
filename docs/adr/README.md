@@ -178,6 +178,16 @@ Current mechanisms:
     formatting/linting. Type checks, architecture and policy guards, IaC
     validation/security scanners, migration checks, and test suites are
     CI-only so a commit does not reproduce the repository-wide pipeline.
+- GCP bootstrap and deployment migration Jobs explicitly disable model access
+  and clear its catalog path/digest: these database-only Jobs do not mount the
+  runtime catalog. Model-broker pods use their application group as `fsGroup`
+  so their non-root process can read the projected 0440 fingerprint files.
+  The dedicated provisioner-launcher Role grants `list` on pods only in the
+  jobs namespace so cancellation can confirm that foreground Job deletion
+  removed every pod. It grants no pod mutation, log, or exec access (ADR-006-R4).
+  Range-access NetworkPolicies also select the ephemeral post-deploy smoke Job
+  so its documented SSH/RDP probe can reach guests; destination CIDRs and ports
+  remain identical to the existing portal/guacd access boundary.
 - `.github/workflows/_quality.yml`: CI architecture gate. Every quality unit
   it routes is declared in the `.github/quality-path-filters.yaml` contract
   (ADR-004-R24), which the `quality-path-ownership` check reconciles against
@@ -196,6 +206,10 @@ Current mechanisms:
   action majors for checkout, artifact restore, Java setup, and the
   SonarQube Cloud scan so runner deprecation warnings do not mask real
   SonarCloud quality findings.
+  Manual deployment scans explicitly pass the selected Git branch through
+  `sonar.branch.name`: scanner auto-detection does not identify branches for
+  `workflow_dispatch`, which otherwise publishes tenant analysis to the Sonar
+  project's main branch. Pull-request and push analysis retain auto-detection.
   - Repository branch protection for `main` and `dev` requires the
     aggregate `PR Gate`, CodeQL, and `Lint PR title` with strict
     up-to-date status checks. The title-lint workflow triggers on PRs

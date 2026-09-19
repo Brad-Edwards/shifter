@@ -2019,6 +2019,10 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                                 # too: with no host, config/_redis.py and config/_channels.py
                                 # both select the LocMem cache and in-memory channel layer.
                                 {"name": "REDIS_HOST", "value": ""},
+                                # This DB-only Job has no mounted model catalog.
+                                {"name": "MODEL_ACCESS_ENABLED", "value": "false"},
+                                {"name": "MODEL_ACCESS_CATALOG_PATH", "value": ""},
+                                {"name": "MODEL_ACCESS_CATALOG_DIGEST", "value": ""},
                                 {"name": "EMAIL_API_KEY_SECRET_ID", "value": ""},
                             ],
                             "securityContext": {
