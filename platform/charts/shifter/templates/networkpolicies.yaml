@@ -416,8 +416,9 @@ spec:
   # range guests for the browser SSH terminal, and guacd dials them for
   # Guacamole SSH/RDP. Range VMs are private-only, so without this egress the
   # GKE default-deny blocks the portal/guacd -> range path even though the
-  # per-range GCE ingress firewall permits it. Scoped to just those two
-  # workloads (not all platform pods; guacd, not guacamole-client, is the
+  # per-range GCE ingress firewall permits it. The post-deploy smoke Job probes
+  # the same endpoints. Scoped to those dialers
+  # (not all platform pods; guacd, not guacamole-client, is the
   # dialer) and to the participant channel ports. AWS parity: the guacd egress
   # rule in platform/terraform/modules/guacamole/security.tf.
   podSelector:
@@ -427,6 +428,7 @@ spec:
         values:
           - portal
           - guacd
+          - post-deploy-smoke
   policyTypes:
     - Egress
   egress:

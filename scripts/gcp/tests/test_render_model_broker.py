@@ -99,6 +99,34 @@ def test_deploy_job_installs_renderer_dependencies_before_use():
     assert "GITHUB_PATH" in helm[0]["run"]
 
 
+def test_migration_does_not_load_the_unmounted_runtime_catalog():
+    from shared.model_access.runtime import load_mounted_catalog
+
+    root = Path(__file__).resolve().parents[3]
+    workflow = yaml.safe_load((root / ".github/workflows/_gcp-dev.yml").read_text())
+    step = next(
+        step
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name", "").startswith("Run database migrations")
+    )
+    manifest = step["run"].split("cat <<YAML | kubectl apply -f -\n", 1)[1].split("\nYAML\n", 1)[0]
+    container = yaml.safe_load(manifest)["spec"]["template"]["spec"]["containers"][0]
+    effective = {
+        "MODEL_ACCESS_ENABLED": "true",
+        "MODEL_ACCESS_CATALOG_PATH": "/unmounted/catalog.json",
+        "MODEL_ACCESS_CATALOG_DIGEST": "sha256:" + "a" * 64,
+        **{item["name"]: item["value"] for item in container["env"] if "value" in item},
+    }
+    assert (
+        load_mounted_catalog(
+            enabled=effective["MODEL_ACCESS_ENABLED"] == "true",
+            path=effective["MODEL_ACCESS_CATALOG_PATH"],
+            expected_digest=effective["MODEL_ACCESS_CATALOG_DIGEST"],
+        )
+        is None
+    )
+
+
 @pytest.mark.integration
 def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     import subprocess
