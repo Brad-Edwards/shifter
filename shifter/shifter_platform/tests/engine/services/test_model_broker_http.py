@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import signal
 import socket
 import ssl
 from types import SimpleNamespace
@@ -281,7 +280,11 @@ async def test_live_stream_fences_within_ten_seconds_and_keeps_liability(stack, 
         elif fence == "control_loss":
             stack.control_server.should_exit = True
         elif fence == "drain":
-            stack.broker_server.handle_exit(signal.SIGTERM, None)
+            # Invoking Uvicorn's signal handler while serve() owns its signal
+            # capture replays SIGTERM when the server exits, killing xdist's
+            # worker instead of completing this in-process transport test.
+            stack.broker.begin_drain()
+            stack.broker_server.should_exit = True
         elif fence == "disconnect":
             await response.aclose()
         await asyncio.wait_for(stack.upstream.closed.wait(), 9)
