@@ -2,6 +2,11 @@
 
 This directory holds the machine-readable part of ADR enforcement.
 
+The GCP model-broker IAM guard accepts the cluster-derived
+`var.workload_identity_pool` reference for its exact Kubernetes service account
+binding. The owning GKE output is resource-backed so fresh bootstrap creates the
+pool before bindings; the allowed role, namespace and service account are unchanged.
+
 The GCP `gcp-foundation` bootstrap applies the existing purpose-scoped identity
 root before runners, images, and platform infrastructure. Its optional private
 image-build VPC has no runtime/runner peering, admits builder and validator
