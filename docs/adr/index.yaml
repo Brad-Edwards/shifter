@@ -2084,7 +2084,7 @@
       },
       {
         "id": "ADR-037-R5",
-        "description": "Release OCI image builds MUST produce an SBOM and maximum build provenance and MUST create a GitHub OIDC-signed artifact attestation bound to the exact repository name and image@sha256 digest. Build jobs receive only the narrow attestation/id-token permissions; no long-lived signing key or PAT is introduced, and credentials are never passed as Docker build arguments. Packer AMI/GCE artifacts are not OCI images and MUST NOT be represented as OCI provenance.",
+        "description": "Release OCI image builds MUST produce an SBOM and maximum build provenance and MUST create a GitHub OIDC-signed artifact attestation bound to the exact repository name and image@sha256 digest. Build jobs receive only the narrow attestation/id-token permissions; no long-lived signing key or PAT is introduced, and credentials are never passed as Docker build arguments. Packer AMI/GCE artifacts are not OCI application images and MUST NOT be represented as OCI application-image provenance. A qcow2 VM-disk artifact may use OCI distribution only when its media type, digest-pinned consumption contract, and VM-disk boundary are explicit.",
         "checks": []
       },
       {
@@ -2100,6 +2100,11 @@
       {
         "id": "ADR-037-R8",
         "description": "A GCP exact-release decision binds source revision to the four built OCI digests, their SBOM/provenance attestations, a blocking HIGH/CRITICAL vulnerability scan of each exact digest before rollout, and a closed inventory of every running GKE workload and normal/init/ephemeral container after rollout. Every Deployment in that same closed component inventory MUST converge before evidence is sampled; a partial rollout wait cannot establish runtime identity. Every declared image and runtime image ID MUST equal its approved full repository@sha256 identity; unexpected workloads or containers fail closed. For GCE guests, the build producer MUST bind its protected source revision to the server-assigned numeric image ID in immutable private evidence before validation. Protected validation MUST collect a non-empty SPDX JSON package inventory outside the candidate trust domain by attaching an exact candidate-derived disk read-only to a separate credentialless trusted scanner, mounting it read-only/noexec/nosuid/nodev, and using a source-pinned scanner archive digest. Versioned validation evidence binds the SBOM SHA-256, scanner version and identity, external collection boundary, numeric candidate image ID, and source revision. Promotion MUST authenticate the exact redacted verdict artifact from the successful protected validation run and verify its candidate-binding and private-evidence digests before verifying every raw evidence binding. Tags, families, labels, source locks, OCI SBOMs, candidate-executed tools, and source-only tests never substitute for the matching running-workload or guest-image evidence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-037-R9",
+        "description": "Protected Packer GCE Linux builds may publish their already-exported qcow2 payloads to the canonical GHCR VM-disk packages only through a dedicated package-write job. The job MUST stream no credentials into artifact content or runtime configuration, record the resulting manifest digest, and document an explicit digest-pinned GDC VM Runtime opt-in. Publication MUST NOT replace GCE image-family, AWS AMI, or default bootstrap consumption.",
         "checks": []
       }
     ],
@@ -2120,6 +2125,10 @@
       "scripts/gcp/tests/test_verify_running_image_ids.py",
       ".github/workflows/packer-gcp-validate.yml",
       ".github/workflows/packer-gcp-promote.yml",
+      ".github/workflows/packer-gcp.yml",
+      "docs/architecture/gcp-guest-images.md",
+      "docs/architecture/ghcr-vm-guest-image-preflight-2297.md",
+      "shifter/engine/provisioner/config/_gdc.py",
       "shifter/packer/gcp/scripts/validate/verify-promotion-evidence.sh",
       "shifter/packer/tests/test_packer_gcp.py",
       ".github/dependabot.yml",
