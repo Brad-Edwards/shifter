@@ -1079,6 +1079,22 @@ class TestGdcControlPlaneHelmValues:
         assert redis_secret["value"] == ""
         redis_host = next(item for item in container["env"] if item["name"] == "REDIS_HOST")
         assert redis_host["value"] == ""
+        from shared.model_access.runtime import load_mounted_catalog
+
+        effective = {
+            "MODEL_ACCESS_ENABLED": "true",
+            "MODEL_ACCESS_CATALOG_PATH": "/unmounted/catalog.json",
+            "MODEL_ACCESS_CATALOG_DIGEST": "sha256:" + "a" * 64,
+            **{item["name"]: item["value"] for item in container["env"] if "value" in item},
+        }
+        assert (
+            load_mounted_catalog(
+                enabled=effective["MODEL_ACCESS_ENABLED"] == "true",
+                path=effective["MODEL_ACCESS_CATALOG_PATH"],
+                expected_digest=effective["MODEL_ACCESS_CATALOG_DIGEST"],
+            )
+            is None
+        )
         assert container["image"] == values["images"]["platform"]
         assert (
             values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]

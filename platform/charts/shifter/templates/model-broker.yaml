@@ -110,6 +110,8 @@ spec:
       enableServiceLinks: false
       terminationGracePeriodSeconds: 150
       {{- include "shifter.podSecurityContext" . | nindent 6 }}
+        # Projected fingerprint files are 0440; grant the broker's group access.
+        fsGroup: {{ .Values.security.app.runAsGroup }}
       {{- include "shifter.podAntiAffinity" (dict "component" "model-broker") | nindent 6 }}
       containers:
         - name: model-broker

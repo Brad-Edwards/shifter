@@ -1173,6 +1173,13 @@ jobs:
                       # connection (there is none) — it declares there is no Redis.
                       - name: REDIS_HOST
                         value: ""
+                      # This DB-only Job does not mount or serve the model catalog.
+                      - name: MODEL_ACCESS_ENABLED
+                        value: "false"
+                      - name: MODEL_ACCESS_CATALOG_PATH
+                        value: ""
+                      - name: MODEL_ACCESS_CATALOG_DIGEST
+                        value: ""
                       - name: EMAIL_API_KEY_SECRET_ID
                         value: ""
                     securityContext:

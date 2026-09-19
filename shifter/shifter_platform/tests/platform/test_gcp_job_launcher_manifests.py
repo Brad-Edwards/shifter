@@ -774,4 +774,8 @@ def test_job_launcher_role_grants_per_job_secret_lifecycle(
     assert _verbs_for(role, "batch", "jobs") == {"create", "get", "delete"}, (
         f"{source_name} job-launcher Role must grant only create/get/delete on jobs"
     )
-    assert _verbs_for(role, "", "pods") == set(), f"{source_name} launcher must not receive Pod read access"
+    assert _verbs_for(role, "", "pods") == {"list"}, (
+        f"{source_name} launcher must list pods to confirm cancellation, without mutation or streaming access"
+    )
+    assert _verbs_for(role, "", "pods/log") == set()
+    assert _verbs_for(role, "", "pods/exec") == set()
