@@ -154,7 +154,9 @@ out-of-band IAP path.
 
 - Each GCP deployment label keeps its CI off the AWS `self-hosted` pool and
   every other tenant's runner. `_gcp-dev.yml` selects the allowlisted deployment
-  input as `runs-on`; `gcp-dev-destroy.yml` remains scoped to `gcp-dev`.
+  input as `runs-on`; `gcp-dev-destroy.yml` is parameterized over the tenant and
+  runs on `ubuntu-latest` (teardown deletes resources through the GCP APIs over
+  WIF and needs no in-VPC or self-hosted runner access).
 - The ADR-003-R5 exposure checker treats the dynamic GCP deployment selector as
   self-hosted-class, so the cut-over jobs keep their pull-request-reachability
   gate (no fork PR can reach a self-hosted runner). New dynamic self-hosted

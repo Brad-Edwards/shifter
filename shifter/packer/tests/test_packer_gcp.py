@@ -709,7 +709,10 @@ class TestGcpPurposeIdentityWorkflows:
             ("packer-gcp.yml", "gcp-build-", "GCP_PACKER_BUILD_SERVICE_ACCOUNT"),
             ("packer-gcp-validate.yml", "gcp-validate-", "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT"),
             ("packer-gcp-promote.yml", "gcp-promote-prod", "GCP_PACKER_PROMOTE_SERVICE_ACCOUNT"),
-            ("gcp-dev-destroy.yml", "gcp-dev-destroy", "GCP_DESTROY_SERVICE_ACCOUNT"),
+            # The destroy workflow is parameterized over the tenant, so its
+            # purpose Environment is the per-tenant `<environment>-destroy`
+            # (resolved from the dispatch input), not a single literal.
+            ("gcp-dev-destroy.yml", "${{ inputs.environment }}-destroy", "GCP_DESTROY_SERVICE_ACCOUNT"),
         ],
     )
     def test_direct_workflow_uses_purpose_environment_and_secret(self, workflow_name, environment_marker, secret_name):

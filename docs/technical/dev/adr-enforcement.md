@@ -424,6 +424,26 @@ The first slice intentionally stays small:
   environment` step keys on that input rather than a branch-name `case` router,
   and that `push` / `pull_request` run validation only (no run/apply flags).
 
+  The GCP teardown guardrail
+  (`test_gcp_workflows_keep_sensitive_tfvars_out_of_the_checkout`) asserts that
+  `gcp-dev-destroy.yml` is parameterized over the tenant: `GCP_ENVIRONMENT`,
+  `TF_DIR`, `TF_BACKEND_PREFIX`, and the destroy `environment`
+  (`<environment>-destroy`) all derive from the `environment` dispatch input
+  rather than being hardcoded to gcp-dev, so every GCP tenant
+  (gcp-dev / nazgul / orthanc / sauron) tears down through the one workflow. It
+  runs on `ubuntu-latest` because teardown deletes resources through the GCP
+  APIs over WIF and needs no in-VPC or self-hosted runner access. Each GCP env
+  root declares `cloud_sql_deletion_protection` (default true) so the workflow's
+  rendered `false` actually lifts deletion protection at teardown instead of
+  being dropped as an undeclared `-var-file` entry. The `packer-gcp.yml` and
+  `packer-gcp-validate.yml` environment enums name the gcp-dev tenant `gcp-dev`
+  (mapped back to the `gcp-build-dev` / `gcp-validate-dev` Environments, whose
+  validate identity is provisioned at standup via the tenant's cicd-oidc
+  `validate` purpose) for parity with `deploy.yml`, and drop the unbacked
+  `proof` option. The teardown workflow runs an upfront preflight that fails with
+  the full list of any secrets missing from the selected `<environment>-destroy`
+  Environment before checkout or auth.
+
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`
   must call `scripts/portal_deploy/portal_deploy.py resolve-topology` instead

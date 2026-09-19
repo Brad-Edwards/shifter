@@ -216,7 +216,7 @@ guest-content validation follow-up.
 Build + export one guest (Actions → "Packer GCE Image Build" → pick type/env, or):
 
 ```bash
-gh workflow run packer-gcp.yml -f image_type=ubuntu -f environment=dev
+gh workflow run packer-gcp.yml -f image_type=ubuntu -f environment=gcp-dev
 ```
 
 After all four guests (`ubuntu`, `kali`, `windows`, `dc`) are built and
