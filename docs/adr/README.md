@@ -196,6 +196,10 @@ Current mechanisms:
   action majors for checkout, artifact restore, Java setup, and the
   SonarQube Cloud scan so runner deprecation warnings do not mask real
   SonarCloud quality findings.
+  Manual deployment scans explicitly pass the selected Git branch through
+  `sonar.branch.name`: scanner auto-detection does not identify branches for
+  `workflow_dispatch`, which otherwise publishes tenant analysis to the Sonar
+  project's main branch. Pull-request and push analysis retain auto-detection.
   - Repository branch protection for `main` and `dev` requires the
     aggregate `PR Gate`, CodeQL, and `Lint PR title` with strict
     up-to-date status checks. The title-lint workflow triggers on PRs
