@@ -151,16 +151,26 @@ def test_render_emits_range_access_egress_scoped_to_range_dialers():
     rendered = module.render_netpol(_outputs())
 
     assert "name: allow-platform-range-access-egress-generated" in rendered
-    policy = next(doc for doc in yaml.safe_load_all(rendered)
-                  if doc["metadata"]["name"] == "allow-platform-range-access-egress-generated")
-    assert policy["spec"]["podSelector"] == {"matchExpressions": [{
-        "key": "app.kubernetes.io/component", "operator": "In",
-        "values": ["portal", "guacd", "post-deploy-smoke"],
-    }]}
-    assert policy["spec"]["egress"] == [{
-        "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
-        "ports": [{"protocol": "TCP", "port": 22}, {"protocol": "TCP", "port": 3389}],
-    }]
+    policy = next(
+        doc
+        for doc in yaml.safe_load_all(rendered)
+        if doc["metadata"]["name"] == "allow-platform-range-access-egress-generated"
+    )
+    assert policy["spec"]["podSelector"] == {
+        "matchExpressions": [
+            {
+                "key": "app.kubernetes.io/component",
+                "operator": "In",
+                "values": ["portal", "guacd", "post-deploy-smoke"],
+            }
+        ]
+    }
+    assert policy["spec"]["egress"] == [
+        {
+            "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
+            "ports": [{"protocol": "TCP", "port": 22}, {"protocol": "TCP", "port": 3389}],
+        }
+    ]
     # Egress to the range network CIDR on the participant channel ports only.
     assert "cidr: 10.50.0.0/16" in rendered
     assert "name: allow-jobs-range-access-egress-generated" in rendered
