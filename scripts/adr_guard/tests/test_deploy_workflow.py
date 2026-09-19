@@ -573,6 +573,14 @@ class TestSonarScannerIdentity(unittest.TestCase):
             "push and manually dispatched release analysis must wait for the quality-gate verdict too (#2084)",
         )
 
+    def test_manual_deploy_analysis_uses_selected_branch(self):
+        self.assertIn(
+            "${{ github.event_name == 'workflow_dispatch' && "
+            "format('-Dsonar.branch.name={0}', github.ref_name) || '' }}",
+            self.args,
+        )
+        self.assertNotIn("sonar.branch.name", self.property_keys)
+
 
 class TestGcpReleaseSecurityClosure(unittest.TestCase):
     """#2084: release security checks fail closed and preserve exact evidence."""
