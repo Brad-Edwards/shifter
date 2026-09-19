@@ -122,10 +122,8 @@ class GcpBackendSettings(BaseModel):
     model_broker_runtime: ModelBrokerRuntimeSettings | None = None
 
     @model_validator(mode="after")
-    def validate_model_projects(self) -> GcpBackendSettings:
-        """Allow platform-hosted inference with distinct invocation-only identities."""
-        if self.range_resource_project_id in self.model_broker.model_projects:
-            raise ValueError("model projects must remain outside the dynamic-secret project")
+    def validate_capacity_profile(self) -> GcpBackendSettings:
+        """Validate the selected shared-service capacity contract."""
         resolve_capacity_profile(self.shared_service_capacity_profile)
         return self
 
