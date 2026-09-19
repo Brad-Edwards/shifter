@@ -76,6 +76,7 @@ variable "validate_permissions" {
     "compute.instances.delete",
     "compute.instances.attachDisk",
     "compute.instances.get",
+    "compute.instances.list",
     "compute.instances.reset",
     # Both candidate and scanner creation supply instance-local SSH metadata
     # and lifecycle labels; Compute checks these permissions at insert time.
@@ -85,6 +86,8 @@ variable "validate_permissions" {
     "compute.machineTypes.get",
     "compute.networks.get",
     "compute.networks.use",
+    # gcloud SSH/SCP inspect project settings for the credentialless scanner.
+    "compute.projects.get",
     "compute.subnetworks.get",
     "compute.subnetworks.use",
     "compute.zoneOperations.get",
