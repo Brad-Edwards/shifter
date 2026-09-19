@@ -915,7 +915,7 @@ def _check_model_broker_scope(path: Path, lines: list[str]) -> list[Violation]:
             {
                 "service_account_id": "google_service_account.model_broker[0].name",
                 "role": '"roles/iam.workloadIdentityUser"',
-                "member": '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/model-broker]"',
+                "member": '"serviceAccount:${var.workload_identity_pool}[shifter-platform/model-broker]"',
             },
         ),
         "google_project_iam_member": (
