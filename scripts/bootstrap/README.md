@@ -198,11 +198,17 @@ default; their state addresses and existing image network remain unchanged.
    GCP range backend defaults to the GCE range-cell path, and a range launch
    needs the guest images to exist. See `docs/dev/gcp-range-cell-deploy.md` and
    `docs/architecture/gcp-guest-images.md`.
+   Run `packer-gcp.yml` for the minimum image set required by the bootstrap
+   preflight and the ranges being deployed. Separate image qualification
+   (`packer-gcp-validate.yml`, including boot/reboot checks and disk inventory)
+   is optional and off by default. Bootstrap and deploy do not invoke it or
+   wait for it; run it only when explicitly requested.
 5. Bootstrap the GDC/GKE substrate and control plane with `gdc-bootstrap` (see
    the command below). It applies the GCP Terraform (GKE, Cloud SQL,
    Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
-   Helm values from Terraform outputs and Secret Manager, and installs the
-   Shifter Helm release.
+   Helm values from Terraform outputs and Secret Manager, migrates the database
+   and registers the shipped scenario catalog, then installs the Shifter Helm
+   release. Catalog registration uses the same idempotent command as deploy CI.
 6. Subsequent deploys run through CI as a manual dispatch:
    `gh workflow run deploy.yml --ref <branch> -f environment=gcp-dev` (see the
    CI/CD trigger matrix in `docs/technical/dev/ci-cd.md`). Branch names no longer
