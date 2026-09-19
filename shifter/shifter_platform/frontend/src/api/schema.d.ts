@@ -995,6 +995,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/communications/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Create or list campaigns within one authorized workspace. */
+        get: operations["ctf_communications_list"];
+        put?: never;
+        /** @description Create or list campaigns within one authorized workspace. */
+        post: operations["ctf_communications_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        get: operations["ctf_communications_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        post: operations["ctf_communications_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/release/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        post: operations["ctf_communications_release_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/revisions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Bearer-first auth, closed JSON and canonical domain error translation. */
+        post: operations["ctf_communications_revisions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/": {
         parameters: {
             query?: never;
@@ -1187,23 +1273,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ctf/events/{event_id}/invitations/send/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Rate-limit, enforce ownership, then queue the invitation emails. */
-        post: operations["ctf_events_invitations_send_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/ctf/events/{event_id}/lifecycle/": {
         parameters: {
             query?: never;
@@ -1231,8 +1300,7 @@ export interface paths {
         /** @description Return the notifications for an owned event, newest first. */
         get: operations["ctf_events_notifications_retrieve"];
         put?: never;
-        /** @description Send an announcement to an owned event from the request body. */
-        post: operations["ctf_events_notifications_create"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1673,6 +1741,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/me/events/{event_id}/communications/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ctf_communication_inbox_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ctf_me_events_communications_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/acknowledge/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ctf_me_events_communications_acknowledge_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/read/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ctf_me_events_communications_read_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/me/pages/": {
         parameters: {
             query?: never;
@@ -1878,40 +2010,6 @@ export interface paths {
         put?: never;
         /** @description Validate, apply, and audit the self-rename; return the fresh profile. */
         post: operations["ctf_me_username_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/ctf/notifications/{notification_id}/cancel-schedule/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Revert the notification to draft and cancel its scheduler task. */
-        post: operations["ctf_notifications_cancel_schedule_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/ctf/notifications/{notification_id}/send/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Resolve the notification, enforce ownership, then send it. */
-        post: operations["ctf_notifications_send_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2170,26 +2268,6 @@ export interface paths {
         put?: never;
         /** @description Restore competitive standing. */
         post: operations["ctf_participants_requalify_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/ctf/participants/{participant_id}/resend-invite/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @deprecated
-         * @description Rate-limit, enforce ownership, then resend non-secret login information.
-         */
-        post: operations["ctf_participants_resend_invite_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3292,6 +3370,13 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * @description * `none` - none
+         *     * `read` - read
+         *     * `explicit` - explicit
+         * @enum {string}
+         */
+        AcknowledgementPolicyEnum: "none" | "read" | "explicit";
+        /**
          * @description * `user` - User
          *     * `apikey` - API Key
          *     * `system` - System
@@ -3548,6 +3633,11 @@ export interface components {
             is_staff: boolean;
             is_superuser: boolean;
         };
+        /** @description A bounded page; offset advances across authorized workspace candidates. */
+        CampaignList: {
+            results: components["schemas"]["CommunicationCampaignSummary"][];
+            next_offset: number | null;
+        };
         /**
          * @description Read-only catalog entry projection for the CMS catalog API.
          *
@@ -3698,6 +3788,12 @@ export interface components {
         ChangeWorkspaceMemberRole: {
             role: components["schemas"]["WorkspaceRoleEnum"];
         };
+        /**
+         * @description * `in_app` - in_app
+         *     * `email` - email
+         * @enum {string}
+         */
+        ChannelsEnum: "in_app" | "email";
         /** @description Defer or cancel the pending automated range cleanup (CTF-1003). */
         CleanupControlRequest: {
             action: components["schemas"]["CleanupControlRequestActionEnum"];
@@ -3714,6 +3810,142 @@ export interface components {
             code: string;
             detail: string;
         };
+        /** @description Closed audience variants; semantics remain in the domain contract. */
+        CommunicationAudience: {
+            kind: components["schemas"]["CommunicationAudienceKindEnum"];
+            participant_ids?: string[];
+            team_ids?: string[];
+            event_ids?: string[];
+        } & ({
+            kind: string & "participant";
+            participant_ids: string[];
+        } | {
+            kind: string & "participant_set";
+            participant_ids: string[];
+        } | {
+            kind: string & "team";
+            team_ids: string[];
+        } | {
+            kind: string & "event";
+            event_ids: string[];
+        } | {
+            kind: string & "multi_event";
+            event_ids: string[];
+        });
+        /**
+         * @description * `participant` - participant
+         *     * `participant_set` - participant_set
+         *     * `team` - team
+         *     * `event` - event
+         *     * `multi_event` - multi_event
+         * @enum {string}
+         */
+        CommunicationAudienceKindEnum: "participant" | "participant_set" | "team" | "event" | "multi_event";
+        /** @description Organizer-facing campaign summary; carries shape and counts, never recipients. */
+        CommunicationCampaignSummary: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly title: string;
+            readonly status: string;
+            readonly origin: string;
+            readonly channels: string[];
+            readonly acknowledgement_policy: string;
+            /** @description Return the number of events the campaign targets (no identities exposed). */
+            readonly target_event_count: number;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Organizer authoring input; actor and provenance are always server derived. */
+        CommunicationCreate: {
+            subject: string;
+            body: string;
+            /** Format: uuid */
+            workspace_id: string;
+            title: string;
+            target_event_ids: string[];
+            audience_spec: components["schemas"]["CommunicationAudience"];
+            trigger_spec: components["schemas"]["CommunicationTrigger"];
+            channels: components["schemas"]["ChannelsEnum"][];
+            /** @default none */
+            acknowledgement_policy: components["schemas"]["AcknowledgementPolicyEnum"];
+        };
+        /** @description Actions with no caller-controlled state. */
+        CommunicationEmpty: Record<string, never>;
+        /**
+         * @description One inbox item for the requesting participant (never another's).
+         *
+         *     Bound to a ``RecipientSnapshot`` with its intent, revision, and receipt. The
+         *     encrypted delivery coordinate, the participant email, and every other
+         *     recipient are intentionally absent from the declared fields.
+         */
+        CommunicationInboxItem: {
+            /** Format: uuid */
+            readonly message_id: string;
+            readonly subject: string;
+            readonly body: string;
+            readonly content_profile: string;
+            readonly origin: string;
+            readonly acknowledgement_policy: string;
+            /** Format: date-time */
+            readonly read_at: string | null;
+            /** Format: date-time */
+            readonly acknowledged_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string | null;
+        };
+        /** @description Acceptance is distinct from channel delivery or participant interaction. */
+        CommunicationIntent: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: string;
+            /** Format: date-time */
+            readonly due_at: string | null;
+            /** Format: date-time */
+            readonly released_at: string | null;
+        };
+        /** @description Stable occurrence identity; scheduling time comes from the pinned trigger. */
+        CommunicationRelease: {
+            occurrence_key: string;
+            /** Format: uuid */
+            revision_id?: string;
+        };
+        /** @description Append-only content revision input. */
+        CommunicationRevision: {
+            subject: string;
+            body: string;
+        };
+        /** @description Typed trigger fields with UTC/reference rules delegated to the domain. */
+        CommunicationTrigger: {
+            kind: components["schemas"]["CommunicationTriggerKindEnum"];
+            due_at?: string;
+            event_status?: string;
+            declaration_ref?: string;
+            occurrence_ref?: string;
+        } & ({
+            kind: string & "manual";
+        } | {
+            kind: string & "absolute_time";
+            due_at: string;
+        } | {
+            kind: string & "event_lifecycle";
+            event_status: string;
+        } | {
+            kind: string & "raes_occurrence";
+            declaration_ref: string;
+            occurrence_ref: string;
+        } | {
+            kind: string & "range_signal";
+            declaration_ref: string;
+        });
+        /**
+         * @description * `manual` - manual
+         *     * `event_lifecycle` - event_lifecycle
+         *     * `absolute_time` - absolute_time
+         *     * `raes_occurrence` - raes_occurrence
+         *     * `range_signal` - range_signal
+         * @enum {string}
+         */
+        CommunicationTriggerKindEnum: "manual" | "event_lifecycle" | "absolute_time" | "raes_occurrence" | "range_signal";
         /** @description One entry from ``mission_control.utils.build_connection_urls``. */
         ConnectionUrl: {
             uuid: string | null;
@@ -4163,6 +4395,10 @@ export interface components {
          * @enum {string}
          */
         ImageKindEnum: "image" | "machine-image";
+        InboxPage: {
+            results: components["schemas"]["CommunicationInboxItem"][];
+            next_offset: number | null;
+        };
         /** @description Response-only projection of ``shared.schemas.InstanceContext``. */
         InstancePresentation: {
             uuid: string | null;
@@ -4187,12 +4423,6 @@ export interface components {
             email: string;
             role: components["schemas"]["WorkspaceRoleEnum"];
         };
-        /**
-         * @description * `generated` - generated
-         *     * `set` - set
-         * @enum {string}
-         */
-        KindEnum: "generated" | "set";
         /** @description Validate range launch requests. */
         LaunchRange: {
             model_sources?: components["schemas"]["ModelSourceSelection"];
@@ -4452,28 +4682,6 @@ export interface components {
         NGFWListResponse: {
             ngfws: components["schemas"]["NGFWListItem"][];
         };
-        /**
-         * @description Request body for sending an announcement notification.
-         *
-         *     ``subject`` and ``body`` are blank-tolerant at this layer so the view can
-         *     apply the legacy strip-then-reject rule and return the exact ``Invalid
-         *     notification request.`` 400 envelope for an empty or whitespace-only value.
-         */
-        NotificationAnnounceRequest: {
-            /** @default  */
-            subject: string;
-            /** @default  */
-            body: string;
-            /** Format: date-time */
-            scheduled_at?: string | null;
-        };
-        /** @description Result returned after creating and sending an announcement (201). */
-        NotificationAnnounceResult: {
-            readonly id: string;
-            readonly subject: string;
-            readonly status: string;
-            readonly sent_count: number;
-        };
         /** @description List projection of one notification for an event. */
         NotificationListItem: {
             readonly id: string;
@@ -4491,11 +4699,6 @@ export interface components {
         /** @description Envelope returned by the event notification list. */
         NotificationListResponse: {
             readonly notifications: components["schemas"]["NotificationListItem"][];
-        };
-        /** @description Result returned after dispatching a notification to its recipients. */
-        NotificationSendResult: {
-            readonly notification_id: string;
-            readonly status: string;
         };
         /** @enum {unknown} */
         NullEnum: null;
@@ -4936,9 +5139,15 @@ export interface components {
         ParticipantModerationRequest: {
             reason?: string;
         };
+        /**
+         * @description * `generated` - generated
+         *     * `set` - set
+         * @enum {string}
+         */
+        ParticipantPasswordKindEnum: "generated" | "set";
         /** @description Closed write-only request for generated or supplied issuance. */
         ParticipantPasswordRequest: {
-            kind: components["schemas"]["KindEnum"];
+            kind: components["schemas"]["ParticipantPasswordKindEnum"];
             password?: string;
         };
         /** @description One-time participant password issuance returned by the mutation only. */
@@ -4947,7 +5156,7 @@ export interface components {
             readonly event_id: string;
             readonly username: string;
             readonly password: string;
-            readonly kind: components["schemas"]["KindEnum"];
+            readonly kind: components["schemas"]["ParticipantPasswordKindEnum"];
         };
         /** @description Event-scoped self profile (CTF-610). */
         ParticipantProfile: {
@@ -5602,11 +5811,6 @@ export interface components {
             maximum_days: number;
             extensions_enabled: boolean;
         };
-        /** @description Confirmation returned after resending non-secret login information. */
-        ResendLoginInfoResult: {
-            readonly success: boolean;
-            readonly id: string;
-        };
         /** @description Strict explicit reset command. */
         ResetLeasePolicy: {
             expected_revision: number;
@@ -5862,14 +6066,6 @@ export interface components {
             readonly timeline: {
                 [key: string]: unknown;
             }[];
-        };
-        /** @description Result returned after queuing invitation emails for an event. */
-        SendLoginInfoResult: {
-            readonly success: boolean;
-            readonly event_id: string;
-            readonly total: number;
-            readonly sent: number;
-            readonly failed: number;
         };
         /** @description Explicit request body for the activate/deactivate operation. */
         SetActiveRequest: {
@@ -9009,6 +9205,527 @@ export interface operations {
             };
         };
     };
+    ctf_communications_list: {
+        parameters: {
+            query: {
+                event_id?: string;
+                limit?: number;
+                offset?: number;
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunicationCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommunicationEmpty"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_release_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunicationRelease"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationIntent"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_revisions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunicationRevision"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_list: {
         parameters: {
             query?: {
@@ -9697,45 +10414,6 @@ export interface operations {
             };
         };
     };
-    ctf_events_invitations_send_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SendLoginInfoResult"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     ctf_events_lifecycle_create: {
         parameters: {
             query?: never;
@@ -9798,51 +10476,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationListResponse"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    ctf_events_notifications_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["NotificationAnnounceRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["NotificationAnnounceRequest"];
-                "multipart/form-data": components["schemas"]["NotificationAnnounceRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationAnnounceResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -11039,6 +11672,356 @@ export interface operations {
             };
         };
     };
+    ctf_communication_inbox_list: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxPage"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_events_communications_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationInboxItem"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_events_communications_acknowledge_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommunicationEmpty"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationInboxItem"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_events_communications_read_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommunicationEmpty"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationInboxItem"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_me_pages_retrieve: {
         parameters: {
             query?: never;
@@ -11538,84 +12521,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantProfile"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    ctf_notifications_cancel_schedule_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                notification_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationSendResult"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    ctf_notifications_send_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                notification_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationSendResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -12364,45 +13269,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantDetail"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    ctf_participants_resend_invite_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResendLoginInfoResult"];
                 };
             };
             /** @description Authentication failed. */

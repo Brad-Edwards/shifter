@@ -4,11 +4,53 @@ from __future__ import annotations
 
 from django.urls import path
 
-from ctf.api import organizer, participant_views, team_views, views
+from ctf.api import communication_inbox, organizer, participant_views, team_views, views
+from ctf.api.organizer import communication
 
 app_name = "ctf"
 
 urlpatterns = [
+    path(
+        "me/events/<uuid:event_id>/communications/",
+        communication_inbox.CommunicationInboxView.as_view(),
+        name="api_communication_inbox",
+    ),
+    path(
+        "me/events/<uuid:event_id>/communications/<uuid:snapshot_id>/",
+        communication_inbox.CommunicationInboxDetailView.as_view(),
+        name="api_communication_inbox_detail",
+    ),
+    path(
+        "me/events/<uuid:event_id>/communications/<uuid:snapshot_id>/read/",
+        communication_inbox.CommunicationReadView.as_view(),
+        name="api_communication_read",
+    ),
+    path(
+        "me/events/<uuid:event_id>/communications/<uuid:snapshot_id>/acknowledge/",
+        communication_inbox.CommunicationAcknowledgeView.as_view(),
+        name="api_communication_acknowledge",
+    ),
+    path("communications/", communication.CommunicationListView.as_view(), name="api_communications"),
+    path(
+        "communications/<uuid:campaign_id>/",
+        communication.CommunicationDetailView.as_view(),
+        name="api_communication_detail",
+    ),
+    path(
+        "communications/<uuid:campaign_id>/revisions/",
+        communication.CommunicationRevisionView.as_view(),
+        name="api_communication_revision",
+    ),
+    path(
+        "communications/<uuid:campaign_id>/release/",
+        communication.CommunicationReleaseView.as_view(),
+        name="api_communication_release",
+    ),
+    path(
+        "communications/<uuid:campaign_id>/cancel/",
+        communication.CommunicationCancelView.as_view(),
+        name="api_communication_cancel",
+    ),
     # Participant self-reads (typed DRF projections for the SPA workspace).
     path("me/event/", participant_views.ParticipantCurrentEventView.as_view(), name="api_participant_current_event"),
     path("me/challenges/", participant_views.ParticipantChallengeListView.as_view(), name="api_participant_challenges"),

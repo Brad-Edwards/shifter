@@ -580,3 +580,13 @@ def mock_email_backend(mocker) -> MagicMock:
     """Mock email sending."""
     mock = mocker.patch("django.core.mail.send_mail", return_value=1)
     return mock
+
+
+@pytest.fixture(autouse=True)
+def isolate_ctf_rate_counters():
+    """Database rollbacks reuse actor IDs; rate budgets must not span tests."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()

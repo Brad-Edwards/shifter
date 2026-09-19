@@ -92,9 +92,45 @@ def _task_payload(task: CTFScheduledTask) -> dict[str, object]:
         "status": task.status,
         "scheduled_for": task.scheduled_for,
         "executed_at": task.executed_at,
-        "error_message": task.error_message,
+        "error_message": "Task execution failed." if task.error_message else "",
         "retry_count": task.retry_count,
     }
+
+
+def _visible_tasks(request, event_id):
+    """Communication task visibility includes every campaign target's authority."""
+    from uuid import UUID
+
+    from django.db import transaction
+
+    from ctf.api.organizer.communication import request_actor
+    from ctf.exceptions import CTFCommunicationError
+    from ctf.models import CommunicationIntent
+    from ctf.services.communication.admission import reauthorize
+    from ctf.services.event.scheduling import list_event_tasks
+    from shared.api_tokens.scopes import CTF_COMMUNICATION_READ
+
+    for task in list_event_tasks(event_id)[:100]:
+        if task.task_type == "release_communication":
+            try:
+                intent_id = UUID((task.metadata or {}).get("intent_id", ""))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            intent = CommunicationIntent.objects.select_related("campaign").filter(pk=intent_id).first()
+            if intent is None:
+                continue
+            try:
+                with transaction.atomic():
+                    reauthorize(
+                        intent.campaign,
+                        list(intent.campaign.target_events.all()),
+                        request_actor(request),
+                        required_scope=CTF_COMMUNICATION_READ,
+                        audit_authority=False,
+                    )
+            except CTFCommunicationError:
+                continue
+        yield _task_payload(task)
 
 
 class EventTasksView(APIView):
@@ -106,13 +142,11 @@ class EventTasksView(APIView):
     @extend_schema(responses=ScheduledTaskListResponseSerializer)
     def get(self, request: Request, event_id: UUID) -> Response:
         """Return the event's task history, soonest first."""
-        from ctf.services.event.scheduling import list_event_tasks
-
         try:
             _resolve_owned_event(request, event_id, capability=EventCapability.LIFECYCLE)
         except _CtfApiError as exc:
             return exc.to_response(request)
-        return Response({"tasks": [_task_payload(t) for t in list_event_tasks(event_id)]})
+        return Response({"tasks": list(_visible_tasks(request, event_id))})
 
 
 class TaskRunNowView(APIView):
@@ -159,7 +193,6 @@ class EventCleanupControlView(APIView):
         from ctf.services.event.scheduling import (
             cancel_event_cleanup,
             defer_event_cleanup,
-            list_event_tasks,
         )
 
         try:
@@ -180,6 +213,6 @@ class EventCleanupControlView(APIView):
                 _raise_bad_request("Deferral must be between 1 and 168 hours.")
             except CTFStateError:
                 _raise_conflict("No pending cleanup for this event.")
-            return Response({"tasks": [_task_payload(t) for t in list_event_tasks(event_id)]})
+            return Response({"tasks": list(_visible_tasks(request, event_id))})
         except _CtfApiError as exc:
             return exc.to_response(request)
