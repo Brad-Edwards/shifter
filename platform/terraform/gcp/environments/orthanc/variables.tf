@@ -201,6 +201,12 @@ variable "cloud_sql_user_name" {
   default     = "shifter"
 }
 
+variable "cloud_sql_deletion_protection" {
+  description = "Enable Cloud SQL deletion protection on the platform instance. Default true; the GCP Environment Destroy workflow renders false so teardown is permitted (the platform database is durable control-plane state)."
+  type        = bool
+  default     = true
+}
+
 variable "redis_tier" {
   description = "Memorystore tier for the control-plane Redis instance. STANDARD_HA is the default production high-availability posture; AUTH and TLS are enforced unconditionally by the platform-core module regardless of tier (ADR-008-R6)."
   type        = string

@@ -792,7 +792,23 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             self.assertIn("-var-file=", workflow)
 
         destroy = yaml.safe_load((REPO_ROOT / ".github/workflows/gcp-dev-destroy.yml").read_text(encoding="utf-8"))
-        self.assertEqual(destroy["jobs"]["destroy"]["env"]["GCP_ENVIRONMENT"], "gcp-dev")
+        destroy_env = destroy["jobs"]["destroy"]["env"]
+        # The teardown workflow is parameterized over the GCP tenant: the TF root,
+        # state prefix, and destroy Environment all derive from the dispatch input
+        # rather than being hardcoded to gcp-dev.
+        self.assertEqual(destroy_env["GCP_ENVIRONMENT"], "${{ inputs.environment }}")
+        self.assertEqual(
+            destroy_env["TF_DIR"],
+            "platform/terraform/gcp/environments/${{ inputs.environment }}",
+        )
+        self.assertEqual(
+            destroy_env["TF_BACKEND_PREFIX"],
+            "shifter/${{ inputs.environment }}/platform-core",
+        )
+        self.assertEqual(
+            destroy["jobs"]["destroy"]["environment"],
+            "${{ inputs.environment }}-destroy",
+        )
 
     def test_gcp_bootstrap_secrets_never_reach_process_argv(self):
         workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")

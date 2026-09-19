@@ -40,12 +40,12 @@ on:
         required: true
         type: choice
         options:
-          - dev
+          - gcp-dev
           - proof
           - nazgul
           - orthanc
           - sauron
-        default: dev
+        default: gcp-dev
       source_image:
         description: 'Exact candidate image name to validate. Empty resolves the newest image in the image family at validate time and pins it.'
         required: false
@@ -64,7 +64,10 @@ jobs:
   validate:
     name: Validate ${{ inputs.image_type }} GCE image in ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    environment: gcp-validate-${{ inputs.environment }}
+    # The gcp-dev tenant's purpose Environments keep their historical short
+    # suffix (gcp-validate-dev), so map the gcp-dev tenant name back to `dev`
+    # here; every other tenant uses its own name verbatim (gcp-validate-<tenant>).
+    environment: gcp-validate-${{ inputs.environment == 'gcp-dev' && 'dev' || inputs.environment }}
     permissions:
       contents: read
       id-token: write
