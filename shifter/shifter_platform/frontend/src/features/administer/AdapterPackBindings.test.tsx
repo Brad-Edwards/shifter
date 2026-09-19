@@ -69,6 +69,21 @@ describe("pack adapter assignments", () => {
     expect(screen.getByRole("button", { name: "Review assignment" })).toBeEnabled();
   });
 
+  it("lets an administrator bind a prepromoted directory image", async () => {
+    renderRoute(<AdapterPackBindings organization="org-1" adapters={[adapter]} />);
+    await fillAssignment();
+    fireEvent.click(screen.getByLabelText("Use an administrator-selected provider image for server"));
+    fireEvent.change(screen.getByLabelText("Image reference for server"), {
+      target: { value: "projects/example/global/images/directory-v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Bootstrap capability for server"), {
+      target: { value: "prepromoted-domain-controller" },
+    });
+    fireEvent.change(screen.getByLabelText("Domain DNS name for server"), { target: { value: "example.test" } });
+    fireEvent.change(screen.getByLabelText("Domain NetBIOS name for server"), { target: { value: "EXAMPLE" } });
+    expect(screen.getByRole("button", { name: "Review assignment" })).toBeEnabled();
+  });
+
   it("keeps a rejected stale assignment open and shows the server's recovery message", async () => {
     mockApi.mockImplementation(async (url, options) => {
       if (options?.method === "POST") throw new ApiError(400, { code: "plugin_invalid", message: "The pack changed; reload its current version before saving" });

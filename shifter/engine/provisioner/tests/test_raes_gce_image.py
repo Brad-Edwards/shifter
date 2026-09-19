@@ -59,6 +59,20 @@ class TestRegistryResolution:
         assert profile.source_machine_image == runtime.image_ref
         assert profile.machine_type == "e2-standard-8"
 
+    def test_adapter_target_profile_preserves_prepromoted_directory_contract(self):
+        runtime = RuntimeTargetImageProfile(
+            provider="gcp",
+            image_ref="projects/example/global/images/directory-v1",
+            bootstrap_capability="prepromoted-domain-controller",
+            domain_dns_name="example.test",
+            domain_netbios_name="EXAMPLE",
+        )
+        profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
+        assert profile.source_image == runtime.image_ref
+        assert profile.bootstrap_capability == "prepromoted-domain-controller"
+        assert profile.domain_dns_name == "example.test"
+        assert profile.domain_netbios_name == "EXAMPLE"
+
     def test_machine_host_profile_is_resolved_from_tenant_registry(self):
         node = _node(image=RaesPlanImage(name="nested-host"))
         candidate = _candidate("", "projects/example/global/machineImages/nested-host-v1")
