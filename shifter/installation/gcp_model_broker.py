@@ -138,7 +138,11 @@ def validate_model_broker_readback(output: object, config: RootConfig) -> None:
 def _broker_output_settings(output: dict[str, object]) -> GcpModelBrokerSettings:
     """Reject unexpected readback fields before extracting deployment settings."""
     settings_keys = set(GcpModelBrokerSettings.model_fields)
-    if set(output) - settings_keys - {"gsa", "model_identities", "region", "provisioner_subject"}:
+    if (
+        set(output)
+        - settings_keys
+        - {"gsa", "model_identities", "region", "provisioner_subject", "broker_subject_id", "provisioner_subject_id"}
+    ):
         raise ValueError("unknown model broker deployment output")
     return GcpModelBrokerSettings.model_validate({key: value for key, value in output.items() if key in settings_keys})
 
@@ -233,6 +237,13 @@ def project_model_broker(
         ):
             raise ValueError("active broker requires a distinct applied provisioner identity")
         result["provisioner_subject"] = subject
+        for key in ("broker_subject_id", "provisioner_subject_id"):
+            value = output.get(key, "")
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9]{10,32}", value):
+                raise ValueError("active broker requires applied immutable subject IDs")
+            result[key] = value
+        if result["broker_subject_id"] == result["provisioner_subject_id"]:
+            raise ValueError("broker and provisioner require distinct immutable subject IDs")
         result.update(
             project_broker_runtime(
                 runtime_settings, catalog_json=catalog_json, provider="gcp", model_identities=output["model_identities"]

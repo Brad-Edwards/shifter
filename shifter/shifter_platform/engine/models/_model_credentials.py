@@ -18,6 +18,8 @@ class ModelAccessCredential(models.Model):
     access_expires_at = models.DateTimeField(null=True)
     refresh_hash = models.CharField(max_length=64, blank=True, default="")
     hard_expires_at = models.DateTimeField()
+    rotation_window_started_at = models.DateTimeField(null=True)
+    rotation_count = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

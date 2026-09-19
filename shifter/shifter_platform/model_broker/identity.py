@@ -1,9 +1,10 @@
 """Broker workload authentication independent of provider invocation credentials."""
 
-import asyncio
-
 from shared.model_access import ContractError
+from shared.model_access.work import BoundedWork
 from shared.model_access.workload_identity import workload_assertion
+
+_IDENTITY_WORK = BoundedWork(8, name="broker-identity")
 
 
 class WorkloadIdentity:
@@ -16,7 +17,7 @@ class WorkloadIdentity:
 
     async def __call__(self) -> str:
         try:
-            return await asyncio.to_thread(self._assertion)
+            return await _IDENTITY_WORK.run(self._assertion)
         except Exception:
             raise ContractError("control.identity_unavailable") from None
 

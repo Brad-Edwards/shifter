@@ -9,19 +9,22 @@ from functools import partial
 from typing import Protocol
 from uuid import UUID
 
-from asgiref.sync import sync_to_async
-
 from engine.services import (
     RequestIdempotency,
+    advance_model_call,
     authenticate_model_access,
     exchange_model_enrollment,
+    finish_model_call,
     issue_model_enrollment,
+    model_source_execution,
     refresh_model_access,
+    reserve_model_call,
 )
-from engine.services._model_broker_control import advance_model_call, finish_model_call, reserve_model_call
 from shared.model_access import ContractError
-from shared.model_access.http import ASGIScope, Receive, Send, body, headers, json_response
+from shared.model_access.diagnostics import isolate_transport_diagnostics
+from shared.model_access.http import ASGIScope, Receive, ResponseWriter, Send, body, headers, json_response
 from shared.model_access.messages import JsonObject, strict_json
+from shared.model_access.traffic import TrafficBudget
 
 from .schemas import (
     AdvanceRequest,
@@ -31,6 +34,7 @@ from .schemas import (
     SourceExecutionRequest,
     TokenRequest,
 )
+from .work import ControlWork
 
 _INVALID_ROUTE = "control.invalid_route"
 
@@ -45,16 +49,26 @@ class ControlApplication:
     """Only authenticated workload callers can reach Engine effects."""
 
     def __init__(self, *, verify_identity: IdentityVerifier, ready: Callable[[], bool]) -> None:
+        isolate_transport_diagnostics()
         self.verify_identity = verify_identity
         self.ready = ready
+        self.work = ControlWork()
+        self.credential_budget = TrafficBudget(per_key=600, total=1200)
 
     async def __call__(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
+        send = ResponseWriter(send)
         try:
             if scope["type"] != "http":
                 return
             await self._route(scope, receive, send)
         except ContractError as exc:
-            status = 401 if exc.code in {"control.unauthorized", "credential.unavailable"} else 409
+            status = (
+                401
+                if exc.code in {"control.unauthorized", "credential.unavailable"}
+                else 503
+                if exc.code == "control.busy"
+                else 409
+            )
             await json_response(send, status, {"error": exc.code})
         except (ValueError, TimeoutError):
             await json_response(send, 400, {"error": "control.invalid_request"})
@@ -68,7 +82,8 @@ class ControlApplication:
         if scope.get("query_string"):
             raise ContractError(_INVALID_ROUTE)
         if scope["method"] == "GET" and path in {"/health/live", "/health/ready"}:
-            healthy = path.endswith("live") or await sync_to_async(self.ready)()
+            async with asyncio.timeout(2):
+                healthy = path.endswith("live") or await self.work.run(self.ready, lifecycle=True, database=True)
             await json_response(send, 200 if healthy else 503, {"ready": healthy})
         else:
             await self._post(scope, receive, send)
@@ -84,12 +99,26 @@ class ControlApplication:
             raise ContractError("control.invalid_content_type")
         payload = strict_json(await body(receive, limit=65_536), limit=65_536)
         enrollment = EnrollmentRequest.model_validate(payload) if route == "enroll" else None
-        await asyncio.to_thread(
-            self.verify_identity,
-            request_headers.get("authorization", ""),
-            operation_id=enrollment.operation_id if enrollment else None,
-        )
-        result = await sync_to_async(self._dispatch)(route, payload)
+        lifecycle = route in {"advance", "finish", "ready"}
+        if route in {"enroll", "exchange", "refresh"}:
+            self.credential_budget.consume((scope.get("client") or ("",))[0])
+        async with asyncio.timeout(2):
+            await self.work.run(
+                partial(
+                    self.verify_identity,
+                    request_headers.get("authorization", ""),
+                    operation_id=enrollment.operation_id if enrollment else None,
+                ),
+                lifecycle=lifecycle,
+            )
+            if route == "ready":
+                if payload:
+                    raise ValueError
+                result = {"ready": await self.work.run(self.ready, lifecycle=True, database=True)}
+            else:
+                result = await self.work.run(
+                    partial(self._dispatch, route, payload), lifecycle=lifecycle, database=True
+                )
         await json_response(send, 200, result)
 
     @staticmethod
@@ -166,8 +195,6 @@ def _finish(payload: JsonObject) -> JsonObject:
 
 def _source(payload: JsonObject) -> JsonObject:
     """Project execution credentials only for an authenticated model grant."""
-    from engine.services._model_source_control import model_source_execution
-
     request = SourceExecutionRequest.model_validate(payload)
     return model_source_execution(
         token=request.token.get_secret_value(),
@@ -177,6 +204,7 @@ def _source(payload: JsonObject) -> JsonObject:
 
 
 _HANDLERS: dict[str, Callable[[JsonObject], JsonObject]] = {
+    "ready": lambda payload: {},
     "source": _source,
     "enroll": _enroll,
     "exchange": partial(_token_operation, route="exchange"),

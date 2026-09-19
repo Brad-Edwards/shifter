@@ -1,8 +1,8 @@
 """Provider credentials exist in the broker only, scoped to approved identities."""
 
-import asyncio
 from collections.abc import Mapping
 from contextlib import closing
+from functools import partial
 from urllib.parse import urlsplit
 
 from shared.model_access import ContractError
@@ -13,10 +13,12 @@ from shared.model_access.source_credentials import (
     GoogleKeyCredential,
     parse_source_credential,
 )
+from shared.model_access.work import BoundedWork
 
 from .egress import provider_proxy
 
 JSON_MEDIA_TYPE = "application/json"
+_CREDENTIAL_WORK = BoundedWork(8, name="broker-provider")
 
 
 class ProviderCredentials:
@@ -26,9 +28,8 @@ class ProviderCredentials:
         self.credential = credential
 
     async def headers(self, target: ProviderTarget, *, url: str, body: bytes) -> dict[str, str]:
-        if target.authentication == "stored-credential":
-            return await asyncio.to_thread(self._stored_headers, target, url=url, body=body)
-        return await asyncio.to_thread(self._headers, target, url=url, body=body)
+        operation = self._stored_headers if target.authentication == "stored-credential" else self._headers
+        return await _CREDENTIAL_WORK.run(partial(operation, target, url=url, body=body))
 
     def _stored_headers(self, target: ProviderTarget, *, url: str, body: bytes) -> dict[str, str]:
         credential = parse_source_credential(target.provider, self.credential)

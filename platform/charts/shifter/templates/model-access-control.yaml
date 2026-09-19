@@ -52,6 +52,12 @@ spec:
               value: {{ .Values.modelBroker.region | quote }}
             - name: MODEL_CONTROL_PROVISIONER_SUBJECT
               value: {{ .Values.modelBroker.provisioner_subject | quote }}
+            {{- if eq .Values.provider.name "gcp" }}
+            - name: MODEL_CONTROL_BROKER_SUBJECT_ID
+              value: {{ .Values.modelBroker.broker_subject_id | quote }}
+            - name: MODEL_CONTROL_PROVISIONER_SUBJECT_ID
+              value: {{ .Values.modelBroker.provisioner_subject_id | quote }}
+            {{- end }}
             {{- range $name, $value := $controlEnv }}
             - name: {{ $name }}
               value: {{ $value | quote }}

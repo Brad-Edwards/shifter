@@ -147,16 +147,24 @@ def verify_aws_control_assertion(
 
 
 def verify_google_control_assertion(
-    assertion: str, *, audience: str, expected_subject: str, request: GoogleRequest
+    assertion: str, *, audience: str, expected_subject: str, expected_subject_id: str, request: GoogleRequest
 ) -> None:
-    """Verify signature, Google issuer, audience, expiry and exact verified email."""
+    """Bind the verified email and immutable Google subject to applied identity."""
     from google.oauth2.id_token import verify_oauth2_token
 
     try:
-        if not assertion.startswith("Bearer ") or len(assertion) > 16_384:
+        if (
+            not assertion.startswith("Bearer ")
+            or len(assertion) > 16_384
+            or not re.fullmatch(r"[0-9]{10,32}", expected_subject_id)
+        ):
             raise ValueError
         claims = verify_oauth2_token(assertion[7:], request, audience=audience)
-        if claims.get("email") != expected_subject or claims.get("email_verified") is not True:
+        if (
+            claims.get("email") != expected_subject
+            or claims.get("email_verified") is not True
+            or claims.get("sub") != expected_subject_id
+        ):
             raise ValueError
     except Exception:
         raise ContractError("control.unauthorized") from None
