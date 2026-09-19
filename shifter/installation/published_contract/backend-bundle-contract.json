@@ -3882,7 +3882,7 @@
         "$defs": {
           "GcpModelBrokerSettings": {
             "additionalProperties": false,
-            "description": "Closed transport configuration, provisioned only on explicit enablement.\n\nModel projects are pre-existing, dedicated, deployment-owned projects. The\nmap values are stable invocation GSA account IDs, never credentials. This\npackage creates identities and an endpoint, not active participant grants.",
+            "description": "Closed transport configuration, provisioned only on explicit enablement.\n\nModel projects are pre-existing, deployment-owned choices and may include\nthe platform project. The map values are stable invocation GSA account IDs,\nnever credentials. This package creates identities and an endpoint, not\nactive participant grants.",
             "properties": {
               "admitted_subnets": {
                 "items": {

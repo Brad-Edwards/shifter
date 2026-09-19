@@ -60,6 +60,18 @@ def test_empty_overlay_leaves_config_byte_identical(tmp_path):
     assert path.read_bytes() == before
 
 
+def test_reviewed_overlay_file_takes_precedence_over_environment_value(tmp_path, monkeypatch):
+    path = _config(tmp_path)
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text(json.dumps({"settings": {"model_access": {"enabled": True}}}), encoding="utf-8")
+    monkeypatch.setenv("SHIFTER_CONFIG_OVERLAY_FILE", str(overlay))
+    monkeypatch.setenv("SHIFTER_CONFIG_OVERLAY_JSON", '{"settings":{"model_access":{"enabled":false}}}')
+    monkeypatch.setattr("sys.argv", ["apply_shifter_config_overlay.py", "--config", str(path)])
+
+    assert MODULE.main() == 0
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["settings"]["model_access"]["enabled"] is True
+
+
 @pytest.mark.parametrize(
     "overlay",
     [

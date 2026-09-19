@@ -101,7 +101,13 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
     try:
-        apply_overlay(args.config, os.environ.get("SHIFTER_CONFIG_OVERLAY_JSON", ""))
+        overlay_file = os.environ.get("SHIFTER_CONFIG_OVERLAY_FILE", "")
+        raw_overlay = (
+            _read_bounded(Path(overlay_file), MAX_OVERLAY_BYTES)
+            if overlay_file
+            else os.environ.get("SHIFTER_CONFIG_OVERLAY_JSON", "")
+        )
+        apply_overlay(args.config, raw_overlay)
     except (ConfigOverlayError, OSError):
         parser.error("could not apply the bounded deployment configuration overlay")
     return 0
