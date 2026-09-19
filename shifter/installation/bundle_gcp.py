@@ -60,6 +60,7 @@ _GCP_SECRET_REFERENCE_RUNTIME_KEYS: frozenset[str] = frozenset(
     {
         "APP_SECRET_ID",
         "DB_SECRET_ID",
+        "PROVISIONER_DB_SECRET_ID",
         "REDIS_SECRET_ID",
         "GUACAMOLE_SECRET_ID",
         "GDC_ACCESS_SECRET_ID",

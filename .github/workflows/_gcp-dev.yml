@@ -1040,7 +1040,7 @@ jobs:
               -n shifter-jobs --ignore-not-found
           fi
           kubectl apply -f "${manifest}"
-      - name: Run database migrations with the migration identity
+      - name: Run database migrations and bootstrap the in-box catalog with the migration identity
         env:
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
         run: |
@@ -1081,7 +1081,9 @@ jobs:
                   - name: migrate
                     image: ${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}
                     imagePullPolicy: IfNotPresent
-                    args: ["/bin/true"]
+                    # entrypoint.sh runs migrations first, then registers the
+                    # immutable shipped seed through the normal ingestion path.
+                    args: ["python", "manage.py", "bootstrap_inbox_catalog"]
                     envFrom:
                       - configMapRef:
                           name: platform-runtime

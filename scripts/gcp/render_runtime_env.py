@@ -410,6 +410,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "QUEUE_MC_CONSUMER_ID": subscriptions["mc"],
         "QUEUE_MC_PUBLISHER_ID": topic_id,
         "DB_SECRET_ID": secret_ids["db"],
+        "PROVISIONER_DB_SECRET_ID": secret_ids["db-provisioner"],
         "DB_MIGRATION_SECRET_ID": secret_ids["db-migration"],
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
@@ -434,6 +435,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         # DB_PASSWORD is Secret-backed; name/user are plain connection metadata.
         "DB_NAME": database["database_name"],
         "DB_USER": database["user_name"],
+        "PROVISIONER_DB_USER": database["provisioner_user_name"],
         "AUDIT_DEPLOYMENT_SCOPE": f"gcp:{real_project}",
         "SKIP_MIGRATIONS": "1",
         # Redis host/port are non-secret and ride in the runtime ConfigMap.

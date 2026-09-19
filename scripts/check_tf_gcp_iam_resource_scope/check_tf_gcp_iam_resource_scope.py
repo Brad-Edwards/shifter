@@ -21,15 +21,17 @@ workload identity at project scope:
 * a project-scoped ``google_project_iam_custom_role`` whose ``permissions`` grant
   equivalent access outside the exact validated dynamic-secret boundary.
 
-Legitimate different principals (the range-Vertex SA, the GKE node SA, and
-CI/bootstrap identities) are not workload identities and are not matched.
+Legitimate different principals (the GKE node SA and CI/bootstrap identities)
+are not workload identities and are not matched.
 
 The ``range_host`` / ``range_host_pool`` identities are handled separately (#1644):
 they are attached to participant-controllable range guests, so ANY project-level
 Cloud Storage role (including read-only ``objectViewer``) is rejected on them --
 via the same direct-member, inline ``for_each`` role list, local-map,
 policy-binding, and custom-role shapes -- while their logging/monitoring writes
-are left alone. Host artifacts reach these guests through short-lived signed URLs.
+and the ADR-064 predict-only Vertex model role (a custom role, not a storage or
+secret role) are left alone. Host artifacts reach these guests through
+short-lived signed URLs.
 """
 
 from __future__ import annotations
@@ -93,7 +95,9 @@ _FORBIDDEN_PERMISSION_WILDCARD_PREFIXES = ("secretmanager.", "storage.objects.")
 # never hold a project-level Cloud Storage role: a project (or shared-bucket)
 # storage grant crosses the range/tenant boundary and exposes other tenants'
 # objects and Terraform state. Host artifacts are delivered as short-lived signed
-# URLs instead. Their only legitimate project roles are logging/monitoring writes.
+# URLs instead. Their legitimate project roles are logging/monitoring writes and
+# the ADR-064 predict-only Vertex model invocation role; project storage and
+# secret roles remain forbidden.
 _RANGE_HOST_MEMBER_RE = re.compile(r"google_service_account\.range_host(?:_pool)?\b")
 
 

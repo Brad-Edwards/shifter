@@ -33,6 +33,8 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "DB_PORT",
         "DB_SECRET_ID",
         "DB_USER",
+        "PROVISIONER_DB_SECRET_ID",
+        "PROVISIONER_DB_USER",
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
         "DJANGO_DEBUG",
