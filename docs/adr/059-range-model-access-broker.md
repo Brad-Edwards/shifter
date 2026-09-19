@@ -9,8 +9,8 @@ not advertise an installed capability or qualified provider.
 The "no-service-account guest default" for GCP (ADR-059-R3) is superseded by
 [ADR-064](064-default-range-model-access.md): range guests receive a keyless,
 predict-only Vertex model identity by default, or stay identity-less when the
-broker is the guest model path. The rest of this ADR — the broker, its
-ownership, allocation, accounting and enforcement — is unaffected.
+broker is the guest model path. The rest of this ADR (the broker, its
+ownership, allocation, accounting and enforcement) is unaffected.
 
 ## Context
 

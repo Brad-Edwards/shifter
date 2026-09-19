@@ -27,7 +27,7 @@ became coupled to whether a specific scenario declared a model need.
 That coupling is wrong. Whether a scenario uses a model is independent of whether
 a deployment's ranges are *able* to reach one. Most deployments expect their own
 project's Vertex (or AWS Bedrock) to be reachable by ranges by default, with only
-per-model enablement in the provider console left as a manual step — the posture
+per-model enablement in the provider console left as a manual step, the posture
 that existed before the retirement.
 
 ## Decision
@@ -40,8 +40,8 @@ On GCP, the range host service account carries a predict-only Vertex custom role
 default), and the provisioner attaches it to range guests through Workload
 Identity. The guest obtains short-lived tokens from the metadata server; **no key
 material is created, minted, or delivered to the guest.** This resolves the
-original ADR-059 concern — Vertex keys placed in the guest, many keys
-authenticating one principal — while restoring reachability.
+original ADR-059 concern (Vertex keys placed in the guest, many keys
+authenticating one principal) while restoring reachability.
 `aiplatform.googleapis.com` is enabled by default. Enabling a specific model (for
 example Claude in Vertex Model Garden) remains the only manual, provider-console
 step.
@@ -72,8 +72,8 @@ privilege (predict-only invocation plus telemetry writes). A compromised guest
 can call approved models directly under this identity: direct-path invocations
 are **not** subject to the broker's mandatory request/spend/rate enforcement.
 Deployments that require that enforcement enable the broker, which switches
-ranges to the mediated, identity-less path. This is the deliberate tradeoff —
-reachable-by-default for the common case, broker-mediated where enforcement is
+ranges to the mediated, identity-less path. This is the deliberate tradeoff:
+reachable by default for the common case, broker-mediated where enforcement is
 required.
 
 Network reachability (Private Google Access or external egress) is the operator's
