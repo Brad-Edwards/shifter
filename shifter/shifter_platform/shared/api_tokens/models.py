@@ -118,6 +118,18 @@ class ApiToken(models.Model):
         """Return whether the token grants a currently registered scope."""
         return any(scope in KNOWN_SCOPES for scope in self.scopes)
 
+    @property
+    def has_eligible_owner(self) -> bool:
+        """Apply the same owner policy to HTTP and deferred token operations."""
+        owner = self.created_by
+        profile = getattr(owner, "profile", None)
+        return bool(
+            owner is not None
+            and owner.is_active
+            and not getattr(profile, "deleted_at", None)
+            and not getattr(profile, "is_ctf_account", False)
+        )
+
     def revoke(self) -> None:
         """Revoke this token."""
         self.revoked_at = timezone.now()
