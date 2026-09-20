@@ -978,6 +978,13 @@ class TestGcpDcPrebakedCredentialHygiene:
         assert "Get-NetFirewallProfile" in content
         assert "enabledFirewallProfiles.Count -ne 0" in content
 
+    def test_finalize_accepts_password_rotation_task_status(self):
+        content = (GCP_DIR / "dc-prebaked.pkr.hcl").read_text()
+        finalize_block = content.split('"scripts/dc-prebaked/finalize.ps1"', 1)[0].rsplit(
+            'provisioner "powershell"', 1
+        )[1]
+        assert "valid_exit_codes = [0, 16001]" in finalize_block
+
 
 class TestAwsTemplatesUnaffected:
     """AC3 guard: the GCE templates must not leak into the AWS template set."""
