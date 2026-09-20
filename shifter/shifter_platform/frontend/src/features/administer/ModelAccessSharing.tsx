@@ -53,19 +53,13 @@ function splitIds(value: string): string[] {
     .filter(Boolean);
 }
 
-/**
- * Form state and the sharing actions (validate / preview / publish / drain).
- *
- * Kept in a hook so the component body stays a thin render: each action resolves
- * server-side and a stale (409) publish/drain sets the reload prompt.
- */
+/** Compose state (which ranges / which facets) and the request payload builders. */
 function useSharingForm() {
   const [kind, setKind] = useState<SelectorKind>("all_ranges");
   const [ids, setIds] = useState("");
   const [includeSpares, setIncludeSpares] = useState(false);
   const [facets, setFacets] = useState<FacetState>(EMPTY_FACETS);
   const [membershipMode, setMembershipMode] = useState<"snapshot" | "dynamic">("dynamic");
-
   const [bindingId, setBindingId] = useState("");
   const [poolId, setPoolId] = useState("");
   const [profileId, setProfileId] = useState("");
@@ -76,15 +70,6 @@ function useSharingForm() {
   const [providerPoolRef, setProviderPoolRef] = useState("");
   const [spendAccount, setSpendAccount] = useState("");
   const [expectedRevision, setExpectedRevision] = useState(0);
-
-  const [preview, setPreview] = useState<SelectorPreview | null>(null);
-  const [valid, setValid] = useState<boolean | null>(null);
-  const [subjectRef, setSubjectRef] = useState("");
-  const [policy, setPolicy] = useState<EffectivePolicyPreview | null>(null);
-  const [revision, setRevision] = useState<BindingRevision | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [stale, setStale] = useState(false);
-  const [pending, setPending] = useState(false);
 
   const selectorPayload = () => ({ kind, ids: splitIds(ids), include_spares: includeSpares });
   const bindingPayload = () => ({
@@ -105,11 +90,31 @@ function useSharingForm() {
     spend_account_refs: spendAccount ? [spendAccount] : [],
   });
 
-  function begin() {
-    setError(null);
-    setStale(false);
-    setPending(true);
-  }
+  return {
+    kind, setKind, ids, setIds, includeSpares, setIncludeSpares, facets, setFacets, membershipMode, setMembershipMode,
+    bindingId, setBindingId, poolId, setPoolId, profileId, setProfileId, priority, setPriority,
+    effectiveFrom, setEffectiveFrom, effectiveUntil, setEffectiveUntil, routingRevision, setRoutingRevision,
+    providerPoolRef, setProviderPoolRef, spendAccount, setSpendAccount, expectedRevision, setExpectedRevision,
+    selectorPayload, bindingPayload, poolPayload,
+  };
+}
+
+type SharingForm = ReturnType<typeof useSharingForm>;
+
+/**
+ * The sharing actions (preview / validate / policy-preview / publish / drain).
+ *
+ * Each resolves server-side; a stale (409) publish/drain sets the reload prompt.
+ */
+function useSharingActions(form: SharingForm) {
+  const [subjectRef, setSubjectRef] = useState("");
+  const [preview, setPreview] = useState<SelectorPreview | null>(null);
+  const [valid, setValid] = useState<boolean | null>(null);
+  const [policy, setPolicy] = useState<EffectivePolicyPreview | null>(null);
+  const [revision, setRevision] = useState<BindingRevision | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [stale, setStale] = useState(false);
+  const [pending, setPending] = useState(false);
 
   function fail(error_: unknown) {
     if ((error_ as { status?: number })?.status === 409) setStale(true);
@@ -117,7 +122,9 @@ function useSharingForm() {
   }
 
   async function run(action: () => Promise<void>) {
-    begin();
+    setError(null);
+    setStale(false);
+    setPending(true);
     try {
       await action();
     } catch (error_) {
@@ -130,13 +137,13 @@ function useSharingForm() {
   const runPreview = () =>
     run(async () => {
       setPreview(null);
-      setPreview(await previewSelector(selectorPayload()));
+      setPreview(await previewSelector(form.selectorPayload()));
     });
   const runValidate = () =>
     run(async () => {
       setValid(null);
       try {
-        await validateBinding(bindingPayload(), poolPayload());
+        await validateBinding(form.bindingPayload(), form.poolPayload());
         setValid(true);
       } catch (error_) {
         setValid(false);
@@ -151,19 +158,15 @@ function useSharingForm() {
   const runPublish = () =>
     run(async () => {
       setRevision(null);
-      setRevision(await publishBinding(bindingPayload(), poolPayload(), expectedRevision));
+      setRevision(await publishBinding(form.bindingPayload(), form.poolPayload(), form.expectedRevision));
     });
   const runDrain = () =>
     run(async () => {
       setRevision(null);
-      setRevision(await drainBinding(bindingId, expectedRevision));
+      setRevision(await drainBinding(form.bindingId, form.expectedRevision));
     });
 
   return {
-    kind, setKind, ids, setIds, includeSpares, setIncludeSpares, facets, setFacets, membershipMode, setMembershipMode,
-    bindingId, setBindingId, poolId, setPoolId, profileId, setProfileId, priority, setPriority,
-    effectiveFrom, setEffectiveFrom, effectiveUntil, setEffectiveUntil, routingRevision, setRoutingRevision,
-    providerPoolRef, setProviderPoolRef, spendAccount, setSpendAccount, expectedRevision, setExpectedRevision,
     subjectRef, setSubjectRef, preview, valid, policy, revision, error, stale, pending,
     runPreview, runValidate, runPolicyPreview, runPublish, runDrain,
   };
@@ -204,7 +207,9 @@ function PolicyPreviewResult({ policy }: Readonly<{ policy: EffectivePolicyPrevi
  * six sharing.md examples are expressed as combinations of these controls.
  */
 export function ModelAccessSharing() {
-  const f = useSharingForm();
+  const form = useSharingForm();
+  const actions = useSharingActions(form);
+  const f = { ...form, ...actions };
   return (
     <section className="space-y-6" aria-labelledby="model-access-sharing-heading">
       <PageHeader
