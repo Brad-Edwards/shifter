@@ -47,7 +47,9 @@ class FakeRunCmd:
         self.digest = DIGEST
         self.status = "READY"
         self.existing_description: str | None = None
+        self.existing_role: str | None = None
         self.fail_substr: str | None = None
+        self.fail_cleanup = False
 
     def __call__(self, cmd, dry_run=False, check=True, capture=False, profile=None):
         cmd = [str(c) for c in cmd]
@@ -57,6 +59,8 @@ class FakeRunCmd:
             if check:
                 raise SystemExit(1)
             return _completed(returncode=1, stderr="simulated failure")
+        if self.fail_cleanup and cmd[:3] == ["gcloud", "storage", "rm"] and "--recursive" in cmd:
+            return _completed(returncode=1, stderr="simulated cleanup failure")
         if dry_run:
             return None
         if cmd[:3] == ["oras", "repo", "tags"]:
@@ -72,12 +76,28 @@ class FakeRunCmd:
             (dest / "disk.tar.gz").write_bytes(b"rawdisk")
             return _completed()
         if cmd[:4] == ["gcloud", "compute", "images", "describe"]:
-            if "--format=value(description)" in cmd:
+            if "--format=json(description,labels,status)" in cmd:
                 if self.existing_description is None:
                     return _completed(returncode=1, stderr="not found")
-                return _completed(stdout=self.existing_description)
+                image_name = cmd[4]
+                inferred_role = image_name.removeprefix("shifter-").rsplit("-", 1)[0]
+                return _completed(
+                    stdout=json.dumps(
+                        {
+                            "description": self.existing_description,
+                            "labels": {
+                                "shifter-base-role": self.existing_role or inferred_role,
+                                "shifter-base-digest": "a" * 12,
+                            },
+                            "status": self.status,
+                        }
+                    )
+                )
             if "--format=value(status)" in cmd:
                 return _completed(stdout=self.status)
+        if cmd[:4] == ["gcloud", "compute", "images", "delete"]:
+            self.existing_description = None
+            self.status = "READY"
         return _completed()
 
     def ran(self, prefix):
@@ -188,8 +208,41 @@ class TestImportBaseImage:
         fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
         imported = gbi.import_base_image(self._artifact("ubuntu"), project="proj", staging_bucket="stage")
         assert imported.reused is True
+        assert fake_run.ran(["gcloud", "compute", "images", "describe"])
         assert not fake_run.ran(["gcloud", "compute", "images", "create"])
         assert not fake_run.ran(["oras", "pull"])
+
+    def test_import_reconciles_owned_failed_status(self, fake_run):
+        fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
+        fake_run.status = "FAILED"
+
+        imported = gbi.import_base_image(self._artifact("ubuntu"), project="proj", staging_bucket="stage")
+
+        assert imported.reused is False
+        assert fake_run.ran(["gcloud", "compute", "images", "delete"])
+        assert fake_run.ran(["gcloud", "compute", "images", "create"])
+
+    def test_import_does_not_delete_owned_image_while_creation_is_pending(self, fake_run):
+        fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
+        fake_run.status = "PENDING"
+
+        with pytest.raises(gbi.BaseImageError, match="not READY"):
+            gbi.import_base_image(self._artifact("ubuntu"), project="proj", staging_bucket="stage")
+
+        assert not fake_run.ran(["gcloud", "compute", "images", "delete"])
+
+    def test_import_reuse_requires_exact_package_not_only_digest(self, fake_run):
+        fake_run.existing_description = f"oci://ghcr.io/another-owner/another-package@{DIGEST}"
+
+        with pytest.raises(gbi.BaseImageError, match="refusing to reuse"):
+            gbi.import_base_image(self._artifact("ubuntu"), project="proj", staging_bucket="stage")
+
+    def test_import_reuse_requires_exact_role_metadata(self, fake_run):
+        fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
+        fake_run.existing_role = "kali"
+
+        with pytest.raises(gbi.BaseImageError, match="refusing to reuse"):
+            gbi.import_base_image(self._artifact("ubuntu"), project="proj", staging_bucket="stage")
 
     def test_import_refuses_existing_image_with_mismatched_digest(self, fake_run):
         # F6: a pre-existing image whose recorded source is not the resolved
@@ -227,7 +280,7 @@ class TestImportBaseImage:
 
 class TestDiscoverAndImport:
     def test_imports_all_roles_and_renders_env(self, fake_run):
-        imported = gbi.discover_and_import(project="proj", staging_bucket="stage")
+        imported = gbi.discover_and_import(project="proj")
         assert set(imported) == set(gbi.BASE_IMAGE_ROLES)
         env = gbi.render_range_image_env(imported)
         assert set(env) == {"GCP_RANGE_KALI_IMAGE", "GCP_RANGE_LINUX_IMAGE", "GCP_RANGE_DC_IMAGE"}
@@ -237,9 +290,88 @@ class TestDiscoverAndImport:
     def test_missing_artifact_fails_loud(self, fake_run):
         fake_run.fail_substr = "repo tags"
         with pytest.raises(gbi.BaseImageError):
-            gbi.discover_and_import(project="proj", staging_bucket="stage")
+            gbi.discover_and_import(project="proj")
 
     def test_dry_run_discovers_without_transfer(self, fake_run):
-        gbi.discover_and_import(project="proj", staging_bucket="stage", dry_run=True)
+        gbi.discover_and_import(project="proj", dry_run=True)
         assert not fake_run.ran(["oras", "pull"])
         assert not fake_run.ran(["gcloud", "compute", "images", "create"])
+
+    def test_resolves_entire_base_set_before_first_cloud_mutation(self, fake_run, monkeypatch):
+        monkeypatch.setattr(gbi.uuid, "uuid4", lambda: type("Nonce", (), {"hex": "a" * 32})())
+
+        gbi.discover_and_import(project="proj", region="us-central1")
+
+        first_mutation = next(
+            index for index, call in enumerate(fake_run.calls) if call[:4] == ["gcloud", "storage", "buckets", "create"]
+        )
+        resolved_manifests = [
+            index
+            for index, call in enumerate(fake_run.calls)
+            if call[:3] == ["oras", "manifest", "fetch"] and "--descriptor" not in call
+        ]
+        assert len(resolved_manifests) == len(gbi.BASE_IMAGE_ROLES)
+        assert max(resolved_manifests) < first_mutation
+
+    def test_ephemeral_bucket_is_private_and_removed_after_success(self, fake_run, monkeypatch):
+        monkeypatch.setattr(gbi.uuid, "uuid4", lambda: type("Nonce", (), {"hex": "b" * 32})())
+
+        gbi.discover_and_import(project="proj", region="us-central1")
+
+        create = next(c for c in fake_run.calls if c[:4] == ["gcloud", "storage", "buckets", "create"])
+        assert create[4] == "gs://shifter-base-import-proj-bbbbbbbbbbbb"
+        assert "--project" in create and create[create.index("--project") + 1] == "proj"
+        assert "--location" in create and create[create.index("--location") + 1] == "us-central1"
+        assert "--uniform-bucket-level-access" in create
+        assert "--public-access-prevention" in create
+        assert "--soft-delete-duration=0" in create
+        cleanup = next(c for c in fake_run.calls if c[:3] == ["gcloud", "storage", "rm"] and "--recursive" in c)
+        assert "gs://shifter-base-import-proj-bbbbbbbbbbbb/" in cleanup
+        assert "--project" in cleanup and cleanup[cleanup.index("--project") + 1] == "proj"
+
+    def test_ephemeral_bucket_is_removed_after_import_failure(self, fake_run, monkeypatch):
+        monkeypatch.setattr(gbi.uuid, "uuid4", lambda: type("Nonce", (), {"hex": "c" * 32})())
+        fake_run.fail_substr = "images create"
+
+        with pytest.raises(SystemExit):
+            gbi.discover_and_import(project="proj", region="us-central1")
+
+        assert any(c[:3] == ["gcloud", "storage", "rm"] and "--recursive" in c for c in fake_run.calls)
+
+    @pytest.mark.parametrize(
+        ("failure", "status", "expected_error"),
+        [
+            ("oras pull", "READY", SystemExit),
+            ("storage cp", "READY", SystemExit),
+            ("images create", "READY", SystemExit),
+            (None, "PENDING", gbi.BaseImageError),
+        ],
+    )
+    def test_ephemeral_bucket_is_removed_at_each_import_failure_boundary(
+        self, fake_run, monkeypatch, failure, status, expected_error
+    ):
+        monkeypatch.setattr(gbi.uuid, "uuid4", lambda: type("Nonce", (), {"hex": "d" * 32})())
+        fake_run.fail_substr = failure
+        fake_run.status = status
+
+        with pytest.raises(expected_error):
+            gbi.discover_and_import(project="proj", region="us-central1")
+
+        assert any(c[:3] == ["gcloud", "storage", "rm"] and "--recursive" in c for c in fake_run.calls)
+
+    def test_ephemeral_bucket_cleanup_failure_fails_command(self, fake_run, monkeypatch):
+        monkeypatch.setattr(gbi.uuid, "uuid4", lambda: type("Nonce", (), {"hex": "e" * 32})())
+        fake_run.fail_cleanup = True
+
+        with pytest.raises(gbi.BaseImageError, match="cleanup"):
+            gbi.discover_and_import(project="proj", region="us-central1")
+
+    def test_dry_run_validates_all_artifacts_without_ephemeral_bucket(self, fake_run):
+        gbi.discover_and_import(project="proj", region="us-central1", dry_run=True)
+
+        assert len(fake_run.ran(["oras", "repo", "tags"])) == len(gbi.BASE_IMAGE_ROLES)
+        assert not fake_run.ran(["oras", "pull"])
+        assert not fake_run.ran(["gcloud", "storage", "buckets", "create"])
+        assert not fake_run.ran(["gcloud", "storage", "rm"])
+        assert not fake_run.ran(["gcloud", "compute", "images", "create"])
+        assert not any("packer" in " ".join(call) or "workflow" in " ".join(call) for call in fake_run.calls)

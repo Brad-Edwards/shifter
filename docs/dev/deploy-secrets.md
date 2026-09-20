@@ -339,7 +339,7 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
-| `GCP_GCE_BASE_IMAGE_BUCKET` | variable | for GHCR publish | GCS staging bucket the built image is exported into as a GCE-native disk tarball (`disk.raw` in `.tar.gz`) before it is published to GHCR (Terraform output `gce_base_image_bucket`). Required by `packer-gcp.yml` when `publish_target=ghcr`, and by `deploy.py gcp-images` as the transfer staging bucket. The export/publish is selected by the workflow's `publish_target` input, not by `GCP_RANGE_BACKEND`. See `docs/architecture/gcp-guest-images.md`. |
+| `GCP_GCE_BASE_IMAGE_BUCKET` | variable | for GHCR publish | GCS staging bucket where the protected build exports a GCE-native disk tarball (`disk.raw` in `.tar.gz`) before publishing it to GHCR (Terraform output `gce_base_image_bucket`). Required only by `packer-gcp.yml` when `publish_target=ghcr`; tenant import uses a private per-run bucket and does not read this platform output. The export/publish is selected by the workflow's `publish_target` input, not by `GCP_RANGE_BACKEND`. See `docs/architecture/gcp-guest-images.md`. |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
@@ -714,11 +714,15 @@ fall back to the code defaults in `config.py`. See
 `docs/dev/gcp-range-cell-deploy.md` for the operator runbook.
 
 The base-set image variables (`GCP_RANGE_LINUX_IMAGE`, `GCP_RANGE_KALI_IMAGE`,
-`GCP_RANGE_DC_IMAGE`) are set for you by
-`./scripts/bootstrap/deploy.py gcp-images`, which imports the reusable
-Kali/Ubuntu/DC base images from GHCR as native GCE images and writes these
-variables into the deployment Environment (#2309). Set them by hand only to
-pin a specific image outside that flow.
+`GCP_RANGE_DC_IMAGE`) are set by the supported fresh-project command,
+`./scripts/bootstrap/deploy.py gdc-bootstrap --import-public-base-images ...`.
+It imports or reuses the public Kali/Ubuntu/DC artifacts, writes the exact
+digest-derived references into the selected deployment Environment, and passes
+the same values directly into that local platform bootstrap. The standalone
+`gcp-images --project-id <project> --environment <environment> --region
+<region>` command refreshes the Environment for an existing platform. Neither
+command needs `GCP_GCE_BASE_IMAGE_BUCKET`. Set these values by hand only to pin
+a specific image outside that flow.
 
 | Variable | Required | Notes |
 |---|---|---|

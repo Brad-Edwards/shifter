@@ -2612,6 +2612,7 @@ def gdc_bootstrap_cluster(
     dry_run: bool = False,
     *,
     allow_missing_range_images: bool = False,
+    confirmation_obtained: bool = False,
 ) -> dict[str, str]:
     """Bootstrap the repeatable GDC-on-Compute-Engine VM Runtime cluster."""
     if not config.project_id:
@@ -2629,7 +2630,7 @@ def gdc_bootstrap_cluster(
 
     confirm_prompt = _announce_gdc_bootstrap_plan(config, builds_substrate)
 
-    if not dry_run and not confirm(confirm_prompt):
+    if not dry_run and not confirmation_obtained and not confirm(confirm_prompt):
         warn("Aborted by user")
         sys.exit(0)
 
