@@ -126,15 +126,12 @@ class TestErrorMapping:
         assert response.status_code == 404
 
     def test_publish_success_returns_revision(self, planner, available, draft_ok, monkeypatch):
-        revision = type(
-            "Rev",
-            (),
-            {"binding": type("B", (), {"sharing_binding_id": "b1"})(), "definition_revision": 4, "state": "active"},
-        )()
+        # The composition wrapper returns a bounded revision projection dict.
+        revision = {"sharing_binding_id": "b1", "definition_revision": 4, "state": "active"}
         monkeypatch.setattr("config.model_access_sharing.publish_model_access_binding", lambda **_: revision)
         response = _session(planner).post(PUBLISH, self._publish_body(), format="json")
         assert response.status_code == 201
-        assert response.json() == {"sharing_binding_id": "b1", "definition_revision": 4, "state": "active"}
+        assert response.json() == revision
 
 
 class TestDraftSealing:

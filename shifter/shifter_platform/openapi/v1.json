@@ -16347,6 +16347,7 @@
     "schemas": {
       "AccountSummary": {
         "type": "object",
+        "description": "Per-dimension count of accounts the policy references (never balances).",
         "properties": {
           "capacity": {
             "type": "integer"
@@ -16757,6 +16758,7 @@
       },
       "AliasRouting": {
         "type": "object",
+        "description": "The routing affinity chosen for one logical alias.",
         "properties": {
           "logical_alias": {
             "type": "string"
@@ -18658,6 +18660,7 @@
       },
       "Drain": {
         "type": "object",
+        "description": "Drain request: the binding id and its expected definition revision.",
         "properties": {
           "sharing_binding_id": {
             "type": "string",
@@ -18675,6 +18678,7 @@
       },
       "EffectivePolicyResponse": {
         "type": "object",
+        "description": "Bounded effective-policy projection: overlaps, conflicts, routings, account counts.",
         "properties": {
           "stale": {
             "type": "boolean"
@@ -20044,6 +20048,7 @@
       },
       "Member": {
         "type": "object",
+        "description": "One resolved selector member reference.",
         "properties": {
           "owner": {
             "type": "string"
@@ -22498,6 +22503,7 @@
       },
       "PolicyConflict": {
         "type": "object",
+        "description": "One priority/facet conflict in the compiled effective policy.",
         "properties": {
           "code": {
             "type": "string"
@@ -22519,6 +22525,7 @@
       },
       "PolicyContribution": {
         "type": "object",
+        "description": "One binding contributing to the compiled effective policy.",
         "properties": {
           "sharing_binding_id": {
             "type": "string"
@@ -22909,7 +22916,7 @@
       },
       "Publish": {
         "type": "object",
-        "description": "A binding + pool draft. Owner services revalidate the closed contracts.",
+        "description": "Publish request: a binding+pool draft under an optimistic definition-revision fence.",
         "properties": {
           "binding": {
             "type": "object",
@@ -24291,6 +24298,7 @@
       },
       "RevisionResponse": {
         "type": "object",
+        "description": "Bounded published/drained binding-revision projection.",
         "properties": {
           "sharing_binding_id": {
             "type": "string"
@@ -24976,6 +24984,7 @@
       },
       "Selector": {
         "type": "object",
+        "description": "Selector-preview request: one sharing selector to resolve.",
         "properties": {
           "selector": {
             "type": "object",
@@ -24988,6 +24997,7 @@
       },
       "SelectorPreviewResponse": {
         "type": "object",
+        "description": "Matched selector members and their count (advisory).",
         "properties": {
           "matched": {
             "type": "integer"
@@ -25151,6 +25161,7 @@
       },
       "Subject": {
         "type": "object",
+        "description": "Policy-preview request: the subject reference to compile an effective policy for.",
         "properties": {
           "subject": {
             "type": "object",
@@ -25608,6 +25619,7 @@
       },
       "ValidResponse": {
         "type": "object",
+        "description": "Draft-validation result.",
         "properties": {
           "valid": {
             "type": "boolean"

@@ -3532,6 +3532,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Per-dimension count of accounts the policy references (never balances). */
         AccountSummary: {
             capacity: number;
             spend: number;
@@ -3680,6 +3681,7 @@ export interface components {
          * @enum {string}
          */
         AgentTypeEnum: "xdr" | "xdr_collector" | "cloud_identity_engine";
+        /** @description The routing affinity chosen for one logical alias. */
         AliasRouting: {
             logical_alias: string;
             affinity: string;
@@ -4224,10 +4226,12 @@ export interface components {
         DeleteSuccess: {
             readonly success: boolean;
         };
+        /** @description Drain request: the binding id and its expected definition revision. */
         Drain: {
             sharing_binding_id: string;
             expected_definition_revision: number;
         };
+        /** @description Bounded effective-policy projection: overlaps, conflicts, routings, account counts. */
         EffectivePolicyResponse: {
             stale: boolean;
             is_admissible: boolean;
@@ -4704,6 +4708,7 @@ export interface components {
             readonly state: string;
             readonly is_refreshable: boolean;
         };
+        /** @description One resolved selector member reference. */
         Member: {
             owner: string;
             reference: string;
@@ -5474,11 +5479,13 @@ export interface components {
             enabled?: boolean;
             staff_only?: boolean;
         };
+        /** @description One priority/facet conflict in the compiled effective policy. */
         PolicyConflict: {
             code: string;
             facet: string | null;
             logical_alias: string | null;
         };
+        /** @description One binding contributing to the compiled effective policy. */
         PolicyContribution: {
             sharing_binding_id: string;
             definition_digest: string;
@@ -5592,7 +5599,7 @@ export interface components {
             }[] | null;
             readonly brackets: components["schemas"]["_NamedRef"][];
         };
-        /** @description A binding + pool draft. Owner services revalidate the closed contracts. */
+        /** @description Publish request: a binding+pool draft under an optimistic definition-revision fence. */
         Publish: {
             binding: {
                 [key: string]: unknown;
@@ -6083,6 +6090,7 @@ export interface components {
          * @enum {string}
          */
         ResourceStatusEnum: "pending" | "provisioning" | "ready" | "pausing" | "paused" | "resuming" | "destroying" | "destroyed" | "failed";
+        /** @description Bounded published/drained binding-revision projection. */
         RevisionResponse: {
             sharing_binding_id: string;
             definition_revision: number;
@@ -6315,11 +6323,13 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** @description Selector-preview request: one sharing selector to resolve. */
         Selector: {
             selector: {
                 [key: string]: unknown;
             };
         };
+        /** @description Matched selector members and their count (advisory). */
         SelectorPreviewResponse: {
             matched: number;
             members: components["schemas"]["Member"][];
@@ -6374,6 +6384,7 @@ export interface components {
             readonly existing: number;
             readonly created: number;
         };
+        /** @description Policy-preview request: the subject reference to compile an effective policy for. */
         Subject: {
             subject: {
                 [key: string]: unknown;
@@ -6544,6 +6555,7 @@ export interface components {
         UsernameChangeRequest: {
             username: string;
         };
+        /** @description Draft-validation result. */
         ValidResponse: {
             valid: boolean;
         };

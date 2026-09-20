@@ -10,7 +10,7 @@ compares the definition revision (management-preflight-2126.md).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, serializers
@@ -29,8 +29,12 @@ from shared.api_tokens.scopes import (
 )
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from rest_framework.request import Request
     from rest_framework.views import APIView
+
+    from shared.model_access import EffectivePolicy, ModelAccessCatalog, SharingBinding, SharingPool
 
 
 class IsPlatformOperatorActor(permissions.BasePermission):
@@ -74,7 +78,7 @@ _NOT_FOUND = ("model_access_binding_not_found", "Binding not found.", 404)
 _INVALID = ("model_access_invalid", "Invalid model-access request.", 400)
 
 
-def _current_envelope() -> tuple[Any, Any] | None:
+def _current_envelope() -> tuple[ModelAccessCatalog, UUID] | None:
     """Return ``(catalog, deployment_id)`` from the mounted runtime, or ``None``.
 
     Neither is client-supplied. When model access is unconfigured or disabled the
@@ -91,8 +95,19 @@ def _current_envelope() -> tuple[Any, Any] | None:
 
 
 def _error(request: Request, mapped: tuple[str, str, int]) -> Response:
+    """Render a bounded ``(code, message, status)`` triple as the shared envelope."""
     code, message, status_code = mapped
     return api_error_response(code=code, message=message, status_code=status_code, request=request)
+
+
+# Stable owner-domain codes → bounded API category. SharingError carries a
+# ``sharing.*`` code; ContractError a ``*.*`` code.
+_ERROR_BY_CODE: dict[str, tuple[str, str, int]] = {
+    "sharing.revision_conflict": _STALE,
+    "source.revision_conflict": _STALE,
+    "sharing.binding_not_found": _NOT_FOUND,
+    "sharing.publisher_authority_required": _DENIED,
+}
 
 
 def _map_service_error(exc: Exception) -> tuple[str, str, int]:
@@ -101,18 +116,12 @@ def _map_service_error(exc: Exception) -> tuple[str, str, int]:
     from shared.model_access import ContractError
 
     code = getattr(exc, "code", "")
-    if isinstance(exc, ModelAccessCompositionError):
+    denied = isinstance(exc, ModelAccessCompositionError) or (
+        isinstance(exc, ContractError) and code.endswith("_denied")
+    )
+    if denied:
         return _DENIED
-    # SharingError carries a stable ``sharing.*`` code; ContractError a ``*.*`` code.
-    if code == "sharing.revision_conflict" or code == "source.revision_conflict":
-        return _STALE
-    if code == "sharing.binding_not_found":
-        return _NOT_FOUND
-    if code == "sharing.publisher_authority_required":
-        return _DENIED
-    if isinstance(exc, ContractError) and code.endswith("_denied"):
-        return _DENIED
-    return _INVALID
+    return _ERROR_BY_CODE.get(code, _INVALID)
 
 
 class BindingDraftSerializer(serializers.Serializer):
@@ -123,50 +132,70 @@ class BindingDraftSerializer(serializers.Serializer):
 
 
 class PublishSerializer(BindingDraftSerializer):
+    """Publish request: a binding+pool draft under an optimistic definition-revision fence."""
+
     expected_definition_revision = serializers.IntegerField(min_value=0)
     empty_snapshot_ack = serializers.BooleanField(default=False)
 
 
 class DrainSerializer(serializers.Serializer):
+    """Drain request: the binding id and its expected definition revision."""
+
     sharing_binding_id = serializers.CharField(max_length=64)
     expected_definition_revision = serializers.IntegerField(min_value=0)
 
 
 class SelectorSerializer(serializers.Serializer):
+    """Selector-preview request: one sharing selector to resolve."""
+
     selector = serializers.DictField()
 
 
 class SubjectSerializer(serializers.Serializer):
+    """Policy-preview request: the subject reference to compile an effective policy for."""
+
     subject = serializers.DictField()
 
 
 class RevisionResponseSerializer(serializers.Serializer):
+    """Bounded published/drained binding-revision projection."""
+
     sharing_binding_id = serializers.CharField()
     definition_revision = serializers.IntegerField()
     state = serializers.CharField()
 
 
 class ValidResponseSerializer(serializers.Serializer):
+    """Draft-validation result."""
+
     valid = serializers.BooleanField()
 
 
 class MemberSerializer(serializers.Serializer):
+    """One resolved selector member reference."""
+
     owner = serializers.CharField()
     reference = serializers.CharField()
 
 
 class SelectorPreviewResponseSerializer(serializers.Serializer):
+    """Matched selector members and their count (advisory)."""
+
     matched = serializers.IntegerField()
     members = MemberSerializer(many=True)
 
 
 class PolicyConflictSerializer(serializers.Serializer):
+    """One priority/facet conflict in the compiled effective policy."""
+
     code = serializers.CharField()
     facet = serializers.CharField(allow_null=True)
     logical_alias = serializers.CharField(allow_null=True)
 
 
 class PolicyContributionSerializer(serializers.Serializer):
+    """One binding contributing to the compiled effective policy."""
+
     sharing_binding_id = serializers.CharField()
     definition_digest = serializers.CharField()
     membership_revision = serializers.IntegerField()
@@ -177,11 +206,15 @@ class PolicyContributionSerializer(serializers.Serializer):
 
 
 class AliasRoutingSerializer(serializers.Serializer):
+    """The routing affinity chosen for one logical alias."""
+
     logical_alias = serializers.CharField()
     affinity = serializers.CharField()
 
 
 class AccountSummarySerializer(serializers.Serializer):
+    """Per-dimension count of accounts the policy references (never balances)."""
+
     capacity = serializers.IntegerField()
     spend = serializers.IntegerField()
     rate = serializers.IntegerField()
@@ -189,6 +222,8 @@ class AccountSummarySerializer(serializers.Serializer):
 
 
 class EffectivePolicyResponseSerializer(serializers.Serializer):
+    """Bounded effective-policy projection: overlaps, conflicts, routings, account counts."""
+
     stale = serializers.BooleanField()
     is_admissible = serializers.BooleanField()
     conflicts = PolicyConflictSerializer(many=True)
@@ -197,7 +232,7 @@ class EffectivePolicyResponseSerializer(serializers.Serializer):
     account_summary = AccountSummarySerializer()
 
 
-def _binding_and_pool(data: dict[str, Any], deployment_id: Any) -> tuple[Any, Any]:
+def _binding_and_pool(data: dict[str, object], deployment_id: UUID) -> tuple[SharingBinding, SharingPool]:
     """Seal a client binding draft into a full binding and validate the pool.
 
     Server-controlled fields are never trusted from the request: ``deployment_id``
@@ -208,7 +243,7 @@ def _binding_and_pool(data: dict[str, Any], deployment_id: Any) -> tuple[Any, An
     """
     from shared.model_access import SharingPool, seal_sharing_binding
 
-    draft = dict(data["binding"])
+    draft = dict(cast("dict[str, object]", data["binding"]))
     draft["deployment_id"] = str(deployment_id)
     draft.setdefault("contract_version", "model-access-sharing/v1")
     draft["membership_revision"] = 1
@@ -318,7 +353,7 @@ class ModelAccessBindingPublishView(ModelAccessAPIView):
             )
         except (ModelAccessCompositionError, EngineSharingError, ContractError, ValueError) as exc:
             return _error(request, _map_service_error(exc))
-        return Response(_project_revision(revision), status=201)
+        return Response(revision, status=201)
 
 
 class ModelAccessBindingDrainView(ModelAccessAPIView):
@@ -346,19 +381,10 @@ class ModelAccessBindingDrainView(ModelAccessAPIView):
             )
         except (ModelAccessCompositionError, EngineSharingError, ContractError, ValueError) as exc:
             return _error(request, _map_service_error(exc))
-        return Response(_project_revision(revision))
+        return Response(revision)
 
 
-def _project_revision(revision: Any) -> dict[str, Any]:
-    """Bounded revision projection — no internal row ids or definition payload."""
-    return {
-        "sharing_binding_id": revision.binding.sharing_binding_id,
-        "definition_revision": revision.definition_revision,
-        "state": revision.state,
-    }
-
-
-def _project_policy(policy: Any) -> dict[str, Any]:
+def _project_policy(policy: EffectivePolicy) -> dict[str, object]:
     """Bounded effective-policy projection.
 
     Exposes overlap/conflict/routing structure and account presence counts for
@@ -367,7 +393,7 @@ def _project_policy(policy: Any) -> dict[str, Any]:
     """
     return {
         "stale": policy.stale,
-        "is_admissible": policy.is_admissible,
+        "is_admissible": policy.admissible,
         "conflicts": [
             {"code": c.code, "facet": c.facet.value if c.facet else None, "logical_alias": c.logical_alias}
             for c in policy.conflicts

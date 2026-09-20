@@ -1,4 +1,4 @@
-import { useParticipantModelAccess } from "@/api/model-access";
+import { useParticipantModelAccess, type ParticipantModelAccess } from "@/api/model-access";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +9,23 @@ const STATE_LABELS: Record<string, string> = {
   refresh_pending: "Refreshing",
   unavailable: "Not available",
 };
+
+/** The range-scoped detail line: unavailable notice, alias list, or empty state. */
+function AccessDetail({ access }: Readonly<{ access: ParticipantModelAccess }>) {
+  if (access.state === "unavailable") {
+    return <p className="mt-2 text-sm text-muted-foreground">Model access is not enabled for your range.</p>;
+  }
+  if (access.aliases.length) {
+    return (
+      <ul className="mt-2 list-disc pl-5 text-sm">
+        {access.aliases.map((alias) => (
+          <li key={alias}>{alias}</li>
+        ))}
+      </ul>
+    );
+  }
+  return <p className="mt-2 text-sm text-muted-foreground">No models are allocated to your range yet.</p>;
+}
 
 /**
  * Participant-facing model-access status for their own range (M09, #2126).
@@ -37,17 +54,7 @@ export function ParticipantModelAccessCard() {
           <span className="text-sm text-muted-foreground">Status</span>
           <Badge variant="secondary">{STATE_LABELS[access.state] ?? access.state}</Badge>
         </div>
-        {access.state === "unavailable" ? (
-          <p className="mt-2 text-sm text-muted-foreground">Model access is not enabled for your range.</p>
-        ) : access.aliases.length ? (
-          <ul className="mt-2 list-disc pl-5 text-sm">
-            {access.aliases.map((alias) => (
-              <li key={alias}>{alias}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-muted-foreground">No models are allocated to your range yet.</p>
-        )}
+        <AccessDetail access={access} />
       </CardContent>
     </Card>
   );
