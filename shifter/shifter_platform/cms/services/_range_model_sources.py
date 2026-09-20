@@ -121,6 +121,36 @@ def change_range_model_sources(
     return get_range_model_sources(actor, request_id=request_id)
 
 
+def revoke_range_model_sources(actor: User, *, request_id: UUID) -> dict[str, object]:
+    """Revoke a range's model grants under range-administration authority (M09, #2126).
+
+    Authorizes the actor over the range's workspace, then transactionally fences
+    the current generation's model authorities and dispatch leases in Engine with
+    real-actor audit. Returns the refreshed range source status; re-enrollment is
+    the existing selection-change (renew) flow, never a browser-delivered token.
+    """
+    from engine.services import revoke_range_model_access
+
+    _authorized_instance(actor, request_id)
+    revoke_range_model_access(request_id=request_id, actor_id=actor.pk)
+    return get_range_model_sources(actor, request_id=request_id)
+
+
+def get_range_model_policy_status_for_instance(range_instance_id: int) -> dict[str, object] | None:
+    """Return one range instance's current model-policy runtime status, or ``None``.
+
+    Ownership is the caller's responsibility (the participant surface passes only
+    the participant's own range); this resolves the instance's provisioning request
+    and returns the bounded engine runtime status without workspace authority.
+    """
+    from engine.services import get_range_model_policy_status
+
+    instance = RangeInstance.objects.filter(pk=range_instance_id).select_related("request").first()
+    if instance is None or instance.request_id is None:
+        return None
+    return get_range_model_policy_status(request_id=instance.request.request_id)
+
+
 def list_organization_model_ranges(actor: User, *, organization_uuid: UUID, page: int = 1) -> dict[str, object]:
     """Page ranges in the tenant's active workspaces without exposing guest data."""
     from workspaces.services import resolve_model_access_organization

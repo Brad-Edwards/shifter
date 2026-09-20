@@ -36,11 +36,13 @@ from engine.services import CleanupObligation as CleanupObligation
 from engine.services import EventCapacitySignal as EngineEventCapacitySignal
 from engine.services import RangeCleanupOutcome as RangeCleanupOutcome
 from engine.services import RetryKeyConflict as RetryKeyConflict
+from engine.services import SharingError as EngineSharingError
 from engine.services import admit_range_capacity as engine_admit_range_capacity
 from engine.services import assess_declared_event_capacity as engine_assess_declared_event_capacity
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
 from engine.services import confirm_receipt_verifier_binding as engine_confirm_receipt_verifier_binding
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
+from engine.services import drain_sharing_binding as engine_drain_sharing_binding
 from engine.services import fence_model_policy_publication as engine_fence_model_policy_publication
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
 from engine.services import get_openvpn_profile as engine_get_openvpn_profile
@@ -49,6 +51,7 @@ from engine.services import has_openvpn_profile as engine_has_openvpn_profile
 from engine.services import invalidate_sharing_authority as engine_invalidate_sharing_authority
 from engine.services import list_model_launch_refreshes as engine_list_model_launch_refreshes
 from engine.services import pause_range as engine_pause_range
+from engine.services import preview_effective_policy as engine_preview_effective_policy
 from engine.services import project_model_launch_authority as engine_project_model_launch_authority
 from engine.services import project_range_cleanup_outcome as project_range_cleanup_outcome
 from engine.services import project_receipt_verifier_binding as engine_project_receipt_verifier_binding
@@ -67,6 +70,7 @@ from engine.services import release_range_capacity as engine_release_range_capac
 from engine.services import resolve_model_access_range_page as engine_resolve_model_access_range_page
 from engine.services import resolve_model_access_range_views as engine_resolve_model_access_range_views
 from engine.services import resume_range as engine_resume_range
+from engine.services import validate_sharing_binding as engine_validate_sharing_binding
 from shared.audit import (
     AuditEvent,
     audit_log,
@@ -147,7 +151,12 @@ from ._range_lease_policy import (
     reset_tenant_lease_policy,
     resolve_mission_control_lease_policy,
 )
-from ._range_model_sources import change_range_model_sources, get_range_model_sources
+from ._range_model_sources import (
+    change_range_model_sources,
+    get_range_model_policy_status_for_instance,
+    get_range_model_sources,
+    revoke_range_model_sources,
+)
 from ._range_model_sources import list_organization_model_ranges as list_organization_model_ranges
 from ._range_pause import pause_range, pause_range_by_request_id
 from ._range_queries import (
@@ -221,6 +230,7 @@ __all__ = (
     "CtfOpenVpnProfileNotFound",
     "CtfOpenVpnProfileUnavailable",
     "EngineEventCapacitySignal",
+    "EngineSharingError",
     "LeasePolicyAuditContext",
     "LeasePolicyOverride",
     "MissionControlLeasePolicyAdminError",
@@ -275,6 +285,7 @@ __all__ = (
     "engine_cancel_range_by_request",
     "engine_confirm_receipt_verifier_binding",
     "engine_destroy_range_by_request",
+    "engine_drain_sharing_binding",
     "engine_fence_model_policy_publication",
     "engine_get_instance_ips_by_uuid",
     "engine_get_openvpn_profile",
@@ -283,6 +294,7 @@ __all__ = (
     "engine_invalidate_sharing_authority",
     "engine_list_model_launch_refreshes",
     "engine_pause_range",
+    "engine_preview_effective_policy",
     "engine_project_model_launch_authority",
     "engine_project_receipt_verifier_binding",
     "engine_project_selector_resolution",
@@ -296,6 +308,7 @@ __all__ = (
     "engine_resolve_model_access_range_page",
     "engine_resolve_model_access_range_views",
     "engine_resume_range",
+    "engine_validate_sharing_binding",
     "expire_due_ranges",
     "extend_mission_control_range",
     "find_model_access_selected_ranges",
@@ -311,6 +324,7 @@ __all__ = (
     "get_ngfw",
     "get_range",
     "get_range_by_request_id",
+    "get_range_model_policy_status_for_instance",
     "get_range_model_sources",
     "get_range_rdp_connection_info",
     "get_range_spec_by_id",
@@ -362,6 +376,7 @@ __all__ = (
     "resolve_retry_recovery",
     "resume_range",
     "resume_range_by_request_id",
+    "revoke_range_model_sources",
     "transfer_user_ownership",
     "validate_registered_pack_conformance",
     "validate_scenario_requirements",

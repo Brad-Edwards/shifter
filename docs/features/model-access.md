@@ -84,6 +84,53 @@ authority. It does not silently rewrite allocations already running. Use the
 range administration controls for explicit changes to existing ranges. The
 event's workspace remains fixed after creation.
 
+The event detail page shows a **model-access capacity** summary: the assessed
+outcome, whether it blocks admission, and bounded reason codes. This is planning
+information only—raw quotas, usage figures and account identifiers stay
+operator-only, and an unavailable assessment is shown as such rather than as a
+positive decision.
+
+## Share model access across ranges
+
+Operators and organizers open **Administer → Model-access sharing** to share a
+model profile, provider identity, capacity or budget across more than one range.
+Choose separately *which ranges* a binding covers—explicit ranges, an
+event/cohort/team, a user's ranges, a group, workspace or organization, a named
+collection, or (operators only) every range—and *which facets* to share. Each
+unshared facet stays per-range. Membership can be a fixed snapshot or dynamic.
+
+Preview reports the matched ranges before anything is published; the effective
+policy preview shows overlapping bindings, their revisions and any priority
+conflict for a range. Publishing compares an expected definition revision: if the
+binding changed since it was loaded, the save is rejected and the form asks for a
+reload. Publication re-resolves membership and authority on the server, records
+the real publisher, and issues a distinct revocable grant per range—sharing a
+provider account never hands every participant the same token. Draining a binding
+stops new use and advances its fence; it never refunds spend, resets an account
+or cancels a billable request.
+
+These controls express configurations such as:
+
+| Intent | Result |
+| --- | --- |
+| Every range uses one provider account, with individual spend limits | Shared provider identity; per-range spend accounting. |
+| A set of ranges shares everything | One profile, shared assignment, provider identity, capacity and spend/rate/concurrency; distinct revocable grants. |
+| One user's ranges share a budget across two events | One persistent user budget applies to every qualifying range; each event's own limits also apply. |
+| A group shares its main model but keeps separate small-model budgets | Shared assignment for the main alias; per-range assignment and budget for the small alias. |
+| A cohort shares capacity and spend, with individual concurrency caps | One cohort capacity/spend pool plus separate concurrency ceilings. |
+| Two events share a model pool but keep their own budgets | Both bindings reference the same routing/provider pool; each event's budget stays distinct. |
+
+Publishing a binding requires authority over the whole selection; it never grants
+new IAM, event or workspace authority, and it cannot fund a group the publisher
+does not already control.
+
+## What participants see
+
+A participant's range page shows only its own model access: an availability state
+(active, refreshing, or not available) and the logical model aliases the range
+may use. It never shows provider or account identifiers, regions, source
+coordinates, rosters, other members' usage, or shared-pool balances.
+
 ## Change an existing range
 
 Under **Model sources → Range model sources**, choose the range and edit its
@@ -96,6 +143,15 @@ refresh pending until the guest exchanges its refresh credential. It keeps the
 original range operation and hard expiry. If admission fails, the range remains
 blocked and the page displays the reason; retry after correcting the source or
 capacity. Failure does not reactivate the old grant.
+
+**Revoke model access** fences the range's current grants and dispatch leases
+without changing its source selection. It is the immediate control when access
+must stop. Revocation records the acting administrator, and outstanding usage and
+unresolved charges stay accounted for under their original prices; it does not
+refund spend or prove the provider stopped a request already in flight.
+Re-enrolment is the ordinary source change (renew) above, which delivers a fresh
+grant to the guest over the range's existing operation path—a credential is
+never returned to the browser.
 
 Disabling or rotating a source fences dependent grants too. **Retire unused
 credentials** deletes obsolete stored versions only after the grace period and

@@ -53,6 +53,9 @@ urlpatterns = [
     ),
     # Participant self-reads (typed DRF projections for the SPA workspace).
     path("me/event/", participant_views.ParticipantCurrentEventView.as_view(), name="api_participant_current_event"),
+    path(
+        "me/model-access/", participant_views.ParticipantModelAccessView.as_view(), name="api_participant_model_access"
+    ),
     path("me/challenges/", participant_views.ParticipantChallengeListView.as_view(), name="api_participant_challenges"),
     path(
         "me/challenges/<uuid:challenge_id>/",
@@ -79,6 +82,11 @@ urlpatterns = [
     path("me/team/disband/", team_views.TeamDisbandView.as_view(), name="api_team_disband"),
     path("events/", organizer.EventListView.as_view(), name="api_event_list"),
     path("events/<uuid:event_id>/", organizer.EventDetailView.as_view(), name="api_event_detail"),
+    path(
+        "events/<uuid:event_id>/model-access/assessment/",
+        organizer.EventModelAccessAssessmentView.as_view(),
+        name="api_event_model_access_assessment",
+    ),
     path(
         "events/<uuid:event_id>/force-delete/",
         organizer.ForceDeleteEventView.as_view(),
