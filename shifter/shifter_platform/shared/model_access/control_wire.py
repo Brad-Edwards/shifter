@@ -36,6 +36,12 @@ class ReservationReply(ClosedModel):
     account_refs: Annotated[tuple[Identifier, ...], Field(max_length=1024)] = ()
 
 
+class CommitReply(ClosedModel):
+    """The proven paid cost committed to a counted request before paid dispatch."""
+
+    canonical_request_cost: Annotated[StrictInt, Field(ge=0)]
+
+
 class DispatchReply(ClosedModel):
     """Fresh transport authority, never a response replay token."""
 
@@ -82,6 +88,7 @@ def validate_control_reply(route: str, request: JsonObject, reply: JsonObject) -
         "exchange": ModelTokenPair,
         "refresh": ModelTokenPair,
         "reserve": ReservationReply,
+        "commit": CommitReply,
         "source": SourceExecutionProjection,
     }
     actions: dict[str, type[ClosedModel]]

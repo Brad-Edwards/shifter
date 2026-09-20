@@ -5,14 +5,18 @@ import json
 from collections.abc import AsyncIterable, AsyncIterator
 
 from botocore.eventstream import EventStreamBuffer
+from pydantic import ValidationError
 
 from shared.model_access import ContractError
 from shared.model_access.core_models import BillingComponent
-from shared.model_access.messages import JsonObject, strict_json
+from shared.model_access.messages import JsonObject, MessagesResponse, strict_json
 from shared.model_access.provider import ProviderUsage, VerifiedUsage
 
 _MAX_EVENT = 1_048_576
 _INVALID_STREAM = "provider.invalid_stream"
+# Qualified streamed content: only text and local tool_use blocks and their deltas.
+_RESPONSE_BLOCK_TYPES = {"text", "tool_use"}
+_RESPONSE_DELTA_TYPES = {"text_delta", "input_json_delta"}
 
 
 def _units(value: object) -> int:
@@ -20,6 +24,22 @@ def _units(value: object) -> int:
     if type(value) is not int or not 0 <= value <= 2_000_000:
         raise ContractError("provider.invalid_usage")
     return value
+
+
+def validate_message_response(value: JsonObject) -> None:
+    """Reject a reply that is not a completed, qualified assistant Messages response.
+
+    Validation is against the closed ``MessagesResponse`` contract: only text and
+    local tool_use blocks and a terminal ``stop_reason`` are admitted, so an
+    unqualified cost- or semantics-changing block (thinking, media, server tools,
+    citations, …) or a malformed shape is rejected before the reply is forwarded or
+    settled. Benign additive top-level fields are tolerated so a working range is
+    not blocked; cost-bearing usage is enforced separately by ``usage_from_message``.
+    """
+    try:
+        MessagesResponse.model_validate(value)
+    except ValidationError:
+        raise ContractError("provider.invalid_response") from None
 
 
 def usage_from_message(value: JsonObject) -> ProviderUsage:
@@ -66,7 +86,21 @@ class StreamUsage:
                 self.input_usage = {**(self.input_usage or {}), "input_tokens": usage["input_tokens"]}
         elif kind == "message_stop":
             self.stopped = True
-        elif kind not in {"content_block_start", "content_block_delta", "content_block_stop", "ping"}:
+        else:
+            self._observe_content(kind, event)
+
+    @staticmethod
+    def _observe_content(kind: str | None, event: JsonObject) -> None:
+        """Admit only qualified content-block events; reject unknown blocks or deltas."""
+        if kind == "content_block_start":
+            block = event.get("content_block", {})
+            if not isinstance(block, dict) or block.get("type") not in _RESPONSE_BLOCK_TYPES:
+                raise ContractError(_INVALID_STREAM)
+        elif kind == "content_block_delta":
+            delta = event.get("delta", {})
+            if not isinstance(delta, dict) or delta.get("type") not in _RESPONSE_DELTA_TYPES:
+                raise ContractError(_INVALID_STREAM)
+        elif kind not in {"content_block_stop", "ping"}:
             raise ContractError(_INVALID_STREAM)
 
     def result(self) -> ProviderUsage:

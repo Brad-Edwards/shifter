@@ -44,7 +44,17 @@ class ControlClient:
         )
 
     async def call(self, route: str, payload: JsonObject) -> JsonObject:
-        if route not in {"ready", "authenticate", "source", "exchange", "refresh", "reserve", "advance", "finish"}:
+        if route not in {
+            "ready",
+            "authenticate",
+            "source",
+            "exchange",
+            "refresh",
+            "reserve",
+            "commit",
+            "advance",
+            "finish",
+        }:
             raise ContractError("control.invalid_route")
         try:
             async with asyncio.timeout(2):

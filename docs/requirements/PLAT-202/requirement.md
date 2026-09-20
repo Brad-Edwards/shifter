@@ -326,3 +326,7 @@ Scenario authors need a provider-neutral way to request model access. The platfo
 - TESTS → TEST `shifter/shifter_platform/frontend/src/features/administer/ModelAccessSharing.test.tsx`
 - TESTS → TEST `shifter/shifter_platform/frontend/src/features/ctf/ParticipantModelAccessCard.test.tsx`
 - TESTS → TEST `shifter/shifter_platform/frontend/src/features/ctf/admin/EventModelAccessCard.test.tsx`
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2124` (M07: Vertex invocation and usage adapter)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/vertex-adapter-preflight-2124.md`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_broker_count_reservation.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_vertex_token_cache.py`
