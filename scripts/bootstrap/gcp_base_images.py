@@ -137,6 +137,33 @@ def _newest_discovery_tag(tags: list[str]) -> str | None:
     return max(numbered)[1]
 
 
+def _validate_disk_layer(manifest: dict[str, object]) -> None:
+    """Require exactly one digest-pinned GCE disk layer."""
+    layers = manifest.get("layers") or []
+    if not isinstance(layers, list) or not all(isinstance(layer, dict) for layer in layers):
+        raise BaseImageError("base-image manifest layers must be an array of descriptors")
+    disk_layers = [layer for layer in layers if layer.get("mediaType") == GCE_IMAGE_MEDIA_TYPE]
+    if len(disk_layers) != 1:
+        raise BaseImageError(f"expected exactly one {GCE_IMAGE_MEDIA_TYPE} layer, found {len(disk_layers)}")
+    layer_digest = str(disk_layers[0].get("digest", "")).strip()
+    if not _DIGEST_RE.fullmatch(layer_digest):
+        raise BaseImageError("base-image disk layer is missing a full sha256 digest")
+
+
+def _validate_annotations(manifest: dict[str, object], *, role: str) -> str:
+    """Require the requested role and a protected source revision."""
+    annotations = manifest.get("annotations") or {}
+    if not isinstance(annotations, dict):
+        raise BaseImageError("base-image manifest annotations must be an object")
+    declared_role = str(annotations.get("com.shifter.image.role", "")).strip()
+    if declared_role != role:
+        raise BaseImageError(f"artifact role annotation {declared_role!r} does not match requested role {role!r}")
+    revision = str(annotations.get("org.opencontainers.image.revision", "")).strip()
+    if not _REVISION_RE.fullmatch(revision):
+        raise BaseImageError("artifact is missing a full protected-source revision (image.revision annotation)")
+    return revision
+
+
 def validate_artifact_manifest(manifest: dict[str, object], *, role: str) -> str:
     """Validate an OCI manifest against the GCE base-image contract.
 
@@ -149,25 +176,8 @@ def validate_artifact_manifest(manifest: dict[str, object], *, role: str) -> str
     artifact_type = manifest.get("artifactType", "")
     if artifact_type != GCE_IMAGE_ARTIFACT_TYPE:
         raise BaseImageError(f"unexpected artifactType {artifact_type!r}; expected {GCE_IMAGE_ARTIFACT_TYPE}")
-    layers = manifest.get("layers") or []
-    if not isinstance(layers, list) or not all(isinstance(layer, dict) for layer in layers):
-        raise BaseImageError("base-image manifest layers must be an array of descriptors")
-    disk_layers = [layer for layer in layers if layer.get("mediaType") == GCE_IMAGE_MEDIA_TYPE]
-    if len(disk_layers) != 1:
-        raise BaseImageError(f"expected exactly one {GCE_IMAGE_MEDIA_TYPE} layer, found {len(disk_layers)}")
-    layer_digest = str(disk_layers[0].get("digest", "")).strip()
-    if not _DIGEST_RE.fullmatch(layer_digest):
-        raise BaseImageError("base-image disk layer is missing a full sha256 digest")
-    annotations = manifest.get("annotations") or {}
-    if not isinstance(annotations, dict):
-        raise BaseImageError("base-image manifest annotations must be an object")
-    declared_role = str(annotations.get("com.shifter.image.role", "")).strip()
-    if declared_role != role:
-        raise BaseImageError(f"artifact role annotation {declared_role!r} does not match requested role {role!r}")
-    revision = str(annotations.get("org.opencontainers.image.revision", "")).strip()
-    if not _REVISION_RE.fullmatch(revision):
-        raise BaseImageError("artifact is missing a full protected-source revision (image.revision annotation)")
-    return revision
+    _validate_disk_layer(manifest)
+    return _validate_annotations(manifest, role=role)
 
 
 def image_name_for(role: str, short_digest: str) -> str:
