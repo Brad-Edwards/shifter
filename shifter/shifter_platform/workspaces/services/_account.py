@@ -35,6 +35,8 @@ class AccountScopeError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class AccountView:
+    """Public projection of a durable customer account."""
+
     id: int
     uuid: UUID
     kind: str
@@ -43,6 +45,8 @@ class AccountView:
 
 @dataclass(frozen=True, slots=True)
 class OrganizationView:
+    """Public projection of an account-owned organization."""
+
     id: int
     uuid: UUID
     account_id: int
@@ -51,6 +55,8 @@ class OrganizationView:
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceView:
+    """Public projection of an organization-owned workspace."""
+
     id: int
     uuid: UUID
     organization_id: int
@@ -59,6 +65,8 @@ class WorkspaceView:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedResourceScope:
+    """Resolved scalar ancestry for a validated resource scope."""
+
     kind: str
     account_id: int | None
     organization_id: int | None
@@ -66,10 +74,12 @@ class ResolvedResourceScope:
 
 
 def _account_view(account: Account) -> AccountView:
+    """Project an account model without exposing persistence internals."""
     return AccountView(account.id, account.uuid, account.kind, account.individual_principal_uuid)
 
 
 def _organization_view(organization: Organization) -> OrganizationView:
+    """Project an organization only when its account ancestry is present."""
     account_id = organization.account_id
     if account_id is None:
         raise AccountScopeError(_DENIED)
@@ -77,23 +87,28 @@ def _organization_view(organization: Organization) -> OrganizationView:
 
 
 def _workspace_view(workspace: Workspace) -> WorkspaceView:
+    """Project a workspace without loading unrelated ancestry."""
     return WorkspaceView(workspace.id, workspace.uuid, workspace.organization_id, workspace.is_default)
 
 
 def _locked_account(account_uuid: UUID) -> Account:
+    """Resolve and lock one account by its durable public UUID."""
     account = Account.objects.select_for_update().filter(uuid=account_uuid).first()
     if account is None:
         raise AccountScopeError(_DENIED)
     return account
 
 
-def _ensure_defaults_locked(account: Account) -> None:
+def _ensure_individual_defaults_locked(account: Account) -> None:
+    """Reject subdivisions beneath an individual account."""
     if account.kind == Account.Kind.INDIVIDUAL:
         if Organization.objects.filter(account=account).exists():
             raise AccountScopeError(_DENIED)
         return
-    if account.kind not in (Account.Kind.TEAM, Account.Kind.ENTERPRISE):
-        raise AccountScopeError(_DENIED)
+
+
+def _ensure_shared_defaults_locked(account: Account) -> None:
+    """Create the required default organization and workspace when absent."""
     organization = Organization.objects.filter(account=account, is_default=True).first()
     if organization is None:
         organization = Organization.objects.create(account=account, name=_DEFAULT_NAME, is_default=True)
@@ -103,13 +118,29 @@ def _ensure_defaults_locked(account: Account) -> None:
         _audit_create(AuditEntityType.WORKSPACE, workspace.pk, {"organization_id": organization.pk, "default": True})
 
 
+def _ensure_defaults_locked(account: Account) -> None:
+    """Enforce the account-kind-specific default hierarchy under its lock."""
+    if account.kind == Account.Kind.INDIVIDUAL:
+        _ensure_individual_defaults_locked(account)
+        return
+    if account.kind in (Account.Kind.TEAM, Account.Kind.ENTERPRISE):
+        _ensure_shared_defaults_locked(account)
+        return
+    raise AccountScopeError(_DENIED)
+
+
+def _valid_account_declaration(kind: object, name: object, owner: PrincipalRef | None) -> bool:
+    """Return whether one account creation request has a legal shape."""
+    if kind not in Account.Kind.values or not isinstance(name, str) or not name.strip() or len(name) > 200:
+        return False
+    if kind == Account.Kind.INDIVIDUAL:
+        return owner is not None and owner.kind == "human"
+    return owner is None
+
+
 def create_account(*, kind: str, name: str, owner: PrincipalRef | None = None) -> AccountView:
     """Create a typed account and its structural defaults without any grant."""
-    if kind not in Account.Kind.values or not isinstance(name, str) or not name.strip() or len(name) > 200:
-        raise AccountScopeError(_DENIED)
-    if (kind == Account.Kind.INDIVIDUAL and (owner is None or owner.kind != "human")) or (
-        kind != Account.Kind.INDIVIDUAL and owner is not None
-    ):
+    if not _valid_account_declaration(kind, name, owner):
         raise AccountScopeError(_DENIED)
     with transaction.atomic():
         account = Account.objects.create(
@@ -170,32 +201,46 @@ def add_account_member(account_uuid: UUID, principal: PrincipalRef) -> None:
             _audit_create(AuditEntityType.ACCOUNT_MEMBERSHIP, membership.pk, {"account_id": account.pk})
 
 
-def resolve_resource_scope(scope: ResourceScope) -> ResolvedResourceScope:
-    """Validate account type and exact ancestry; never infer installation scope."""
-    if not isinstance(scope, ResourceScope):
-        raise AccountScopeError(_DENIED)
-    if scope.kind == "installation":
-        return ResolvedResourceScope("installation", None, None, None)
+def _scope_account(scope: ResourceScope) -> Account:
+    """Resolve the account root required by an account-scoped declaration."""
     account_uuid = scope.account_uuid
     if account_uuid is None:
         raise AccountScopeError(_DENIED)
     account = Account.objects.filter(uuid=account_uuid).first()
     if account is None:
         raise AccountScopeError(_DENIED)
-    if account.kind == Account.Kind.INDIVIDUAL:
-        if scope.organization_uuid is not None or Organization.objects.filter(account=account).exists():
-            raise AccountScopeError(_DENIED)
+    return account
+
+
+def _resolve_individual_scope(account: Account, scope: ResourceScope) -> ResolvedResourceScope:
+    """Resolve an individual account, which cannot own subdivisions."""
+    if scope.organization_uuid is not None or Organization.objects.filter(account=account).exists():
+        raise AccountScopeError(_DENIED)
+    return ResolvedResourceScope("account", account.id, None, None)
+
+
+def _resolve_nested_scope(account: Account, scope: ResourceScope) -> ResolvedResourceScope:
+    """Resolve optional organization and workspace ancestry below a shared account."""
+    if scope.organization_uuid is None:
         return ResolvedResourceScope("account", account.id, None, None)
-    organization_id = None
-    workspace_id = None
-    if scope.organization_uuid is not None:
-        organization = Organization.objects.filter(uuid=scope.organization_uuid, account=account).first()
-        if organization is None:
-            raise AccountScopeError(_DENIED)
-        organization_id = organization.id
-        if scope.workspace_uuid is not None:
-            workspace = Workspace.objects.filter(uuid=scope.workspace_uuid, organization=organization).first()
-            if workspace is None or workspace.archived_at is not None:
-                raise AccountScopeError(_DENIED)
-            workspace_id = workspace.id
-    return ResolvedResourceScope("account", account.id, organization_id, workspace_id)
+    organization = Organization.objects.filter(uuid=scope.organization_uuid, account=account).first()
+    if organization is None:
+        raise AccountScopeError(_DENIED)
+    if scope.workspace_uuid is None:
+        return ResolvedResourceScope("account", account.id, organization.id, None)
+    workspace = Workspace.objects.filter(uuid=scope.workspace_uuid, organization=organization).first()
+    if workspace is None or workspace.archived_at is not None:
+        raise AccountScopeError(_DENIED)
+    return ResolvedResourceScope("account", account.id, organization.id, workspace.id)
+
+
+def resolve_resource_scope(scope: ResourceScope) -> ResolvedResourceScope:
+    """Validate account type and exact ancestry; never infer installation scope."""
+    if not isinstance(scope, ResourceScope):
+        raise AccountScopeError(_DENIED)
+    if scope.kind == "installation":
+        return ResolvedResourceScope("installation", None, None, None)
+    account = _scope_account(scope)
+    if account.kind == Account.Kind.INDIVIDUAL:
+        return _resolve_individual_scope(account, scope)
+    return _resolve_nested_scope(account, scope)

@@ -15,12 +15,16 @@ from workspaces.models import Organization, OrganizationMembership, Workspace, W
 
 @dataclass(frozen=True, slots=True)
 class MappingBlocker:
+    """One fact that prevents a legacy row from receiving an inferred mapping."""
+
     reason: str
     entity_id: int
 
 
 @dataclass(frozen=True, slots=True)
 class IndividualMapping:
+    """Proposed account mapping for one unambiguous personal workspace."""
+
     principal_uuid: UUID
     user_id: int
     legacy_organization_id: int
@@ -29,6 +33,8 @@ class IndividualMapping:
 
 @dataclass(frozen=True, slots=True)
 class OrganizationMapping:
+    """Proposed account mapping for one shared legacy organization."""
+
     organization_id: int
     account_kind: str
     default_workspace_id: int | None
@@ -36,6 +42,8 @@ class OrganizationMapping:
 
 @dataclass(frozen=True, slots=True)
 class MembershipMapping:
+    """Proposed principal membership retained from a legacy scope."""
+
     scope_kind: str
     scope_id: int
     principal_uuid: UUID
@@ -44,6 +52,8 @@ class MembershipMapping:
 
 @dataclass(frozen=True, slots=True)
 class LegacyAccountMappingPlan:
+    """Complete read-only legacy-account mapping result and its blockers."""
+
     individuals: tuple[IndividualMapping, ...]
     organizations: tuple[OrganizationMapping, ...]
     memberships: tuple[MembershipMapping, ...]
@@ -56,6 +66,7 @@ def _classify_personal(
     principal_by_user: Mapping[int, UUID],
     owner_ids_by_workspace: Mapping[int, set[int]],
 ) -> tuple[IndividualMapping | None, list[MappingBlocker]]:
+    """Classify one personal workspace only when every ownership fact agrees."""
     user_id = workspace.personal_for_user_id
     if user_id is None:
         return None, [MappingBlocker("personal_structure_ambiguous", workspace.pk)]
@@ -81,6 +92,7 @@ def _classify_shared_memberships(
     workspaces: list[Workspace],
     principal_by_user: Mapping[int, UUID],
 ) -> tuple[list[MembershipMapping], list[MappingBlocker]]:
+    """Map shared memberships only when every member has a valid principal."""
     mappings: list[MembershipMapping] = []
     blockers: list[MappingBlocker] = []
     rows = [
@@ -101,6 +113,80 @@ def _classify_shared_memberships(
     return mappings, blockers
 
 
+def _principal_mapping_blockers(principal_by_user: Mapping[int, UUID]) -> list[MappingBlocker]:
+    """Validate that every supplied user-to-principal mapping is unique and usable."""
+    blockers: list[MappingBlocker] = []
+    seen_principals: set[UUID] = set()
+    for user_id, principal_uuid in principal_by_user.items():
+        if not isinstance(principal_uuid, UUID) or principal_uuid.int == 0:
+            blockers.append(MappingBlocker("principal_invalid", user_id))
+        elif principal_uuid in seen_principals:
+            blockers.append(MappingBlocker("duplicate_principal_mapping", user_id))
+        else:
+            seen_principals.add(principal_uuid)
+    return blockers
+
+
+def _classify_personal_organization(
+    organization: Organization,
+    workspaces: list[Workspace],
+    personal: list[Workspace],
+    principal_by_user: Mapping[int, UUID],
+    owner_ids_by_workspace: Mapping[int, set[int]],
+) -> tuple[IndividualMapping | None, list[MappingBlocker]]:
+    """Classify an organization containing a personal workspace shape."""
+    if len(workspaces) != 1 or len(personal) != 1:
+        return None, [MappingBlocker("personal_structure_ambiguous", organization.pk)]
+    return _classify_personal(organization, personal[0], principal_by_user, owner_ids_by_workspace)
+
+
+def _classify_shared_organization(
+    organization: Organization,
+    workspaces: list[Workspace],
+    principal_by_user: Mapping[int, UUID],
+    owner_ids_by_workspace: Mapping[int, set[int]],
+    account_types_by_organization: Mapping[UUID, str],
+) -> tuple[OrganizationMapping | None, list[MembershipMapping], list[MappingBlocker]]:
+    """Classify a shared organization when its default and owner evidence agree."""
+    account_kind = account_types_by_organization.get(organization.uuid)
+    if account_kind not in ("team", "enterprise"):
+        return None, [], [MappingBlocker("account_type_missing", organization.pk)]
+    if not workspaces:
+        return None, [], [MappingBlocker("default_workspace_missing", organization.pk)]
+    if len(workspaces) > 1:
+        return None, [], [MappingBlocker("default_workspace_ambiguous", organization.pk)]
+    if any(workspace.pk not in owner_ids_by_workspace for workspace in workspaces):
+        return None, [], [MappingBlocker("resource_owner_evidence_missing", organization.pk)]
+    if any(
+        user_id not in principal_by_user for workspace in workspaces for user_id in owner_ids_by_workspace[workspace.pk]
+    ):
+        return None, [], [MappingBlocker("principal_missing_for_resource_owner", organization.pk)]
+    memberships, blockers = _classify_shared_memberships(organization, workspaces, principal_by_user)
+    if blockers:
+        return None, [], blockers
+    return OrganizationMapping(organization.pk, account_kind, workspaces[0].pk), memberships, []
+
+
+def _classify_legacy_organization(
+    organization: Organization,
+    principal_by_user: Mapping[int, UUID],
+    owner_ids_by_workspace: Mapping[int, set[int]],
+    account_types_by_organization: Mapping[UUID, str],
+) -> tuple[IndividualMapping | None, OrganizationMapping | None, list[MembershipMapping], list[MappingBlocker]]:
+    """Classify one unbound legacy organization as personal or shared."""
+    workspaces = list(Workspace.objects.filter(organization=organization).order_by("pk"))
+    personal = [workspace for workspace in workspaces if workspace.personal_for_user_id is not None]
+    if personal:
+        individual, blockers = _classify_personal_organization(
+            organization, workspaces, personal, principal_by_user, owner_ids_by_workspace
+        )
+        return individual, None, [], blockers
+    shared, memberships, blockers = _classify_shared_organization(
+        organization, workspaces, principal_by_user, owner_ids_by_workspace, account_types_by_organization
+    )
+    return None, shared, memberships, blockers
+
+
 def plan_legacy_account_mapping(
     *,
     principal_by_user: Mapping[int, UUID],
@@ -118,57 +204,19 @@ def plan_legacy_account_mapping(
     memberships: list[MembershipMapping] = []
     blockers: list[MappingBlocker] = []
 
-    seen_principals: set[UUID] = set()
-    for user_id, principal_uuid in principal_by_user.items():
-        if not isinstance(principal_uuid, UUID) or principal_uuid.int == 0:
-            blockers.append(MappingBlocker("principal_invalid", user_id))
-        elif principal_uuid in seen_principals:
-            blockers.append(MappingBlocker("duplicate_principal_mapping", user_id))
-        else:
-            seen_principals.add(principal_uuid)
+    blockers.extend(_principal_mapping_blockers(principal_by_user))
     if blockers:
         return LegacyAccountMappingPlan((), (), (), tuple(blockers))
 
     for organization in Organization.objects.filter(account__isnull=True).order_by("pk"):
-        workspaces = list(Workspace.objects.filter(organization=organization).order_by("pk"))
-        personal = [workspace for workspace in workspaces if workspace.personal_for_user_id is not None]
-        if personal:
-            if len(workspaces) != 1 or len(personal) != 1:
-                blockers.append(MappingBlocker("personal_structure_ambiguous", organization.pk))
-                continue
-            mapped, personal_blockers = _classify_personal(
-                organization, personal[0], principal_by_user, owner_ids_by_workspace
-            )
-            blockers.extend(personal_blockers)
-            if mapped is not None:
-                individuals.append(mapped)
-            continue
-
-        account_kind = account_types_by_organization.get(organization.uuid)
-        if account_kind not in ("team", "enterprise"):
-            blockers.append(MappingBlocker("account_type_missing", organization.pk))
-            continue
-        if not workspaces:
-            blockers.append(MappingBlocker("default_workspace_missing", organization.pk))
-            continue
-        if len(workspaces) > 1:
-            blockers.append(MappingBlocker("default_workspace_ambiguous", organization.pk))
-            continue
-        if any(workspace.pk not in owner_ids_by_workspace for workspace in workspaces):
-            blockers.append(MappingBlocker("resource_owner_evidence_missing", organization.pk))
-            continue
-        if any(
-            user_id not in principal_by_user
-            for workspace in workspaces
-            for user_id in owner_ids_by_workspace[workspace.pk]
-        ):
-            blockers.append(MappingBlocker("principal_missing_for_resource_owner", organization.pk))
-            continue
-        mapped_members, member_blockers = _classify_shared_memberships(organization, workspaces, principal_by_user)
-        blockers.extend(member_blockers)
-        if member_blockers:
-            continue
-        organizations.append(OrganizationMapping(organization.pk, account_kind, workspaces[0].pk))
-        memberships.extend(mapped_members)
+        individual, shared, mapped_members, organization_blockers = _classify_legacy_organization(
+            organization, principal_by_user, owner_ids_by_workspace, account_types_by_organization
+        )
+        blockers.extend(organization_blockers)
+        if individual is not None:
+            individuals.append(individual)
+        if shared is not None:
+            organizations.append(shared)
+            memberships.extend(mapped_members)
 
     return LegacyAccountMappingPlan(tuple(individuals), tuple(organizations), tuple(memberships), tuple(blockers))

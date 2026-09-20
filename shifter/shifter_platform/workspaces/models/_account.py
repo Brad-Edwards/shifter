@@ -9,6 +9,8 @@ class Account(models.Model):
     """Customer root. Individuals own resources directly, without subdivisions."""
 
     class Kind(models.TextChoices):
+        """Closed customer-account classifications."""
+
         INDIVIDUAL = "individual", "Individual"
         TEAM = "team", "Team"
         ENTERPRISE = "enterprise", "Enterprise"
@@ -23,6 +25,8 @@ class Account(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Database metadata and account-shape constraints."""
+
         db_table = "workspaces_account"
         constraints = [
             models.CheckConstraint(
@@ -50,6 +54,8 @@ class AccountMembership(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        """Database metadata and unique membership constraints."""
+
         db_table = "workspaces_accountmembership"
         constraints = [
             models.UniqueConstraint(fields=["account", "principal_uuid"], name="uniq_account_principal_membership"),

@@ -228,6 +228,8 @@ class Principal(models.Model):
     """Stable human or service identity, separate from credentials and contacts."""
 
     class Kind(models.TextChoices):
+        """Closed durable principal kinds."""
+
         HUMAN = "human", "Human"
         SERVICE = "service", "Service"
 
@@ -260,6 +262,8 @@ class Principal(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Database metadata and identity-shape constraints."""
+
         db_table = "management_principal"
         constraints = [
             models.CheckConstraint(
@@ -292,6 +296,8 @@ class ProviderBinding(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        """Database metadata and immutable tuple constraints."""
+
         db_table = "management_provider_binding"
         constraints = [
             models.UniqueConstraint(fields=["issuer", "subject"], name="uniq_provider_principal_tuple"),

@@ -16,6 +16,7 @@ class ScopeContractError(ValueError):
 
 
 def _valid_uuid(value: object) -> bool:
+    """Return whether a value is a non-nil UUID identity."""
     return isinstance(value, UUID) and value.int != 0
 
 
