@@ -29,7 +29,11 @@ def _audit(entity_type: str, entity_id: int, action: str, state: dict[str, objec
 
 
 def _principal_ref(principal: Principal) -> PrincipalRef:
-    return PrincipalRef(uuid=principal.uuid, kind=principal.kind)
+    if principal.kind == Principal.Kind.HUMAN:
+        return PrincipalRef(uuid=principal.uuid, kind="human")
+    if principal.kind == Principal.Kind.SERVICE:
+        return PrincipalRef(uuid=principal.uuid, kind="service")
+    raise PrincipalConflictError("Principal identity conflict")
 
 
 def ensure_human_principal(user: User) -> PrincipalRef:

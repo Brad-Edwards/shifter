@@ -255,11 +255,14 @@ def _activation_input_payload(target: Range, request: Request) -> dict[str, obje
         raise ValueError("activation requires a claimed warm generation for the request")
     claimant = target.user
     purpose = target.instantiation_purpose or "live_fire"
+    workspace_id = target.workspace_id
+    if workspace_id is None:
+        raise ValueError("activation requires a workspace-scoped range")
     return build_activation_input(
         claimant=ActivationClaimant(
             user_id=int(target.cms_user_id or claimant.id),
             username=str(claimant.username),
-            workspace_id=int(target.workspace_id),
+            workspace_id=workspace_id,
         ),
         generation=ActivationGeneration(
             range_source=gen.range_source,

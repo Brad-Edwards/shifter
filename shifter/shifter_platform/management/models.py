@@ -307,8 +307,10 @@ class ProviderBinding(models.Model):
     def save(self, *args: Any, **kwargs: Any) -> None:
         if self.pk:
             prior = type(self).objects.filter(pk=self.pk).values("principal_id", "issuer", "subject").first()
-            if prior is None or any(
-                prior[field] != getattr(self, field) for field in ("principal_id", "issuer", "subject")
+            if prior is None or (
+                prior["principal_id"] != self.principal_id
+                or prior["issuer"] != self.issuer
+                or prior["subject"] != self.subject
             ):
                 raise PrincipalConflictError("Provider binding is immutable")
         super().save(*args, **kwargs)

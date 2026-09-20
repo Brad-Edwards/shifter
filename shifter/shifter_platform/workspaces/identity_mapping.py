@@ -57,6 +57,8 @@ def _classify_personal(
     owner_ids_by_workspace: Mapping[int, set[int]],
 ) -> tuple[IndividualMapping | None, list[MappingBlocker]]:
     user_id = workspace.personal_for_user_id
+    if user_id is None:
+        return None, [MappingBlocker("personal_structure_ambiguous", workspace.pk)]
     blockers: list[MappingBlocker] = []
     members = list(WorkspaceMembership.objects.filter(workspace=workspace).values_list("user_id", "role"))
     admins = list(OrganizationMembership.objects.filter(organization=organization).values_list("user_id", "role"))
@@ -69,7 +71,7 @@ def _classify_personal(
     principal_uuid = principal_by_user.get(user_id)
     if not isinstance(principal_uuid, UUID) or principal_uuid.int == 0:
         blockers.append(MappingBlocker("principal_missing", user_id))
-    if blockers:
+    if blockers or not isinstance(principal_uuid, UUID):
         return None, blockers
     return IndividualMapping(principal_uuid, user_id, organization.pk, workspace.pk), []
 

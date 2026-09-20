@@ -70,7 +70,10 @@ def _account_view(account: Account) -> AccountView:
 
 
 def _organization_view(organization: Organization) -> OrganizationView:
-    return OrganizationView(organization.id, organization.uuid, organization.account_id, organization.is_default)
+    account_id = organization.account_id
+    if account_id is None:
+        raise AccountScopeError(_DENIED)
+    return OrganizationView(organization.id, organization.uuid, account_id, organization.is_default)
 
 
 def _workspace_view(workspace: Workspace) -> WorkspaceView:
@@ -173,7 +176,10 @@ def resolve_resource_scope(scope: ResourceScope) -> ResolvedResourceScope:
         raise AccountScopeError(_DENIED)
     if scope.kind == "installation":
         return ResolvedResourceScope("installation", None, None, None)
-    account = Account.objects.filter(uuid=scope.account_uuid).first()
+    account_uuid = scope.account_uuid
+    if account_uuid is None:
+        raise AccountScopeError(_DENIED)
+    account = Account.objects.filter(uuid=account_uuid).first()
     if account is None:
         raise AccountScopeError(_DENIED)
     if account.kind == Account.Kind.INDIVIDUAL:
