@@ -25,6 +25,7 @@ deployment ranges. Shared resources do not require shared participant tokens.
 | [Durable allocations](allocations.md) | M03 quota reservations, v2 provider-pool membership, pending grants and preparation authority. |
 | [Request accounting preflight](request-accounting-preflight-2121.md) | M04 budget-account contract, atomic ledger, dispatch lease, idempotency, reconciliation and cross-cutting security guardrails. |
 | [Private broker preflight](broker-preflight-2122.md) | M05 incumbent listeners, identity and credential boundaries, streaming fences, deployment validators and qualification gaps. |
+| [Scoped management preflight](management-preflight-2126.md) | M09 authority, visibility, revision, lifecycle, API/UI and whole-repository boundaries for operator and organizer management. |
 | [Private broker runtime](broker-runtime.md) | M05 closed routes, identity/credential enforcement, resource bounds, drain and local HTTP verification. |
 | [Security design](security.md) | Threats, identities, network/IAM boundaries, credential lifecycle, privacy, and negative tests. |
 | [GCP deployment package](gcp-packaging.md) | Disabled M06 identity, TLS, network, runtime and deployment-lane resources. |

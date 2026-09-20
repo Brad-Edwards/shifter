@@ -9,7 +9,6 @@ The MOST helpful think you can do is stay on task. Answer questions you are aske
 - Keep things very simple
 - Don't re-invent the wheel
 - Use proven, solid technologies when possible
-- Never jump ahead of the user. Doing so ALWAYS results in incorrect or incomplete code, requiring significant rework. If you have observations, suggestions, or a question, ask the user first..
 - If the user makes a specific request, answer or execute it. Do not infer doing more or different.
 - Errors, failed tests, or other problems anywhere are always relevant, no matter what you're working on. Do not ignore them.
 

@@ -279,3 +279,28 @@ def publish_model_access_binding(
             expected_definition_revision=expected_definition_revision,
             empty_snapshot_ack=empty_snapshot_ack,
         )
+
+
+def drain_model_access_binding(
+    *,
+    actor: object,
+    deployment_id: UUID,
+    sharing_binding_id: str,
+    expected_definition_revision: int,
+) -> object:
+    """Withdraw one binding as the resolved server-side publisher under a CAS fence.
+
+    The publisher identity is derived from the authenticated actor, never trusted
+    from the request. Engine rechecks publisher authority and the expected
+    definition revision, tombstones the binding, and advances the membership
+    fence; it never refunds, resets or cancels a billable request.
+    """
+    from cms.services import engine_drain_sharing_binding
+
+    publisher = _publisher_identity(actor)
+    return engine_drain_sharing_binding(
+        deployment_id=deployment_id,
+        sharing_binding_id=sharing_binding_id,
+        publisher_identity=publisher,
+        expected_definition_revision=expected_definition_revision,
+    )

@@ -72,6 +72,38 @@ def admit_range_model_policy_change(*, request_id: UUID, expected_revision: int)
         return tuple(allocation.pk for allocation in allocations)
 
 
+def revoke_range_model_access(*, request_id: UUID, actor_id: int) -> int:
+    """Fence a range's current model grants and dispatch leases (M09, #2126).
+
+    CMS authorizes the range administrator; this transactionally revokes the
+    current execution generation's model authorities. Success fences database
+    authority but never proves provider cancellation, and it neither refunds spend
+    nor releases outstanding liabilities, which remain under their original
+    immutable price/account vector. Returns the number of authorities fenced.
+    """
+    from engine.models import Range
+    from engine.services._model_allocation_lifecycle import revoke_model_generation
+    from shared.audit import AuditActorType, AuditEvent, audit_log
+
+    with transaction.atomic():
+        row = Range.objects.select_for_update().filter(request__request_id=request_id).first()
+        if row is None or row.provisioner_operation_id is None:
+            raise ContractError("source.range_unavailable")
+        fenced = revoke_model_generation(row.uuid, operation_id=row.provisioner_operation_id)
+        audit_log(
+            AuditEvent(
+                entity_type="range",
+                entity_id=row.pk,
+                action="model_access_revoke",
+                actor_type=AuditActorType.USER,
+                actor_id=actor_id,
+                context=f"model access revoked authorities={fenced}",
+            ),
+            strict=True,
+        )
+        return fenced
+
+
 def get_range_model_policy_status(*, request_id: UUID) -> dict[str, object]:
     """Bounded metadata for the current policy; retained allocations stay internal."""
     from engine.models import ModelAllocation, Range

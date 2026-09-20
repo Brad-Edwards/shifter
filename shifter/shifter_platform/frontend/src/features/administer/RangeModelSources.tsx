@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { describeMutationError } from "@/api/errors";
+import { revokeRangeModelAccess } from "@/api/model-access";
 import { rangeSourceKey, saveRangeModelSources, useModelRanges, useRangeModelSources,
   type ModelSourceSelection, type RangeModelSources as RangePolicy } from "@/api/model-sources";
 import { ModelSourcePicker } from "@/components/ModelSourcePicker";
@@ -59,6 +60,17 @@ function PolicyForm({ policy, onClose }: Readonly<{ policy: RangePolicy; onClose
       await client.invalidateQueries({ queryKey: ["model-ranges"] });
     } catch (error_) { setError(error_); } finally { setPending(false); }
   }
+  async function revoke() {
+    if (pending) return;
+    setPending(true); setError(null);
+    try {
+      // Fences the current grants and dispatch leases. Outstanding usage stays
+      // accounted for; this does not refund spend or cancel a billable request.
+      const result = await revokeRangeModelAccess(policy.request_id);
+      client.setQueryData(rangeSourceKey(policy.request_id), result);
+      await client.invalidateQueries({ queryKey: ["model-ranges"] });
+    } catch (error_) { setError(error_); } finally { setPending(false); }
+  }
   return <form aria-label="Edit range model sources" className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
     {Boolean(error) && <Alert variant="destructive"><AlertDescription>{describeMutationError(error, "The source change could not be saved. Reload the policy before retrying.")}</AlertDescription></Alert>}
     <output>{runtimeMessages[policy.runtime.state]}</output>
@@ -67,6 +79,7 @@ function PolicyForm({ policy, onClose }: Readonly<{ policy: RangePolicy; onClose
     <ModelSourcePicker scenario={policy.scenario} workspace={policy.workspace} purpose="admin" value={selection} onChange={setSelection} disabled={pending} />
     <div className="flex gap-2">
       <Button type="submit" disabled={pending}>{pending ? "Applying…" : "Apply source policy"}</Button>
+      <Button type="button" variant="destructive" disabled={pending} onClick={() => void revoke()}>Revoke model access</Button>
       <Button type="button" variant="outline" disabled={pending} onClick={() => void client.invalidateQueries({ queryKey: rangeSourceKey(policy.request_id) })}>Reload policy</Button>
       <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Close editor</Button>
     </div>

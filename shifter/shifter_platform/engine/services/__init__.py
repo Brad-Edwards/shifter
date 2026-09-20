@@ -72,6 +72,7 @@ from ._model_policy_transition import (
     admit_range_model_policy_change,
     begin_range_model_policy_change,
     get_range_model_policy_status,
+    revoke_range_model_access,
 )
 from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
 from ._model_request_lifecycle import (
@@ -416,6 +417,7 @@ __all__ = (
     "retire_unused_model_source_credentials",
     "retry_artifact_preparation",
     "revoke_preparation_grant",
+    "revoke_range_model_access",
     "revoke_receipt_verifier",
     "run_guest_probe",
     "set_preparation_adapter_state",
