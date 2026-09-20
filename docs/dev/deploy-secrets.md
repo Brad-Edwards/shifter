@@ -339,8 +339,7 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
-| `GCP_RANGE_BACKEND` | variable | no | Set `gce` in the build Environment for native GCE deployments. This skips the GDC-only qcow2 export; the exact image build evidence remains mandatory. Unset retains the legacy export behavior. |
-| `GCP_GDC_VM_IMAGE_BUCKET` | variable | for GDC export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset when `GCP_RANGE_BACKEND` is not `gce`. See `docs/architecture/gcp-guest-images.md`. |
+| `GCP_GCE_BASE_IMAGE_BUCKET` | variable | for GHCR publish | GCS staging bucket the built image is exported into as a GCE-native disk tarball (`disk.raw` in `.tar.gz`) before it is published to GHCR (Terraform output `gce_base_image_bucket`). Required by `packer-gcp.yml` when `publish_target=ghcr`, and by `deploy.py gcp-images` as the transfer staging bucket. The export/publish is selected by the workflow's `publish_target` input, not by `GCP_RANGE_BACKEND`. See `docs/architecture/gcp-guest-images.md`. |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
@@ -707,16 +706,23 @@ that re-introduces the drift this flow removes.
 
 ### GCE range-cell backend variables
 
-The GCP range backend defaults to `gce` (GCE range cells). These non-secret
+The GCP range backend is `gce` (GCE range cells). These non-secret
 inputs are GitHub Actions repository or environment **variables** (`vars.*`),
 exported by the `_gcp-dev.yml` `Render generated runtime env` step into the
 generated runtime config. Each account sets its own values; unset variables
 fall back to the code defaults in `config.py`. See
 `docs/dev/gcp-range-cell-deploy.md` for the operator runbook.
 
+The base-set image variables (`GCP_RANGE_LINUX_IMAGE`, `GCP_RANGE_KALI_IMAGE`,
+`GCP_RANGE_DC_IMAGE`) are set for you by
+`./scripts/bootstrap/deploy.py gcp-images`, which imports the reusable
+Kali/Ubuntu/DC base images from GHCR as native GCE images and writes these
+variables into the deployment Environment (#2309). Set them by hand only to
+pin a specific image outside that flow.
+
 | Variable | Required | Notes |
 |---|---|---|
-| `GCP_RANGE_BACKEND` | no | `gce` (default) or `gdc`. Set `gdc` to roll back to GDC VM Runtime. |
+| `GCP_RANGE_BACKEND` | no | `gce` (default), the supported native GCE range-cell backend. The legacy `gdc` VM Runtime backend is retired and removed root-and-branch in #2311. |
 | `GCP_RANGE_CELL_PROJECT_ID` | no | Project the range cells provision into. Defaults to the project parsed from the range VPC self-link (`range_network_id`), so it is correct even while the control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder. |
 | `RANGE_NETWORK_ZONE` | yes | Compute Engine zone for range guests, for example `us-central1-a`. |
 | `GCP_RANGE_LINUX_IMAGE` | yes | Full image or family URL for the default unkeyed Linux/host profile. |

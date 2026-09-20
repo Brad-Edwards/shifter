@@ -51,8 +51,11 @@ for the authoritative order.
 - Workload Identity Federation configured for GitHub Actions (pool, provider,
   purpose service accounts), with the explicit `GCP_*_SERVICE_ACCOUNT` value
   and `GCP_WORKLOAD_IDENTITY_PROVIDER` set in each purpose Environment.
-- Range guest images available for range provisioning. See
-  [`gcp-range-cell-deploy.md`](../../dev/gcp-range-cell-deploy.md).
+- Range guest images imported into the project. On a fresh project run
+  `./scripts/bootstrap/deploy.py gcp-images` to import the reusable base set
+  (Kali/Ubuntu/DC) from GHCR as native GCE images. See
+  [`gcp-range-cell-deploy.md`](../../dev/gcp-range-cell-deploy.md) and
+  [`gcp-guest-images.md`](../../architecture/gcp-guest-images.md).
 
 ### Configuration values
 

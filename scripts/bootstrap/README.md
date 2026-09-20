@@ -194,15 +194,23 @@ default; their state addresses and existing image network remain unchanged.
 3. Configure the GCP deployment secrets and variables in
    `docs/dev/deploy-secrets.md` (the `gcp-dev` section), including
    `SHIFTER_CONFIG_GCP_DEV` and the GCE range-cell variables.
-4. Build the range guest images and set the image variables before deploy. The
-   GCP range backend defaults to the GCE range-cell path, and a range launch
-   needs the guest images to exist. See `docs/dev/gcp-range-cell-deploy.md` and
-   `docs/architecture/gcp-guest-images.md`.
-   Run `packer-gcp.yml` for the minimum image set required by the bootstrap
-   preflight and the ranges being deployed. Separate image qualification
-   (`packer-gcp-validate.yml`, including boot/reboot checks and disk inventory)
-   is optional and off by default. Bootstrap and deploy do not invoke it or
-   wait for it; run it only when explicitly requested.
+4. Make the range guest images available before deploy. The GCP range backend is
+   GCE range cells, and a range launch needs native GCE guest images. On a fresh
+   project you do **not** re-bake them - import the reusable base set from GHCR:
+
+   ```bash
+   ./scripts/bootstrap/deploy.py gcp-images --project-id <project> --environment <env>
+   ```
+
+   This discovers the Kali, Ubuntu, and DC base images published in GHCR by
+   `packer-gcp.yml`, validates each artifact and its provenance, imports them as
+   native GCE images in the target project (reusing an image when its digest is
+   unchanged), and wires `GCP_RANGE_{LINUX,KALI,DC}_IMAGE` into the deployment
+   Environment. It fails clearly if a base image has not been published yet.
+   Publishing the base set is the protected `packer-gcp.yml` workflow's job
+   (`publish_target=ghcr`); separate candidate qualification
+   (`packer-gcp-validate.yml`) remains optional and off by default. See
+   `docs/dev/gcp-range-cell-deploy.md` and `docs/architecture/gcp-guest-images.md`.
 5. Bootstrap the GDC/GKE substrate and control plane with `gdc-bootstrap` (see
    the command below). It applies the GCP Terraform (GKE, Cloud SQL,
    Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
