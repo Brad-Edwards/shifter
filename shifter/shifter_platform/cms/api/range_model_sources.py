@@ -161,7 +161,10 @@ class RangeModelSourcesRevokeView(ModelAccessAPIView):
 
     @extend_schema(request=None, responses=RangeModelSourcesSerializer)
     def post(self, request: Request, request_id: UUID) -> Response:
+        actor = self.actor(request)
+        if actor is None:
+            return api_error_response(code="permission_denied", message="Forbidden", status_code=403, request=request)
         try:
-            return Response(revoke_range_model_sources(self.actor(request), request_id=request_id))
+            return Response(revoke_range_model_sources(actor, request_id=request_id))
         except (WorkspaceAuthorizationError, OrganizationAuthorizationError, ContractError) as exc:
             return source_policy_error(request, exc)

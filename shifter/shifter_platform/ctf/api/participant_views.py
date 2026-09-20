@@ -13,7 +13,7 @@ authority.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers, status
@@ -138,7 +138,8 @@ class ParticipantModelAccessView(APIView):
         status_payload = get_range_model_policy_status_for_instance(participant.range_instance_id)
         if status_payload is None:
             return Response(unavailable)
-        aliases = sorted({assignment["logical_alias"] for assignment in status_payload["assignments"]})
+        assignments = cast("list[dict[str, str]]", status_payload["assignments"])
+        aliases = sorted({assignment["logical_alias"] for assignment in assignments})
         return Response({"state": status_payload["state"], "aliases": aliases})
 
 

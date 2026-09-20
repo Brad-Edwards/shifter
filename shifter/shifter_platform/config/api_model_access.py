@@ -51,12 +51,15 @@ class IsPlatformOperatorActor(permissions.BasePermission):
 
 # Session/CSRF + scoped-token parity per surface. ``require_scope`` also publishes
 # the exact scope into OpenAPI (shared.api.schema.PlatformAutoSchema).
-_SHARING_READ = [IsAuthenticatedSessionOrApiToken, require_scope(MODEL_ACCESS_SHARING_READ, MODEL_ACCESS_SHARING_READ)]
-_SHARING_WRITE = [
+_SHARING_READ: list[type[permissions.BasePermission]] = [
+    IsAuthenticatedSessionOrApiToken,
+    require_scope(MODEL_ACCESS_SHARING_READ, MODEL_ACCESS_SHARING_READ),
+]
+_SHARING_WRITE: list[type[permissions.BasePermission]] = [
     IsAuthenticatedSessionOrApiToken,
     require_scope(MODEL_ACCESS_SHARING_WRITE, MODEL_ACCESS_SHARING_WRITE),
 ]
-_OPERATOR_READ = [
+_OPERATOR_READ: list[type[permissions.BasePermission]] = [
     IsAuthenticatedSessionOrApiToken,
     IsPlatformOperatorActor,
     require_scope(MODEL_ACCESS_OPERATOR_READ, MODEL_ACCESS_OPERATOR_READ),

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
+from rest_framework import permissions
 from rest_framework.views import APIView
 
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
@@ -36,7 +37,7 @@ class ModelAccessAPIView(APIView):
 
     versioning_class = None
     parser_classes: ClassVar = [ClosedJSONParser]
-    permission_classes: ClassVar = [IsAuthenticatedSessionOrApiToken]
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [IsAuthenticatedSessionOrApiToken]
 
     def actor(self, request: Request) -> User | None:
         """Return the active session or token-owner actor, or ``None``."""
