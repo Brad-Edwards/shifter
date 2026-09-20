@@ -55,15 +55,18 @@ _CONNECT_SECONDS = 2.0
 _WRITE_SECONDS = 5.0
 _POOL_SECONDS = 1.0
 
+_INVALID_REQUEST = "provider.invalid_request"
+_INPUT_LIMIT = "messages.input_limit"
+
 # Provider HTTP statuses that carry an actionable participant meaning. Everything
 # else, including auth failures that are the deployment's and not the participant's,
 # normalizes to a bounded 'unavailable' so no provider body, header or request id
 # leaks and the pinned client is not driven into a credential-rejection retry loop.
 _PROVIDER_STATUS_CODES = {
     429: "provider.rate_limited",
-    400: "provider.invalid_request",
-    413: "provider.invalid_request",
-    422: "provider.invalid_request",
+    400: _INVALID_REQUEST,
+    413: _INVALID_REQUEST,
+    422: _INVALID_REQUEST,
 }
 
 
@@ -321,7 +324,7 @@ class MessagesProvider(ModelProviderAdapter):
             # full physical context is the only safe pre-dispatch input bound.
             # Smaller input envelopes fail closed; no estimate becomes a count.
             if self.target.context_window_tokens > self.limits.max_input_tokens:
-                raise NoBillableEffect("messages.input_limit", count_only=False)
+                raise NoBillableEffect(_INPUT_LIMIT, count_only=False)
             return self.target.context_window_tokens
         # The count is covered by the request's existing reservation and lease.
         # It cannot mint a second grant or bypass rate/concurrency admission.
@@ -331,7 +334,7 @@ class MessagesProvider(ModelProviderAdapter):
             # The fixed count endpoint is free, and no invocation was attempted.
             raise NoBillableEffect("provider.count_unavailable", count_only=count_only) from None
         if tokens > self.limits.max_input_tokens:
-            raise NoBillableEffect("messages.input_limit", count_only=count_only)
+            raise NoBillableEffect(_INPUT_LIMIT, count_only=count_only)
         if not count_only:
             if not isinstance(message, MessagesRequest):
                 raise NoBillableEffect("messages.unsupported_request", count_only=False)

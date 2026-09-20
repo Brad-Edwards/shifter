@@ -86,7 +86,13 @@ class StreamUsage:
                 self.input_usage = {**(self.input_usage or {}), "input_tokens": usage["input_tokens"]}
         elif kind == "message_stop":
             self.stopped = True
-        elif kind == "content_block_start":
+        else:
+            self._observe_content(kind, event)
+
+    @staticmethod
+    def _observe_content(kind: str | None, event: JsonObject) -> None:
+        """Admit only qualified content-block events; reject unknown blocks or deltas."""
+        if kind == "content_block_start":
             block = event.get("content_block", {})
             if not isinstance(block, dict) or block.get("type") not in _RESPONSE_BLOCK_TYPES:
                 raise ContractError(_INVALID_STREAM)

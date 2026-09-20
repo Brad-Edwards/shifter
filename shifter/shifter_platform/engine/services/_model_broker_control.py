@@ -15,10 +15,10 @@ from shared.model_access.provider import ProviderUsage
 
 from ._model_credentials import authenticate_model_access
 from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
+from ._model_request_commit import commit_request_spend
 from ._model_request_lifecycle import (
     charge_unknown,
     check_dispatch_lease,
-    commit_request_spend,
     open_dispatch,
     release_before_dispatch,
     renew_continuation_lease,

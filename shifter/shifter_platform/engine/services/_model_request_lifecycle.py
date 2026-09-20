@@ -29,13 +29,7 @@ from shared.model_access.core_models import BillingComponent, Price
 from shared.model_access.effective_policy import EffectivePolicy
 from shared.model_access.provider import ProviderUsage
 
-from ._model_request_accounting import (
-    _SPEND_UNIT,
-    _checked_ceil,
-    _conservative_charge,
-    _load_snapshot,
-    _recheck_authority,
-)
+from ._model_request_accounting import _checked_ceil, _recheck_authority
 
 if TYPE_CHECKING:
     from engine.models import (
@@ -94,60 +88,6 @@ def open_dispatch(*, request_uuid: UUID, now: datetime | None = None) -> Dispatc
         reservation.state = "dispatched"
         reservation.save(update_fields=["state", "updated_at"])
         return DispatchGrant(dispatch_token=token, dispatch_deadline=lease.dispatch_deadline)
-
-
-def commit_request_spend(*, request_uuid: UUID, billing_bound: BillingBound, now: datetime | None = None) -> int:
-    """Add the proven input/output spend hold to a counted reservation, atomically.
-
-    A counting paid request is admitted with a free count bound (rate and
-    concurrency held, zero spend) so a completed retry deduplicates before the
-    provider is ever counted. After the provider-proven count this narrows the
-    request's input units to that count, adds the output ceiling, checks every
-    spend account against the immutable price snapshot, and replaces the bound so
-    settlement matches the paid usage. It upgrades a freshly dispatched count
-    reservation exactly once and never touches a settled request.
-    """
-    from engine.models import ModelAllocation, ModelPendingGrant, ModelRequestReservation
-
-    moment = now or datetime.now(UTC)
-    with transaction.atomic():
-        # Owner-first lock order matches reserve and dispatch: allocation, grant and
-        # authority before the request row and its account postings.
-        reservation = ModelRequestReservation.objects.get(request_uuid=request_uuid)
-        allocation = ModelAllocation.objects.select_for_update().get(pk=reservation.allocation_id)
-        _assert_allocation_live(allocation, moment)
-        _assert_request_current(reservation, moment)
-        _assert_grant_current(ModelPendingGrant, reservation)
-        _recheck_authority(allocation)
-        reservation = ModelRequestReservation.objects.select_for_update().get(pk=reservation.pk)
-        if reservation.state != "dispatched" or set(reservation.billed_components or ()) != {
-            BillingComponent.REQUEST.value
-        }:
-            # Commit upgrades a freshly dispatched count reservation exactly once.
-            raise ContractError("request.commit_state")
-        catalog, effective = _load_snapshot(allocation)
-        currency, upper_charge = _conservative_charge(
-            catalog, reservation.logical_alias, billing_bound, moment, effective, reservation.shard["shard_id"]
-        )
-        holds = [
-            (posting, account) for posting, account in _locked_postings(reservation) if account.dimension == "spend"
-        ]
-        for _posting, account in holds:
-            if account.currency != currency or account.unit != _SPEND_UNIT:
-                raise ContractError("request.currency_mismatch")
-            if account.spent + account.reserved + upper_charge > account.limit:
-                raise ContractError("request.budget_exceeded")
-        for posting, account in holds:
-            account.reserved += upper_charge
-            account.save(update_fields=["reserved"])
-            posting.held = upper_charge
-            posting.save(update_fields=["held"])
-        reservation.billing_bound = billing_bound.model_dump(mode="json")
-        reservation.billed_components = sorted({amount.component.value for amount in billing_bound.amounts})
-        reservation.canonical_request_cost = upper_charge
-        reservation.save(update_fields=["billing_bound", "billed_components", "canonical_request_cost", "updated_at"])
-        _lifecycle_audit(reservation, "MODEL_REQUEST_RESERVE", f"commit cost={upper_charge}")
-        return upper_charge
 
 
 def check_dispatch_lease(*, request_uuid: UUID, dispatch_token: str, now: datetime | None = None) -> bool:

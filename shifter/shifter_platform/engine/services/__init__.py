@@ -74,11 +74,11 @@ from ._model_policy_transition import (
     get_range_model_policy_status,
 )
 from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
+from ._model_request_commit import commit_request_spend
 from ._model_request_lifecycle import (
     DispatchGrant,
     charge_unknown,
     check_dispatch_lease,
-    commit_request_spend,
     fence_revoked_requests,
     open_dispatch,
     release_before_dispatch,
