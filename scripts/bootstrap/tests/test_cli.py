@@ -540,7 +540,7 @@ class TestMainCLI:
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
 
-    def test_gdc_bootstrap_imports_public_images_and_hands_exact_refs_to_platform(self):
+    def test_gdc_bootstrap_imports_public_images_and_hands_exact_refs_to_platform(self, tmp_path):
         runner = _GcpBootstrapProcess()
         keys = ("GCP_RANGE_LINUX_IMAGE", "GCP_RANGE_KALI_IMAGE", "GCP_RANGE_DC_IMAGE")
         expected = {
@@ -548,7 +548,14 @@ class TestMainCLI:
             "GCP_RANGE_KALI_IMAGE": "projects/proj/global/images/shifter-kali-aaaaaaaaaaaa",
             "GCP_RANGE_DC_IMAGE": "projects/proj/global/images/shifter-dc-aaaaaaaaaaaa",
         }
-        config = deploy.GDCBootstrapConfig(project_id="proj", environment="gcp-dev", region="us-east1")
+        shifter_config = tmp_path / "shifter.yaml"
+        shifter_config.write_text("version: 1\nbackend: gcp\n")
+        config = deploy.GDCBootstrapConfig(
+            project_id="proj",
+            environment="gcp-dev",
+            region="us-east1",
+            shifter_config_path=str(shifter_config),
+        )
         deploy.set_assume_yes(True)
         try:
             with (
