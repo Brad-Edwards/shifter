@@ -85,6 +85,7 @@ class ResolvedArtifact:
     role: str
     package: str  # e.g. ghcr.io/brad-edwards/shifter-gce-kali
     digest: str  # sha256:<64 hex>
+    disk_digest: str  # sha256:<64 hex> for the validated GCE disk layer
     revision: str  # provenance: the protected build source revision
 
     @property
@@ -137,8 +138,8 @@ def _newest_discovery_tag(tags: list[str]) -> str | None:
     return max(numbered)[1]
 
 
-def _validate_disk_layer(manifest: dict[str, object]) -> None:
-    """Require exactly one digest-pinned GCE disk layer."""
+def _disk_layer_digest(manifest: dict[str, object]) -> str:
+    """Return the one validated, digest-pinned GCE disk layer."""
     layers = manifest.get("layers") or []
     if not isinstance(layers, list) or not all(isinstance(layer, dict) for layer in layers):
         raise BaseImageError("base-image manifest layers must be an array of descriptors")
@@ -148,6 +149,12 @@ def _validate_disk_layer(manifest: dict[str, object]) -> None:
     layer_digest = str(disk_layers[0].get("digest", "")).strip()
     if not _DIGEST_RE.fullmatch(layer_digest):
         raise BaseImageError("base-image disk layer is missing a full sha256 digest")
+    return layer_digest
+
+
+def _validate_disk_layer(manifest: dict[str, object]) -> None:
+    """Require exactly one digest-pinned GCE disk layer."""
+    _disk_layer_digest(manifest)
 
 
 def _validate_annotations(manifest: dict[str, object], *, role: str) -> str:
@@ -245,8 +252,15 @@ def resolve_artifact(role: str) -> ResolvedArtifact:
     """Discover, digest-pin, and validate the GHCR base-image artifact for a role."""
     package = package_for_role(role)
     digest = _fetch_digest(package, _discover_newest_tag(package))
-    revision = validate_artifact_manifest(_fetch_manifest(package, digest), role=role)
-    return ResolvedArtifact(role=role, package=package, digest=digest, revision=revision)
+    manifest = _fetch_manifest(package, digest)
+    revision = validate_artifact_manifest(manifest, role=role)
+    return ResolvedArtifact(
+        role=role,
+        package=package,
+        digest=digest,
+        disk_digest=_disk_layer_digest(manifest),
+        revision=revision,
+    )
 
 
 def _existing_image_metadata(project: str, image_name: str) -> dict[str, object] | None:
@@ -310,14 +324,21 @@ def _delete_owned_partial_image(project: str, image_name: str) -> None:
 
 
 def _pull_disk_tarball(artifact: ResolvedArtifact, destination: Path) -> Path:
-    """Pull the digest-pinned disk tarball into ``destination`` and return it."""
-    run_cmd(["oras", "pull", f"{artifact.package}@{artifact.digest}", "-o", str(destination)])
-    tarballs = sorted(destination.glob("*.tar.gz"))
-    if len(tarballs) != 1:
-        raise BaseImageError(
-            f"expected exactly one disk tarball from {artifact.pinned_reference}, found {len(tarballs)}"
-        )
-    return tarballs[0]
+    """Fetch the validated disk blob to a caller-owned path and return it."""
+    tarball = destination / f"{artifact.role}-{artifact.short_digest}.tar.gz"
+    run_cmd(
+        [
+            "oras",
+            "blob",
+            "fetch",
+            "--output",
+            str(tarball),
+            f"{artifact.package}@{artifact.disk_digest}",
+        ]
+    )
+    if not tarball.is_file():
+        raise BaseImageError(f"disk blob fetch produced no tarball for {artifact.pinned_reference}")
+    return tarball
 
 
 def import_base_image(

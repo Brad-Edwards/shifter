@@ -66,9 +66,9 @@ class _GcpBootstrapProcess:
                 },
             }
             return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(manifest), stderr="")
-        if cmd[:2] == ["oras", "pull"]:
-            destination = Path(cmd[cmd.index("-o") + 1])
-            (destination / "disk.tar.gz").write_bytes(b"rawdisk")
+        if cmd[:3] == ["oras", "blob", "fetch"]:
+            destination = Path(cmd[cmd.index("--output") + 1])
+            destination.write_bytes(b"rawdisk")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         if cmd[:4] == ["gcloud", "compute", "images", "describe"]:
             if "--format=json(description,labels,status)" in cmd:
