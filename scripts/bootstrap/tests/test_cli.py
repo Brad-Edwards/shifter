@@ -43,8 +43,8 @@ class _GcpBootstrapProcess:
         self.calls.append(cmd)
         if cmd[:3] == ["gcloud", "auth", "list"]:
             return subprocess.CompletedProcess(cmd, 0, stdout="operator@example.test\n", stderr="")
-        if cmd[:3] == ["gh", "auth", "status"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        if cmd[0] == "gh":
+            return self._run_gh(cmd)
         if cmd[:3] == ["oras", "repo", "tags"]:
             return subprocess.CompletedProcess(cmd, 0, stdout="gce-1\n", stderr="")
         if cmd[:3] == ["oras", "manifest", "fetch"]:
@@ -66,9 +66,9 @@ class _GcpBootstrapProcess:
                 },
             }
             return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(manifest), stderr="")
-        if cmd[:2] == ["oras", "pull"]:
-            destination = Path(cmd[cmd.index("-o") + 1])
-            (destination / "disk.tar.gz").write_bytes(b"rawdisk")
+        if cmd[:3] == ["oras", "blob", "fetch"]:
+            destination = Path(cmd[cmd.index("--output") + 1])
+            destination.write_bytes(b"rawdisk")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         if cmd[:4] == ["gcloud", "compute", "images", "describe"]:
             if "--format=json(description,labels,status)" in cmd:
@@ -79,13 +79,25 @@ class _GcpBootstrapProcess:
                 keys = ("GCP_RANGE_LINUX_IMAGE", "GCP_RANGE_KALI_IMAGE", "GCP_RANGE_DC_IMAGE")
                 self.observed_image_env = {key: os.environ.get(key) for key in keys}
                 return subprocess.CompletedProcess(cmd, 0, stdout=f"{cmd[4]}\n", stderr="")
-        if cmd[:3] == ["gh", "variable", "set"]:
+        if cmd[:4] == ["gcloud", "storage", "buckets", "describe"] and "terraform-state" in cmd[4]:
+            raise _StopAfterImageHandoff("platform boundary reached")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def _run_gh(self, cmd):
+        if cmd[:4] == ["gh", "repo", "view", "--json"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="Brad-Edwards/shifter\n", stderr="")
+        if cmd[:2] == ["gh", "api"] and "--paginate" in cmd:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout="GCP_RANGE_DC_IMAGE\nGCP_RANGE_KALI_IMAGE\nGCP_RANGE_LINUX_IMAGE\n",
+                stderr="",
+            )
+        if cmd[:3] == ["gh", "api", "--method"]:
             self.publication_count += 1
             if self.fail_publication and self.publication_count == 2:
                 raise subprocess.CalledProcessError(1, cmd)
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-        if cmd[:4] == ["gcloud", "storage", "buckets", "describe"] and "terraform-state" in cmd[4]:
-            raise _StopAfterImageHandoff("platform boundary reached")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
 
@@ -645,14 +657,30 @@ class TestMainCLI:
 
         def fake_run(cmd, dry_run=False, **_kwargs):
             calls.append((cmd, dry_run))
+            if cmd[:4] == ["gh", "repo", "view", "--json"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="Brad-Edwards/shifter\n", stderr="")
+            if cmd[:2] == ["gh", "api"] and "--paginate" in cmd:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    0,
+                    stdout="GCP_RANGE_DC_IMAGE\nGCP_RANGE_LINUX_IMAGE\n",
+                    stderr="",
+                )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         deploy._publish_range_image_env(refs, "tenant", dry_run=False, command_runner=fake_run)
-        variable_calls = [call for call, dry_run in calls if call[:3] == ["gh", "variable", "set"]]
+        variable_calls = [call for call, dry_run in calls if call[:3] == ["gh", "api", "--method"]]
         assert len(variable_calls) == 3
         assert {
-            (call[3], call[call.index("--body") + 1], call[call.index("--env") + 1]) for call in variable_calls
-        } == {(name, ref, "tenant") for name, ref in refs.items()}
+            (
+                call[call.index("--method") + 1],
+                call[call.index("-f") + 1],
+                call[call.index("-f", call.index("-f") + 1) + 1],
+            )
+            for call in variable_calls
+        } == {
+            ("PATCH", f"name={name}", f"value={ref}") for name, ref in refs.items() if name != "GCP_RANGE_KALI_IMAGE"
+        } | {("POST", "name=GCP_RANGE_KALI_IMAGE", f"value={refs['GCP_RANGE_KALI_IMAGE']}")}
 
     def test_gcp_images_requires_an_active_gcloud_identity_before_mutation(self):
         def fake_run(cmd, **_kwargs):
