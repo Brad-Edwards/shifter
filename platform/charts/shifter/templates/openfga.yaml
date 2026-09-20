@@ -1,0 +1,276 @@
+{{- if .Values.openfga.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openfga-runtime
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+automountServiceAccountToken: false
+{{- if .Values.network.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openfga-migration-egress
+  namespace: {{ .Values.namespaces.platform }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-25"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: openfga-admin
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.openfga.databaseCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.openfga.databasePort }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openfga-admin
+  namespace: {{ .Values.namespaces.platform }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga-admin
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openfga-datastore-migrate
+  namespace: {{ .Values.namespaces.platform }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-20"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga-admin
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "shifter.partOfLabels" . | nindent 8 }}
+        app.kubernetes.io/component: openfga-admin
+    spec:
+      restartPolicy: Never
+      serviceAccountName: openfga-admin
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: {{ .Values.openfga.image | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["migrate"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openfga.runtimeSecretName }}
+                  key: datastore-uri
+          resources:
+            {{- toYaml .Values.openfga.resources | nindent 12 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfga
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+spec:
+  replicas: {{ .Values.openfga.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: shifter
+      app.kubernetes.io/component: openfga
+  template:
+    metadata:
+      labels:
+        {{- include "shifter.partOfLabels" . | nindent 8 }}
+        app.kubernetes.io/component: openfga
+    spec:
+      serviceAccountName: openfga-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/part-of: shifter
+                  app.kubernetes.io/component: openfga
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: openfga
+          image: {{ .Values.openfga.image | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["run"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openfga.runtimeSecretName }}
+                  key: datastore-uri
+            - name: OPENFGA_AUTHN_METHOD
+              value: preshared
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openfga.runtimeSecretName }}
+                  key: server-preshared-keys
+            - name: OPENFGA_HTTP_TLS_ENABLED
+              value: "true"
+            - name: OPENFGA_HTTP_TLS_CERT
+              value: /etc/openfga/tls/tls.crt
+            - name: OPENFGA_HTTP_TLS_KEY
+              value: /etc/openfga/tls/tls.key
+            - name: OPENFGA_GRPC_ADDR
+              value: 127.0.0.1:8081
+            - name: OPENFGA_PLAYGROUND_ENABLED
+              value: "false"
+            - name: OPENFGA_PROFILER_ENABLED
+              value: "false"
+            - name: OPENFGA_LOG_FORMAT
+              value: json
+            - name: OPENFGA_LOG_LEVEL
+              value: info
+            - name: OPENFGA_METRICS_ENABLED
+              value: "true"
+            - name: OPENFGA_DATASTORE_METRICS_ENABLED
+              value: "true"
+            - name: OPENFGA_DATASTORE_MIN_OPEN_CONNS
+              value: {{ .Values.openfga.pools.minOpen | quote }}
+            - name: OPENFGA_DATASTORE_MIN_IDLE_CONNS
+              value: {{ .Values.openfga.pools.minIdle | quote }}
+            - name: OPENFGA_DATASTORE_MAX_OPEN_CONNS
+              value: {{ .Values.openfga.pools.maxOpen | quote }}
+          ports:
+            - name: https
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/openfga/tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.openfga.resources | nindent 12 }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.openfga.runtimeSecretName }}
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfga
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/part-of: shifter
+    app.kubernetes.io/component: openfga
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: openfga
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: shifter
+      app.kubernetes.io/component: openfga
+{{- end }}

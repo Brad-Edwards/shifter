@@ -6,6 +6,12 @@ Split into one module per entity, mirroring ``engine/models/``. Only
 """
 
 from ._account import Account, AccountMembership
+from ._authorization import (
+    AuthorizationGroup,
+    AuthorizationMutationFence,
+    AuthorizationOperation,
+    AuthorizationPolicy,
+)
 from ._invitation import WorkspaceInvitation
 from ._membership import WorkspaceMembership
 from ._organization import Organization
@@ -52,6 +58,10 @@ __all__ = [
     "WORKSPACE_QUOTA_RESOURCE_VALUES",
     "Account",
     "AccountMembership",
+    "AuthorizationGroup",
+    "AuthorizationMutationFence",
+    "AuthorizationOperation",
+    "AuthorizationPolicy",
     "Organization",
     "OrganizationMembership",
     "Workspace",

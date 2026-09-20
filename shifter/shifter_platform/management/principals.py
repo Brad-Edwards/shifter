@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log
 from shared.identity_scope import PrincipalRef
@@ -59,7 +61,39 @@ def principal_for_user(user: User) -> PrincipalRef:
     """Resolve a pre-existing human identity without creating one on a read."""
     if user is None or user.pk is None:
         raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
-    principal = Principal.objects.filter(user=user, kind=Principal.Kind.HUMAN).first()
+    principal = _active_principals().filter(user=user, kind=Principal.Kind.HUMAN).first()
+    if principal is None:
+        raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+    return _principal_ref(principal)
+
+
+def _active_principals():
+    return Principal.objects.filter(is_active=True).filter(
+        Q(kind=Principal.Kind.SERVICE) | Q(kind=Principal.Kind.HUMAN, user__is_active=True)
+    )
+
+
+def resolve_principal(principal_ref: PrincipalRef) -> PrincipalRef:
+    """Re-resolve an active durable principal without exposing its persistence row."""
+    if not isinstance(principal_ref, PrincipalRef):
+        raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+    principal = (
+        _active_principals()
+        .filter(
+            uuid=principal_ref.uuid,
+            kind=principal_ref.kind,
+            is_active=True,
+        )
+        .first()
+    )
+    if principal is None:
+        raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+    return _principal_ref(principal)
+
+
+def resolve_principal_uuid(principal_uuid: UUID) -> PrincipalRef:
+    """Resolve one active principal by its globally unique public UUID."""
+    principal = _active_principals().filter(uuid=principal_uuid).first()
     if principal is None:
         raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
     return _principal_ref(principal)
@@ -156,5 +190,7 @@ __all__ = [
     "create_service_principal",
     "ensure_human_principal",
     "principal_for_user",
+    "resolve_principal",
+    "resolve_principal_uuid",
     "set_service_contact",
 ]

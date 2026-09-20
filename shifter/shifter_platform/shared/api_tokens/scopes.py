@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from shared.authorization import ACTION_CATALOG
+
 # --- Mission Control API (PLAT-106 / issue #1120) -----------------------------
 # Wired by subsurface instead of overloading a single coarse Mission Control
 # token audience.
@@ -47,6 +49,11 @@ CMS_PREPARATION_WRITE = "cms:preparation:write"
 WORKSPACES_MEMBERSHIP_READ = "workspaces:membership:read"
 WORKSPACES_MEMBERSHIP_WRITE = "workspaces:membership:write"
 
+# --- Application authorization API (#2315) ----------------------------------
+# One exact credential scope per closed action. A token cannot use a broader
+# administration scope to delegate an action it was not explicitly issued.
+AUTHORIZATION_ACTION_SCOPES = {action.code: f"authorization:{action.code}" for action in ACTION_CATALOG}
+
 KNOWN_SCOPES: frozenset[str] = frozenset(
     {
         MISSION_CONTROL_RANGE_READ,
@@ -72,6 +79,7 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         CMS_PREPARATION_WRITE,
         WORKSPACES_MEMBERSHIP_READ,
         WORKSPACES_MEMBERSHIP_WRITE,
+        *AUTHORIZATION_ACTION_SCOPES.values(),
     }
 )
 

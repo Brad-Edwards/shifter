@@ -34,6 +34,10 @@ class AuditAction(models.TextChoices):
     ACCESS_DENIED = "access_denied", "Access Denied"
     # Authorization
     ROLE_SYNC = "role_sync", "Role Sync"
+    AUTHORIZATION_REQUESTED = "authorization_requested", "Authorization Requested"
+    AUTHORIZATION_CONFIRMED = "authorization_confirmed", "Authorization Confirmed"
+    AUTHORIZATION_DENIED = "authorization_denied", "Authorization Denied"
+    AUTHORIZATION_UNRESOLVED = "authorization_unresolved", "Authorization Unresolved"
     # Sessions
     CONNECT = "connect", "Connect"
     DISCONNECT = "disconnect", "Disconnect"
@@ -97,6 +101,9 @@ class AuditEntityType(models.TextChoices):
     ACCOUNT_MEMBERSHIP = "account_membership", "Account Membership"
     PRINCIPAL = "principal", "Principal"
     PROVIDER_BINDING = "provider_binding", "Provider Binding"
+    AUTHORIZATION_GROUP = "authorization_group", "Authorization Group"
+    AUTHORIZATION_POLICY = "authorization_policy", "Authorization Policy"
+    AUTHORIZATION_OPERATION = "authorization_operation", "Authorization Operation"
     # ADR-051, #2048: scoped CTF communications (campaigns, intents, deliveries).
     COMMUNICATION = "communication", "Communication"
     # Model-access sharing binding (PLAT-202, #2139).

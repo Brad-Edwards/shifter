@@ -13,6 +13,7 @@
     "serviceAccounts",
     "runtimeEnv",
     "guacamoleRuntimeSecret",
+    "openfga",
     "images",
     "imagePullPolicy",
     "identity",
@@ -30,6 +31,42 @@
     "edge"
   ],
   "properties": {
+    "openfga": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "image", "replicas", "hostname", "storeId", "modelId", "runtimeSecretName", "caConfigMapName", "databaseCidrs", "databasePort", "pools", "resources"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"type": "string", "const": "openfga/openfga@sha256:d53ce5c48413d01e75ecf375f3f74eb35c50f155fc028c41d03dbc7c9838fb38"},
+        "replicas": {"type": "integer", "minimum": 2, "maximum": 10},
+        "hostname": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])$"},
+        "storeId": {"type": "string", "pattern": "^$|^[0-9A-HJKMNP-TV-Z]{26}$"},
+        "modelId": {"type": "string", "pattern": "^$|^[0-9A-HJKMNP-TV-Z]{26}$"},
+        "runtimeSecretName": {"$ref": "#/$defs/dnsLabel"},
+        "caConfigMapName": {"$ref": "#/$defs/dnsLabel"},
+        "databaseCidrs": {"$ref": "#/$defs/cidrList"},
+        "databasePort": {"type": "integer", "minimum": 1024, "maximum": 65535},
+        "pools": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minOpen", "minIdle", "maxOpen"],
+          "properties": {
+            "minOpen": {"type": "integer", "minimum": 1, "maximum": 100},
+            "minIdle": {"type": "integer", "minimum": 0, "maximum": 100},
+            "maxOpen": {"type": "integer", "minimum": 1, "maximum": 200}
+          }
+        },
+        "resources": {"$ref": "#/$defs/resources"}
+      },
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {
+        "properties": {
+          "storeId": {"pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"},
+          "modelId": {"pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"},
+          "databaseCidrs": {"minItems": 1}
+        }
+      }
+    },
     "modelBroker": {
       "type": "object",
       "additionalProperties": false,

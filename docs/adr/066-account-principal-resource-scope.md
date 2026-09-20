@@ -67,11 +67,15 @@ workspace memberships are explicit facts at their own scope. A membership or
 role at one scope grants nothing at another scope unless the owning policy
 explicitly composes it.
 
-The existing `workspaces.services` authorization and role-policy boundary stays
-the customer-scope owner. Cross-domain consumers receive immutable scalar
-projections or authorization results and never import workspaces models.
-Provider groups, Django groups, token scopes, CTF roles, cloud IAM, cached UI
-capabilities, and OpenFGA tuples do not become alternate membership stores.
+The existing `workspaces.services` boundary stays the customer-scope owner and
+the only resolver of SQL-owned resource ancestry. Cross-domain consumers
+receive immutable scalar projections or authorization results and never import
+workspaces models. OpenFGA becomes authoritative for application permission
+relationships at the S8 cutover; SQL continues to own identities, resource
+state and ancestry, and display metadata. SQL rows must not mirror or evaluate
+OpenFGA relationships. Provider groups, Django groups, token scopes, CTF roles,
+cloud IAM, and cached UI capabilities do not become alternate application
+permission stores or implicit grants.
 
 ### Shared principal and scope contracts
 
@@ -137,6 +141,21 @@ application policy; established Django mechanisms; and django-rest-knox in the
 slices that own those integrations. This ADR does not authorize a custom
 authentication protocol, policy engine, token format, secret broker, JIT/Vault
 dependency, or organizational approval workflow.
+
+The OpenFGA application-policy boundary, supported SDK operations, durable
+write semantics, deployment contract, and cutover constraints are clarified by
+`docs/architecture/openfga-authorization-preflight-2315.md`. That clarification
+does not move the S8 activation point or authorize mixed runtime authority.
+Delegation proofs enumerate a bounded, complete descendant set from the
+SQL-owning domain service boundaries before asking OpenFGA to evaluate it;
+provider graph discovery is never authoritative ancestry. A blocking Quality
+job runs the released OpenFGA/PostgreSQL harness whenever platform changes are
+selected, so missing harness configuration or skipped conformance cannot pass.
+Each descendant retains its SQL scope during delegation checks. Durable
+operations bind their provider store and model; explicit HTTP recovery checks
+the caller's current authority for the recorded effect before replay. Helm
+migration service-account and egress prerequisites remain present until the
+dependent job finishes, including first enablement on an existing deployment.
 
 ## Supersession
 
