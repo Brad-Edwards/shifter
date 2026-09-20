@@ -20,6 +20,7 @@ def list_authorization_event_uuids(workspace_ids: Sequence[int], limit: int) -> 
 
 
 def _authorization_event_targets(workspace_ids: Sequence[int], limit: int) -> tuple[TargetRef, ...]:
+    """Project SQL-owned event identities into neutral authorization targets."""
     return tuple(TargetRef("event", item) for item in list_authorization_event_uuids(workspace_ids, limit))
 
 

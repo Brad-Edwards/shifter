@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from shared.identity_scope import PrincipalRef
 
-PrincipalForUser = Callable[[Any], PrincipalRef]
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
+_DIRECTORY_UNBOUND = "No principal directory is bound"
+_PRINCIPAL_UNAVAILABLE = "Principal unavailable"
+
+PrincipalForUser = Callable[["User"], PrincipalRef]
 PrincipalResolver = Callable[[PrincipalRef], PrincipalRef]
 PrincipalUuidResolver = Callable[[UUID], PrincipalRef]
 
@@ -37,34 +43,37 @@ def bind_principal_directory(
     _uuid_resolver = uuid_resolver
 
 
-def principal_for_user(user: Any) -> PrincipalRef:
+def principal_for_user(user: User) -> PrincipalRef:
+    """Resolve an existing human principal through the bound management directory."""
     if _for_user is None:
-        raise PrincipalResolutionError("No principal directory is bound")
+        raise PrincipalResolutionError(_DIRECTORY_UNBOUND)
     try:
         return _for_user(user)
     except PrincipalResolutionError:
         raise
     except Exception as exc:
-        raise PrincipalResolutionError("Principal unavailable") from exc
+        raise PrincipalResolutionError(_PRINCIPAL_UNAVAILABLE) from exc
 
 
 def resolve_principal(principal: PrincipalRef) -> PrincipalRef:
+    """Revalidate an active principal through the bound management directory."""
     if _resolver is None:
-        raise PrincipalResolutionError("No principal directory is bound")
+        raise PrincipalResolutionError(_DIRECTORY_UNBOUND)
     try:
         return _resolver(principal)
     except PrincipalResolutionError:
         raise
     except Exception as exc:
-        raise PrincipalResolutionError("Principal unavailable") from exc
+        raise PrincipalResolutionError(_PRINCIPAL_UNAVAILABLE) from exc
 
 
 def resolve_principal_uuid(principal_uuid: UUID) -> PrincipalRef:
+    """Resolve an active principal UUID without exposing management persistence."""
     if _uuid_resolver is None:
-        raise PrincipalResolutionError("No principal directory is bound")
+        raise PrincipalResolutionError(_DIRECTORY_UNBOUND)
     try:
         return _uuid_resolver(principal_uuid)
     except PrincipalResolutionError:
         raise
     except Exception as exc:
-        raise PrincipalResolutionError("Principal unavailable") from exc
+        raise PrincipalResolutionError(_PRINCIPAL_UNAVAILABLE) from exc

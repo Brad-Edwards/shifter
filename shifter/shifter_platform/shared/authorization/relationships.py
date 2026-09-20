@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import re
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Protocol
 from uuid import UUID
 
-from .catalog import AuthorizationContractError, action_definition, predefined_policy_definition
+from .catalog import (
+    AuthorizationContractError,
+    PredefinedPolicyDefinition,
+    action_definition,
+    predefined_policy_definition,
+)
 from .contracts import TargetRef
 from .model import deny_relation_for_action, grant_relation_for_action
 
@@ -73,6 +79,8 @@ class RelationshipChangePage:
 
 
 class PolicyEffect(StrEnum):
+    """Explicit grant or revoke intent for a typed relationship mutation."""
+
     GRANT = "grant"
     REVOKE = "revoke"
 
@@ -95,18 +103,30 @@ class RelationshipChange(Protocol):
     def deletes(self) -> tuple[RelationshipTuple, ...]: ...
 
 
-class _MonotonicChange:
+class _MonotonicChange(ABC):
     """Shared positive/explicit-exclusion mutation behavior."""
 
     effect: PolicyEffect
 
     @property
+    @abstractmethod
+    def grant_tuple(self) -> RelationshipTuple:
+        """Return the positive relationship for this typed change."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def deny_tuple(self) -> RelationshipTuple:
+        """Return the explicit exclusion for this typed change."""
+        raise NotImplementedError
+
+    @property
     def writes(self) -> tuple[RelationshipTuple, ...]:
-        return (self.grant_tuple,) if self.effect == PolicyEffect.GRANT else (self.deny_tuple,)  # type: ignore[attr-defined]
+        return (self.grant_tuple,) if self.effect == PolicyEffect.GRANT else (self.deny_tuple,)
 
     @property
     def deletes(self) -> tuple[RelationshipTuple, ...]:
-        return (self.deny_tuple,) if self.effect == PolicyEffect.GRANT else (self.grant_tuple,)  # type: ignore[attr-defined]
+        return (self.deny_tuple,) if self.effect == PolicyEffect.GRANT else (self.grant_tuple,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,7 +238,7 @@ class AdministrativeRoleChange(_MonotonicChange):
         return f"{self.target.type}:{self.target.uuid}"
 
     @property
-    def _definition(self):
+    def _definition(self) -> PredefinedPolicyDefinition:
         return predefined_policy_definition(self.policy_code)
 
     @property
@@ -307,9 +327,10 @@ class VersionedRelationshipChange:
     @property
     def writes(self) -> tuple[RelationshipTuple, ...]:
         superseded = self._superseded_tuple
-        if superseded is None:
-            return (self._candidate_tuple, self._effective_tuple)
-        return (self._candidate_tuple, self._effective_tuple, superseded)
+        writes = [self._candidate_tuple, self._effective_tuple]
+        if superseded is not None:
+            writes.append(superseded)
+        return tuple(writes)
 
     @property
     def deletes(self) -> tuple[RelationshipTuple, ...]:

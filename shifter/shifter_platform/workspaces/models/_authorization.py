@@ -11,6 +11,8 @@ class AuthorizationScopeMixin(models.Model):
     """SQL-owned scope/display projection; never effective permission state."""
 
     class ScopeKind(models.TextChoices):
+        """Persisted root scope types for authorization display metadata."""
+
         INSTALLATION = "installation", "Installation"
         ACCOUNT = "account", "Account"
 
@@ -20,6 +22,8 @@ class AuthorizationScopeMixin(models.Model):
     workspace_uuid = models.UUIDField(null=True, blank=True)
 
     class Meta:
+        """Keep shared ancestry fields abstract rather than creating a separate table."""
+
         abstract = True
 
     def _scope_label(self) -> str:
@@ -29,6 +33,7 @@ class AuthorizationScopeMixin(models.Model):
 
     @staticmethod
     def scope_constraint(name: str) -> models.CheckConstraint:
+        """Reject inconsistent installation and account ancestry shapes in SQL."""
         return models.CheckConstraint(
             condition=(
                 models.Q(
@@ -84,6 +89,8 @@ class AuthorizationGroup(AuthorizationScopeMixin):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Enforce valid ancestry and scope-local group name uniqueness."""
+
         db_table = "workspaces_authorization_group"
         constraints = [
             AuthorizationScopeMixin.scope_constraint("authz_group_scope_shape"),
@@ -106,6 +113,8 @@ class AuthorizationPolicy(AuthorizationScopeMixin):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Enforce valid ancestry and scope-local policy name uniqueness."""
+
         db_table = "workspaces_authorization_policy"
         constraints = [
             AuthorizationScopeMixin.scope_constraint("authz_policy_scope_shape"),
@@ -125,6 +134,8 @@ class AuthorizationMutationFence(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Store the stable per-relationship serialization record."""
+
         db_table = "workspaces_authorization_mutation_fence"
 
     def __str__(self) -> str:
@@ -135,12 +146,16 @@ class AuthorizationOperation(models.Model):
     """Durable intent/outcome for one external OpenFGA relationship change."""
 
     class State(models.TextChoices):
+        """Durable lifecycle outcomes for authorization mutations and reconciliation."""
+
         REQUESTED = "requested", "Requested"
         CONFIRMED = "confirmed", "Confirmed"
         DENIED = "denied", "Denied"
         UNRESOLVED = "unresolved", "Unresolved"
 
     class RelationshipKind(models.TextChoices):
+        """Closed relationship forms supported by operation reconstruction."""
+
         ACTION = "action", "Action assignment"
         GROUP_MEMBERSHIP = "group_member", "Group membership"
         ROLE_ASSIGNMENT = "role_assign", "Role assignment"
@@ -184,6 +199,8 @@ class AuthorizationOperation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Enforce idempotency and uniqueness of accepted fence generations."""
+
         db_table = "workspaces_authorization_operation"
         constraints = [
             models.UniqueConstraint(

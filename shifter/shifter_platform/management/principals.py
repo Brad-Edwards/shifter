@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 
 from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log
 from shared.identity_scope import PrincipalRef
@@ -67,7 +67,8 @@ def principal_for_user(user: User) -> PrincipalRef:
     return _principal_ref(principal)
 
 
-def _active_principals():
+def _active_principals() -> QuerySet[Principal]:
+    """Limit resolution to active services and active human user accounts."""
     return Principal.objects.filter(is_active=True).filter(
         Q(kind=Principal.Kind.SERVICE) | Q(kind=Principal.Kind.HUMAN, user__is_active=True)
     )

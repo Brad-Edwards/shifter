@@ -81,7 +81,9 @@ STORE_RESPONSE="$(curl --silent --fail --cacert "${FIXTURE_DIR}/tls.crt" \
   -d '{"name":"shifter-integration"}' \
   "${API_URL}/stores")"
 STORE_ID="$(printf '%s' "${STORE_RESPONSE}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
-MODEL_DSL="$(TESTING=1 ENVIRONMENT=test uv run python manage.py render_openfga_model)"
+# CI prepares the frozen environment before this harness. Execution must not
+# resolve dependencies or build source distributions as a side effect.
+MODEL_DSL="$(TESTING=1 ENVIRONMENT=test uv run --no-build --no-sync python manage.py render_openfga_model)"
 MODEL_RESPONSE="$(docker run --rm "${OPENFGA_CLI_IMAGE}" model transform "${MODEL_DSL}" \
   --input-format fga --output-format json | curl --silent --fail --cacert "${FIXTURE_DIR}/tls.crt" \
   -H "Authorization: Bearer ${TOKEN}" \
@@ -104,4 +106,4 @@ OPENFGA_INTEGRATION_MODEL_ID="${MODEL_ID}" \
 OPENFGA_INTEGRATION_TOKEN="${TOKEN}" \
 OPENFGA_INTEGRATION_CA_CERT="${FIXTURE_DIR}/tls.crt" \
 OPENFGA_INTEGRATION_REQUIRED=1 \
-uv run pytest -n0 -q tests/integration/authorization/test_openfga_released_server.py
+uv run --no-build --no-sync pytest -n0 -q tests/integration/authorization/test_openfga_released_server.py

@@ -12,6 +12,7 @@ from .catalog import AuthorizationContractError, TargetType, action_definition
 
 
 def _valid_uuid(value: object) -> bool:
+    """Accept only nonzero UUID instances as public object identities."""
     return isinstance(value, UUID) and value.int != 0
 
 
@@ -48,6 +49,7 @@ class CredentialCeiling:
 
 
 def _validate_target_scope(target: TargetRef, scope: ResourceScope) -> None:
+    """Reject targets that disagree with the server-resolved ancestry."""
     if target.type == "installation":
         if scope.kind != "installation":
             raise AuthorizationContractError("Installation target requires installation scope")
@@ -85,6 +87,8 @@ class AuthorizationRequest:
 
 
 class DecisionKind(StrEnum):
+    """Closed authorization outcomes, including fail-closed evaluator failures."""
+
     ALLOWED = "allowed"
     DENIED = "denied"
     EVALUATOR_ERROR = "evaluator_error"

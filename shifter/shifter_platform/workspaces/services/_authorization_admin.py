@@ -36,6 +36,8 @@ class AuthorizationAdminConflict(AuthorizationAdminError):
 
 @dataclass(frozen=True, slots=True)
 class AuthorizationMetadataView:
+    """Display-only scoped group or policy metadata, never effective grants."""
+
     uuid: UUID
     name: str
     description: str
@@ -45,6 +47,8 @@ class AuthorizationMetadataView:
 
 @dataclass(frozen=True, slots=True)
 class AuthorizationOperationView:
+    """Sanitized durable mutation status returned to authorized administrators."""
+
     uuid: UUID
     relationship_kind: str
     action: str
@@ -54,6 +58,7 @@ class AuthorizationOperationView:
 
 
 def workspace_authorization_scope(workspace_uuid: UUID) -> ResourceScope:
+    """Resolve an unarchived workspace's complete account ancestry from SQL."""
     workspace = (
         Workspace.objects.select_related("organization__account")
         .filter(uuid=workspace_uuid, archived_at__isnull=True, organization__account__isnull=False)
@@ -75,6 +80,7 @@ def _authorize(
     scope: ResourceScope,
     provider: AuthorizationProvider,
 ) -> None:
+    """Require an active principal and current exact-workspace management authority."""
     try:
         resolve_principal(actor)
         resolve_resource_scope(scope)
@@ -95,6 +101,7 @@ def _authorize(
 
 
 def _lookup(scope: ResourceScope) -> dict[str, object]:
+    """Match metadata against all components of the trusted scope."""
     return {
         "scope_kind": scope.kind,
         "account_uuid": scope.account_uuid,
@@ -104,6 +111,7 @@ def _lookup(scope: ResourceScope) -> dict[str, object]:
 
 
 def _metadata_view(item: AuthorizationGroup | AuthorizationPolicy) -> AuthorizationMetadataView:
+    """Project a persisted display identity into its public service contract."""
     return AuthorizationMetadataView(
         uuid=item.uuid,
         name=item.name,
@@ -115,15 +123,14 @@ def _metadata_view(item: AuthorizationGroup | AuthorizationPolicy) -> Authorizat
 
 def _ensure_predefined_metadata(scope: ResourceScope) -> None:
     """Provision immutable display identities for the current concrete scope."""
-    target_type = (
-        "workspace"
-        if scope.workspace_uuid is not None
-        else "organization"
-        if scope.organization_uuid is not None
-        else "account"
-        if scope.account_uuid is not None
-        else "installation"
-    )
+    if scope.workspace_uuid is not None:
+        target_type = "workspace"
+    elif scope.organization_uuid is not None:
+        target_type = "organization"
+    elif scope.account_uuid is not None:
+        target_type = "account"
+    else:
+        target_type = "installation"
     lookup = _lookup(scope)
     definitions = (item for item in PREDEFINED_POLICIES if item.target_type == target_type)
     try:
@@ -147,6 +154,7 @@ def _ensure_predefined_metadata(scope: ResourceScope) -> None:
 
 
 def _audit_metadata(item: AuthorizationGroup | AuthorizationPolicy, audit: RequestAudit) -> None:
+    """Record metadata creation with trusted request attribution in the same transaction."""
     entity_type = (
         AuditEntityType.AUTHORIZATION_GROUP
         if isinstance(item, AuthorizationGroup)
@@ -171,6 +179,7 @@ def _audit_metadata(item: AuthorizationGroup | AuthorizationPolicy, audit: Reque
 
 
 def _validated_metadata(name: str, description: str) -> tuple[str, str]:
+    """Normalize bounded display fields and reject empty or oversized names."""
     normalized_name = name.strip() if isinstance(name, str) else ""
     normalized_description = description.strip() if isinstance(description, str) else ""
     if not normalized_name or len(normalized_name) > 120 or len(normalized_description) > 500:
@@ -184,6 +193,7 @@ def list_authorization_groups(
     scope: ResourceScope,
     provider: AuthorizationProvider,
 ) -> tuple[AuthorizationMetadataView, ...]:
+    """List scoped group metadata only after current administration checks."""
     _authorize(actor, credential, scope, provider)
     _ensure_predefined_metadata(scope)
     return tuple(
@@ -201,6 +211,7 @@ def create_authorization_group(
     description: str = "",
     audit: RequestAudit,
 ) -> AuthorizationMetadataView:
+    """Create and audit scoped group metadata without granting membership."""
     name, description = _validated_metadata(name, description)
     _authorize(actor, credential, scope, provider)
     _ensure_predefined_metadata(scope)
@@ -223,6 +234,7 @@ def list_authorization_policies(
     scope: ResourceScope,
     provider: AuthorizationProvider,
 ) -> tuple[AuthorizationMetadataView, ...]:
+    """List scoped policy metadata only after current administration checks."""
     _authorize(actor, credential, scope, provider)
     _ensure_predefined_metadata(scope)
     return tuple(
@@ -240,6 +252,7 @@ def create_authorization_policy(
     description: str = "",
     audit: RequestAudit,
 ) -> AuthorizationMetadataView:
+    """Create and audit a custom policy identity without granting permissions."""
     name, description = _validated_metadata(name, description)
     _authorize(actor, credential, scope, provider)
     _ensure_predefined_metadata(scope)
@@ -263,6 +276,7 @@ def get_authorization_operation(
     provider: AuthorizationProvider,
     operation_uuid: UUID,
 ) -> AuthorizationOperationView:
+    """Read operation status only within the caller's authorized exact scope."""
     _authorize(actor, credential, scope, provider)
     operation = AuthorizationOperation.objects.filter(
         id=operation_uuid,

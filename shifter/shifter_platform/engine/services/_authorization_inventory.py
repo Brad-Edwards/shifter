@@ -20,6 +20,7 @@ def list_authorization_range_uuids(workspace_ids: Sequence[int], limit: int) -> 
 
 
 def _authorization_range_targets(workspace_ids: Sequence[int], limit: int) -> tuple[TargetRef, ...]:
+    """Project SQL-owned range identities into neutral authorization targets."""
     return tuple(TargetRef("range", item) for item in list_authorization_range_uuids(workspace_ids, limit))
 
 

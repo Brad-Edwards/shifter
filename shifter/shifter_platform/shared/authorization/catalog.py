@@ -45,6 +45,7 @@ def _action(
     delegable: bool = True,
     requires_administrator: bool = False,
 ) -> ActionDefinition:
+    """Build one catalog entry with explicit delegation and administrator semantics."""
     return ActionDefinition(code, target, administrative, delegable, requires_administrator)
 
 
@@ -109,13 +110,15 @@ ACTION_CATALOG: tuple[ActionDefinition, ...] = (
 )
 
 _ACTIONS_BY_CODE = {action.code: action for action in ACTION_CATALOG}
-if len(_ACTIONS_BY_CODE) != len(ACTION_CATALOG):  # pragma: no cover - import-time invariant
+# Import-time invariant: duplicate codes cannot represent a valid catalog.
+if len(_ACTIONS_BY_CODE) != len(ACTION_CATALOG):
     raise RuntimeError("authorization action codes must be unique")
 
 APPLICATION_ADMINISTRATOR_ACTIONS = frozenset(action.code for action in ACTION_CATALOG if action.administrative)
 
 
 def _actions_at_or_below(target_type: TargetType) -> frozenset[str]:
+    """Collect the complete action set rooted at a target's hierarchy level."""
     hierarchy = ("installation", "account", "organization", "workspace", "event", "range")
     start = hierarchy.index(target_type)
     descendants = set(hierarchy[start:])
@@ -123,6 +126,7 @@ def _actions_at_or_below(target_type: TargetType) -> frozenset[str]:
 
 
 def _administrative_actions_at_or_below(target_type: TargetType) -> frozenset[str]:
+    """Select administrative actions within a predefined policy's descendant scope."""
     return frozenset(action for action in _actions_at_or_below(target_type) if _ACTIONS_BY_CODE[action].administrative)
 
 

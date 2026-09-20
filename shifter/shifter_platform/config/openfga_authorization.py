@@ -40,6 +40,7 @@ from shared.authorization import (
     RelationshipChangePage,
     RelationshipObjectType,
     RelationshipState,
+    RelationshipTuple,
     VersionedRelationshipChange,
 )
 from shared.authorization.model import decision_relation_for_action
@@ -61,16 +62,7 @@ class OpenFgaRuntimeSettings:
     timeout_ms: int = 1500
 
     def __post_init__(self) -> None:
-        parsed = urlparse(self.api_url)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("OpenFGA api_url must use https")
+        _validate_api_url(self.api_url)
         if not self.api_token:
             raise ValueError("OpenFGA runtime API token is required")
         if not re.fullmatch(r"[0-9A-HJKMNP-TV-Z]{26}", self.store_id):
@@ -83,7 +75,19 @@ class OpenFgaRuntimeSettings:
             raise ValueError("OpenFGA timeout must be between 100 and 10000 milliseconds")
 
 
+def _validate_api_url(api_url: str) -> None:
+    """Accept only a private TLS endpoint without embedded credentials or query data."""
+    parsed = urlparse(api_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or any((parsed.username, parsed.password, parsed.query, parsed.fragment))
+    ):
+        raise ValueError("OpenFGA api_url must use https")
+
+
 def _sdk_client(settings: OpenFgaRuntimeSettings) -> OpenFgaClient:
+    """Construct the pinned SDK client without automatic write retries."""
     credentials = Credentials(
         method="api_token",
         configuration=CredentialConfiguration(api_token=settings.api_token),
@@ -102,6 +106,7 @@ def _sdk_client(settings: OpenFgaRuntimeSettings) -> OpenFgaClient:
 
 
 def _read_secret_file(path_value: str) -> str:
+    """Load a bounded mounted runtime token, exposing only sanitized configuration errors."""
     if not path_value:
         raise ImproperlyConfigured("OPENFGA_API_TOKEN_FILE is required when OpenFGA is enabled")
     path = Path(path_value)
@@ -140,12 +145,14 @@ def configured_authorization_provider() -> OpenFgaAuthorizationProvider:
 
 
 def _provider_object(request: AuthorizationRequest) -> str:
+    """Encode the validated application target as an OpenFGA object."""
     if request.target.type == "installation":
         return "installation:root"
     return f"{request.target.type}:{request.target.uuid}"
 
 
 def _check_body(request: AuthorizationRequest) -> ClientCheckRequest:
+    """Translate a closed authorization request into the SDK check contract."""
     return ClientCheckRequest(
         user=f"principal:{request.principal.uuid}",
         relation=decision_relation_for_action(request.action),
@@ -154,9 +161,29 @@ def _check_body(request: AuthorizationRequest) -> ClientCheckRequest:
 
 
 def _decision(allowed: bool) -> AuthorizationDecision:
+    """Convert an explicit provider boolean into a bounded application decision."""
     if allowed:
         return AuthorizationDecision(DecisionKind.ALLOWED, "policy_allowed")
     return AuthorizationDecision(DecisionKind.DENIED, "policy_denied")
+
+
+def _batch_decisions(results: object, count: int) -> tuple[AuthorizationDecision, ...]:
+    """Reject incomplete, duplicate, unexpected, or errored batch correlations atomically."""
+    failed = AuthorizationDecision(DecisionKind.EVALUATOR_ERROR, "incomplete_batch")
+    if isinstance(results, Mapping):
+        by_correlation = dict(results)
+    elif isinstance(results, list):
+        by_correlation = {getattr(item, "correlation_id", None): item for item in results}
+    else:
+        return (failed,) * count
+    expected = {str(index) for index in range(count)}
+    if (
+        len(by_correlation) != len(results)
+        or set(by_correlation) != expected
+        or any(getattr(item, "error", None) is not None for item in by_correlation.values())
+    ):
+        return (failed,) * count
+    return tuple(_decision(getattr(by_correlation[str(index)], "allowed", False) is True) for index in range(count))
 
 
 def _scope_parents(request: AuthorizationRequest) -> tuple[tuple[str, str, str], ...]:
@@ -209,17 +236,18 @@ class OpenFgaAuthorizationProvider:
         for object_id, relation, parent in _scope_parents(request):
             if self._parents(object_id, relation) != (parent,):
                 return False
-        if request.target.type == "range":
-            workspace = f"workspace:{request.scope.workspace_uuid}"
-            workspaces = self._parents(_provider_object(request), "workspace")
-            if workspaces not in {(), (workspace,)}:
-                return False
-            events = self._parents(_provider_object(request), "event")
-            if len(events) > 1 or not (workspaces or events):
-                return False
-            if events and self._parents(events[0], "workspace") != (workspace,):
-                return False
-        return True
+        return request.target.type != "range" or self._range_ancestry_matches(request)
+
+    def _range_ancestry_matches(self, request: AuthorizationRequest) -> bool:
+        """Require every direct or event-derived range parent to match the SQL workspace."""
+        workspace = f"workspace:{request.scope.workspace_uuid}"
+        workspaces = self._parents(_provider_object(request), "workspace")
+        if workspaces not in {(), (workspace,)}:
+            return False
+        events = self._parents(_provider_object(request), "event")
+        if len(events) > 1 or not (workspaces or events):
+            return False
+        return not events or self._parents(events[0], "workspace") == (workspace,)
 
     def check(self, request: AuthorizationRequest) -> AuthorizationDecision:
         try:
@@ -242,32 +270,28 @@ class OpenFgaAuthorizationProvider:
             )
             for index, request in enumerate(requests)
         ]
-        failed = AuthorizationDecision(DecisionKind.EVALUATOR_ERROR, "incomplete_batch")
         try:
-            checked_targets = set()
-            for request in requests:
-                identity = (request.target, request.scope)
-                if identity not in checked_targets:
-                    if not self._ancestry_matches(request):
-                        return tuple(AuthorizationDecision(DecisionKind.DENIED, "invalid_request") for _ in requests)
-                    checked_targets.add(identity)
-            response = self._client.batch_check(ClientBatchCheckRequest(checks=checks), self._options)
-            results = response.result
-            if isinstance(results, Mapping):
-                by_correlation = dict(results)
-            elif isinstance(results, list):
-                by_correlation = {getattr(item, "correlation_id", None): item for item in results}
+            if self._batch_ancestry_matches(requests):
+                response = self._client.batch_check(ClientBatchCheckRequest(checks=checks), self._options)
+                decisions = _batch_decisions(response.result, len(requests))
             else:
-                return tuple(failed for _ in requests)
-            expected = {str(index) for index in range(len(requests))}
-            if len(by_correlation) != len(results) or set(by_correlation) != expected:
-                return tuple(failed for _ in requests)
-            ordered = [by_correlation[str(index)] for index in range(len(requests))]
-            if any(getattr(item, "error", None) is not None for item in ordered):
-                return tuple(failed for _ in requests)
-            return tuple(_decision(getattr(item, "allowed", False) is True) for item in ordered)
+                decisions = tuple(AuthorizationDecision(DecisionKind.DENIED, "invalid_request") for _ in requests)
         except Exception:
-            return tuple(AuthorizationDecision(DecisionKind.EVALUATOR_ERROR, "evaluator_unavailable") for _ in requests)
+            decisions = tuple(
+                AuthorizationDecision(DecisionKind.EVALUATOR_ERROR, "evaluator_unavailable") for _ in requests
+            )
+        return decisions
+
+    def _batch_ancestry_matches(self, requests: Sequence[AuthorizationRequest]) -> bool:
+        """Validate each distinct target and trusted scope before submitting any checks."""
+        checked_targets = set()
+        for request in requests:
+            identity = (request.target, request.scope)
+            if identity not in checked_targets:
+                if not self._ancestry_matches(request):
+                    return False
+                checked_targets.add(identity)
+        return True
 
     def write_relationships(
         self,
@@ -289,7 +313,7 @@ class OpenFgaAuthorizationProvider:
         except Exception as exc:
             raise AuthorizationProviderError("OpenFGA relationship write failed") from exc
 
-    def _relationship_present(self, tuple_key: Any) -> bool:
+    def _relationship_present(self, tuple_key: RelationshipTuple) -> bool:
         body = ReadRequestTupleKey(user=tuple_key.user, relation=tuple_key.relation, object=tuple_key.object)
         try:
             response = self._client.read(body, self._options)

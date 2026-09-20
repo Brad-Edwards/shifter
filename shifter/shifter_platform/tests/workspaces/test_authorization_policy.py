@@ -405,7 +405,7 @@ def test_predefined_administrator_denies_when_a_concrete_descendant_permission_i
         return (event,)
 
     monkeypatch.setattr(
-        "workspaces.services._authorization_policy.resolve_authorization_descendants",
+        "workspaces.services._authorization_delegation.resolve_authorization_descendants",
         resolve_descendants,
     )
     provider = FakeProvider(denied_actions=frozenset({"event.manage"}))

@@ -21,6 +21,7 @@ from shared.authorization import (
     PREDEFINED_POLICIES,
     AdministrativeRoleChange,
     AuthorizationContractError,
+    AuthorizationProvider,
     AuthorizationProviderBindingError,
     CredentialCeiling,
     GroupMembershipChange,
@@ -30,6 +31,7 @@ from shared.authorization import (
     TargetRef,
     configured_authorization_provider,
 )
+from shared.identity_scope import PrincipalRef, ResourceScope
 from shared.principal_port import PrincipalResolutionError, principal_for_user
 from workspaces import services
 from workspaces.api.permissions import AUTHORIZATION_PERMISSIONS
@@ -53,6 +55,8 @@ if TYPE_CHECKING:
 
 
 class AuthorizationAPIError(RuntimeError):
+    """Bounded API error carrying only a safe code and HTTP status."""
+
     def __init__(self, code: str, status_code: int) -> None:
         super().__init__(code)
         self.code = code
@@ -60,6 +64,7 @@ class AuthorizationAPIError(RuntimeError):
 
 
 def _credential_ceiling(request: Request) -> CredentialCeiling:
+    """Derive permitted actions from the admitted token or authenticated session."""
     auth = getattr(request, "auth", None)
     if isinstance(auth, ApiToken):
         by_scope = {value: action for action, value in AUTHORIZATION_ACTION_SCOPES.items()}
@@ -67,7 +72,11 @@ def _credential_ceiling(request: Request) -> CredentialCeiling:
     return CredentialCeiling(frozenset(item.code for item in ACTION_CATALOG))
 
 
-def _context(request: Request, workspace_uuid: UUID):
+def _context(
+    request: Request,
+    workspace_uuid: UUID,
+) -> tuple[PrincipalRef, CredentialCeiling, ResourceScope, AuthorizationProvider]:
+    """Resolve the active actor, trusted workspace scope, and configured evaluator."""
     actor_user = active_actor_user(request)
     if actor_user is None:
         raise AuthorizationAPIError("authorization_denied", 403)
@@ -83,6 +92,7 @@ def _context(request: Request, workspace_uuid: UUID):
 
 
 def _request_audit(request: Request) -> RequestAudit:
+    """Capture server-owned actor and bounded HTTP request attribution."""
     actor_type, actor_id = get_actor_from_request(request)
     return RequestAudit(
         actor_type=actor_type,
@@ -94,10 +104,13 @@ def _request_audit(request: Request) -> RequestAudit:
 
 
 class _AuthorizationAPIView(APIView):
+    """Shared authentication, closed JSON parsing, and sanitized error handling."""
+
     permission_classes = AUTHORIZATION_PERMISSIONS
     parser_classes = [ClosedJSONParser]
 
     def handle_exception(self, exc: Exception) -> Response:
+        """Translate known authorization failures without exposing internal exception data."""
         if isinstance(exc, AuthorizationAPIError):
             return api_error_response(
                 code=exc.code,
@@ -105,45 +118,32 @@ class _AuthorizationAPIView(APIView):
                 status_code=exc.status_code,
                 request=self.request,
             )
-        if isinstance(exc, services.AuthorizationMutationConflict):
-            return api_error_response(
-                code="authorization_conflict",
-                message="Authorization request conflicts with current state",
-                status_code=409,
-                request=self.request,
-            )
-        if isinstance(exc, services.AuthorizationAdminValidationError):
-            return api_error_response(
-                code="invalid_request",
-                message="Authorization request is invalid",
-                status_code=400,
-                request=self.request,
-            )
-        if isinstance(exc, services.AuthorizationAdminConflict):
-            return api_error_response(
-                code="authorization_conflict",
-                message="Authorization metadata already exists",
-                status_code=409,
-                request=self.request,
-            )
-        if isinstance(exc, services.AuthorizationAdminError):
-            return api_error_response(
-                code="authorization_denied",
-                message="Authorization request denied",
-                status_code=403,
-                request=self.request,
-            )
-        if isinstance(exc, AuthorizationContractError):
-            return api_error_response(
-                code="invalid_request",
-                message="Authorization request is invalid",
-                status_code=400,
-                request=self.request,
-            )
+        error_contracts = (
+            (
+                services.AuthorizationMutationConflict,
+                "authorization_conflict",
+                "Authorization request conflicts with current state",
+                409,
+            ),
+            (services.AuthorizationAdminValidationError, "invalid_request", "Authorization request is invalid", 400),
+            (
+                services.AuthorizationAdminConflict,
+                "authorization_conflict",
+                "Authorization metadata already exists",
+                409,
+            ),
+            (services.AuthorizationAdminError, "authorization_denied", "Authorization request denied", 403),
+            (AuthorizationContractError, "invalid_request", "Authorization request is invalid", 400),
+        )
+        for error_type, code, message, status_code in error_contracts:
+            if isinstance(exc, error_type):
+                return api_error_response(code=code, message=message, status_code=status_code, request=self.request)
         return super().handle_exception(exc)
 
 
 class AuthorizationCatalogView(_AuthorizationAPIView):
+    """Expose the closed action vocabulary to authenticated callers."""
+
     @extend_schema(responses={200: AuthorizationActionSerializer(many=True)})
     def get(self, request: Request) -> Response:
         payload = [
@@ -160,6 +160,8 @@ class AuthorizationCatalogView(_AuthorizationAPIView):
 
 
 class PredefinedAuthorizationCatalogView(_AuthorizationAPIView):
+    """Expose immutable predefined policy definitions to authenticated callers."""
+
     @extend_schema(responses={200: PredefinedAuthorizationPolicySerializer(many=True)})
     def get(self, request: Request) -> Response:
         payload = [
@@ -176,6 +178,8 @@ class PredefinedAuthorizationCatalogView(_AuthorizationAPIView):
 
 
 class AuthorizationGroupCollectionView(_AuthorizationAPIView):
+    """List or create display-only groups within an authorized workspace."""
+
     @extend_schema(responses={200: AuthorizationMetadataSerializer(many=True)})
     def get(self, request: Request, workspace_uuid: UUID) -> Response:
         actor, credential, scope, provider = _context(request, workspace_uuid)
@@ -202,6 +206,8 @@ class AuthorizationGroupCollectionView(_AuthorizationAPIView):
 
 
 class AuthorizationPolicyCollectionView(_AuthorizationAPIView):
+    """List or create display-only policies within an authorized workspace."""
+
     @extend_schema(responses={200: AuthorizationMetadataSerializer(many=True)})
     def get(self, request: Request, workspace_uuid: UUID) -> Response:
         actor, credential, scope, provider = _context(request, workspace_uuid)
@@ -227,7 +233,13 @@ class AuthorizationPolicyCollectionView(_AuthorizationAPIView):
         return Response(AuthorizationMetadataSerializer(item).data, status=201)
 
 
-def _native_result(request: Request, workspace_uuid: UUID, change, idempotency_key: str) -> Response:
+def _native_result(
+    request: Request,
+    workspace_uuid: UUID,
+    change: GroupMembershipChange | RoleAssignmentChange | AdministrativeRoleChange,
+    idempotency_key: str,
+) -> Response:
+    """Submit a typed native relationship mutation and return its durable operation."""
     actor, credential, scope, provider = _context(request, workspace_uuid)
     mutation = services.NativeRelationshipMutationRequest(
         actor=actor,
@@ -243,6 +255,8 @@ def _native_result(request: Request, workspace_uuid: UUID, change, idempotency_k
 
 
 class AuthorizationGroupMembershipView(_AuthorizationAPIView):
+    """Accept exact-principal membership changes for a scoped native group."""
+
     @extend_schema(request=NativeMembershipMutationSerializer, responses={202: AuthorizationMutationSerializer})
     def post(self, request: Request, workspace_uuid: UUID, group_uuid: UUID) -> Response:
         command = NativeMembershipMutationSerializer(data=request.data)
@@ -257,6 +271,8 @@ class AuthorizationGroupMembershipView(_AuthorizationAPIView):
 
 
 class AuthorizationPolicyAssignmentView(_AuthorizationAPIView):
+    """Accept principal or group assignments to a scoped custom policy."""
+
     @extend_schema(request=RoleAssignmentMutationSerializer, responses={202: AuthorizationMutationSerializer})
     def post(self, request: Request, workspace_uuid: UUID, policy_uuid: UUID) -> Response:
         command = RoleAssignmentMutationSerializer(data=request.data)
@@ -271,6 +287,8 @@ class AuthorizationPolicyAssignmentView(_AuthorizationAPIView):
 
 
 class AuthorizationPredefinedAssignmentView(_AuthorizationAPIView):
+    """Accept assignment of closed administrator policies at workspace scope."""
+
     @extend_schema(request=PredefinedRoleMutationSerializer, responses={202: AuthorizationMutationSerializer})
     def post(self, request: Request, workspace_uuid: UUID) -> Response:
         command = PredefinedRoleMutationSerializer(data=request.data)
@@ -291,6 +309,7 @@ def _action_result(
     subject: RelationshipSubject,
     data: dict[str, object],
 ) -> Response:
+    """Submit an exact action assignment with server-owned actor and scope context."""
     actor, credential, scope, provider = _context(request, workspace_uuid)
     mutation = services.PolicyMutationRequest(
         actor=actor,
@@ -309,6 +328,8 @@ def _action_result(
 
 
 class AuthorizationPolicyActionView(_AuthorizationAPIView):
+    """Change the explicit actions granted to a scoped custom policy."""
+
     @extend_schema(request=PolicyActionMutationSerializer, responses={202: AuthorizationMutationSerializer})
     def post(self, request: Request, workspace_uuid: UUID, policy_uuid: UUID) -> Response:
         command = PolicyActionMutationSerializer(data=request.data)
@@ -318,6 +339,8 @@ class AuthorizationPolicyActionView(_AuthorizationAPIView):
 
 
 class AuthorizationDirectAssignmentView(_AuthorizationAPIView):
+    """Change a direct principal or group action assignment."""
+
     @extend_schema(request=DirectActionAssignmentMutationSerializer, responses={202: AuthorizationMutationSerializer})
     def post(self, request: Request, workspace_uuid: UUID) -> Response:
         command = DirectActionAssignmentMutationSerializer(data=request.data)
@@ -328,6 +351,8 @@ class AuthorizationDirectAssignmentView(_AuthorizationAPIView):
 
 
 class AuthorizationOperationView(_AuthorizationAPIView):
+    """Read or explicitly reconcile an authorized workspace mutation."""
+
     @extend_schema(responses={200: AuthorizationOperationSerializer})
     def get(self, request: Request, workspace_uuid: UUID, operation_uuid: UUID) -> Response:
         actor, credential, scope, provider = _context(request, workspace_uuid)

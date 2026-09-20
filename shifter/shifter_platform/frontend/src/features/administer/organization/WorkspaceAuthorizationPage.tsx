@@ -368,7 +368,7 @@ function ActionAssignmentForm({ workspaceUuid, policies, actions }: Readonly<{ w
       }}>
         <fieldset className="contents" disabled={mutation.isPending || mutation.uncertain}>
         <LabeledSelect label="Policy (optional)" value={policyUuid} onChange={setPolicyUuid} options={policies} optional />
-        {!policyUuid ? <LabeledUuid label="Principal UUID" value={subjectUuid} onChange={setSubjectUuid} /> : null}
+        {policyUuid ? null : <LabeledUuid label="Principal UUID" value={subjectUuid} onChange={setSubjectUuid} />}
         <LabeledSelect label="Action" value={action} onChange={setAction} options={actions.map((item) => ({ uuid: item.code, name: item.code }))} />
         <EffectSelect value={effect} onChange={setEffect} />
         <Button type="submit" disabled={!action || (!policyUuid && !subjectUuid) || mutation.isPending}>Apply</Button>
