@@ -33,6 +33,7 @@ graph TB
 | **Shifter CMS** | `cms` | User content. Assets, credentials, scenario catalog. |
 | **Shifter Management** | `management` | Platform administration. Audit logging, user management. |
 | **[Workspaces](workspaces)** | `workspaces` | Organization/workspace tenancy above range ownership. |
+| **[Authorization](authorization)** | `shared.authorization` / `workspaces` | Closed OpenFGA contracts, scoped policy administration, durable writes. |
 
 ## Model Ownership
 

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from shared.authorization import ACTION_CATALOG
+
 # --- Mission Control API (PLAT-106 / issue #1120) -----------------------------
 # Wired by subsurface instead of overloading a single coarse Mission Control
 # token audience.
@@ -47,6 +49,25 @@ CMS_PREPARATION_WRITE = "cms:preparation:write"
 WORKSPACES_MEMBERSHIP_READ = "workspaces:membership:read"
 WORKSPACES_MEMBERSHIP_WRITE = "workspaces:membership:write"
 
+# --- Application authorization API (#2315) ----------------------------------
+# One exact credential scope per closed action. A token cannot use a broader
+# administration scope to delegate an action it was not explicitly issued.
+AUTHORIZATION_ACTION_SCOPES = {action.code: f"authorization:{action.code}" for action in ACTION_CATALOG}
+
+# --- Scoped model-access management (M09, #2126 / PLAT-202) -------------------
+# Exact per-audience scopes for the management projection surface. Each audience
+# has its own read/write pair so a token is admitted only to the surface it was
+# minted for; a broad CTF/CMS scope never substitutes (management-preflight-2126.md).
+MODEL_ACCESS_OPERATOR_READ = "model-access:operator:read"
+MODEL_ACCESS_OPERATOR_WRITE = "model-access:operator:write"
+MODEL_ACCESS_SHARING_READ = "model-access:sharing:read"
+MODEL_ACCESS_SHARING_WRITE = "model-access:sharing:write"
+MODEL_ACCESS_EVENT_READ = "model-access:event:read"
+MODEL_ACCESS_EVENT_WRITE = "model-access:event:write"
+MODEL_ACCESS_RANGE_READ = "model-access:range:read"
+MODEL_ACCESS_RANGE_WRITE = "model-access:range:write"
+MODEL_ACCESS_PARTICIPANT_READ = "model-access:participant:read"
+
 KNOWN_SCOPES: frozenset[str] = frozenset(
     {
         MISSION_CONTROL_RANGE_READ,
@@ -72,6 +93,16 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         CMS_PREPARATION_WRITE,
         WORKSPACES_MEMBERSHIP_READ,
         WORKSPACES_MEMBERSHIP_WRITE,
+        *AUTHORIZATION_ACTION_SCOPES.values(),
+        MODEL_ACCESS_OPERATOR_READ,
+        MODEL_ACCESS_OPERATOR_WRITE,
+        MODEL_ACCESS_SHARING_READ,
+        MODEL_ACCESS_SHARING_WRITE,
+        MODEL_ACCESS_EVENT_READ,
+        MODEL_ACCESS_EVENT_WRITE,
+        MODEL_ACCESS_RANGE_READ,
+        MODEL_ACCESS_RANGE_WRITE,
+        MODEL_ACCESS_PARTICIPANT_READ,
     }
 )
 

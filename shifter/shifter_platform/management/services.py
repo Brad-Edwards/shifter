@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +24,18 @@ from shared.model_access import AuthorityInvalidation, AuthorityState, OwnedRefe
 from shared.model_access.authority_port import invalidate_authority, suppress_authority_invalidation_signals
 
 from . import model_access_authority as _model_access_authority
+from . import principals as _principals
+from .audit_context import AuditContext
 from .models import ActivityLog, UserProfile
+
+PrincipalConflictError = _principals.PrincipalConflictError
+bind_principal_provider_identity = _principals.bind_principal_provider_identity
+create_service_principal = _principals.create_service_principal
+ensure_human_principal = _principals.ensure_human_principal
+principal_for_user = _principals.principal_for_user
+resolve_principal = _principals.resolve_principal
+resolve_principal_uuid = _principals.resolve_principal_uuid
+set_service_contact = _principals.set_service_contact
 
 ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView
 ModelAccessGroupScope = _model_access_authority.ModelAccessGroupScope
@@ -108,22 +118,6 @@ def get_user_profile(user: User) -> UserProfile:
     except Exception:
         logger.exception("Failed to get/create profile for user id %s", user.pk)
         raise
-
-
-@dataclass(frozen=True)
-class AuditContext:
-    """Request-attributed audit fields bundled for the account-mutation services.
-
-    Bundling the attribution fields keeps the mutation service signatures small
-    and lets the HTTP layer build one object from the request (see
-    ``management.api.views._audit_context``).
-    """
-
-    actor_type: str
-    actor_id: int | None
-    request_id: str = ""
-    source_ip: str | None = None
-    user_agent: str = ""
 
 
 def mark_user_deleted(

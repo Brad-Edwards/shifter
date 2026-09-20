@@ -289,6 +289,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         purpose: "Manage model accounts and their spending permissions.", routePath: "/administer/model-sources",
         permissionPolicy: "model_source_admin", iconKey: "boxes", external: false,
       },
+      {
+        surface: "Model-access Sharing", routeName: "administer:model-access",
+        purpose: "Share model profiles, provider identity, capacity and budgets across ranges.",
+        routePath: "/administer/model-access",
+        permissionPolicy: "model_source_admin", iconKey: "boxes", external: false,
+      },
       // Django admin escape hatch: always available, linked as a full-page legacy
       // handoff and never wrapped or described as a SPA-native workflow.
       {

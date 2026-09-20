@@ -1,0 +1,197 @@
+# ADR-066: Stable accounts, independent principals, and explicit resource scope
+
+## Status
+
+Accepted for the identity and authorization redesign agreed on #2308. Issue
+#2314 is the first schema and mapping slice. Runtime cutover remains S8.
+
+## Context
+
+The current tenancy model gives every Django user a synthetic personal
+organization and workspace. It also treats one deployment as one customer
+boundary. Those assumptions cannot represent an individual customer without
+invented subdivisions, a person who belongs to several customer accounts, an
+independent service identity, or shared B2C and B2B hosting.
+
+The useful incumbent boundaries remain sound: `workspaces` owns customer scope
+and membership policy, `management` owns application identity, `shared` owns
+dependency-neutral contracts and cross-cutting primitives, and other domains
+carry validated scalar scope references rather than cross-layer foreign keys.
+
+## Decision
+
+### Customer hierarchy
+
+`workspaces` owns one stable, publicly opaque `Account` root with a closed type.
+An individual account has no organization or workspace. A team or enterprise
+account has one default organization and may have more; every organization has
+one default workspace and may have more. An organization belongs to exactly one
+account and a workspace belongs to exactly one organization.
+
+Creating the type-required default structure is an idempotent domain operation.
+It does not infer or create a membership, owner, administrator, policy, or cloud
+grant from the caller, creator, Django user, provider claim, or account type.
+Any grant is a separate explicit mutation.
+
+Existing organization and workspace primary keys and UUIDs remain stable when
+the row has a valid place in the new hierarchy. The words account,
+organization, and workspace describe distinct facts and are not aliases.
+
+### Principals and provider bindings
+
+`management` owns stable `Principal` records with a closed human or service
+kind. A human principal retains the existing Django user as its authentication
+and lifecycle record. A service principal has no fabricated Django human and is
+not the principal of its creator or responsible contact. Changing or removing
+creator/contact responsibility does not change the service principal identity,
+memberships, policies, or owned resources.
+
+Provider identity is an immutable binding from an exact, opaque
+`(issuer, subject)` pair to one principal. The tuple is unique. Email, username,
+provider group, sign-in method, or subject without issuer is not an identity
+key and cannot merge, repair, or rebind a principal. A collision fails closed.
+The existing `shared.verified_identity.VerifiedIdentity` gate remains the only
+provider-evidence shape admitted by the Cognito/OIDC and Identity Platform
+adapters.
+
+Email-free temporary CTF users remain supported as human principals without a
+provider binding. Their durable `UserProfile.is_ctf_account` origin marker,
+password-change gate, event-native authority, and provider-login exclusions
+remain authoritative.
+
+### Membership and authority
+
+Customer membership targets a principal, not a Django user, email, provider
+identity, API token, or creator relationship. Account, organization, and
+workspace memberships are explicit facts at their own scope. A membership or
+role at one scope grants nothing at another scope unless the owning policy
+explicitly composes it.
+
+The existing `workspaces.services` boundary stays the customer-scope owner and
+the only resolver of SQL-owned resource ancestry. Cross-domain consumers
+receive immutable scalar projections or authorization results and never import
+workspaces models. OpenFGA becomes authoritative for application permission
+relationships at the S8 cutover; SQL continues to own identities, resource
+state and ancestry, and display metadata. SQL rows must not mirror or evaluate
+OpenFGA relationships. Provider groups, Django groups, token scopes, CTF roles,
+cloud IAM, and cached UI capabilities do not become alternate application
+permission stores or implicit grants.
+
+### Shared principal and scope contracts
+
+`shared` owns one dependency-neutral principal reference and one closed
+`ResourceScope` contract. The scope has an explicit discriminator:
+
+The principal reference carries only the stable opaque principal UUID and its
+closed human/service kind. It carries no user, provider, credential, account,
+membership, role, or policy data.
+
+- installation scope has no account, organization, or workspace identity;
+- account scope requires an account identity, may include its organization,
+  and may include a workspace only with its organization.
+
+Missing customer identifiers never means installation scope. The shared
+contract rejects malformed shapes; `workspaces.services` resolves identifiers
+and rejects an organization from another account, a workspace from another
+organization, archived or otherwise inadmissible scope, and any subdivision on
+an individual account. Owning domains persist the validated scalar scope facts
+they require. They do not add a cross-layer foreign key, JSON scope bag, copied
+hierarchy, or local scope validator.
+
+### Mapping and cutover
+
+Current users map to human principals by durable user ID. Existing provider
+tuples map to provider bindings only from complete, valid evidence. Existing
+membership and ownership rows map through that user-to-principal relation, not
+through email, name, group, or ordering. Existing organization and workspace
+rows keep their durable IDs when their ancestry is valid.
+
+Legacy personal-workspace data maps to an individual's account-level scope only
+when the current ownership projections and synthetic personal structure make
+that mapping unambiguous. Shared organizations cannot be guessed to be team or
+enterprise accounts. Subject-only provider rows cannot be assigned an issuer by
+guessing. Extra members, conflicting owners, cross-layer projection drift, or
+other contradictory evidence stop mapping with bounded internal row
+identifiers. Mapping never deletes, silently reassigns, or fabricates a grant to
+make inconsistent data fit.
+
+Source changes may establish and test the new schema before S8, but they do not
+activate a mixed authority model. There is no dual-write compatibility window,
+read fallback, customer-specific deployment requirement, feature-flagged
+policy fork, rollback to the personal-workspace model, or partial production
+cutover. S8 is the activation point after all mappings and constraints pass.
+
+### Hosting and policy boundaries
+
+One deployment may host unrelated B2C and B2B accounts. Account scope is an
+application authorization and data-partition fact; it does not by itself prove
+separate PostgreSQL, encryption-key, cloud-project, network, secret, workload
+identity, or incident boundaries. Those guarantees require their own effective
+controls and evidence.
+
+Application, cloud, organization, workspace, event, participant, operator, and
+external-client authority remain distinct and compose only through their owning
+service boundaries. Deliberately granting one principal full application and
+cloud authority is supported as two explicit grants. No role or account type
+implies the other grant. Dependency loss never creates permission or a
+successful effect.
+
+The redesign uses provider-native GCP identity, IAM, and renewal; OpenFGA for
+application policy; established Django mechanisms; and django-rest-knox in the
+slices that own those integrations. This ADR does not authorize a custom
+authentication protocol, policy engine, token format, secret broker, JIT/Vault
+dependency, or organizational approval workflow.
+
+The OpenFGA application-policy boundary, supported SDK operations, durable
+write semantics, deployment contract, and cutover constraints are clarified by
+`docs/architecture/openfga-authorization-preflight-2315.md`. That clarification
+does not move the S8 activation point or authorize mixed runtime authority.
+Delegation proofs enumerate a bounded, complete descendant set from the
+SQL-owning domain service boundaries before asking OpenFGA to evaluate it;
+provider graph discovery is never authoritative ancestry. A blocking Quality
+job runs the released OpenFGA/PostgreSQL harness whenever platform changes are
+selected, so missing harness configuration or skipped conformance cannot pass.
+The general PostgreSQL lane deselects the `openfga` marker because that service
+posture is owned by the equally mandatory released-server job, not by a bare
+PostgreSQL service. Both jobs retain the PostgreSQL fail-on-skip guard; the
+OpenFGA harness also requires its server configuration explicitly. CI contract
+tests keep the lane selection and mandatory dedicated job coupled.
+Each descendant retains its SQL scope during delegation checks. Durable
+operations bind their provider store and model; explicit HTTP recovery checks
+the caller's current authority for the recorded effect before replay. Helm
+migration service-account and egress prerequisites remain present until the
+dependent job finishes, including first enablement on an existing deployment.
+
+## Supersession
+
+This decision supersedes:
+
+- ADR-046's per-user personal organization/workspace compatibility default and
+  the parts of its membership contract that use a Django user as the durable
+  member identity. Its workspaces-domain ownership, scalar cross-layer
+  references, service authorization, locking, opaque denial, and distinct
+  authority rules remain incumbent.
+- ADR-048's bootstrap administrator inference for personal organizations. Its
+  explicit organization authority, service ownership, UUID-only public
+  identity, transaction, and strict-audit rules remain incumbent for real
+  organizations.
+- ADR-054's one-customer-per-deployment decision and its personal-workspace
+  migration assumption. Its least-privilege, distinct-authority,
+  deployment-local effect ownership, fail-closed outage, and real-boundary
+  evidence requirements are carried forward here.
+
+PLAT-2011, PLAT-232, and PLAT-233 must be reconciled through Ground Control when
+implementation begins. Historical migration files remain immutable evidence;
+new forward migrations replace the active invariant.
+
+## Consequences
+
+The model can represent an individual without fake subdivisions, one person in
+several accounts, and a service whose identity outlives its creator. It also
+requires explicit account scope on customer data and explicit ancestry checks
+at every owning service boundary. Current personal-workspace shortcuts cannot
+be retained as hidden defaults.
+
+Shared-hosting support increases the importance of negative authorization,
+mapping, and provider-isolation evidence. Schema presence alone does not claim
+that S8 cutover or live multi-customer isolation has occurred.

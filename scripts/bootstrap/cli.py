@@ -4,6 +4,8 @@ import argparse
 import os
 import shutil
 import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 from account_recovery import account_recovery
 from aws_bootstrap import AWS_ENVIRONMENTS, BootstrapConfig, bootstrap_account
@@ -18,9 +20,12 @@ from bootstrap_core import (
     get_default_gdc_project_id,
     header,
     info,
+    run_cmd,
     set_assume_yes,
+    success,
     warn,
 )
+from gcp_base_images import BaseImageError, discover_and_import, render_range_image_env
 from gcp_control_plane import gdc_bootstrap_cluster
 from gcp_foundation import bootstrap_gcp_foundation
 from preflight import Cloud, Mode, preflight_gate
@@ -53,6 +58,7 @@ HELP_YES = (
     "Assume 'yes' for routine confirmation prompts so the bootstrap can run without a TTY "
     "(issue #1639). Does NOT authorize destructive cleanup; the leftover sweep has its own opt-in."
 )
+_RANGE_IMAGE_ENV_KEYS = frozenset({"GCP_RANGE_LINUX_IMAGE", "GCP_RANGE_KALI_IMAGE", "GCP_RANGE_DC_IMAGE"})
 _AWS_COMPONENTS = ("core", "range", "portal")
 _PREFLIGHT_COMPONENTS = (*_AWS_COMPONENTS, "deploy")
 
@@ -218,6 +224,59 @@ def gcp_runners_deployment(
     )
 
 
+def gcp_base_images_import(
+    project_id: str,
+    environment: str,
+    region: str,
+    *,
+    dry_run: bool = False,
+) -> dict[str, str]:
+    """Import the reusable GHCR base images as native GCE images and wire the refs.
+
+    Discovers Kali/Ubuntu/DC in GHCR, imports them into ``project_id`` as native
+    GCE images (reusing unchanged digests), and sets the GCP_RANGE_*_IMAGE
+    variables in the ``environment`` deployment Environment so deploy resolves
+    them without a per-tenant Packer bake (#2309). The returned mapping is also
+    the supported in-process handoff to the first local platform bootstrap.
+    """
+    if not project_id:
+        error("gcp-images requires --project-id (the range project the images import into)")
+        sys.exit(1)
+    _validate_base_image_auth()
+
+    imported = discover_and_import(project=project_id, region=region, dry_run=dry_run)
+    range_image_env = render_range_image_env(imported)
+    _publish_range_image_env(range_image_env, environment, dry_run=dry_run)
+    success(f"Wired {', '.join(sorted(range_image_env))} into the {environment} deployment environment")
+    return range_image_env
+
+
+def _validate_base_image_auth(*, command_runner: Callable[..., object] = run_cmd) -> None:
+    """Validate the existing GCP and GitHub CLI sessions without mutation."""
+    for command, failure in (
+        (["gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"], "gcloud authentication"),
+        (["gh", "auth", "status"], "GitHub authentication"),
+    ):
+        result = command_runner(command, check=False, capture=True)
+        missing_gcloud_identity = command[0] == "gcloud" and not (getattr(result, "stdout", "") or "").strip()
+        if result is None or getattr(result, "returncode", 1) != 0 or missing_gcloud_identity:
+            raise BaseImageError(f"{failure} is required before importing public base images")
+
+
+def _publish_range_image_env(
+    range_image_env: dict[str, str],
+    environment: str,
+    *,
+    dry_run: bool,
+    command_runner: Callable[..., object] = run_cmd,
+) -> None:
+    """Publish one complete exact image mapping to a GitHub Environment."""
+    if set(range_image_env) != _RANGE_IMAGE_ENV_KEYS:
+        raise BaseImageError("public base-image import did not return the complete range-image environment")
+    for name, ref in sorted(range_image_env.items()):
+        command_runner(["gh", "variable", "set", name, "--env", environment, "--body", ref], dry_run=dry_run)
+
+
 def _missing_dependency_lines(commands: dict[str, str]) -> list[str]:
     """Return formatted '  - cmd: desc' lines for each command not found on PATH."""
     return [f"  - {cmd}: {desc}" for cmd, desc in commands.items() if not shutil.which(cmd)]
@@ -234,15 +293,19 @@ _TOOL_HINTS = {
     "docker": "Docker - https://docs.docker.com/engine/install/",
     "kubectl": "kubectl - https://kubernetes.io/docs/tasks/tools/",
     "helm": "Helm - https://helm.sh/docs/intro/install/",
+    "oras": "ORAS CLI - https://oras.land/docs/installation",
 }
 
 
-def _required_tools(command: str | None, cloud: str | None) -> set[str]:
+def _required_tools(command: str | None, cloud: str | None, *, import_public_base_images: bool = False) -> set[str]:
     """Return the set of required CLI tools for a bootstrap command."""
     if command == "gcp-foundation":
         return {"git", "gcloud", "gh", "terraform"}
+    if command == "gcp-images":
+        return {"git", "gcloud", "gh", "oras"}
     if command == "gdc-bootstrap":
-        return {"git", "gcloud", "ssh-keygen", "terraform", "docker", "kubectl", "helm"}
+        tools = {"git", "gcloud", "ssh-keygen", "terraform", "docker", "kubectl", "helm"}
+        return tools | ({"gh", "oras"} if import_public_base_images else set())
     if command == "runners":
         # GCP runners use gcloud + ADC (no AWS CLI); both clouds need gh + terraform.
         cloud_tools = {"gcloud"} if cloud == Cloud.GCP.value else {"aws"}
@@ -254,9 +317,17 @@ def _required_tools(command: str | None, cloud: str | None) -> set[str]:
     return {"git"}
 
 
-def check_dependencies(command: str | None = None, cloud: str | None = None) -> None:
+def check_dependencies(
+    command: str | None = None,
+    cloud: str | None = None,
+    *,
+    import_public_base_images: bool = False,
+) -> None:
     """Check command-specific dependencies before starting."""
-    required = {tool: _TOOL_HINTS[tool] for tool in _required_tools(command, cloud)}
+    required = {
+        tool: _TOOL_HINTS[tool]
+        for tool in _required_tools(command, cloud, import_public_base_images=import_public_base_images)
+    }
     optional = {"gh": "GitHub CLI - https://cli.github.com/ (recommended for automating GitHub secrets)"}
 
     missing_required = _missing_dependency_lines(required)
@@ -391,6 +462,14 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
     gdc_parser.add_argument("--yes", action="store_true", help=HELP_YES)
     gdc_parser.add_argument(
+        "--import-public-base-images",
+        action="store_true",
+        help=(
+            "Discover and import the public Kali/Ubuntu/DC base set, publish the exact references to the "
+            "selected GitHub Environment, and use them for this local GCE platform bootstrap"
+        ),
+    )
+    gdc_parser.add_argument(
         "--allow-missing-range-images",
         action="store_true",
         help=(
@@ -400,6 +479,26 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
             "plane; see scripts/bootstrap/README.md 'Fresh GCP Account Order'."
         ),
     )
+
+
+def _add_gcp_images_subparser(subparsers: argparse._SubParsersAction) -> None:
+    """Wire the `gcp-images` subcommand: import the reusable GHCR base images (#2309)."""
+    images_parser = subparsers.add_parser(
+        "gcp-images",
+        help="Import the reusable GHCR base images (Kali/Ubuntu/DC) as native GCE images and wire GCP_RANGE_*_IMAGE",
+    )
+    images_parser.add_argument(
+        "--project-id",
+        default=get_default_gdc_project_id(),
+        help="GCP project the range guest images import into (defaults to PANW_GCP_DEV or the repo-root env file)",
+    )
+    images_parser.add_argument(
+        "--environment",
+        default="gcp-dev",
+        help="GitHub deployment Environment to set GCP_RANGE_*_IMAGE in (default gcp-dev)",
+    )
+    images_parser.add_argument("--region", default="us-central1", help="Region for the temporary transfer bucket")
+    images_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
 
 def _add_eks_subparsers(subparsers: argparse._SubParsersAction) -> None:
@@ -532,6 +631,7 @@ Examples:
     _add_preflight_and_recovery_subparsers(subparsers)
     _add_runners_subparser(subparsers)
     _add_gdc_bootstrap_subparser(subparsers)
+    _add_gcp_images_subparser(subparsers)
     foundation = subparsers.add_parser("gcp-foundation", help="Bootstrap GCP state, CI identities, and image network")
     foundation.add_argument("--inputs", required=True, help="Explicit foundation JSON Terraform var-file")
     foundation.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
@@ -652,11 +752,71 @@ def _handle_full(args: argparse.Namespace) -> None:
 
 def _handle_gdc_bootstrap(args: argparse.Namespace) -> None:
     """Bootstrap the configured GDC VM Runtime control plane."""
-    gdc_bootstrap_cluster(
-        _build_gdc_bootstrap_config(args),
+    config = _build_gdc_bootstrap_config(args)
+    if not args.import_public_base_images:
+        gdc_bootstrap_cluster(
+            config,
+            dry_run=args.dry_run,
+            allow_missing_range_images=args.allow_missing_range_images,
+        )
+        return
+
+    if config.builds_gdc_substrate:
+        raise BaseImageError("--import-public-base-images applies only to the native GCE range backend")
+    gcp_bootstrap_with_public_images(
+        config,
         dry_run=args.dry_run,
         allow_missing_range_images=args.allow_missing_range_images,
     )
+
+
+def gcp_bootstrap_with_public_images(
+    config: GDCBootstrapConfig,
+    *,
+    dry_run: bool,
+    allow_missing_range_images: bool = False,
+) -> None:
+    """Import, publish, bind, and consume one exact public image mapping."""
+    if not dry_run:
+        header("Foundation-ready Shifter GCP bootstrap")
+        info(f"GCP Project: {config.project_id}")
+        info(f"Deployment Environment: {config.environment}")
+        info(f"Region / Zone: {config.region} / {config.zone}")
+        info("Public base images: import or reuse Kali, Ubuntu, and DC before platform bootstrap")
+        if not confirm("Import the public base set, publish its exact references, and bootstrap this deployment?"):
+            warn("Aborted by user")
+            sys.exit(0)
+
+    range_image_env = gcp_base_images_import(
+        config.project_id,
+        config.environment,
+        config.region,
+        dry_run=dry_run,
+    )
+    with _temporary_environment_overlay(range_image_env):
+        gdc_bootstrap_cluster(
+            config,
+            dry_run=dry_run,
+            allow_missing_range_images=allow_missing_range_images,
+            confirmation_obtained=not dry_run,
+        )
+
+
+@contextmanager
+def _temporary_environment_overlay(values: dict[str, str]) -> Iterator[None]:
+    """Overlay imported image references for one local bootstrap and restore them."""
+    if set(values) != _RANGE_IMAGE_ENV_KEYS:
+        raise BaseImageError("public base-image import did not return the complete range-image environment")
+    previous = {key: os.environ.get(key) for key in values}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 _COMMAND_HANDLERS = {
@@ -670,6 +830,9 @@ _COMMAND_HANDLERS = {
     "full": _handle_full,
     "runners": _dispatch_runners,
     "gdc-bootstrap": _handle_gdc_bootstrap,
+    "gcp-images": lambda args: gcp_base_images_import(
+        args.project_id, args.environment, args.region, dry_run=args.dry_run
+    ),
 }
 
 
@@ -678,7 +841,15 @@ def main() -> None:
     args = _build_parser().parse_args()
     if getattr(args, "yes", False):
         set_assume_yes(True)
-    check_dependencies(args.command, cloud=getattr(args, "cloud", None))
+    check_dependencies(
+        args.command,
+        cloud=getattr(args, "cloud", None),
+        import_public_base_images=getattr(args, "import_public_base_images", False),
+    )
     if args.command in {"bootstrap", "terraform", "full"}:
         preflight_gate(Cloud.AWS, Mode.LOCAL, args.env, headless=args.headless)
-    _COMMAND_HANDLERS[args.command](args)
+    try:
+        _COMMAND_HANDLERS[args.command](args)
+    except BaseImageError as exc:
+        error(str(exc))
+        raise SystemExit(1) from None

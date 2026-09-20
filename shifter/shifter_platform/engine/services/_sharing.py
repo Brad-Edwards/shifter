@@ -219,6 +219,7 @@ def publish_sharing_binding(
                 f"pool={sealed.sharing_pool_id} priority={sealed.priority} "
                 f"facets={','.join(facet.value for facet in sealed.facets)}"
             ),
+            publisher=publisher,
         )
     return revision
 
@@ -310,6 +311,7 @@ def drain_sharing_binding(
             "sharing_drain",
             entity_id=record.pk,
             context=f"binding={sharing_binding_id} revision={next_revision}",
+            publisher=publisher,
         )
     return terminal
 

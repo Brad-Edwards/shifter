@@ -194,17 +194,45 @@ default; their state addresses and existing image network remain unchanged.
 3. Configure the GCP deployment secrets and variables in
    `docs/dev/deploy-secrets.md` (the `gcp-dev` section), including
    `SHIFTER_CONFIG_GCP_DEV` and the GCE range-cell variables.
-4. Build the range guest images and set the image variables before deploy. The
-   GCP range backend defaults to the GCE range-cell path, and a range launch
-   needs the guest images to exist. See `docs/dev/gcp-range-cell-deploy.md` and
-   `docs/architecture/gcp-guest-images.md`.
-   Run `packer-gcp.yml` for the minimum image set required by the bootstrap
-   preflight and the ranges being deployed. Separate image qualification
-   (`packer-gcp-validate.yml`, including boot/reboot checks and disk inventory)
-   is optional and off by default. Bootstrap and deploy do not invoke it or
-   wait for it; run it only when explicitly requested.
-5. Bootstrap the GDC/GKE substrate and control plane with `gdc-bootstrap` (see
-   the command below). It applies the GCP Terraform (GKE, Cloud SQL,
+4. Bootstrap the GKE control plane and GCE range plane with one local command.
+   On a fresh project, opt into the public base-image import so the exact image
+   references are available to the same process before platform preconditions
+   run:
+
+   ```bash
+   ./scripts/bootstrap/deploy.py gdc-bootstrap \
+     --project-id <project> --environment <env> \
+     --region <region> --zone <zone> \
+     --shifter-config /path/to/shifter.yaml \
+     --import-public-base-images --yes
+   ```
+
+   This first discovers and validates the complete public Kali, Ubuntu, and DC
+   base set. It imports missing digests through a private per-run bucket in the
+   selected project and region, removes that bucket and every transfer object on
+   success or failure, requires all three native GCE images to be `READY`, and
+   publishes the exact digest-derived references to the selected GitHub
+   Environment. The command overlays those same
+   `GCP_RANGE_{LINUX,KALI,DC}_IMAGE` values for its platform bootstrap, then
+   restores the caller's environment. A retry reuses matching `READY` images;
+   it never dispatches Packer or falls back to a tenant bake.
+
+   Use the standalone refresh command when the platform already exists:
+
+   ```bash
+   ./scripts/bootstrap/deploy.py gcp-images \
+     --project-id <project> --environment <env> --region <region>
+   ```
+
+   Add `--dry-run` to either command to perform public discovery, manifest
+   validation, auth validation, and existing-image inspection without pulling
+   disk payloads or mutating GCP or GitHub.
+
+   Publishing the base set is the protected `packer-gcp.yml` workflow's job
+   (`publish_target=ghcr`); separate candidate qualification
+   (`packer-gcp-validate.yml`) remains optional and off by default. See
+   `docs/dev/gcp-range-cell-deploy.md` and `docs/architecture/gcp-guest-images.md`.
+5. The same `gdc-bootstrap` invocation applies the GCP Terraform (GKE, Cloud SQL,
    Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
    Helm values from Terraform outputs and Secret Manager, migrates the database
    and registers the shipped scenario catalog, then installs the Shifter Helm

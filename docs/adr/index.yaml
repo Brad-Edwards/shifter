@@ -67,7 +67,7 @@
       },
       {
         "id": "ADR-002-R2",
-        "description": "Commit messages and tracked text must not contain AI/agent attribution markers (Co-authored-by agent lines, Cursor marketing footers, Claude Code branding, etc.).",
+        "description": "Commit messages and tracked text must not contain AI/agent promotional or authorship attribution markers. Canonical Ground Control review, finding, decision, readiness and final-report records, and the required factual review attestation in a PR body's Ground Control Checks section, may identify the reviewer engine. This narrow review exception does not permit branded branch or issue/PR titles, promotional wording, generated-by footers or AI co-author trailers.",
         "checks": [
           "no-agent-attribution"
         ]
@@ -2104,7 +2104,7 @@
       },
       {
         "id": "ADR-037-R9",
-        "description": "Protected Packer GCE Linux builds may publish their already-exported qcow2 payloads to the canonical GHCR VM-disk packages only through a dedicated package-write job. The job MUST stream no credentials into artifact content or runtime configuration, record the resulting manifest digest, and document an explicit digest-pinned GDC VM Runtime opt-in. Publication MUST NOT replace GCE image-family, AWS AMI, or default bootstrap consumption.",
+        "description": "Protected Packer GCE builds may publish only the allowlisted Kali, Ubuntu, and pre-promoted DC base set as GCE-native disk.raw tarballs to the canonical public GHCR packages through the dedicated package-write job. The tenant bootstrap MUST discover public packages without registry credentials, validate the OCI artifact/layer/role/protected-revision contract before payload download, resolve and pull by immutable manifest digest, import or reuse a digest-derived native GCE image, require READY, and publish the same exact image resources to both the first local bootstrap and the selected GitHub deployment Environment. Transfer buckets, objects, and any proven-necessary temporary access MUST be narrowly scoped, retry-convergent, and removed on success and failure. Mutable tags are discovery only; publication/import is neither qualification nor stronger attestation, and bootstrap MUST NOT dispatch Packer or fall back to a tenant bake.",
         "checks": []
       }
     ],
@@ -2128,6 +2128,7 @@
       ".github/workflows/packer-gcp.yml",
       "docs/architecture/gcp-guest-images.md",
       "docs/architecture/ghcr-vm-guest-image-preflight-2297.md",
+      "docs/architecture/gcp-foundation-image-bootstrap-preflight-2338.md",
       "shifter/engine/provisioner/config/_gdc.py",
       "shifter/packer/gcp/scripts/validate/verify-promotion-evidence.sh",
       "shifter/packer/tests/test_packer_gcp.py",
@@ -2944,11 +2945,11 @@
     "title": "Organization administrator authority is a persisted org-scoped role, distinct from workspace roles, with a platform-superuser override",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "ADR-046-R8 deliberately left the organization/workspace tenancy layer with no organization-wide role, and ADR-046-R12 requires a separately accepted, service-owned authority rule before any organization mutation. This is that separately accepted rule. Organization authority is a persisted OrganizationMembership row with a closed org-scoped role (initially admin), owned by the workspaces domain and reachable only through workspaces.services. It is never derived at authorization time from a workspace role, Django staff/groups, Django model permissions, identity-provider claims, API-token scopes, or cloud roles; those derivations remain forbidden by ADR-046-R8/R12. A personal organization (ADR-046-R4) seeds its personal workspace owner as its bootstrap admin once, at creation and by backfill, after which authority is read only from the persisted membership. The single deliberate exception is a Django superuser (is_superuser), the platform-root operator that may read and update any organization as a platform-operator action recorded distinctly in audit; is_staff and model permissions alone still grant nothing. Organization profile reads and updates address the organization by its immutable public uuid, expose a closed scalar projection, and never emit the integer primary key. Updates are atomic: they lock the organization row, re-check live authority under the lock, write only changed fields, and emit one strict shared.audit event carrying changed field names and the internal organization id (never the field values) in the same transaction, so an audit-write failure rolls the update back. A missing organization, an organization outside the actor's authority, and insufficient authority share one opaque outcome. Mutable profile fields are explicit typed domain fields (name, description, support_email, support_url) with one validation path; there is no generic settings/branding/defaults JSON, and organization branding assets are out of scope until they have their own storage, content-type, and CSP contract. There is no organization create/delete/transfer, org-admin grant/revoke, or organization-wide role beyond admin in this iteration; a future shared-organization creation path must seed an admin so the last-admin invariant holds.",
+    "decision": "ADR-046-R8 deliberately left the organization/workspace tenancy layer with no organization-wide role, and ADR-046-R12 requires a separately accepted, service-owned authority rule before any organization mutation. This is that separately accepted rule. Organization authority is a persisted OrganizationMembership row with a closed org-scoped role (initially admin), owned by the workspaces domain and reachable only through workspaces.services. It is never derived at authorization time from a workspace role, Django staff/groups, Django model permissions, identity-provider claims, API-token scopes, or cloud roles; those derivations remain forbidden by ADR-046-R8/R12. ADR-066 supersedes the former personal-organization bootstrap rule: individual accounts have no organization or workspace, and creating a team or enterprise default hierarchy grants no membership or role. Legacy personal-organization seeding and backfill remain compatibility history until the S8 hard cut, not a rule for new accounts. The single deliberate exception is a Django superuser (is_superuser), the platform-root operator that may read and update any organization as a platform-operator action recorded distinctly in audit; is_staff and model permissions alone still grant nothing. Organization profile reads and updates address the organization by its immutable public uuid, expose a closed scalar projection, and never emit the integer primary key. Updates are atomic: they lock the organization row, re-check live authority under the lock, write only changed fields, and emit one strict shared.audit event carrying changed field names and the internal organization id (never the field values) in the same transaction, so an audit-write failure rolls the update back. A missing organization, an organization outside the actor's authority, and insufficient authority share one opaque outcome. Mutable profile fields are explicit typed domain fields (name, description, support_email, support_url) with one validation path; there is no generic settings/branding/defaults JSON, and organization branding assets are out of scope until they have their own storage, content-type, and CSP contract. There is no organization create/delete/transfer, org-admin grant/revoke, or organization-wide role beyond admin in this iteration. A business organization may have zero administrators until a separately authorized grant operation creates an explicit membership.",
     "rules": [
       {
         "id": "ADR-048-R1",
-        "description": "Organization authority is a persisted OrganizationMembership row (organization, user, closed role; unique per organization+user; role a database-checked closed vocabulary) owned by the workspaces domain and exposed only through workspaces.services. No other layer imports the model or holds a cross-layer ForeignKey to it (ADR-001, ADR-046-R1).",
+        "description": "Organization authority is a persisted OrganizationMembership row owned by the workspaces domain and exposed only through workspaces.services. Before the S8 hard cut its compatibility target is the Django user; at activation ADR-066 replaces that target with the stable scalar principal UUID, with uniqueness per organization+principal and no dual runtime authority. The role remains a database-checked closed vocabulary. No other layer imports the model or holds a cross-layer ForeignKey to management identity persistence (ADR-001, ADR-046-R1, ADR-066-R3).",
         "checks": [
           "layer-imports",
           "cross-layer-model-imports"
@@ -2966,7 +2967,7 @@
       },
       {
         "id": "ADR-048-R4",
-        "description": "Every personal organization (ADR-046-R4) has exactly one bootstrap admin: its personal workspace owner, seeded once at personal-workspace creation and by the idempotent #1939 backfill. Authority is read from the persisted membership afterwards and never re-inferred from the workspace role. This iteration adds no organization create/delete/transfer, no org-admin grant/revoke API, and no organization role beyond admin; a future shared-organization creation path must seed an admin so at least one admin always exists.",
+        "description": "ADR-066 supersedes the personal-organization default and bootstrap-admin rule. Individual accounts have no organization or workspace. Creating a team or enterprise default organization/workspace grants no membership or role, and an organization may have zero administrators until a separately authorized grant operation creates an explicit OrganizationMembership. Legacy personal-organization seeding/backfill remains compatibility behavior only until the S8 hard cut; it is not copied into the account hierarchy. This iteration adds no organization create/delete/transfer, no org-admin grant/revoke API, and no organization role beyond admin.",
         "checks": []
       },
       {
@@ -3387,7 +3388,7 @@
   {
     "id": "ADR-054",
     "title": "Dedicated-customer deployment with explicit internal authority",
-    "status": "accepted",
+    "status": "superseded",
     "scope": "repository",
     "decision": "The first BigRAE SaaS release on GCP is operated as one customer security and administration boundary per deployment. Unrelated customers do not share its product control plane, PostgreSQL authority, runtime secret authority, or product workload identities. Organizations and workspaces remain internal authorization scopes rather than customer-isolation boundaries, and dedicated deployment never flattens organization, workspace, event, participant, application-operator, cloud-operator, or external-client authority. Deployment-local services own admission, policy, validation, persistence, lifecycle effects, secrets, audit, and effect results; external clients act only through the versioned public API and never become a second effect owner. ADR-051's event workspace binding is a staged migration: the current pre-#2048 model remains deployment-global with event-native authorization; the post-migration model becomes operative only after every event is deterministically backfilled, unresolved mappings fail closed, the schema requires one immutable workspace_id, and supported creation persists the binding through workspaces.services. The binding proves tenant confinement only and never grants event participation or authority. Effective configuration, IAM, datastore, secret, network, and evidence controls prove the deployment boundary; names and labels do not. Dependency loss never invents authority or an unobserved successful effect.",
     "interface_contract": {
@@ -4164,6 +4165,66 @@
       "docs/architecture/ctf-communication-migration-decision-2100.md",
       "shifter/shifter_platform/tests/ctf/test_communication_cutover.py",
       "shifter/shifter_platform/tests/shared/test_api_operation_retirement.py"
+    ]
+  },
+  {
+    "id": "ADR-066",
+    "title": "Stable accounts, independent principals, and explicit resource scope",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "The workspaces domain owns stable typed Account hierarchy and customer membership; management owns independent human/service Principal records and immutable provider bindings; shared owns the dependency-neutral principal-reference and explicit ResourceScope shapes. Individual accounts have no fabricated organization/workspace. Team and enterprise accounts have idempotent default structure without implicit grants. Deterministic mapping preserves valid durable IDs, blocks ambiguity, and does not activate a mixed authority model before the S8 hard cut. This supersedes the personal-workspace default and one-customer-per-deployment decisions while retaining the named service, least-privilege, fail-closed, and evidence controls.",
+    "rules": [
+      {
+        "id": "ADR-066-R1",
+        "description": "workspaces owns one stable Account root with a closed individual, team, or enterprise type. Individuals have no organization/workspace; team and enterprise accounts have one default organization and one default workspace per organization, with additional subdivisions allowed. Default creation is atomic and idempotent and grants no membership, role, policy, or cloud authority.",
+        "checks": []
+      },
+      {
+        "id": "ADR-066-R2",
+        "description": "management owns stable human/service Principal records. Human principals preserve their Django user; service principals remain independent of creator/contact lifecycle. Provider bindings use one immutable unique issuer/subject tuple and collisions fail closed; email-free temporary CTF humans require no provider binding.",
+        "checks": []
+      },
+      {
+        "id": "ADR-066-R3",
+        "description": "Account, organization, and workspace membership targets a principal and remains explicit at its own scope. workspaces.services owns SQL resource-ancestry resolution; cross-domain consumers use validated scalar projections. Delegation proofs enumerate a bounded complete descendant set through SQL-owning domain service boundaries before OpenFGA evaluates it; provider graph discovery is never authoritative ancestry. At S8, OpenFGA is authoritative for application permission relationships while SQL owns identities, resource state/ancestry, and display metadata. SQL does not mirror or evaluate OpenFGA relationships. Provider groups, Django groups, token scopes, CTF roles, cloud IAM, and UI capabilities are not alternate application permission stores or implicit grants. A blocking quality job runs released OpenFGA/PostgreSQL conformance for platform changes and fails when the harness is not configured.",
+        "checks": []
+      },
+      {
+        "id": "ADR-066-R4",
+        "description": "shared owns one closed dependency-neutral principal reference and ResourceScope. Installation scope is explicit and has no customer IDs; account scope requires an account and allows organization/workspace only with valid ancestry. Missing IDs never imply installation. workspaces.services resolves lifecycle and ancestry; owning domains persist validated scalar scope facts without cross-layer foreign keys, JSON scope bags, copied hierarchy, or local validators.",
+        "checks": []
+      },
+      {
+        "id": "ADR-066-R5",
+        "description": "Mapping uses durable user, provider tuple, membership, ownership, and scope facts; preserves compatible organization/workspace identities; and stops on ambiguity or contradiction without deletion, silent reassignment, guessed account type, guessed issuer, or fabricated grant. Source schema may precede S8, but runtime authority has no dual-write, read fallback, customer-specific fork, rollback model, or partial production cutover.",
+        "checks": []
+      },
+      {
+        "id": "ADR-066-R6",
+        "description": "One deployment may host unrelated B2C/B2B accounts, but account scope does not claim separate data, key, project, network, secret, workload identity, or incident boundaries. Application and cloud authority are separate explicit grants. Later integration uses provider-native GCP identity/IAM/renewal, OpenFGA, Django, and django-rest-knox; no custom authentication protocol, policy engine, token format, secret broker, mandatory JIT/Vault product, or extra approval workflow is authorized.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2308",
+      "https://github.com/Brad-Edwards/shifter/issues/2314",
+      "https://github.com/Brad-Edwards/shifter/issues/2315",
+      "docs/adr/066-account-principal-resource-scope.md",
+      "docs/architecture/account-principal-scope-preflight-2314.md",
+      "docs/architecture/openfga-authorization-preflight-2315.md",
+      ".github/workflows/_quality.yml",
+      "shifter/shifter_platform/scripts/run_openfga_integration.sh",
+      "shifter/shifter_platform/workspaces",
+      "shifter/shifter_platform/management",
+      "shifter/shifter_platform/shared/verified_identity.py",
+      "shifter/shifter_platform/shared/api/principals.py",
+      "scripts/check_layer_imports/layer_imports.yaml",
+      "shifter/shifter_platform/management/management/commands/check_model_fks.py"
     ]
   }
 ]

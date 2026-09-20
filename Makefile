@@ -67,7 +67,7 @@ test-platform-postgres: ## Platform PostgreSQL semantics lane (needs a Postgres 
 	cd shifter/shifter_platform && uv sync --group dev && \
 	  TESTING=1 DJANGO_DEBUG=true TEST_DB_BACKEND=postgres DJANGO_SECRET_KEY=$(TEST_DJANGO_SECRET_KEY) \
 	  DB_HOST=localhost DB_PORT=5432 DB_NAME=shifter DB_USER=test DB_PASSWORD=test \
-	  uv run pytest tests/ -m "not redis"
+	  uv run pytest tests/ -m "not redis and not openfga"
 
 test-platform-redis: ## Platform Redis channel-layer integration lane (needs a Redis service on :6379)
 	cd shifter/shifter_platform && uv sync --group dev && \

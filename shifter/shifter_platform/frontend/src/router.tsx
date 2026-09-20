@@ -7,6 +7,7 @@ import { AuditPage } from "@/features/administer/AuditPage";
 import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { AdaptersPage } from "@/features/administer/AdaptersPage";
+import { ModelAccessSharing } from "@/features/administer/ModelAccessSharing";
 import { ModelSourcesPage } from "@/features/administer/ModelSourcesPage";
 import { platformSettingsPath } from "@/features/administer/routes";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
@@ -24,6 +25,7 @@ import { WorkspaceMembershipPage } from "@/features/administer/organization/Work
 import { WorkspaceInvitationsPage } from "@/features/administer/organization/WorkspaceInvitationsPage";
 import { WorkspaceRangeScopingPage } from "@/features/administer/organization/WorkspaceRangeScopingPage";
 import { WorkspaceQuotaPage } from "@/features/administer/organization/WorkspaceQuotaPage";
+import { WorkspaceAuthorizationPage } from "@/features/administer/organization/WorkspaceAuthorizationPage";
 import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
 import {
   WORKSPACE_SURFACES,
@@ -62,6 +64,7 @@ function workspaceSurfaceElement(surface: WorkspaceSurface) {
   if (surface.key === "invitations") return <WorkspaceInvitationsPage />;
   if (surface.key === "range-scoping") return <WorkspaceRangeScopingPage />;
   if (surface.key === "quota") return <WorkspaceQuotaPage />;
+  if (surface.key === "policy") return <WorkspaceAuthorizationPage />;
   return <ConsoleSlotPage title={surface.label} />;
 }
 import { RangeDashboardPage } from "@/features/mission-control/RangeDashboardPage";
@@ -227,6 +230,11 @@ export const router = createBrowserRouter(
             { path: "settings", element: <PlatformSettingsPage /> },
             { path: "adapters", element: <AdaptersPage />, handle: { permissionPolicy: "adapter_admin" } },
             { path: "model-sources", element: <ModelSourcesPage />, handle: { permissionPolicy: "model_source_admin" } },
+            {
+              path: "model-access",
+              element: <ModelAccessSharing />,
+              handle: { permissionPolicy: "model_source_admin" },
+            },
             // Administrator audit / activity history (#1947, PLAT-240): a
             // deployment-global, staff-only surface. Top-level (not workspace
             // scoped) because the audit store carries no per-row tenant scope.

@@ -51,8 +51,12 @@ for the authoritative order.
 - Workload Identity Federation configured for GitHub Actions (pool, provider,
   purpose service accounts), with the explicit `GCP_*_SERVICE_ACCOUNT` value
   and `GCP_WORKLOAD_IDENTITY_PROVIDER` set in each purpose Environment.
-- Range guest images available for range provisioning. See
-  [`gcp-range-cell-deploy.md`](../../dev/gcp-range-cell-deploy.md).
+- Public Kali/Ubuntu/DC base packages available in GHCR. The first local
+  `gdc-bootstrap --import-public-base-images` invocation imports them as native
+  GCE images before platform preconditions run; no platform-owned transfer
+  bucket must already exist. See
+  [`gcp-range-cell-deploy.md`](../../dev/gcp-range-cell-deploy.md) and
+  [`gcp-guest-images.md`](../../architecture/gcp-guest-images.md).
 
 ### Configuration values
 
@@ -525,7 +529,11 @@ Federation is only needed for CI). Subsequent deploys run through CI with
 bootstrap entrypoint is:
 
 ```bash
-./scripts/bootstrap/deploy.py gdc-bootstrap --project-id <your-gcp-project-id> --shifter-config ./shifter.yaml
+./scripts/bootstrap/deploy.py gdc-bootstrap \
+  --project-id <your-gcp-project-id> --environment <environment> \
+  --region <region> --zone <zone> \
+  --shifter-config /path/to/shifter.yaml \
+  --import-public-base-images --yes
 ```
 
 Despite the command name, the default `--range-backend gce` deploys the GKE control
@@ -534,11 +542,22 @@ substrate is built only with `--range-backend gdc`. With the default
 `--terraform-identity operator-adc`, Terraform runs under your Application Default
 Credentials, creating no service account or key. The flow:
 
-1. applies GCP Terraform (GKE, Cloud SQL, Memorystore, Pub/Sub, and related resources)
-2. seeds the first Identity Platform operator
-3. builds and pushes control-plane images
-4. renders secure Helm values from Terraform outputs and Secret Manager
-5. installs or upgrades the Shifter Helm release
+1. validates GCP/GitHub authentication and all three public OCI manifests
+2. imports or reuses exact digest-derived `READY` GCE images through a private,
+   per-run transfer bucket that is removed on every exit
+3. publishes the exact references to the selected GitHub Environment and binds
+   those same values to the local platform bootstrap
+4. applies GCP Terraform (GKE, Cloud SQL, Memorystore, Pub/Sub, and related resources)
+5. seeds the first Identity Platform operator
+6. builds and pushes control-plane images
+7. renders secure Helm values from Terraform outputs and Secret Manager
+8. installs or upgrades the Shifter Helm release
+
+For an existing platform, refresh only the public base set with
+`./scripts/bootstrap/deploy.py gcp-images --project-id <project> --environment
+<environment> --region <region>`. Either command accepts `--dry-run`; discovery
+and read-only validation still run, while payload download and GCP/GitHub
+mutation do not.
 
 With `--range-backend gdc`, the flow first builds or reconciles the GDC substrate.
 
