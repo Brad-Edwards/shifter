@@ -35,14 +35,16 @@ docker run -d --name "${POSTGRES_NAME}" --network "${NETWORK_NAME}" \
   -e POSTGRES_DB=openfga \
   "${POSTGRES_IMAGE}" >/dev/null
 
+# The image's initialization server accepts Unix sockets only and then stops.
+# Wait for TCP so that readiness cannot race that temporary server's shutdown.
 for _ in $(seq 1 60); do
-  if docker exec "${POSTGRES_NAME}" pg_isready -U openfga -d openfga >/dev/null 2>&1; then
+  if docker exec "${POSTGRES_NAME}" pg_isready -h 127.0.0.1 -U openfga -d openfga >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-docker exec "${POSTGRES_NAME}" pg_isready -U openfga -d openfga >/dev/null
-docker exec "${POSTGRES_NAME}" createdb -U openfga shifter
+docker exec "${POSTGRES_NAME}" pg_isready -h 127.0.0.1 -U openfga -d openfga >/dev/null
+docker exec "${POSTGRES_NAME}" createdb -h 127.0.0.1 -U openfga shifter
 
 DATASTORE_URI="postgres://openfga:${DB_PASSWORD}@${POSTGRES_NAME}:5432/openfga?sslmode=disable"
 docker run --rm --network "${NETWORK_NAME}" \
