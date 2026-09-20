@@ -22,13 +22,22 @@ from .providers import ProviderRegistry
 _CREDENTIAL_UNAVAILABLE = "credential.unavailable"
 
 
-def _broker_error_status(code: str) -> int:
-    """Map closed participant errors to fixed transport statuses."""
-    if code in {"http.rate_limited", "credential.rate_limited"}:
-        return 429
-    if code == _CREDENTIAL_UNAVAILABLE:
-        return 401
-    return 409
+# Closed participant error codes with an actionable transport meaning, mapped to a
+# fixed status and Messages envelope type so the pinned client backs off, fails or
+# retries correctly instead of looping on a mislabelled provider outcome.
+_ERROR_ENVELOPE = {
+    "http.rate_limited": (429, "rate_limit_error"),
+    "credential.rate_limited": (429, "rate_limit_error"),
+    "provider.rate_limited": (429, "rate_limit_error"),
+    _CREDENTIAL_UNAVAILABLE: (401, "authentication_error"),
+    "provider.invalid_request": (400, "invalid_request_error"),
+    "provider.unavailable": (503, "api_error"),
+}
+
+
+def _broker_error(code: str) -> tuple[int, str]:
+    """Map a closed participant error to its fixed transport status and envelope type."""
+    return _ERROR_ENVELOPE.get(code, (409, "invalid_request_error"))
 
 
 def _broker_route(scope: ASGIScope) -> tuple[str, bool]:
@@ -97,7 +106,8 @@ class BrokerApplication:
                 # alone owns the absolute deadline once a response can start.
                 await self._post(scope, receive, send, started_at=started_at)
         except ContractError as exc:
-            await _error(send, _broker_error_status(exc.code), "invalid_request_error", exc.code)
+            status, category = _broker_error(exc.code)
+            await _error(send, status, category, exc.code)
         except (ValueError, TimeoutError):
             await _error(send, 400, "invalid_request_error", "broker.invalid_request")
         except Exception:

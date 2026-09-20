@@ -1,7 +1,11 @@
 """Provider credentials exist in the broker only, scoped to approved identities."""
 
-from collections.abc import Mapping
+import threading
+import time
+from collections.abc import Callable, Mapping
 from contextlib import closing
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import partial
 from urllib.parse import urlsplit
 
@@ -19,6 +23,60 @@ from .egress import provider_proxy
 
 JSON_MEDIA_TYPE = "application/json"
 _CREDENTIAL_WORK = BoundedWork(8, name="broker-provider")
+
+
+@dataclass
+class _CachedToken:
+    """One approved target's short-lived access token and its early-expiry deadline."""
+
+    token: str
+    expires_at: float
+
+
+class _AccessTokenCache:
+    """In-memory, single-flight access-token reuse with early expiry.
+
+    An availability optimization only: tokens live in broker memory keyed by the
+    complete approved identity/authentication target, never cross the process, and
+    never enter logs, exceptions, responses or accounting. It caches no grant
+    authority or provider result, and a stored-credential revision change keys a
+    new entry rather than reusing a fenced token.
+    """
+
+    def __init__(self, *, early_expiry_seconds: float = 60.0) -> None:
+        self._early = early_expiry_seconds
+        self._guard = threading.Lock()
+        self._entries: dict[tuple[str, ...], _CachedToken] = {}
+        self._flights: dict[tuple[str, ...], threading.Lock] = {}
+
+    def token(self, key: tuple[str, ...], mint: Callable[[], tuple[str, float]]) -> str:
+        """Return a live cached token or mint one under a per-key single-flight lock."""
+        fresh = self._fresh(key)
+        if fresh is not None:
+            return fresh
+        with self._flight(key):
+            # Re-check inside the single-flight lock so only one caller mints per key.
+            fresh = self._fresh(key)
+            if fresh is not None:
+                return fresh
+            token, lifetime = mint()
+            with self._guard:
+                self._entries[key] = _CachedToken(token=token, expires_at=time.monotonic() + max(0.0, lifetime))
+            return token
+
+    def _fresh(self, key: tuple[str, ...]) -> str | None:
+        with self._guard:
+            entry = self._entries.get(key)
+        if entry is not None and entry.expires_at - self._early > time.monotonic():
+            return entry.token
+        return None
+
+    def _flight(self, key: tuple[str, ...]) -> threading.Lock:
+        with self._guard:
+            return self._flights.setdefault(key, threading.Lock())
+
+
+_VERTEX_TOKENS = _AccessTokenCache()
 
 
 class ProviderCredentials:
@@ -66,10 +124,22 @@ class ProviderCredentials:
 
 
 def _vertex_headers(target: ProviderTarget, *, stored: GoogleKeyCredential | None = None) -> dict[str, str]:
-    """Impersonate the approved service account through a bounded private session."""
+    """Impersonate the approved service account, reusing a bounded cached token."""
+    if stored is not None and (stored.client_email != target.principal or stored.project_id != target.project):
+        raise ContractError("provider.target_mismatch")
+    key = ("vertex", target.authentication, target.principal, target.project, target.credential_reference)
+    token = _VERTEX_TOKENS.token(key, partial(_mint_vertex_token, target, stored))
+    return {
+        "authorization": f"Bearer {token}",
+        "content-type": JSON_MEDIA_TYPE,
+        "accept-encoding": "identity",
+    }
+
+
+def _mint_vertex_token(target: ProviderTarget, stored: GoogleKeyCredential | None) -> tuple[str, float]:
+    """Mint one short-lived Vertex access token through a bounded private session."""
     import requests
     from google.auth import compute_engine, impersonated_credentials
-    from google.auth.transport import Response
     from google.auth.transport.requests import Request
 
     with requests.Session() as session:
@@ -85,7 +155,7 @@ def _vertex_headers(target: ProviderTarget, *, stored: GoogleKeyCredential | Non
             body: bytes | None = None,
             headers: Mapping[str, str] | None = None,
             **kwargs: object,
-        ) -> Response:
+        ) -> object:
             """Bound every credential refresh HTTP call to two seconds."""
             kwargs["timeout"] = 2
             return request(url, method=method, body=body, headers=headers, **kwargs)
@@ -100,19 +170,22 @@ def _vertex_headers(target: ProviderTarget, *, stored: GoogleKeyCredential | Non
         else:
             from google.oauth2 import service_account
 
-            if stored.client_email != target.principal or stored.project_id != target.project:
-                raise ContractError("provider.target_mismatch")
             value = stored.model_dump(mode="json")
             value["private_key"] = stored.private_key.get_secret_value()
             credentials = service_account.Credentials.from_service_account_info(
                 value, scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
         credentials.refresh(bounded)
-        return {
-            "authorization": f"Bearer {credentials.token}",
-            "content-type": JSON_MEDIA_TYPE,
-            "accept-encoding": "identity",
-        }
+    return credentials.token, _seconds_until(credentials.expiry)
+
+
+def _seconds_until(expiry: datetime | None) -> float:
+    """Remaining lifetime of a minted token; unknown expiry is treated as immediate."""
+    if expiry is None:
+        return 0.0
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    return (expiry - datetime.now(UTC)).total_seconds()
 
 
 def _bedrock_headers(
