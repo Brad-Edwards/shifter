@@ -217,7 +217,9 @@ class ProviderServer:
                 200,
                 {
                     "type": "message",
+                    "role": "assistant",
                     "content": [{"type": "text", "text": ANSWER}],
+                    "stop_reason": "end_turn",
                     "usage": {"input_tokens": 5, "output_tokens": 3},
                 },
             )

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal, NoReturn
 
-from pydantic import Field, JsonValue, StrictBool, StrictFloat, StrictInt, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, StrictFloat, StrictInt, ValidationError
 
 from shared.model_access.catalog import ContractError
 from shared.model_access.core_models import AccessLimits, ClosedModel, Identifier
@@ -86,6 +86,29 @@ class MessagesRequest(CountTokensRequest):
     top_p: Annotated[StrictFloat, Field(ge=0, le=1)] | None = None
     top_k: Annotated[StrictInt, Field(ge=0, le=1000)] | None = None
     stop_sequences: Annotated[list[Annotated[str, Field(max_length=256)]], Field(max_length=16)] | None = None
+
+
+ResponseContentBlock = Annotated[TextBlock | ToolUseBlock, Field(discriminator="type")]
+
+
+class MessagesResponse(BaseModel):
+    """Closed qualified assistant reply used to validate provider responses.
+
+    Content is restricted to the qualified text and local ``tool_use`` blocks, so
+    an unqualified cost- or semantics-changing block (for example ``thinking``) is
+    rejected before it reaches the participant. Unknown top-level fields are
+    tolerated and ignored rather than rejected, so a benign additive provider
+    field never blocks a working range; cost-bearing usage is enforced separately
+    by the usage normalizer, and the qualified surface is pinned by the wire corpus.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["message"]
+    role: Literal["assistant"]
+    content: Annotated[list[ResponseContentBlock], Field(min_length=1, max_length=512)]
+    stop_reason: Annotated[str, Field(min_length=1, max_length=64)]
+    usage: dict[str, JsonValue]
 
 
 def strict_json(raw: bytes, *, limit: int = MAX_MESSAGE_BYTES) -> JsonObject:

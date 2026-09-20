@@ -36,7 +36,45 @@ from shared.model_access.provider_runtime import ProviderInventory, ProviderTarg
 from .egress import provider_proxy
 from .errors import NoBillableEffect
 from .provider_credentials import ProviderCredentials
-from .provider_usage import StreamUsage, bedrock_events, encode_sse, usage_from_message, vertex_events
+from .provider_usage import (
+    StreamUsage,
+    bedrock_events,
+    encode_sse,
+    usage_from_message,
+    validate_message_response,
+    vertex_events,
+)
+
+# Bounded upstream transport controls. The absolute request/grant deadline in
+# BrokerInvocation is the total cap; these bound each transport phase separately so
+# a useful streamed coding response is not cut at a five-second read, while an idle
+# upstream still cannot stall a worker slot indefinitely. Tune from observed client
+# and provider behavior (#2334); never disable a control to make streaming pass.
+_STREAM_IDLE_SECONDS = 30.0
+_CONNECT_SECONDS = 2.0
+_WRITE_SECONDS = 5.0
+_POOL_SECONDS = 1.0
+
+# Provider HTTP statuses that carry an actionable participant meaning. Everything
+# else, including auth failures that are the deployment's and not the participant's,
+# normalizes to a bounded 'unavailable' so no provider body, header or request id
+# leaks and the pinned client is not driven into a credential-rejection retry loop.
+_PROVIDER_STATUS_CODES = {
+    429: "provider.rate_limited",
+    400: "provider.invalid_request",
+    413: "provider.invalid_request",
+    422: "provider.invalid_request",
+}
+
+
+def _provider_error(status_code: int) -> ContractError:
+    """Classify a non-200 provider status into a bounded, body-free participant error.
+
+    Mirrors the ``ProviderError`` category vocabulary: rate-limited preserves client
+    backoff, malformed-request statuses stay client-visible, and authentication or
+    server failures surface as unavailable without exposing provider diagnostics.
+    """
+    return ContractError(_PROVIDER_STATUS_CODES.get(status_code, "provider.unavailable"))
 
 
 @dataclass
@@ -60,7 +98,9 @@ class ProviderRegistry:
             proxy=provider_proxy(),
             trust_env=False,
             follow_redirects=False,
-            timeout=httpx.Timeout(5, connect=1, pool=0.25, write=1),
+            timeout=httpx.Timeout(
+                _STREAM_IDLE_SECONDS, connect=_CONNECT_SECONDS, pool=_POOL_SECONDS, write=_WRITE_SECONDS
+            ),
             limits=httpx.Limits(max_connections=128),
         )
 
@@ -164,18 +204,26 @@ class MessagesProvider(ModelProviderAdapter):
             raise ContractError("messages.too_large")
         return self._billing_bound(count_only=features == ("token-count",), output_limit=self.limits.max_output_tokens)
 
-    def message_billing_bound(self, message: CountTokensRequest, *, count_only: bool) -> BillingBound:
-        """Use the validated message's output limit for its pre-dispatch reservation."""
+    def message_billing_bound(
+        self, message: CountTokensRequest, *, count_only: bool, input_tokens: int | None = None
+    ) -> BillingBound:
+        """Reserve output by the request's limit and input by a proven count when known."""
         output_limit = message.max_tokens if isinstance(message, MessagesRequest) else self.limits.max_output_tokens
-        return self._billing_bound(count_only=count_only, output_limit=output_limit)
+        return self._billing_bound(count_only=count_only, output_limit=output_limit, input_tokens=input_tokens)
 
-    def _billing_bound(self, *, count_only: bool, output_limit: int) -> BillingBound:
-        """Count endpoints are free but still consume rate and concurrency capacity."""
+    def _billing_bound(self, *, count_only: bool, output_limit: int, input_tokens: int | None = None) -> BillingBound:
+        """Count endpoints are free but still consume rate and concurrency capacity.
+
+        A provider-proven ``input_tokens`` narrows the input reservation so routine
+        small prompts are not denied; absent that proof the full physical context
+        window is the only safe conservative bound.
+        """
+        input_units = self.target.context_window_tokens if input_tokens is None else input_tokens
         amounts = (
             [(BillingComponent.REQUEST, 1)]
             if count_only
             else [
-                (BillingComponent.INPUT_TOKENS, self.target.context_window_tokens),
+                (BillingComponent.INPUT_TOKENS, input_units),
                 (BillingComponent.OUTPUT_TOKENS, output_limit),
             ]
         )
@@ -237,9 +285,9 @@ class MessagesProvider(ModelProviderAdapter):
             raise NoBillableEffect("provider.transport_lease_unavailable", count_only=count_only) from None
         async with self.client.stream("POST", url, content=raw, headers=headers) as response:
             if response.status_code != 200:
-                # Do not reflect provider errors or automatically retry a call
-                # that might already have incurred an effect.
-                raise ContractError("provider.unavailable")
+                # Normalize to a bounded category without reflecting provider bodies or
+                # automatically retrying a call that might already have incurred an effect.
+                raise _provider_error(response.status_code)
             if response.headers.get("content-encoding", "identity") != "identity":
                 raise ContractError("provider.encoding_unsupported")
             yield response
@@ -291,11 +339,33 @@ class MessagesProvider(ModelProviderAdapter):
                 raise NoBillableEffect("messages.context_limit", count_only=False)
         return tokens
 
+    async def count(self, message: CountTokensRequest, *, before_transport: Callable[[], Awaitable[str]]) -> int:
+        """Prove the request's input token count through the fixed free count endpoint."""
+        return await self._validated_count(message, count_only=False, before_transport=before_transport)
+
+    def _accept_precount(self, message: CountTokensRequest, precounted: int) -> int:
+        """Trust only this request's own proven count, still bounded by the physical context."""
+        if not isinstance(message, MessagesRequest):
+            raise NoBillableEffect("messages.unsupported_request", count_only=False)
+        if not 0 <= precounted <= self.limits.max_input_tokens:
+            raise NoBillableEffect("messages.input_limit", count_only=False)
+        if precounted + message.max_tokens > self.target.context_window_tokens:
+            raise NoBillableEffect("messages.context_limit", count_only=False)
+        return precounted
+
     @asynccontextmanager
     async def invoke(
-        self, message: CountTokensRequest, *, count_only: bool, before_transport: Callable[[], Awaitable[str]]
+        self,
+        message: CountTokensRequest,
+        *,
+        count_only: bool,
+        before_transport: Callable[[], Awaitable[str]],
+        precounted: int | None = None,
     ) -> AsyncIterator[ProviderResponse]:
-        tokens = await self._validated_count(message, count_only=count_only, before_transport=before_transport)
+        if precounted is None:
+            tokens = await self._validated_count(message, count_only=count_only, before_transport=before_transport)
+        else:
+            tokens = self._accept_precount(message, precounted)
         if count_only:
 
             async def counted() -> AsyncIterator[bytes]:
@@ -328,6 +398,8 @@ class MessagesProvider(ModelProviderAdapter):
                         from .openai_messages import response_message
 
                         value = response_message(value, model=self.target.model)
+                    else:
+                        validate_message_response(value)
                     result.usage = usage_from_message(value)
                     yield json.dumps(value, separators=(",", ":")).encode()
 
