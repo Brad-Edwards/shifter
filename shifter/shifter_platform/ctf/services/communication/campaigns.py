@@ -80,6 +80,16 @@ def _resolve_workspace(user: User, workspace_uuid: str | UUID) -> int:
     return authorization.workspace_id
 
 
+def _legacy_workspace_id(campaign: CommunicationCampaign) -> int:
+    """Reject campaign scopes unsupported by the workspace communication service."""
+    if campaign.workspace_id is None:
+        raise CTFCommunicationError(
+            "Campaign is not available for workspace communications",
+            code="CTF_COMMUNICATION_WORKSPACE_DENIED",
+        )
+    return campaign.workspace_id
+
+
 def _authorized_target_events(user: User, workspace_id: int, target_event_ids: list[UUID]) -> list[CTFEvent]:
     """Return the target events after confining them to the workspace and per-event capability.
 
@@ -186,7 +196,7 @@ def revise_message(
                 "Only a draft campaign's message can be revised",
                 code="CTF_COMMUNICATION_NOT_DRAFT",
             )
-        enforce_operation_rate(actor.user_id, campaign.workspace_id)
+        enforce_operation_rate(actor.user_id, _legacy_workspace_id(campaign))
         next_number = (
             MessageRevision.objects.filter(campaign=campaign)
             .order_by("-revision_number")

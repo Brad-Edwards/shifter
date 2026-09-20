@@ -75,7 +75,10 @@ def change_range_model_sources(
             raise ContractError(REVISION_CONFLICT)
         if not _snapshot_needs(instance):
             raise ContractError("source.range_unavailable")
-        sponsorship = resolve_model_source_sponsorship(actor, instance.workspace_id, selection, administrative=True)
+        workspace_id = instance.workspace_id
+        if workspace_id is None:
+            raise ContractError("source.range_unavailable")
+        sponsorship = resolve_model_source_sponsorship(actor, workspace_id, selection, administrative=True)
         retry_pending = (
             instance.model_source_policy_error == "source.admission_pending"
             and instance.model_source_sponsorship == sponsorship.model_dump(mode="json")

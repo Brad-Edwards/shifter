@@ -5,6 +5,7 @@ Split into one module per entity, mirroring ``engine/models/``. Only
 ``workspaces.services``.
 """
 
+from ._account import Account, AccountMembership
 from ._invitation import WorkspaceInvitation
 from ._membership import WorkspaceMembership
 from ._organization import Organization
@@ -49,6 +50,8 @@ __all__ = [
     "WORKSPACE_QUOTA_MODE_VALUES",
     "WORKSPACE_QUOTA_OUTCOME_VALUES",
     "WORKSPACE_QUOTA_RESOURCE_VALUES",
+    "Account",
+    "AccountMembership",
     "Organization",
     "OrganizationMembership",
     "Workspace",
