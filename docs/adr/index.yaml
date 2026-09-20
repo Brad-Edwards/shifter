@@ -2104,7 +2104,7 @@
       },
       {
         "id": "ADR-037-R9",
-        "description": "Protected Packer GCE Linux builds may publish their already-exported qcow2 payloads to the canonical GHCR VM-disk packages only through a dedicated package-write job. The job MUST stream no credentials into artifact content or runtime configuration, record the resulting manifest digest, and document an explicit digest-pinned GDC VM Runtime opt-in. Publication MUST NOT replace GCE image-family, AWS AMI, or default bootstrap consumption.",
+        "description": "Protected Packer GCE builds may publish only the allowlisted Kali, Ubuntu, and pre-promoted DC base set as GCE-native disk.raw tarballs to the canonical public GHCR packages through the dedicated package-write job. The tenant bootstrap MUST discover public packages without registry credentials, validate the OCI artifact/layer/role/protected-revision contract before payload download, resolve and pull by immutable manifest digest, import or reuse a digest-derived native GCE image, require READY, and publish the same exact image resources to both the first local bootstrap and the selected GitHub deployment Environment. Transfer buckets, objects, and any proven-necessary temporary access MUST be narrowly scoped, retry-convergent, and removed on success and failure. Mutable tags are discovery only; publication/import is neither qualification nor stronger attestation, and bootstrap MUST NOT dispatch Packer or fall back to a tenant bake.",
         "checks": []
       }
     ],
@@ -2128,6 +2128,7 @@
       ".github/workflows/packer-gcp.yml",
       "docs/architecture/gcp-guest-images.md",
       "docs/architecture/ghcr-vm-guest-image-preflight-2297.md",
+      "docs/architecture/gcp-foundation-image-bootstrap-preflight-2338.md",
       "shifter/engine/provisioner/config/_gdc.py",
       "shifter/packer/gcp/scripts/validate/verify-promotion-evidence.sh",
       "shifter/packer/tests/test_packer_gcp.py",
