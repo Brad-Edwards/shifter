@@ -972,13 +972,11 @@ class TestGcpDcPrebakedCredentialHygiene:
         assert "scripts/dc-prebaked/cleanup.ps1" not in content
         assert content.index("finalize.ps1") < content.index("post-processor")
 
-    def test_finalize_uses_existing_winrm_session_after_promotion(self):
-        content = (GCP_DIR / "dc-prebaked.pkr.hcl").read_text()
-        finalize_block = content.split('script = "scripts/dc-prebaked/finalize.ps1"', 1)[0].rsplit(
-            'provisioner "powershell"', 1
-        )[1]
-        assert "elevated_user" not in finalize_block
-        assert "elevated_password" not in finalize_block
+    def test_finalize_does_not_mutate_firewall_across_its_winrm_session(self):
+        content = (GCP_SCRIPTS_DIR / "dc-prebaked" / "finalize.ps1").read_text()
+        assert "Set-NetFirewallProfile" not in content
+        assert "Get-NetFirewallProfile" in content
+        assert "enabledFirewallProfiles.Count -ne 0" in content
 
 
 class TestAwsTemplatesUnaffected:
