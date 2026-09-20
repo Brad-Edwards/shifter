@@ -133,7 +133,7 @@ def _newest_discovery_tag(tags: list[str]) -> str | None:
     return max(numbered)[1]
 
 
-def validate_artifact_manifest(manifest: dict, *, role: str) -> str:
+def validate_artifact_manifest(manifest: dict[str, object], *, role: str) -> str:
     """Validate an OCI manifest against the GCE base-image contract.
 
     Returns the provenance source revision. Raises :class:`BaseImageError` when
@@ -172,7 +172,7 @@ def render_range_image_env(imported: dict[str, ImportedImage]) -> dict[str, str]
 # --- Registry / GCE boundary (mocked in tests via bootstrap_core.run_cmd) -----
 
 
-def _oras_json(cmd: list[str], *, what: str) -> dict:
+def _oras_json(cmd: list[str], *, what: str) -> dict[str, object]:
     """Run an oras command that emits JSON and parse it, failing clearly."""
     result = run_cmd(cmd, check=False, capture=True)
     if result is None or result.returncode != 0:
@@ -212,7 +212,7 @@ def _fetch_digest(package: str, tag: str) -> str:
     return digest
 
 
-def _fetch_manifest(package: str, digest: str) -> dict:
+def _fetch_manifest(package: str, digest: str) -> dict[str, object]:
     """Fetch the manifest for a digest-pinned reference."""
     return _oras_json(
         ["oras", "manifest", "fetch", f"{package}@{digest}"],
