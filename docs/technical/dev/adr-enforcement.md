@@ -447,10 +447,10 @@ The first slice intentionally stays small:
   The reusable GCE base-image guardrail
   (`test_gcp_base_image_publish_uses_gce_native_contract_and_protected_ref_gate`)
   asserts `packer-gcp.yml` publishes the minimum base set (kali, ubuntu, and DC
-  via `dc-prebaked`) to GHCR as GCE-native disk tarballs — package
+  via `dc-prebaked`) to GHCR as GCE-native disk tarballs (package
   `shifter-gce-<role>`, artifact type `application/vnd.shifter.gce-image.v1`,
   layer media type `application/vnd.shifter.gce-image.tar.gz`, provenance
-  annotations — gated on `publish_target=ghcr` and a protected dispatch ref, with
+  annotations) gated on `publish_target=ghcr` and a protected dispatch ref, with
   the staging object keyed on `BUILT_IMAGE_ID` (not the build-step-local
   `IMAGE_ID`). The retired GDC qcow2 `shifter-vm-*` publish contract is gone. The
   tenant bootstrap consumes these via `scripts/bootstrap/gcp_base_images.py`
