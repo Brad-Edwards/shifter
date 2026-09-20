@@ -698,19 +698,36 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn("ro,nosuid,nodev,noexec", scanner)
         self.assertNotIn("validator@${VALIDATION_VM}:/tmp/syft", validate)
 
-    def test_gcp_linux_guest_publish_keeps_vm_disk_contract_and_protected_ref_gate(self):
-        """#2297: GHCR packages are digest-pinned qcow2 VM disks, never containers."""
+    def test_gcp_base_image_publish_uses_gce_native_contract_and_protected_ref_gate(self):
+        """#2309: GHCR base images are digest-pinned GCE-native disk tarballs (kali/ubuntu/dc)."""
         build = (REPO_ROOT / ".github/workflows/packer-gcp.yml").read_text(encoding="utf-8")
 
         self.assertIn("packages: write", build)
-        self.assertIn("Publish Linux VM disk to GHCR", build)
-        self.assertIn('inputs.image_type == \'kali\' || inputs.image_type == \'ubuntu\'', build)
+        self.assertIn("Publish GCE base image to GHCR", build)
+        self.assertIn("inputs.publish_target == 'ghcr'", build)
+        # The reusable DC base is the pre-promoted dc-prebaked image (the generic
+        # sysprepped 'dc' needs runtime promotion, which is disabled), published
+        # under the 'dc' role.
+        self.assertIn(
+            "inputs.image_type == 'kali' || inputs.image_type == 'ubuntu' || inputs.image_type == 'dc-prebaked'",
+            build,
+        )
         self.assertIn("oras-project/setup-oras@", build)
-        self.assertIn("application/vnd.shifter.vm-disk.qcow2", build)
-        self.assertIn("ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shifter-vm-${IMAGE_TYPE}", build)
+        self.assertIn("application/vnd.shifter.gce-image.tar.gz", build)
+        self.assertIn("application/vnd.shifter.gce-image.v1", build)
+        self.assertIn("ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shifter-gce-${IMAGE_TYPE}", build)
         self.assertIn("oci://${PACKAGE}@${DIGEST}", build)
-        self.assertIn("GDC_${IMAGE_TYPE^^}_IMAGE_URL", build)
-        self.assertIn("${IMAGE_TYPE}-${IMAGE_ID}.qcow2", build)
+        # Provenance annotations bind the artifact to its protected build.
+        self.assertIn("org.opencontainers.image.revision=${GITHUB_SHA}", build)
+        # F2: the export object is keyed on BUILT_IMAGE_ID (exported to GITHUB_ENV),
+        # not the build-step-local IMAGE_ID which would expand empty here. The role
+        # names the object (dc-prebaked maps to the 'dc' role).
+        self.assertIn("${ROLE}-${BUILT_IMAGE_ID}.tar.gz", build)
+        self.assertNotIn("${IMAGE_TYPE}-${IMAGE_ID}.tar.gz", build)
+        # The retired GDC VM Runtime qcow2 publish contract is gone.
+        self.assertNotIn("application/vnd.shifter.vm-disk", build)
+        self.assertNotIn("shifter-vm-${IMAGE_TYPE}", build)
+        self.assertNotIn("GDC_${IMAGE_TYPE^^}_IMAGE_URL", build)
 
     def test_release_evidence_iam_is_purpose_and_prefix_scoped(self):
         identity = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text(encoding="utf-8")

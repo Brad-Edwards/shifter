@@ -56,6 +56,13 @@ class AdvanceRequest(TokenRequest):
     dispatch_token: SecretStr = SecretStr("")
 
 
+class CommitRequest(TokenRequest):
+    """The proven input/output spend bound committed to a counted request."""
+
+    request_uuid: UUID
+    billing_bound: BillingBound
+
+
 class FinishRequest(ClosedModel):
     """A closed settlement, uncertainty or reservation-release outcome."""
 

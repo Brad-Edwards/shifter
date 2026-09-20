@@ -9,11 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cms.api.preparation_adapters import PreparationSerializer
-from cms.services import change_range_model_sources, get_range_model_sources
+from cms.services import change_range_model_sources, get_range_model_sources, revoke_range_model_sources
 from shared.api.errors import api_error_response
+from shared.api.model_access import ModelAccessAPIView
 from shared.api.model_sources import ModelSourceRevisionField, ModelSourceSelectionField, ModelSourceSelectionSerializer
-from shared.api.permissions import IsAuthenticatedSession
+from shared.api.permissions import IsAuthenticatedSession, IsAuthenticatedSessionOrApiToken
 from shared.api.strict_json import ClosedJSONParser
+from shared.api_tokens.permissions import require_scope
+from shared.api_tokens.scopes import MODEL_ACCESS_RANGE_WRITE
 from shared.model_access import ContractError
 from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthorizationError
 
@@ -139,4 +142,29 @@ class OrganizationModelRangesView(APIView):
                 )
             )
         except (OrganizationAuthorizationError, WorkspaceAuthorizationError) as exc:
+            return source_policy_error(request, exc)
+
+
+class RangeModelSourcesRevokeView(ModelAccessAPIView):
+    """Revoke a range's model grants under range-administration authority (M09, #2126).
+
+    Session/CSRF or a ``model-access:range:write`` scoped token; the service
+    re-checks workspace authority and fences the current generation's grants and
+    dispatch leases with real-actor audit. Revocation never proves provider
+    cancellation, refunds spend or releases outstanding liabilities.
+    """
+
+    permission_classes = [
+        IsAuthenticatedSessionOrApiToken,
+        require_scope(MODEL_ACCESS_RANGE_WRITE, MODEL_ACCESS_RANGE_WRITE),
+    ]
+
+    @extend_schema(request=None, responses=RangeModelSourcesSerializer)
+    def post(self, request: Request, request_id: UUID) -> Response:
+        actor = self.actor(request)
+        if actor is None:
+            return api_error_response(code="permission_denied", message="Forbidden", status_code=403, request=request)
+        try:
+            return Response(revoke_range_model_sources(actor, request_id=request_id))
+        except (WorkspaceAuthorizationError, OrganizationAuthorizationError, ContractError) as exc:
             return source_policy_error(request, exc)

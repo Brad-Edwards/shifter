@@ -74,7 +74,9 @@ async def test_fixed_provider_origins_count_before_invoke_and_normalize_usage(pr
             200,
             json={
                 "type": "message",
+                "role": "assistant",
                 "content": [{"type": "text", "text": "answer"}],
+                "stop_reason": "end_turn",
                 "usage": {"input_tokens": 12, "output_tokens": 5},
             },
         )
@@ -112,6 +114,109 @@ async def test_fixed_provider_origins_count_before_invoke_and_normalize_usage(pr
         prompt = json.loads(base64.b64decode(json.loads(calls[0].content)["input"]["invokeModel"]["body"]))
         assert prompt["messages"][0]["content"] == "test"
         assert invoke["anthropic_version"] == "bedrock-2023-05-31"
+
+
+@pytest.mark.parametrize(
+    "status,code",
+    [
+        (429, "provider.rate_limited"),
+        (503, "provider.unavailable"),
+        (500, "provider.unavailable"),
+        (403, "provider.unavailable"),
+        (400, "provider.invalid_request"),
+    ],
+)
+async def test_provider_error_status_is_normalized_without_leaking_diagnostics(status, code):
+    def transport(request):
+        if "count-tokens" in request.url.path:
+            return httpx.Response(200, json={"input_tokens": 12})
+        return httpx.Response(status, json={"error": {"message": "secret-upstream-diagnostic"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = MessagesProvider(
+            target=target("vertex-v1"), limits=_limits(), credentials=CredentialsPort(), client=client
+        )
+        with pytest.raises(ContractError) as err:
+            async with adapter.invoke(message(), count_only=False, before_transport=lease):
+                pytest.fail("provider error yielded a response")
+    assert err.value.code == code
+    assert "secret-upstream-diagnostic" not in str(err.value)
+
+
+async def test_message_response_contract_rejects_unqualified_blocks_but_tolerates_additive_fields():
+    from model_broker.provider_usage import validate_message_response
+
+    # A qualified reply (text + local tool_use blocks) with a benign additive top-level
+    # field passes; the additive field is tolerated so a working range is not blocked.
+    validate_message_response(
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "hi"}, {"type": "tool_use", "id": "t1", "name": "read", "input": {}}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 5, "output_tokens": 3},
+            "container": {"id": "benign-additive"},
+        }
+    )
+    usage = {"input_tokens": 1, "output_tokens": 1}
+    for malformed in (
+        # Unqualified, cost/semantics-changing block is rejected, not admitted.
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "thinking", "thinking": "…"}],
+            "stop_reason": "end_turn",
+            "usage": usage,
+        },
+        {
+            "type": "error",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "x"}],
+            "stop_reason": "end_turn",
+            "usage": usage,
+        },
+        {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "text", "text": "x"}],
+            "stop_reason": "end_turn",
+            "usage": usage,
+        },
+        {"type": "message", "role": "assistant", "content": [], "stop_reason": "end_turn", "usage": usage},
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "x"}],
+            "usage": usage,
+        },  # no stop_reason
+        {"type": "message", "role": "assistant", "content": "not-a-list", "stop_reason": "end_turn", "usage": usage},
+        # An unknown field inside a qualified block is rejected by the closed block contract.
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "x", "cache_control": {"type": "ephemeral"}}],
+            "stop_reason": "end_turn",
+            "usage": usage,
+        },
+    ):
+        with pytest.raises(ContractError, match="invalid_response"):
+            validate_message_response(malformed)
+
+
+async def test_stream_usage_rejects_unqualified_streamed_blocks_and_deltas():
+    from model_broker.provider_usage import StreamUsage
+
+    rejecting = StreamUsage()
+    rejecting.observe({"type": "message_start", "message": {"usage": {"input_tokens": 1}}})
+    with pytest.raises(ContractError, match="invalid_stream"):
+        rejecting.observe({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking"}})
+
+    ok = StreamUsage()
+    ok.observe({"type": "message_start", "message": {"usage": {"input_tokens": 1}}})
+    ok.observe({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
+    ok.observe({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}})
+    with pytest.raises(ContractError, match="invalid_stream"):
+        ok.observe({"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "x"}})
 
 
 async def test_revocation_between_count_and_invoke_prevents_paid_transport():
@@ -272,7 +377,9 @@ async def test_direct_anthropic_uses_owned_key_and_fixed_messages_and_count_rout
             200,
             json={
                 "type": "message",
+                "role": "assistant",
                 "content": [{"type": "text", "text": "answer"}],
+                "stop_reason": "end_turn",
                 "usage": {"input_tokens": 12, "output_tokens": 5},
             },
         )
@@ -441,7 +548,9 @@ async def test_openrouter_pins_upstream_without_inventing_a_count_endpoint():
             200,
             json={
                 "type": "message",
+                "role": "assistant",
                 "content": [{"type": "text", "text": "answer"}],
+                "stop_reason": "end_turn",
                 "usage": {"input_tokens": 12, "output_tokens": 5},
             },
         )

@@ -81,8 +81,15 @@ class RangeInstance(SoftDeleteMixin, models.Model):
     # made mandatory by cms migration 0040.
     workspace_id = models.IntegerField(
         db_index=True,
+        null=True,
+        blank=True,
         help_text="Workspace this range is scoped to (soft reference; see ADR-046).",
     )
+    scope_kind = models.CharField(
+        max_length=16, blank=True, default="", choices=(("installation", "Installation"), ("account", "Account"))
+    )
+    account_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    organization_id = models.PositiveBigIntegerField(null=True, blank=True)
     agent = models.ForeignKey(
         AgentConfig,
         on_delete=models.SET_NULL,
@@ -168,6 +175,24 @@ class RangeInstance(SoftDeleteMixin, models.Model):
         verbose_name_plural = "Range Instances"
         base_manager_name = "all_objects"
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        scope_kind="", account_id__isnull=True, organization_id__isnull=True, workspace_id__isnull=False
+                    )
+                    | models.Q(
+                        scope_kind="installation",
+                        account_id__isnull=True,
+                        organization_id__isnull=True,
+                        workspace_id__isnull=True,
+                    )
+                    | (
+                        models.Q(scope_kind="account", account_id__isnull=False)
+                        & (models.Q(workspace_id__isnull=True) | models.Q(organization_id__isnull=False))
+                    )
+                ),
+                name="cms_range_resource_scope_shape",
+            ),
             # At most one active range per (user, source). "Active" mirrors
             # ``cms.services.get_active_range``: a non-soft-deleted row whose
             # status is not DESTROYING. Terminal DESTROYED/FAILED rows set
