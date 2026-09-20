@@ -126,6 +126,8 @@ def _administrative_actions_at_or_below(target_type: TargetType) -> frozenset[st
     return frozenset(action for action in _actions_at_or_below(target_type) if _ACTIONS_BY_CODE[action].administrative)
 
 
+_SCOPED_ADMINISTRATOR_TARGETS: tuple[TargetType, ...] = ("account", "organization", "workspace", "event")
+
 PREDEFINED_POLICIES: tuple[PredefinedPolicyDefinition, ...] = (
     PredefinedPolicyDefinition(
         "application_administrator",
@@ -152,7 +154,7 @@ PREDEFINED_POLICIES: tuple[PredefinedPolicyDefinition, ...] = (
             "administrator",
             _administrative_actions_at_or_below(target),
         )
-        for target in ("account", "organization", "workspace", "event")
+        for target in _SCOPED_ADMINISTRATOR_TARGETS
     ),
 )
 

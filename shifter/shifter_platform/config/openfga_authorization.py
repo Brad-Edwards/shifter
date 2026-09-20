@@ -46,6 +46,7 @@ from shared.authorization.model import decision_relation_for_action
 
 _CONSISTENCY_OPTIONS = {"consistency": "HIGHER_CONSISTENCY"}
 _MAX_SECRET_BYTES = 16_384
+type _SdkOptions = dict[str, int | str | dict[str, int | str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +193,7 @@ class OpenFgaAuthorizationProvider:
         return self._settings.model_id
 
     @property
-    def _options(self) -> dict[str, str]:
+    def _options(self) -> _SdkOptions:
         return {"authorization_model_id": self._settings.model_id, **_CONSISTENCY_OPTIONS}
 
     def _parents(self, object_id: str, relation: str) -> tuple[str, ...]:
@@ -334,7 +335,7 @@ class OpenFgaAuthorizationProvider:
             raise AuthorizationProviderError("Invalid OpenFGA diagnostic object type")
         if not 1 <= page_size <= 100:
             raise AuthorizationProviderError("Invalid OpenFGA diagnostic page size")
-        options: dict[str, object] = {"page_size": page_size}
+        options: _SdkOptions = {"page_size": page_size}
         if continuation_token:
             options["continuation_token"] = continuation_token
         try:

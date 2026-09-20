@@ -299,7 +299,7 @@ def _action_result(
         action=str(data["action"]),
         target=TargetRef("workspace", workspace_uuid),
         scope=scope,
-        effect=PolicyEffect(data["effect"]),
+        effect=PolicyEffect(str(data["effect"])),
         idempotency_key=str(data["idempotency_key"]),
         model_id=settings.OPENFGA_MODEL_ID,
         audit=_request_audit(request),

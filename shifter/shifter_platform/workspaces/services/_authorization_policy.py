@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Literal, cast
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
@@ -33,6 +34,8 @@ from shared.authorization import (
     predefined_policy_definition,
     resolve_authorization_descendants,
 )
+from shared.authorization.catalog import TargetType
+from shared.authorization.relationships import SubjectKind
 from shared.identity_scope import PrincipalRef, ResourceScope
 from shared.principal_port import resolve_principal
 from shared.principal_port import resolve_principal_uuid as directory_resolve_principal_uuid
@@ -250,7 +253,7 @@ def _reserve(
     request: MutationRequest,
     provider: AuthorizationProvider,
     *,
-    state: str,
+    state: AuthorizationOperation.State,
     reason: str,
     block: bool,
 ) -> tuple[AuthorizationOperation, bool]:
@@ -329,7 +332,9 @@ def _reserve(
         return operation, True
 
 
-def _set_outcome(owner: AuthorizationOperation, state: str, reason: str) -> AuthorizationOperation:
+def _set_outcome(
+    owner: AuthorizationOperation, state: AuthorizationOperation.State, reason: str
+) -> AuthorizationOperation:
     with transaction.atomic():
         operation = AuthorizationOperation.objects.select_for_update().get(pk=owner.id)
         if operation.state in {AuthorizationOperation.State.CONFIRMED, AuthorizationOperation.State.DENIED}:
@@ -421,6 +426,8 @@ def _authoritative_descendant_targets(target: TargetRef) -> tuple[tuple[TargetRe
         account_query = Account.objects.all()
         organization_query = Organization.objects.filter(account__isnull=False)
         workspace_query = Workspace.objects.filter(organization__account__isnull=False)
+    elif target.uuid is None:
+        raise AuthorizationMutationConflict("authorization target is unavailable")
     elif target.type == "account":
         organization_query = Organization.objects.filter(account__uuid=target.uuid)
         workspace_query = Workspace.objects.filter(organization__account__uuid=target.uuid)
@@ -489,7 +496,7 @@ def _native_delegation_requests(request: NativeRelationshipMutationRequest) -> t
 
     action_definitions = tuple(action_definition(action) for action in sorted(actions))
     needs_descendants = any(item.target_type != target.type for item in action_definitions)
-    concrete_targets = ((target, request.scope),)
+    concrete_targets: tuple[tuple[TargetRef, ResourceScope], ...] = ((target, request.scope),)
     if needs_descendants:
         concrete_targets += _authoritative_descendant_targets(target)
     return tuple(
@@ -696,20 +703,20 @@ def _base_change_from_operation(
             raise AuthorizationMutationConflict("authorization operation is invalid")
         return RoleAssignmentChange(
             target_uuid,
-            RelationshipSubject(operation.subject_kind, subject_uuid),
+            RelationshipSubject(cast(SubjectKind, operation.subject_kind), subject_uuid),
             effect,
         )
     if operation.relationship_kind == AuthorizationOperation.RelationshipKind.PREDEFINED_ROLE:
         return AdministrativeRoleChange(
-            RelationshipSubject(operation.subject_kind, subject_uuid),
+            RelationshipSubject(cast(SubjectKind, operation.subject_kind), subject_uuid),
             operation.action,
-            TargetRef(operation.target_kind, target_uuid),
+            TargetRef(cast(TargetType, operation.target_kind), target_uuid),
             effect,
         )
     return PolicyRelationshipChange(
-        RelationshipSubject(operation.subject_kind, subject_uuid),
+        RelationshipSubject(cast(SubjectKind, operation.subject_kind), subject_uuid),
         operation.action,
-        TargetRef(operation.target_kind, target_uuid),
+        TargetRef(cast(TargetType, operation.target_kind), target_uuid),
         effect,
     )
 
@@ -744,27 +751,39 @@ def authorize_operation_reconciliation(
     operation = AuthorizationOperation.objects.get(pk=operation_id)
     _assert_operation_provider(operation, provider)
     scope = ResourceScope(
-        operation.scope_kind, operation.account_uuid, operation.organization_uuid, operation.workspace_uuid
+        cast(Literal["installation", "account"], operation.scope_kind),
+        operation.account_uuid,
+        operation.organization_uuid,
+        operation.workspace_uuid,
     )
     resolve_resource_scope(scope)
     change = _base_change_from_operation(operation)
-    common = {
-        "actor": actor,
-        "credential": credential,
-        "scope": scope,
-        "model_id": operation.model_id,
-        "idempotency_key": operation.idempotency_key,
-    }
+    checks: tuple[AuthorizationRequest, ...]
     if isinstance(change, PolicyRelationshipChange):
         request = PolicyMutationRequest(
-            **common, subject=change.subject, action=change.action, target=change.target, effect=change.effect
+            actor=actor,
+            credential=credential,
+            scope=scope,
+            model_id=operation.model_id,
+            idempotency_key=operation.idempotency_key,
+            subject=change.subject,
+            action=change.action,
+            target=change.target,
+            effect=change.effect,
         )
         _resolve_policy_change(request)
         checks = _delegation_requests(request)
     else:
-        request = NativeRelationshipMutationRequest(**common, change=change)
-        _resolve_native_change(request)
-        checks = _native_delegation_requests(request)
+        native_request = NativeRelationshipMutationRequest(
+            actor=actor,
+            credential=credential,
+            scope=scope,
+            model_id=operation.model_id,
+            idempotency_key=operation.idempotency_key,
+            change=change,
+        )
+        _resolve_native_change(native_request)
+        checks = _native_delegation_requests(native_request)
     decisions = provider.batch_check(checks)
     if not checks or len(decisions) != len(checks) or not all(item.allowed for item in decisions):
         raise AuthorizationMutationConflict("authorization recovery denied")
