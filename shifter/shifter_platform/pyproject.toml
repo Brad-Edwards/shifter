@@ -73,6 +73,7 @@ dependencies = [
     "whitenoise",
     "httpx>=0.28,<1",
     "defusedxml>=0.7.1",
+    "openfga-sdk==0.10.4",
 ]
 
 [dependency-groups]
@@ -113,6 +114,7 @@ pythonpath = [".."]  # Add shifter/ to the path for sibling runtime packages.
 # worker counts.
 addopts = "-n auto --maxprocesses=8 --dist loadscope --reuse-db"
 markers = [
+    "openfga: released OpenFGA server integration tests (run through scripts/run_openfga_integration.sh)",
     "redis: integration tests requiring a real Redis channel layer (run with -m redis -n0; needs a Redis service)",
     "postgres: integration tests requiring a real PostgreSQL backend (run with -m postgres; needs TEST_DB_BACKEND=postgres and a Postgres service)",
 ]
