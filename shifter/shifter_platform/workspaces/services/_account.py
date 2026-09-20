@@ -101,10 +101,8 @@ def _locked_account(account_uuid: UUID) -> Account:
 
 def _ensure_individual_defaults_locked(account: Account) -> None:
     """Reject subdivisions beneath an individual account."""
-    if account.kind == Account.Kind.INDIVIDUAL:
-        if Organization.objects.filter(account=account).exists():
-            raise AccountScopeError(_DENIED)
-        return
+    if Organization.objects.filter(account=account).exists():
+        raise AccountScopeError(_DENIED)
 
 
 def _ensure_shared_defaults_locked(account: Account) -> None:

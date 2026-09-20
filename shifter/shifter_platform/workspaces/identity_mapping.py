@@ -148,23 +148,41 @@ def _classify_shared_organization(
     account_types_by_organization: Mapping[UUID, str],
 ) -> tuple[OrganizationMapping | None, list[MembershipMapping], list[MappingBlocker]]:
     """Classify a shared organization when its default and owner evidence agree."""
-    account_kind = account_types_by_organization.get(organization.uuid)
-    if account_kind not in ("team", "enterprise"):
-        return None, [], [MappingBlocker("account_type_missing", organization.pk)]
-    if not workspaces:
-        return None, [], [MappingBlocker("default_workspace_missing", organization.pk)]
-    if len(workspaces) > 1:
-        return None, [], [MappingBlocker("default_workspace_ambiguous", organization.pk)]
-    if any(workspace.pk not in owner_ids_by_workspace for workspace in workspaces):
-        return None, [], [MappingBlocker("resource_owner_evidence_missing", organization.pk)]
-    if any(
-        user_id not in principal_by_user for workspace in workspaces for user_id in owner_ids_by_workspace[workspace.pk]
-    ):
-        return None, [], [MappingBlocker("principal_missing_for_resource_owner", organization.pk)]
+    account_kind, blocker = _shared_structure(
+        organization, workspaces, principal_by_user, owner_ids_by_workspace, account_types_by_organization
+    )
+    if blocker is not None:
+        return None, [], [blocker]
     memberships, blockers = _classify_shared_memberships(organization, workspaces, principal_by_user)
     if blockers:
         return None, [], blockers
     return OrganizationMapping(organization.pk, account_kind, workspaces[0].pk), memberships, []
+
+
+def _shared_structure(
+    organization: Organization,
+    workspaces: list[Workspace],
+    principal_by_user: Mapping[int, UUID],
+    owner_ids_by_workspace: Mapping[int, set[int]],
+    account_types_by_organization: Mapping[UUID, str],
+) -> tuple[str, MappingBlocker | None]:
+    """Return the shared-account kind and the first missing structural fact."""
+    account_kind = account_types_by_organization.get(organization.uuid, "")
+    reason: str | None = None
+    if account_kind not in ("team", "enterprise"):
+        reason = "account_type_missing"
+    elif not workspaces:
+        reason = "default_workspace_missing"
+    elif len(workspaces) > 1:
+        reason = "default_workspace_ambiguous"
+    elif any(workspace.pk not in owner_ids_by_workspace for workspace in workspaces):
+        reason = "resource_owner_evidence_missing"
+    elif any(
+        user_id not in principal_by_user for workspace in workspaces for user_id in owner_ids_by_workspace[workspace.pk]
+    ):
+        reason = "principal_missing_for_resource_owner"
+    blocker = MappingBlocker(reason, organization.pk) if reason is not None else None
+    return account_kind, blocker
 
 
 def _classify_legacy_organization(
