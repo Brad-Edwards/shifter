@@ -31,9 +31,6 @@ from ._authorization_commands import (
     MutationRequest as MutationRequest,
 )
 from ._authorization_commands import (
-    NativeRelationshipChange as NativeRelationshipChange,
-)
-from ._authorization_commands import (
     NativeRelationshipMutationRequest as NativeRelationshipMutationRequest,
 )
 from ._authorization_commands import (

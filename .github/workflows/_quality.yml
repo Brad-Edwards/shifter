@@ -1607,7 +1607,7 @@ jobs:
         run: uv sync --group dev
 
       # Broad application scope against real PostgreSQL, excluding tests owned by
-      # another real service posture (redis) and the separately-tracked
+      # another real service posture (redis/OpenFGA) and the separately-tracked
       # documentation suite. No --cov: the SQLite job publishes coverage. The
       # root-conftest fail-closed marker guard asserts >=1 postgres-marked test
       # is collected and fails on any skipped postgres-marked test; the vendor
@@ -1628,7 +1628,7 @@ jobs:
           uv run python manage.py collectstatic --noinput
           start=$(date +%s)
           set +e
-          uv run pytest tests/ -m "not redis" \
+          uv run pytest tests/ -m "not redis and not openfga" \
             --junit-xml=postgres-junit.xml -p no:cacheprovider
           status=$?
           set -e

@@ -151,6 +151,11 @@ SQL-owning domain service boundaries before asking OpenFGA to evaluate it;
 provider graph discovery is never authoritative ancestry. A blocking Quality
 job runs the released OpenFGA/PostgreSQL harness whenever platform changes are
 selected, so missing harness configuration or skipped conformance cannot pass.
+The general PostgreSQL lane deselects the `openfga` marker because that service
+posture is owned by the equally mandatory released-server job, not by a bare
+PostgreSQL service. Both jobs retain the PostgreSQL fail-on-skip guard; the
+OpenFGA harness also requires its server configuration explicitly. CI contract
+tests keep the lane selection and mandatory dedicated job coupled.
 Each descendant retains its SQL scope during delegation checks. Durable
 operations bind their provider store and model; explicit HTTP recovery checks
 the caller's current authority for the recorded effect before replay. Helm
