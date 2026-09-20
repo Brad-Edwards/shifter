@@ -18,9 +18,12 @@ from bootstrap_core import (
     get_default_gdc_project_id,
     header,
     info,
+    run_cmd,
     set_assume_yes,
+    success,
     warn,
 )
+from gcp_base_images import discover_and_import, render_range_image_env
 from gcp_control_plane import gdc_bootstrap_cluster
 from gcp_foundation import bootstrap_gcp_foundation
 from preflight import Cloud, Mode, preflight_gate
@@ -218,6 +221,36 @@ def gcp_runners_deployment(
     )
 
 
+def gcp_base_images_import(
+    project_id: str,
+    environment: str,
+    staging_bucket: str,
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Import the reusable GHCR base images as native GCE images and wire the refs.
+
+    Discovers Kali/Ubuntu/DC in GHCR, imports them into ``project_id`` as native
+    GCE images (reusing unchanged digests), and sets the GCP_RANGE_*_IMAGE
+    variables in the ``environment`` deployment Environment so deploy resolves
+    them without a per-tenant Packer bake (#2309). Run before gdc-bootstrap.
+    """
+    if not project_id:
+        error("gcp-images requires --project-id (the range project the images import into)")
+        sys.exit(1)
+    if not staging_bucket:
+        error(
+            "gcp-images requires --staging-bucket (or the GCP_GCE_BASE_IMAGE_BUCKET env var): "
+            "the reusable base-image staging bucket (Terraform output gce_base_image_bucket)."
+        )
+        sys.exit(1)
+    imported = discover_and_import(project=project_id, staging_bucket=staging_bucket, dry_run=dry_run)
+    range_image_env = render_range_image_env(imported)
+    for name, ref in sorted(range_image_env.items()):
+        run_cmd(["gh", "variable", "set", name, "--env", environment, "--body", ref], dry_run=dry_run)
+    success(f"Wired {', '.join(sorted(range_image_env))} into the {environment} deployment environment")
+
+
 def _missing_dependency_lines(commands: dict[str, str]) -> list[str]:
     """Return formatted '  - cmd: desc' lines for each command not found on PATH."""
     return [f"  - {cmd}: {desc}" for cmd, desc in commands.items() if not shutil.which(cmd)]
@@ -234,6 +267,7 @@ _TOOL_HINTS = {
     "docker": "Docker - https://docs.docker.com/engine/install/",
     "kubectl": "kubectl - https://kubernetes.io/docs/tasks/tools/",
     "helm": "Helm - https://helm.sh/docs/intro/install/",
+    "oras": "ORAS CLI - https://oras.land/docs/installation",
 }
 
 
@@ -241,6 +275,8 @@ def _required_tools(command: str | None, cloud: str | None) -> set[str]:
     """Return the set of required CLI tools for a bootstrap command."""
     if command == "gcp-foundation":
         return {"git", "gcloud", "gh", "terraform"}
+    if command == "gcp-images":
+        return {"git", "gcloud", "gh", "oras"}
     if command == "gdc-bootstrap":
         return {"git", "gcloud", "ssh-keygen", "terraform", "docker", "kubectl", "helm"}
     if command == "runners":
@@ -402,6 +438,33 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
     )
 
 
+def _add_gcp_images_subparser(subparsers: argparse._SubParsersAction) -> None:
+    """Wire the `gcp-images` subcommand: import the reusable GHCR base images (#2309)."""
+    images_parser = subparsers.add_parser(
+        "gcp-images",
+        help="Import the reusable GHCR base images (Kali/Ubuntu/DC) as native GCE images and wire GCP_RANGE_*_IMAGE",
+    )
+    images_parser.add_argument(
+        "--project-id",
+        default=get_default_gdc_project_id(),
+        help="GCP project the range guest images import into (defaults to PANW_GCP_DEV or the repo-root env file)",
+    )
+    images_parser.add_argument(
+        "--environment",
+        default="gcp-dev",
+        help="GitHub deployment Environment to set GCP_RANGE_*_IMAGE in (default gcp-dev)",
+    )
+    images_parser.add_argument(
+        "--staging-bucket",
+        default=os.environ.get("GCP_GCE_BASE_IMAGE_BUCKET", ""),
+        help=(
+            "GCS staging bucket for the disk transfer (default from GCP_GCE_BASE_IMAGE_BUCKET; "
+            "Terraform output gce_base_image_bucket)"
+        ),
+    )
+    images_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+
+
 def _add_eks_subparsers(subparsers: argparse._SubParsersAction) -> None:
     """Add the explicit AWS EKS deploy and teardown commands."""
     deploy_parser = subparsers.add_parser(
@@ -532,6 +595,7 @@ Examples:
     _add_preflight_and_recovery_subparsers(subparsers)
     _add_runners_subparser(subparsers)
     _add_gdc_bootstrap_subparser(subparsers)
+    _add_gcp_images_subparser(subparsers)
     foundation = subparsers.add_parser("gcp-foundation", help="Bootstrap GCP state, CI identities, and image network")
     foundation.add_argument("--inputs", required=True, help="Explicit foundation JSON Terraform var-file")
     foundation.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
@@ -670,6 +734,9 @@ _COMMAND_HANDLERS = {
     "full": _handle_full,
     "runners": _dispatch_runners,
     "gdc-bootstrap": _handle_gdc_bootstrap,
+    "gcp-images": lambda args: gcp_base_images_import(
+        args.project_id, args.environment, args.staging_bucket, dry_run=args.dry_run
+    ),
 }
 
 
