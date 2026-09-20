@@ -1,8 +1,17 @@
 # GHCR VM Guest Images Preflight (#2297)
 
-Status: pre-implementation guidance
+Status: superseded by #2309
 
 Date: 2026-09-19
+
+> **Superseded (#2309).** This note scoped publishing Kali/Ubuntu **qcow2 VM
+> disks** to GHCR for the GDC VM Runtime importer. #2309 retires that path: the
+> supported GCE tenant bootstrap now consumes **GCE-native disk tarballs**
+> (`shifter-gce-<role>`, artifact type `application/vnd.shifter.gce-image.v1`)
+> imported as native GCE images. GDC is removed root-and-branch in #2311, and
+> private-package credentials are tracked in #2312. The guidance below is
+> retained for historical context only; see
+> [`gcp-guest-images.md`](./gcp-guest-images.md) for the current contract.
 
 This note fixes the boundary for publishing the existing basic Kali and Ubuntu
 **VM disks** in GitHub Container Registry. It does not authorize changing a
