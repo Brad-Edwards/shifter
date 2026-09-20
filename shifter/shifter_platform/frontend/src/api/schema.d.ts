@@ -3233,6 +3233,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Change a direct principal or group action assignment. */
         post: operations["workspaces_authorization_direct_assignments_create"];
         delete?: never;
         options?: never;
@@ -3247,8 +3248,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List or create display-only groups within an authorized workspace. */
         get: operations["workspaces_authorization_groups_list"];
         put?: never;
+        /** @description List or create display-only groups within an authorized workspace. */
         post: operations["workspaces_authorization_groups_create"];
         delete?: never;
         options?: never;
@@ -3265,6 +3268,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Accept exact-principal membership changes for a scoped native group. */
         post: operations["workspaces_authorization_groups_memberships_create"];
         delete?: never;
         options?: never;
@@ -3279,8 +3283,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Read or explicitly reconcile an authorized workspace mutation. */
         get: operations["workspaces_authorization_operations_retrieve"];
         put?: never;
+        /** @description Read or explicitly reconcile an authorized workspace mutation. */
         post: operations["workspaces_authorization_operations_create"];
         delete?: never;
         options?: never;
@@ -3295,8 +3301,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List or create display-only policies within an authorized workspace. */
         get: operations["workspaces_authorization_policies_list"];
         put?: never;
+        /** @description List or create display-only policies within an authorized workspace. */
         post: operations["workspaces_authorization_policies_create"];
         delete?: never;
         options?: never;
@@ -3313,6 +3321,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Change the explicit actions granted to a scoped custom policy. */
         post: operations["workspaces_authorization_policies_actions_create"];
         delete?: never;
         options?: never;
@@ -3329,6 +3338,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Accept principal or group assignments to a scoped custom policy. */
         post: operations["workspaces_authorization_policies_assignments_create"];
         delete?: never;
         options?: never;
@@ -3345,6 +3355,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Accept assignment of closed administrator policies at workspace scope. */
         post: operations["workspaces_authorization_predefined_assignments_create"];
         delete?: never;
         options?: never;
@@ -3571,6 +3582,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Expose the closed action vocabulary to authenticated callers. */
         get: operations["workspaces_authorization_catalog_list"];
         put?: never;
         post?: never;
@@ -3587,6 +3599,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Expose immutable predefined policy definitions to authenticated callers. */
         get: operations["workspaces_authorization_predefined_catalog_list"];
         put?: never;
         post?: never;
