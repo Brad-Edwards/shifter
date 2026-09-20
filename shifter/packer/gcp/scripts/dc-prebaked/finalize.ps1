@@ -9,9 +9,6 @@ $ErrorActionPreference = "Stop"
 Start-Transcript -Path "C:\dc-prebaked-finalize.log" -Append -Force
 Write-Host "=== dc-prebaked finalize $(Get-Date -Format o) ==="
 
-# Firewall stays off on the DC (assert again post-reboot).
-Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-
 # Wait until AD Web Services / NTDS answer.
 $ok = $false
 for ($i = 0; $i -lt 60; $i++) {
@@ -20,6 +17,16 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 if (-not $ok) { throw "AD DS did not become available after promotion" }
 Write-Host "AD DS is serving."
+
+# base.ps1 and promote-bake.ps1 disable every firewall profile before the
+# promotion reboot. Do not mutate the profiles from this post-reboot WinRM
+# command: the domain-profile transition can terminate the command with
+# WinRM exit 16001. Verify the persisted fail-closed build state instead.
+$enabledFirewallProfiles = @(Get-NetFirewallProfile | Where-Object { $_.Enabled })
+if ($enabledFirewallProfiles.Count -ne 0) {
+    throw "Windows Firewall was re-enabled across the promotion reboot"
+}
+Write-Host "Windows Firewall remains disabled after promotion."
 
 $fwd = "8.8.8.8"
 if (Test-Path "C:\dc-prebaked-dns-forwarder.txt") {
