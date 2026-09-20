@@ -67,7 +67,7 @@
       },
       {
         "id": "ADR-002-R2",
-        "description": "Commit messages and tracked text must not contain AI/agent attribution markers (Co-authored-by agent lines, Cursor marketing footers, Claude Code branding, etc.).",
+        "description": "Commit messages and tracked text must not contain AI/agent promotional or authorship attribution markers. Canonical Ground Control review, finding, decision, readiness and final-report records, and the required factual review attestation in a PR body's Ground Control Checks section, may identify the reviewer engine. This narrow review exception does not permit branded branch or issue/PR titles, promotional wording, generated-by footers or AI co-author trailers.",
         "checks": [
           "no-agent-attribution"
         ]
