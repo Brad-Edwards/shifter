@@ -49,7 +49,7 @@ Shifter consists of four major elements:
 
 Always read chat history after compacting messages.
 
-Creating many tiny tests each with inline `AsyncMock()`/`MagicMock()` causes OOM (27GB+). Use fixtures for mocks and write integration-style tests instead of one test per assertion.
+Creating many tiny tests each with inline `AsyncMock()`/`MagicMock()` causes OOM (27 GB+). Use fixtures for mocks and write integration-style tests instead of one test per assertion.
 
 When the user asks a question, answer their question. Do not infer you are meant to change anything or do anything else.
 
@@ -73,7 +73,7 @@ Write for technical audience (no marketing language).
 commit / push / PR / CI / SonarCloud / review-fix lifecycle and is the
 authoritative workflow for issue-driven changes. Outside of `/implement`,
 do not commit, push, or open PRs without explicit user direction. Do not
-merge branches under any workflow — merges are always user-driven.
+merge branches under any workflow—merges are always user-driven.
 
 Understand your tasks in the overall context of the project and sound architecture. If something seems wrong or odd, bring it to the user's attention.
 

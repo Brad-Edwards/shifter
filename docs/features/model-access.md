@@ -86,7 +86,7 @@ event's workspace remains fixed after creation.
 
 The event detail page shows a **model-access capacity** summary: the assessed
 outcome, whether it blocks admission, and bounded reason codes. This is planning
-information only — raw quotas, usage figures and account identifiers stay
+information only—raw quotas, usage figures and account identifiers stay
 operator-only, and an unavailable assessment is shown as such rather than as a
 positive decision.
 
@@ -94,9 +94,9 @@ positive decision.
 
 Operators and organizers open **Administer → Model-access sharing** to share a
 model profile, provider identity, capacity or budget across more than one range.
-Choose separately *which ranges* a binding covers — explicit ranges, an
+Choose separately *which ranges* a binding covers—explicit ranges, an
 event/cohort/team, a user's ranges, a group, workspace or organization, a named
-collection, or (operators only) every range — and *which facets* to share. Each
+collection, or (operators only) every range—and *which facets* to share. Each
 unshared facet stays per-range. Membership can be a fixed snapshot or dynamic.
 
 Preview reports the matched ranges before anything is published; the effective
@@ -104,7 +104,7 @@ policy preview shows overlapping bindings, their revisions and any priority
 conflict for a range. Publishing compares an expected definition revision: if the
 binding changed since it was loaded, the save is rejected and the form asks for a
 reload. Publication re-resolves membership and authority on the server, records
-the real publisher, and issues a distinct revocable grant per range — sharing a
+the real publisher, and issues a distinct revocable grant per range—sharing a
 provider account never hands every participant the same token. Draining a binding
 stops new use and advances its fence; it never refunds spend, resets an account
 or cancels a billable request.
@@ -150,7 +150,7 @@ must stop. Revocation records the acting administrator, and outstanding usage an
 unresolved charges stay accounted for under their original prices; it does not
 refund spend or prove the provider stopped a request already in flight.
 Re-enrolment is the ordinary source change (renew) above, which delivers a fresh
-grant to the guest over the range's existing operation path — a credential is
+grant to the guest over the range's existing operation path—a credential is
 never returned to the browser.
 
 Disabling or rotating a source fences dependent grants too. **Retire unused
