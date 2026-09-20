@@ -93,6 +93,10 @@ class AuditEntityType(models.TextChoices):
     WORKSPACE_INVITATION = "workspace_invitation", "Workspace Invitation"
     WORKSPACE = "workspace", "Workspace"
     ORGANIZATION = "organization", "Organization"
+    ACCOUNT = "account", "Account"
+    ACCOUNT_MEMBERSHIP = "account_membership", "Account Membership"
+    PRINCIPAL = "principal", "Principal"
+    PROVIDER_BINDING = "provider_binding", "Provider Binding"
     # ADR-051, #2048: scoped CTF communications (campaigns, intents, deliveries).
     COMMUNICATION = "communication", "Communication"
     # Model-access sharing binding (PLAT-202, #2139).

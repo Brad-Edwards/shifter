@@ -320,7 +320,7 @@ def archive_workspace(
     *,
     audit: WorkspaceAuditContext,
 ) -> WorkspaceProjection:
-    """Archive a non-personal workspace (reversible ``archived_at`` marker).
+    """Archive a non-personal, non-default workspace (reversible marker).
 
     Owner/admin authorized. Idempotent: archiving an already-archived workspace
     is a no-op that records no audit event. Archival sets the marker only -- it
@@ -328,11 +328,13 @@ def archive_workspace(
 
     Raises:
         WorkspaceAuthorizationError: The actor may not archive the workspace.
-        WorkspaceLifecycleError: The workspace is personal.
+        WorkspaceLifecycleError: The workspace is personal or is the default.
     """
     with transaction.atomic():
         workspace, _ = _lock_workspace_and_actor(actor, workspace_uuid, WorkspaceOperation.ARCHIVE_WORKSPACE)
         _reject_personal(workspace)
+        if workspace.is_default:
+            raise _error("default_workspace", "The default workspace cannot be archived")
         if workspace.archived_at is not None:
             return _projection(workspace)
         workspace.archived_at = timezone.now()

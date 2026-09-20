@@ -10,6 +10,19 @@ callers never write tenancy models directly.
 
 from workspaces.roles import WorkspaceOperation
 
+from ._account import (
+    AccountScopeError,
+    AccountView,
+    OrganizationView,
+    ResolvedResourceScope,
+    WorkspaceView,
+    add_account_member,
+    create_account,
+    create_account_organization,
+    create_account_workspace,
+    ensure_default_hierarchy,
+    resolve_resource_scope,
+)
 from ._admin_transfer import WorkspaceOwnershipTransferResult, admin_transfer_workspace_ownership
 from ._authorization import (
     WorkspaceAuthorization,
@@ -108,6 +121,8 @@ from ._range_scope_admin import RangeRebindAuthorization, authorize_range_rebind
 __all__ = [
     "WORKSPACE_INVITATION_SIGNING_SALT",
     "WORKSPACE_INVITATION_TOKEN_MAX_AGE_SECONDS",
+    "AccountScopeError",
+    "AccountView",
     "ActorWorkspaceContext",
     "MembershipAuditContext",
     "ModelAccessOrganizationScope",
@@ -117,8 +132,10 @@ __all__ = [
     "OrganizationProfile",
     "OrganizationRef",
     "OrganizationValidationError",
+    "OrganizationView",
     "QuotaVerdict",
     "RangeRebindAuthorization",
+    "ResolvedResourceScope",
     "WorkspaceAuditContext",
     "WorkspaceAuthorization",
     "WorkspaceAuthorizationError",
@@ -137,7 +154,9 @@ __all__ = [
     "WorkspaceQuotaProjection",
     "WorkspaceQuotaRejected",
     "WorkspaceResourceUsage",
+    "WorkspaceView",
     "accept_workspace_invitation",
+    "add_account_member",
     "add_workspace_member",
     "admin_transfer_workspace_ownership",
     "admit_workspace_member_seat",
@@ -150,7 +169,11 @@ __all__ = [
     "authorized_workspace_ids",
     "change_workspace_member_role",
     "content_organization_uuids",
+    "create_account",
+    "create_account_organization",
+    "create_account_workspace",
     "create_workspace",
+    "ensure_default_hierarchy",
     "get_organization_profile",
     "get_self_membership",
     "get_workspace",
@@ -172,6 +195,7 @@ __all__ = [
     "resolve_model_access_organization",
     "resolve_model_access_workspace",
     "resolve_personal_workspace",
+    "resolve_resource_scope",
     "restore_workspace",
     "revoke_workspace_invitation",
     "set_workspace_egress_policy",

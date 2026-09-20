@@ -140,10 +140,11 @@ Current mechanisms:
   exact fields. ADR-032 uses `raes-plan-accessor-boundary/v1` to pin the
   serialized-plan ownership split, RAES-free provisioner, fail-closed access,
   canonical naming identity, exact-pin compatibility evidence, and #2082
-  delivery boundary. ADR-054 uses `dedicated-customer-authority/v1` to pin the
-  one-customer deployment claim, independent authority scopes, #2048 activation
-  conditions, infrastructure owners, fail-closed outage posture, and required
-  evidence classes. ADR-055 uses `accessibility-enforcement/v1` to pin the WCAG
+  delivery boundary. The superseded ADR-054 entry retains its
+  `dedicated-customer-authority/v1` shape as historical evidence; ADR-066 is the
+  current customer/deployment decision and carries forward only the named
+  independent-authority, infrastructure-owner, fail-closed, and evidence rules.
+  ADR-055 uses `accessibility-enforcement/v1` to pin the WCAG
   target, incumbent axe/Playwright toolchain, execution cadence, coverage
   inventory, non-growing finding baseline, manual-audit evidence, central
   waiver policy, and scanner security posture. These structural checks do not
