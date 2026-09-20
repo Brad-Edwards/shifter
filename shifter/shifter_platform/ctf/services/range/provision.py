@@ -194,6 +194,7 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
                 model_launch_scope=project_event_model_scope(
                     event, participant.pk, participant_model_admission_subject(participant)
                 ),
+                content_authorizer=event.created_by,
             )
         except Exception as e:
             logger.exception("Range provisioning failed for participant %s", safe_log_value(participant_id))

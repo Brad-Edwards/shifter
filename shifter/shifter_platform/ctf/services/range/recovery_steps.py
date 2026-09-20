@@ -85,6 +85,7 @@ def _rebuild_replacement(participant: CTFParticipant, model_subject: OwnedRefere
             remote_access_teardown_at=event.get_cleanup_time(),
             model_admission_subject=model_subject,
             model_launch_scope=project_event_model_scope(event, participant.pk, model_subject),
+            content_authorizer=event.created_by,
         )
     except Exception as e:
         raise _range_error(

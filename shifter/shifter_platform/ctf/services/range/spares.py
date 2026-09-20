@@ -175,6 +175,7 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
                 subject,
                 spare_id=spare.pk,
             ),
+            content_authorizer=event.created_by,
         )
     except Exception:
         logger.exception(

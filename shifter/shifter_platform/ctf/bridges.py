@@ -170,6 +170,7 @@ def cms_create_range(
     remote_access_teardown_at: datetime | None,
     model_admission_subject: OwnedReference | None = None,
     model_launch_scope: ModelLaunchScope | None = None,
+    content_authorizer: User | None = None,
 ) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
@@ -196,6 +197,7 @@ def cms_create_range(
         remote_access_teardown_at=remote_access_teardown_at,
         model_admission_subject=model_admission_subject,
         model_launch_scope=model_launch_scope,
+        content_authorizer=content_authorizer,
     )
     return RangeProvisionResult(request_id=result.request_id)
 
