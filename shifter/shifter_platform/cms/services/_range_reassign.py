@@ -108,6 +108,8 @@ def _rehome_to_new_owner_workspace(instance: RangeInstance, new_user: User) -> N
 
     target = resolve_personal_workspace(new_user).workspace_id
     source = instance.workspace_id
+    if source is None:
+        raise CMSError(f"Range {instance.pk} is not available for workspace rehoming")
     if source == target:
         return
 

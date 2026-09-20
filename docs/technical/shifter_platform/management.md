@@ -2,6 +2,22 @@
 
 Platform administration.
 
+## Account principals introduced by ADR-066
+
+`Principal` identifies a human or service actor independently from Django user
+and provider identity records. A human principal has exactly one Django user;
+a service principal has no Django user and may have a human contact. The
+`ProviderBinding` table maps one exact issuer/subject pair to one principal.
+The pair is immutable after creation, including through bulk SQL updates. A
+provider identity collision fails rather than silently changing principal
+ownership. Principal and binding changes use strict audit writes.
+
+The `management.services` facade creates and resolves principals through its
+same-domain `management.principals` implementation. The data
+migration maps existing users to human principals and maps only complete,
+unambiguous legacy provider tuples. Legacy authentication and token behavior
+remain active until the S8 cutover.
+
 ## Models
 
 | Model | Purpose |
