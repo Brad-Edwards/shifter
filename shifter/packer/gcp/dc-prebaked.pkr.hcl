@@ -118,9 +118,12 @@ build {
   // provisioner) because the content seed resets the Administrator password, so
   // a later provisioner could not reconnect over WinRM.
   provisioner "powershell" {
-    elevated_user     = "Administrator"
-    elevated_password = var.winrm_bootstrap_password
-    script            = "scripts/dc-prebaked/finalize.ps1"
+    // Run in the already-authenticated Administrator WinRM process. Packer's
+    // elevated runner uses a scheduled task; immediately after AD promotion
+    // that task can terminate with exit 16001 even though WinRM is available.
+    // The direct WinRM session is already elevated and survives the content
+    // seed's in-process Administrator password rotation through cleanup.
+    script = "scripts/dc-prebaked/finalize.ps1"
   }
 
   post-processor "manifest" {

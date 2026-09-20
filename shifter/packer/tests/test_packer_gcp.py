@@ -972,6 +972,14 @@ class TestGcpDcPrebakedCredentialHygiene:
         assert "scripts/dc-prebaked/cleanup.ps1" not in content
         assert content.index("finalize.ps1") < content.index("post-processor")
 
+    def test_finalize_uses_existing_winrm_session_after_promotion(self):
+        content = (GCP_DIR / "dc-prebaked.pkr.hcl").read_text()
+        finalize_block = content.split('script = "scripts/dc-prebaked/finalize.ps1"', 1)[0].rsplit(
+            'provisioner "powershell"', 1
+        )[1]
+        assert "elevated_user" not in finalize_block
+        assert "elevated_password" not in finalize_block
+
 
 class TestAwsTemplatesUnaffected:
     """AC3 guard: the GCE templates must not leak into the AWS template set."""
