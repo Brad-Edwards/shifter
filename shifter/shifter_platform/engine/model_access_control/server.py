@@ -13,6 +13,7 @@ from engine.services import (
     RequestIdempotency,
     advance_model_call,
     authenticate_model_access,
+    commit_model_call,
     exchange_model_enrollment,
     finish_model_call,
     issue_model_enrollment,
@@ -28,6 +29,7 @@ from shared.model_access.traffic import TrafficBudget
 
 from .schemas import (
     AdvanceRequest,
+    CommitRequest,
     EnrollmentRequest,
     FinishRequest,
     ReservationRequest,
@@ -107,7 +109,7 @@ class ControlApplication:
             raise ContractError("control.invalid_content_type")
         payload = strict_json(await body(receive, limit=65_536), limit=65_536)
         enrollment = EnrollmentRequest.model_validate(payload) if route == "enroll" else None
-        lifecycle = route in {"advance", "finish", "ready"}
+        lifecycle = route in {"advance", "commit", "finish", "ready"}
         if route in {"enroll", "exchange", "refresh"}:
             self.credential_budget.consume((scope.get("client") or ("",))[0])
         async with asyncio.timeout(2):
@@ -196,6 +198,17 @@ def _advance(payload: JsonObject) -> JsonObject:
     )
 
 
+def _commit(payload: JsonObject) -> JsonObject:
+    """Commit a counted request's proven input/output spend before paid dispatch."""
+    request = CommitRequest.model_validate(payload)
+    return commit_model_call(
+        token=request.token.get_secret_value(),
+        transport_peer=request.transport_peer,
+        request_uuid=request.request_uuid,
+        billing_bound=request.billing_bound,
+    )
+
+
 def _finish(payload: JsonObject) -> JsonObject:
     """Settle usage or preserve uncertainty through the closed terminal actions."""
     request = FinishRequest.model_validate(payload)
@@ -221,5 +234,6 @@ _HANDLERS: dict[str, Callable[[JsonObject], JsonObject]] = {
     "authenticate": partial(_token_operation, route="authenticate"),
     "reserve": _reserve,
     "advance": _advance,
+    "commit": _commit,
     "finish": _finish,
 }

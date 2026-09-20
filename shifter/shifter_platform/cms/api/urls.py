@@ -37,6 +37,11 @@ urlpatterns = [
         range_model_sources.RangeModelSourcesView.as_view(),
         name="range-model-sources",
     ),
+    path(
+        "ranges/<uuid:request_id>/model-sources/revoke/",
+        range_model_sources.RangeModelSourcesRevokeView.as_view(),
+        name="range-model-sources-revoke",
+    ),
     path("model-source-options/", model_source_options.ModelSourceOptionsView.as_view(), name="model-source-options"),
     path(
         "organizations/<uuid:organization_uuid>/model-sources/",

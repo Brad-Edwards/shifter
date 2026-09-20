@@ -3335,6 +3335,69 @@
         }
       }
     },
+    "/api/v1/cms/ranges/{request_id}/model-sources/revoke/": {
+      "post": {
+        "operationId": "cms_ranges_model_sources_revoke_create",
+        "description": "Revoke a range's model grants under range-administration authority (M09, #2126).\n\nSession/CSRF or a ``model-access:range:write`` scoped token; the service\nre-checks workspace authority and fences the current generation's grants and\ndispatch leases with real-actor audit. Revocation never proves provider\ncancellation, refunds spend or releases outstanding liabilities.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeModelSources"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:range:write"
+        ]
+      }
+    },
     "/api/v1/cms/ranges/{request_id}/workspace/": {
       "post": {
         "operationId": "api_v1_cms_range_workspace_rebind",
@@ -6651,6 +6714,69 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/model-access/assessment/": {
+      "get": {
+        "operationId": "ctf_events_model_access_assessment_retrieve",
+        "description": "Organizer read of an event's bounded model-access capacity assessment.\n\nReturns only the safe summary — outcome, whether it blocks, the partition and\nbounded reason codes. Raw quota limits, usage figures and account identifiers\nstay operator-only. A ``None`` assessment (model access disabled, no\ndeclaration, or the assessment itself unavailable) reports ``available:false``\nwith empty fields, never a fabricated positive decision.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventModelAccessAssessment"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:event:read"
+        ]
+      }
+    },
     "/api/v1/ctf/events/{event_id}/notifications/": {
       "get": {
         "operationId": "ctf_events_notifications_retrieve",
@@ -9040,6 +9166,58 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/ctf/me/model-access/": {
+      "get": {
+        "operationId": "ctf_me_model_access_retrieve",
+        "description": "Return the participant's own range model-access status: state and allowed aliases.\n\nRange-scoped and redacted (management-preflight-2126.md): the participant sees\nonly their range's availability state and the logical model aliases they may\nuse. Provider/account identifiers, regions, source coordinates, rosters,\nbindings and other members' usage never appear. An absent or unrealized range\nreports ``unavailable`` with no aliases.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantModelAccess"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:participant:read"
+        ]
       }
     },
     "/api/v1/ctf/me/pages/": {
@@ -14050,6 +14228,316 @@
         ]
       }
     },
+    "/api/v1/model-access/bindings/drain/": {
+      "post": {
+        "operationId": "model_access_bindings_drain_create",
+        "description": "Withdraw a binding (terminal revision + membership fence) under a CAS fence.",
+        "tags": [
+          "model-access"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Drain"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:sharing:write"
+        ]
+      }
+    },
+    "/api/v1/model-access/bindings/policy-preview/": {
+      "post": {
+        "operationId": "model_access_bindings_policy_preview_create",
+        "description": "Preview the compiled effective policy for a subject: overlaps, conflicts, routings.",
+        "tags": [
+          "model-access"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Subject"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectivePolicyResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:operator:read"
+        ]
+      }
+    },
+    "/api/v1/model-access/bindings/publish/": {
+      "post": {
+        "operationId": "model_access_bindings_publish_create",
+        "description": "Publish the next immutable binding revision under an optimistic CAS fence.",
+        "tags": [
+          "model-access"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Publish"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:sharing:write"
+        ]
+      }
+    },
+    "/api/v1/model-access/bindings/selector-preview/": {
+      "post": {
+        "operationId": "model_access_bindings_selector_preview_create",
+        "description": "Preview a selector's matched members and reason codes. Advisory, not authority.",
+        "tags": [
+          "model-access"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Selector"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectorPreviewResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:sharing:read"
+        ]
+      }
+    },
+    "/api/v1/model-access/bindings/validate/": {
+      "post": {
+        "operationId": "model_access_bindings_validate_create",
+        "description": "Validate a binding+pool draft against the pinned catalog. Confers no authority.",
+        "tags": [
+          "model-access"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "model-access:sharing:read"
+        ]
+      }
+    },
     "/api/v1/workspaces/": {
       "get": {
         "operationId": "api_v1_workspaces_list",
@@ -16723,6 +17211,30 @@
   },
   "components": {
     "schemas": {
+      "AccountSummary": {
+        "type": "object",
+        "description": "Per-dimension count of accounts the policy references (never balances).",
+        "properties": {
+          "capacity": {
+            "type": "integer"
+          },
+          "spend": {
+            "type": "integer"
+          },
+          "rate": {
+            "type": "integer"
+          },
+          "concurrency": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capacity",
+          "concurrency",
+          "rate",
+          "spend"
+        ]
+      },
       "AcknowledgementPolicyEnum": {
         "enum": [
           "none",
@@ -17109,6 +17621,22 @@
         ],
         "type": "string",
         "description": "* `xdr` - xdr\n* `xdr_collector` - xdr_collector\n* `cloud_identity_engine` - cloud_identity_engine"
+      },
+      "AliasRouting": {
+        "type": "object",
+        "description": "The routing affinity chosen for one logical alias.",
+        "properties": {
+          "logical_alias": {
+            "type": "string"
+          },
+          "affinity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "affinity",
+          "logical_alias"
+        ]
       },
       "AliasSourceOptions": {
         "type": "object",
@@ -17541,6 +18069,24 @@
         "required": [
           "points",
           "reason"
+        ]
+      },
+      "BindingDraft": {
+        "type": "object",
+        "description": "A binding + pool draft. Owner services revalidate the closed contracts.",
+        "properties": {
+          "binding": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "pool": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "binding",
+          "pool"
         ]
       },
       "Bootstrap": {
@@ -19189,6 +19735,24 @@
           "subject_uuid"
         ]
       },
+      "Drain": {
+        "type": "object",
+        "description": "Drain request: the binding id and its expected definition revision.",
+        "properties": {
+          "sharing_binding_id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "expected_definition_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "expected_definition_revision",
+          "sharing_binding_id"
+        ]
+      },
       "EffectEnum": {
         "enum": [
           "grant",
@@ -19196,6 +19760,47 @@
         ],
         "type": "string",
         "description": "* `grant` - grant\n* `revoke` - revoke"
+      },
+      "EffectivePolicyResponse": {
+        "type": "object",
+        "description": "Bounded effective-policy projection: overlaps, conflicts, routings, account counts.",
+        "properties": {
+          "stale": {
+            "type": "boolean"
+          },
+          "is_admissible": {
+            "type": "boolean"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyConflict"
+            }
+          },
+          "contributions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyContribution"
+            }
+          },
+          "alias_routings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasRouting"
+            }
+          },
+          "account_summary": {
+            "$ref": "#/components/schemas/AccountSummary"
+          }
+        },
+        "required": [
+          "account_summary",
+          "alias_routings",
+          "conflicts",
+          "contributions",
+          "is_admissible",
+          "stale"
+        ]
       },
       "EffectiveSourceEnum": {
         "enum": [
@@ -19611,6 +20216,40 @@
         },
         "required": [
           "events"
+        ]
+      },
+      "EventModelAccessAssessment": {
+        "type": "object",
+        "description": "Bounded model-access capacity assessment for an event.",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "outcome": {
+            "type": "string",
+            "nullable": true
+          },
+          "blocking": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "partition": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "available",
+          "blocking",
+          "outcome",
+          "partition",
+          "reason_codes"
         ]
       },
       "EventMutationResult": {
@@ -20490,6 +21129,22 @@
           "is_refreshable",
           "scenario_id",
           "state"
+        ]
+      },
+      "Member": {
+        "type": "object",
+        "description": "One resolved selector member reference.",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "reference"
         ]
       },
       "MissionControlLeasePolicySettings": {
@@ -22500,6 +23155,25 @@
           "total"
         ]
       },
+      "ParticipantModelAccess": {
+        "type": "object",
+        "description": "Participant-safe model-access state for the participant's own range (M09).\n\n``state`` is one of ``active``, ``refresh_pending`` or ``unavailable`` (a plain\nstring in the contract to avoid an ambiguous shared ``state`` enum).",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "aliases",
+          "state"
+        ]
+      },
       "ParticipantModerationRequest": {
         "type": "object",
         "description": "Optional reason accompanying a ban or disqualification.",
@@ -22956,6 +23630,67 @@
           "idempotency_key"
         ]
       },
+      "PolicyConflict": {
+        "type": "object",
+        "description": "One priority/facet conflict in the compiled effective policy.",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "facet": {
+            "type": "string",
+            "nullable": true
+          },
+          "logical_alias": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "code",
+          "facet",
+          "logical_alias"
+        ]
+      },
+      "PolicyContribution": {
+        "type": "object",
+        "description": "One binding contributing to the compiled effective policy.",
+        "properties": {
+          "sharing_binding_id": {
+            "type": "string"
+          },
+          "definition_digest": {
+            "type": "string"
+          },
+          "membership_revision": {
+            "type": "integer"
+          },
+          "routing_revision": {
+            "type": "integer"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "matched_reason": {
+            "type": "string"
+          },
+          "facets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "definition_digest",
+          "facets",
+          "matched_reason",
+          "membership_revision",
+          "priority",
+          "routing_revision",
+          "sharing_binding_id"
+        ]
+      },
       "PredefinedAuthorizationPolicy": {
         "type": "object",
         "description": "Closed built-in policy/assignment-group catalog entry.",
@@ -23373,6 +24108,33 @@
           "rankings",
           "scoreboard_hidden",
           "team_mode"
+        ]
+      },
+      "Publish": {
+        "type": "object",
+        "description": "Publish request: a binding+pool draft under an optimistic definition-revision fence.",
+        "properties": {
+          "binding": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "pool": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "expected_definition_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "empty_snapshot_ack": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "binding",
+          "expected_definition_revision",
+          "pool"
         ]
       },
       "RaesCatalogFields": {
@@ -24740,6 +25502,26 @@
         "type": "string",
         "description": "* `pending` - pending\n* `provisioning` - provisioning\n* `ready` - ready\n* `pausing` - pausing\n* `paused` - paused\n* `resuming` - resuming\n* `destroying` - destroying\n* `destroyed` - destroyed\n* `failed` - failed"
       },
+      "RevisionResponse": {
+        "type": "object",
+        "description": "Bounded published/drained binding-revision projection.",
+        "properties": {
+          "sharing_binding_id": {
+            "type": "string"
+          },
+          "definition_revision": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "definition_revision",
+          "sharing_binding_id",
+          "state"
+        ]
+      },
       "RoleAssignmentMutation": {
         "type": "object",
         "description": "Closed policy assignment command for a principal or group.",
@@ -25432,6 +26214,38 @@
           "timeline"
         ]
       },
+      "Selector": {
+        "type": "object",
+        "description": "Selector-preview request: one sharing selector to resolve.",
+        "properties": {
+          "selector": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "SelectorPreviewResponse": {
+        "type": "object",
+        "description": "Matched selector members and their count (advisory).",
+        "properties": {
+          "matched": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            }
+          }
+        },
+        "required": [
+          "matched",
+          "members"
+        ]
+      },
       "SetActiveRequest": {
         "type": "object",
         "description": "Explicit request body for the activate/deactivate operation.",
@@ -25575,6 +26389,19 @@
           "event_id",
           "existing",
           "target_count"
+        ]
+      },
+      "Subject": {
+        "type": "object",
+        "description": "Policy-preview request: the subject reference to compile an effective policy for.",
+        "properties": {
+          "subject": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "subject"
         ]
       },
       "SubmissionListItem": {
@@ -26020,6 +26847,18 @@
         },
         "required": [
           "username"
+        ]
+      },
+      "ValidResponse": {
+        "type": "object",
+        "description": "Draft-validation result.",
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid"
         ]
       },
       "Webhook": {

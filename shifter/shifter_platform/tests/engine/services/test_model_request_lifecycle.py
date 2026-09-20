@@ -20,6 +20,7 @@ from engine.services import (
     apply_late_evidence,
     charge_unknown,
     close_expired_revocations,
+    commit_request_spend,
     fence_revoked_requests,
     open_dispatch,
     reconcile_model_requests,
@@ -28,9 +29,11 @@ from engine.services import (
     reserve_request,
     settle_request,
 )
-from shared.model_access import ContractError
-from shared.model_access.provider import ProviderUsage, VerifiedUsage
+from shared.model_access import BillingBound, ContractError
+from shared.model_access.core_models import BillingComponent
+from shared.model_access.provider import BillingAmount, ProviderUsage, VerifiedUsage
 
+from .model_broker_http_support import enable_count
 from .test_model_request_accounting import _bound, failing_audit_writer, make_reservable_allocation
 
 pytestmark = pytest.mark.django_db
@@ -69,6 +72,63 @@ def _spend():
 
 def _concurrency():
     return ModelBudgetAccount.objects.get(account_ref="deployment-concurrency")
+
+
+def _count_bound():
+    return BillingBound(
+        amounts=(BillingAmount(component=BillingComponent.REQUEST, units=1, maximum_charge_micro_units=0),)
+    )
+
+
+def _paid_bound(input_tokens, output_tokens=10):
+    return BillingBound(
+        amounts=(
+            BillingAmount(component=BillingComponent.INPUT_TOKENS, units=input_tokens, maximum_charge_micro_units=0),
+            BillingAmount(component=BillingComponent.OUTPUT_TOKENS, units=output_tokens, maximum_charge_micro_units=0),
+        )
+    )
+
+
+def test_commit_narrows_a_counted_reservation_to_the_proven_input_and_settles():
+    allocation = make_reservable_allocation()
+    enable_count(allocation)
+    outcome = _reserve(allocation, billing_bound=_count_bound())  # free count admission: zero spend
+    assert outcome.canonical_request_cost == 0
+    open_dispatch(request_uuid=outcome.request_uuid)
+
+    cost = commit_request_spend(request_uuid=outcome.request_uuid, billing_bound=_paid_bound(12))
+
+    assert cost == 12 * 3 + 10 * 15  # input 3 micro/token, output 15 micro/token, from the snapshot schedule
+    reservation = ModelRequestReservation.objects.get(request_uuid=outcome.request_uuid)
+    assert sorted(reservation.billed_components) == ["input_tokens", "output_tokens"]
+    assert reservation.canonical_request_cost == cost
+    spend = ModelBudgetAccount.objects.get(account_ref="deployment-spend")
+    assert spend.reserved == cost
+    # Settlement against the committed bound charges the proven usage exactly once.
+    usage = ProviderUsage(
+        items=(
+            VerifiedUsage(component="input_tokens", units=12, provider_verified=True),
+            VerifiedUsage(component="output_tokens", units=10, provider_verified=True),
+        )
+    )
+    assert settle_request(request_uuid=outcome.request_uuid, usage=usage) == cost
+
+
+def test_commit_denies_when_the_proven_input_would_exceed_the_spend_ceiling():
+    allocation = make_reservable_allocation(spend_ceiling=100)
+    enable_count(allocation)
+    outcome = _reserve(allocation, billing_bound=_count_bound())
+    open_dispatch(request_uuid=outcome.request_uuid)
+    with pytest.raises(ContractError, match="budget_exceeded"):
+        commit_request_spend(request_uuid=outcome.request_uuid, billing_bound=_paid_bound(1000))
+
+
+def test_commit_rejects_a_reservation_that_already_carries_a_spend_bound():
+    allocation = make_reservable_allocation()
+    outcome = _reserve(allocation)  # ordinary full input bound, not a count-first reservation
+    open_dispatch(request_uuid=outcome.request_uuid)
+    with pytest.raises(ContractError, match="commit_state"):
+        commit_request_spend(request_uuid=outcome.request_uuid, billing_bound=_paid_bound(12))
 
 
 def test_open_dispatch_acquires_single_short_lease():

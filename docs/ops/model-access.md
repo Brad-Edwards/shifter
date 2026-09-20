@@ -396,3 +396,67 @@ fixed private HTTPS coordinates in the runtime ConfigMap, which the provisioner
 Job admission policy matches exactly. No CA private key belongs in root config.
 Leaving this value empty prevents mapped guest enrollment before cloud mutation.
 The broker/control TLS Secrets and public trust ConfigMap remain deployment-owned.
+
+## Vertex invocation and usage adapter (M07)
+
+Issue [#2124](https://github.com/Brad-Edwards/shifter/issues/2124) hardens the
+existing broker Vertex path into a qualified invocation and usage adapter.
+[ADR-059](../adr/059-range-model-access-broker.md),
+[ADR-060](../adr/060-model-access-allocation-accounting.md),
+[ADR-061](../adr/061-model-access-operations-qualification.md)
+and the [Vertex adapter preflight](../architecture/model-access/vertex-adapter-preflight-2124.md)
+retain their authority. Live qualification evidence is owned by
+[#2334](https://github.com/Brad-Edwards/shifter/issues/2334); local rendering,
+transport tests and a successful count are not live invocation proof.
+
+### Runtime behavior
+
+- **Count-based pre-dispatch charge bound.** A paid request against a counting
+  provider is admitted on a free count bound (rate and concurrency are held, zero
+  spend) so a completed retry deduplicates before the provider is counted. After
+  the provider-proven count, the broker commits the input reservation to that
+  proven count and the output reservation to the request's `max_tokens`, then
+  dispatches the paid call. Routine small prompts are no longer denied because the
+  reservation assumed the entire context window; hard spend, input and output
+  ceilings and the immutable price schedule still apply. A provider with no free
+  count endpoint keeps the conservative full-context reservation.
+- **Bounded token reuse.** Impersonated Vertex access tokens are cached only in
+  broker memory, keyed by the complete approved target (authentication, principal,
+  project, credential reference), with single-flight refresh and early expiry. A
+  stored-credential revision keys a new entry. Tokens never cross the process or
+  enter logs, exceptions, responses or accounting.
+- **Normalized failure and transport bounds.** Non-200 provider statuses map to a
+  bounded participant category without reflecting provider bodies, headers or
+  request ids: 429 preserves client backoff, malformed-request statuses stay
+  client-visible, and authentication or server failures surface as unavailable.
+  The broker performs no provider retry, redirect or fallback, and an ambiguous
+  dispatch retains a conservative liability rather than replaying a billable call.
+  Upstream connect, write, pool and stream-idle limits are bounded separately
+  under the absolute request/grant deadline so a useful streamed response is not
+  cut at a short read while an idle upstream still cannot stall a worker slot.
+
+### Enablement prerequisites per target
+
+Before enabling a Vertex target, record and validate: an enabled v3 catalog with
+input and output prices plus a zero-cost `request` component for counting; the
+approved project, inference region, explicit token-count geography (never
+`global`), pinned publisher model and version, and an invocation principal that
+belongs to the approved project; the real quota-pool identity, shared by every
+model version or service account that draws on the same provider pool (identity
+never multiplies capacity); and the current price, geography and retention
+prerequisites. Provider credentials are obtained by keyless workload
+impersonation and never supplied in configuration.
+
+### Installed client-settings contract
+
+The pinned released client's installed configuration is the default that must let
+a provisioned range work with no participant-side repair: it emits only the
+qualified Anthropic Messages subset the broker admits (pinned `anthropic-version`,
+no unqualified `anthropic-beta` or other cost-changing default features). An
+unsupported cost-changing feature fails before a billable effect rather than being
+silently stripped; a feature is admitted only when its protocol, provider
+behavior, billing bound and usage settlement are all qualified. The exact client
+version, installed settings and the sanitized real wire corpus that prove this
+default are captured under [#2334](https://github.com/Brad-Edwards/shifter/issues/2334);
+[#2125](https://github.com/Brad-Edwards/shifter/issues/2125) installs the same
+pin and settings into guests without introducing a second compatibility target.

@@ -61,11 +61,14 @@ class ProviderPort:
     def build(self, shard, limits):
         return self
 
-    def message_billing_bound(self, message, *, count_only):
+    def capabilities(self):
+        return SimpleNamespace(token_counting=False)
+
+    def message_billing_bound(self, message, *, count_only, input_tokens=None):
         return _bound()
 
     @asynccontextmanager
-    async def invoke(self, message, *, count_only, before_transport):
+    async def invoke(self, message, *, count_only, before_transport, precounted=None):
         self.invocations += 1
 
         async def chunks():

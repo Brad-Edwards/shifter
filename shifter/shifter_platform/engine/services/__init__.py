@@ -52,7 +52,7 @@ from ._cleanup_verification import (
 from ._common import EngineError
 from ._lifecycle import dispatch_prepared_range_resume, pause_range, resume_range
 from ._model_admission import admit_range_model_access
-from ._model_broker_control import advance_model_call, finish_model_call, reserve_model_call
+from ._model_broker_control import advance_model_call, commit_model_call, finish_model_call, reserve_model_call
 from ._model_credentials import (
     authenticate_model_access,
     exchange_model_enrollment,
@@ -73,8 +73,10 @@ from ._model_policy_transition import (
     admit_range_model_policy_change,
     begin_range_model_policy_change,
     get_range_model_policy_status,
+    revoke_range_model_access,
 )
 from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
+from ._model_request_commit import commit_request_spend
 from ._model_request_lifecycle import (
     DispatchGrant,
     charge_unknown,
@@ -301,6 +303,8 @@ __all__ = (
     "check_dispatch_lease",
     "claim_ready_generation",
     "close_expired_revocations",
+    "commit_model_call",
+    "commit_request_spend",
     "compile_authorized_model_sources",
     "confirm_receipt_verifier_binding",
     "connect_ngfw_terminal",
@@ -418,6 +422,7 @@ __all__ = (
     "retire_unused_model_source_credentials",
     "retry_artifact_preparation",
     "revoke_preparation_grant",
+    "revoke_range_model_access",
     "revoke_receipt_verifier",
     "run_guest_probe",
     "set_preparation_adapter_state",

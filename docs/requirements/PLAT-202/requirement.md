@@ -306,3 +306,27 @@ Scenario authors need a provider-neutral way to request model access. The platfo
 - TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_credentials.py`
 - TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_model_credentials_postgres.py`
 - TESTS → TEST `shifter/installation/tests/test_model_broker_runtime.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2126` (M09: scoped operator and organizer model-access management)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/management-preflight-2126.md`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/api_tokens/scopes.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/api/model_access.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/config/api_model_access.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/api/organizer/model_access.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/ctf/api/participant_views.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/api/model-access.ts`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/administer/ModelAccessSharing.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/ctf/ParticipantModelAccessCard.tsx`
+- IMPLEMENTS → CODE `shifter/shifter_platform/frontend/src/features/ctf/admin/EventModelAccessCard.tsx`
+- TESTS → TEST `shifter/shifter_platform/tests/config/test_model_access_management_api.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_model_access_api.py`
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_range_model_access_revoke.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_sharing_audit_attribution.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/test_api_tokens_scopes.py`
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/administer/ModelAccessSharing.test.tsx`
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/ctf/ParticipantModelAccessCard.test.tsx`
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/ctf/admin/EventModelAccessCard.test.tsx`
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2124` (M07: Vertex invocation and usage adapter)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/vertex-adapter-preflight-2124.md`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_broker_count_reservation.py`
+- TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_vertex_token_cache.py`

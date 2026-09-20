@@ -246,8 +246,12 @@ def publish_model_access_binding(
     pool: SharingPool,
     expected_definition_revision: int,
     empty_snapshot_ack: bool = False,
-) -> object:
-    """Resolve, project, and publish one binding in a single DB transaction."""
+) -> dict[str, object]:
+    """Resolve, project, and publish one binding in a single DB transaction.
+
+    Returns a bounded revision projection (binding id, definition revision, state);
+    the raw Engine revision row never crosses the composition-root boundary.
+    """
     from cms.services import (
         engine_fence_model_policy_publication,
         engine_project_selector_resolution,
@@ -270,7 +274,7 @@ def publish_model_access_binding(
         payload = binding.model_dump(mode="json")
         payload["membership_revision"] = projection.membership_revision
         projected_binding = seal_sharing_binding(payload)
-        return engine_publish_sharing_binding(
+        revision = engine_publish_sharing_binding(
             deployment_id=deployment_id,
             catalog=catalog,
             binding=projected_binding,
@@ -279,3 +283,39 @@ def publish_model_access_binding(
             expected_definition_revision=expected_definition_revision,
             empty_snapshot_ack=empty_snapshot_ack,
         )
+        return {
+            "sharing_binding_id": projected_binding.sharing_binding_id,
+            "definition_revision": revision.definition_revision,
+            "state": revision.state,
+        }
+
+
+def drain_model_access_binding(
+    *,
+    actor: object,
+    deployment_id: UUID,
+    sharing_binding_id: str,
+    expected_definition_revision: int,
+) -> dict[str, object]:
+    """Withdraw one binding as the resolved server-side publisher under a CAS fence.
+
+    The publisher identity is derived from the authenticated actor, never trusted
+    from the request. Engine rechecks publisher authority and the expected
+    definition revision, tombstones the binding, and advances the membership
+    fence; it never refunds, resets or cancels a billable request. Returns a
+    bounded revision projection.
+    """
+    from cms.services import engine_drain_sharing_binding
+
+    publisher = _publisher_identity(actor)
+    revision = engine_drain_sharing_binding(
+        deployment_id=deployment_id,
+        sharing_binding_id=sharing_binding_id,
+        publisher_identity=publisher,
+        expected_definition_revision=expected_definition_revision,
+    )
+    return {
+        "sharing_binding_id": sharing_binding_id,
+        "definition_revision": revision.definition_revision,
+        "state": revision.state,
+    }

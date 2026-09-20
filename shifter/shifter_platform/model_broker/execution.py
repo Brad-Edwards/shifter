@@ -9,10 +9,11 @@ from typing import NoReturn
 from uuid import uuid4
 
 from shared.model_access import ContractError
+from shared.model_access.core_models import BillingComponent
 from shared.model_access.credentials import ModelAccessAuthorization
 from shared.model_access.http import Receive, Send
 from shared.model_access.messages import MAX_RESPONSE_BYTES, CountTokensRequest, JsonObject, MessagesRequest
-from shared.model_access.provider import ProviderUsage
+from shared.model_access.provider import ProviderUsage, VerifiedUsage
 
 from .control import ControlClient
 from .errors import NoBillableEffect
@@ -54,6 +55,9 @@ class BrokerInvocation:
         self.identity = {"token": request.token, "transport_peer": request.peer, "request_uuid": self.request_uuid}
         self.dispatched = False
         self.started = False
+        self.reserved = False
+        self.count_first = False
+        self.committed = False
         self.settled = False
         self.tasks: list[asyncio.Task[object]] = []
 
@@ -61,13 +65,16 @@ class BrokerInvocation:
         """Reserve before dispatch and finalize accounting even on disconnect."""
         try:
             async with asyncio.timeout_at(self.request.deadline):
-                if not await self._reserve():
+                self.count_first = self._counts_before_dispatch()
+                if not await self._reserve(count_first=self.count_first):
                     return
                 await self._dispatch()
-                await self._settle(await self._wait_for_transfer())
+                precounted = await self._commit_proven_input(self.count_first)
+                await self._settle(await self._wait_for_transfer(precounted))
                 await self.send({"type": _RESPONSE_BODY, "body": b"", "more_body": False})
         except NoBillableEffect as exc:
-            await self._settle(exc.usage)
+            if self.reserved:
+                await self._settle(self._no_effect_usage(exc))
             raise
         except Exception:
             await self._cancel_transport()
@@ -77,9 +84,29 @@ class BrokerInvocation:
         finally:
             await self._finalize()
 
-    async def _reserve(self) -> bool:
-        """Deduplicate before any potentially billable provider work starts."""
-        bounded = self.provider.message_billing_bound(self.request.message, count_only=self.request.count_only)
+    def _counts_before_dispatch(self) -> bool:
+        """A paid request proves its input first only when counting is actually enabled.
+
+        The provider must support counting and this grant's alias must carry the
+        ``token-count`` capability, which is enabled together with the zero-cost
+        ``request`` price the count reservation needs. Without it the request keeps
+        the conservative full-context reservation rather than failing to admit.
+        """
+        if self.request.count_only or not self.provider.capabilities().token_counting:
+            return False
+        shard = self.request.authority.aliases.get(self.request.message.model)
+        return shard is not None and "token-count" in shard.capabilities
+
+    async def _reserve(self, *, count_first: bool) -> bool:
+        """Deduplicate before any potentially billable provider work starts.
+
+        A counting paid request reserves the free count bound first so a completed
+        retry deduplicates before the provider is ever counted; the proven input
+        spend is committed to this same reservation after the count.
+        """
+        bounded = self.provider.message_billing_bound(
+            self.request.message, count_only=self.request.count_only or count_first
+        )
         reserved = await self.control.call(
             "reserve",
             {
@@ -94,7 +121,38 @@ class BrokerInvocation:
 
             await json_response(self.send, 409, {"type": "completed", "request_id": reserved["request_uuid"]})
             return False
+        self.reserved = True
         return True
+
+    async def _commit_proven_input(self, counting: bool) -> int | None:
+        """Prove the input count under the dispatch lease and commit its spend hold.
+
+        Routine small prompts must not be denied because the reservation assumed
+        the full physical context window. The count is an accounted, authority-
+        checked provider operation; ``commit`` then narrows this exact request's
+        input units to the proven count before the paid transfer. Providers with
+        no free count endpoint keep the conservative full-context reservation.
+        """
+        if not counting:
+            return None
+        tokens = await self.provider.count(self.request.message, before_transport=self._before_transport)
+        paid = self.provider.message_billing_bound(self.request.message, count_only=False, input_tokens=tokens)
+        await self.control.call("commit", {**self.identity, "billing_bound": paid.model_dump(mode="json")})
+        self.committed = True
+        return tokens
+
+    def _no_effect_usage(self, exc: NoBillableEffect) -> ProviderUsage:
+        """Terminalize a pre-commit count-first failure as its free count, not paid liability.
+
+        Before commit the reservation still carries only the zero-cost request bound,
+        so a failed count settles that free operation rather than leaving a paid
+        input/output reservation stuck as unknown with a retained obligation.
+        """
+        if self.count_first and not self.committed:
+            return ProviderUsage(
+                items=(VerifiedUsage(component=BillingComponent.REQUEST, units=0, provider_verified=True),)
+            )
+        return exc.usage
 
     async def _dispatch(self) -> None:
         """Fence provider dispatch with a fresh, checked accounting lease."""
@@ -104,9 +162,9 @@ class BrokerInvocation:
             "advance", {**self.identity, "action": "check", "dispatch_token": lease["dispatch_token"]}
         )
 
-    async def _wait_for_transfer(self) -> ProviderUsage:
+    async def _wait_for_transfer(self, precounted: int | None) -> ProviderUsage:
         """End the transfer when either peer disconnects or its grant is revoked."""
-        work = asyncio.create_task(self._transfer())
+        work = asyncio.create_task(self._transfer(precounted))
         heartbeat = asyncio.create_task(self._renew())
         disconnect = asyncio.create_task(self._disconnected())
         draining = asyncio.create_task(self._drained())
@@ -145,7 +203,7 @@ class BrokerInvocation:
     async def _finalize(self) -> None:
         """Cancel sibling tasks and preserve uncertain provider liability."""
         await self._cancel_transport()
-        if not self.settled:
+        if self.reserved and not self.settled:
             with suppress(Exception):
                 await self.control.call(
                     "finish", {"request_uuid": self.request_uuid, "action": "unknown" if self.dispatched else "release"}
@@ -164,11 +222,14 @@ class BrokerInvocation:
         result = await self.control.call("advance", {**self.identity, "action": "continue"})
         return str(result["deadline"])
 
-    async def _transfer(self) -> ProviderUsage:
+    async def _transfer(self, precounted: int | None = None) -> ProviderUsage:
         """Forward bounded chunks and require usage before terminal success."""
         total = 0
         async with self.provider.invoke(
-            self.request.message, count_only=self.request.count_only, before_transport=self._before_transport
+            self.request.message,
+            count_only=self.request.count_only,
+            before_transport=self._before_transport,
+            precounted=precounted,
         ) as response:
             await self.send(
                 {

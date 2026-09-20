@@ -15,6 +15,7 @@ from shared.model_access.provider import ProviderUsage
 
 from ._model_credentials import authenticate_model_access
 from ._model_request_accounting import RequestIdempotency, ReservationOutcome, reserve_request
+from ._model_request_commit import commit_request_spend
 from ._model_request_lifecycle import (
     charge_unknown,
     check_dispatch_lease,
@@ -87,6 +88,35 @@ def advance_model_call(
                 raise ContractError("request.no_lease")
             return {"revision": revision, "deadline": continuation.continuation_deadline.isoformat()}
         raise ContractError("request.invalid_action")
+
+
+def commit_model_call(
+    *,
+    token: str,
+    transport_peer: str,
+    request_uuid: UUID,
+    billing_bound: BillingBound,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Commit the proven input/output spend hold to this guest's counted request."""
+    from engine.models import ModelRequestReservation
+
+    moment = now or timezone.now()
+    with transaction.atomic():
+        authority = authenticate_model_access(token=token, transport_peer=transport_peer, now=moment)
+        reservation = ModelRequestReservation.objects.filter(
+            request_uuid=request_uuid,
+            allocation_id=authority.allocation_id,
+            operation_id=authority.operation_id,
+            grant_epoch=authority.grant_epoch,
+        ).first()
+        if reservation is None:
+            raise ContractError("request.unavailable")
+        return {
+            "canonical_request_cost": commit_request_spend(
+                request_uuid=request_uuid, billing_bound=billing_bound, now=moment
+            )
+        }
 
 
 def finish_model_call(
