@@ -25,7 +25,15 @@ from shared.model_access import AuthorityInvalidation, AuthorityState, OwnedRefe
 from shared.model_access.authority_port import invalidate_authority, suppress_authority_invalidation_signals
 
 from . import model_access_authority as _model_access_authority
+from . import principals as _principals
 from .models import ActivityLog, UserProfile
+
+PrincipalConflictError = _principals.PrincipalConflictError
+bind_principal_provider_identity = _principals.bind_principal_provider_identity
+create_service_principal = _principals.create_service_principal
+ensure_human_principal = _principals.ensure_human_principal
+principal_for_user = _principals.principal_for_user
+set_service_contact = _principals.set_service_contact
 
 ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView
 ModelAccessGroupScope = _model_access_authority.ModelAccessGroupScope

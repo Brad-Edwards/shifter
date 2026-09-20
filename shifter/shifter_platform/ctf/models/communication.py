@@ -59,9 +59,16 @@ class CommunicationCampaign(CTFBaseModel):
     """
 
     workspace_id = models.IntegerField(
+        null=True,
+        blank=True,
         db_index=True,
         help_text="Immutable workspace scope; every target event must share it (ADR-046/ADR-051).",
     )
+    scope_kind = models.CharField(
+        max_length=16, blank=True, default="", choices=(("installation", "Installation"), ("account", "Account"))
+    )
+    account_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    organization_id = models.PositiveBigIntegerField(null=True, blank=True)
     title = models.CharField(max_length=200, help_text="Organizer-facing campaign title")
     origin = models.CharField(
         max_length=32,
@@ -117,6 +124,24 @@ class CommunicationCampaign(CTFBaseModel):
             models.Index(fields=["status", "created_at"]),
         ]
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        scope_kind="", account_id__isnull=True, organization_id__isnull=True, workspace_id__isnull=False
+                    )
+                    | models.Q(
+                        scope_kind="installation",
+                        account_id__isnull=True,
+                        organization_id__isnull=True,
+                        workspace_id__isnull=True,
+                    )
+                    | (
+                        models.Q(scope_kind="account", account_id__isnull=False)
+                        & (models.Q(workspace_id__isnull=True) | models.Q(organization_id__isnull=False))
+                    )
+                ),
+                name="ctf_campaign_resource_scope_shape",
+            ),
             models.CheckConstraint(
                 condition=models.Q(status__in=[s.value for s in CampaignStatus]),
                 name="ctf_comm_campaign_status_valid",

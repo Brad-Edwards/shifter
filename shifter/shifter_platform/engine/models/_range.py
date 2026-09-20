@@ -55,7 +55,14 @@ class Range(models.Model):
     )
     # Soft reference to workspaces.Workspace (ADR-046-R3, #1325): a scalar, not a
     # cross-layer FK (ADR-001-R2) from the trusted CMS launch path; non-null, no default.
-    workspace_id = models.IntegerField(db_index=True, help_text="Workspace scope (soft reference; ADR-046).")
+    workspace_id = models.IntegerField(
+        null=True, blank=True, db_index=True, help_text="Workspace scope (soft reference; ADR-046/ADR-066)."
+    )
+    scope_kind = models.CharField(
+        max_length=16, blank=True, default="", choices=(("installation", "Installation"), ("account", "Account"))
+    )
+    account_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    organization_id = models.PositiveBigIntegerField(null=True, blank=True)
     # Effective egress posture pinned at create under the workspace mutex, replay-verified (PLAT-238).
     egress_mode = models.CharField(
         max_length=16,
@@ -219,6 +226,26 @@ class Range(models.Model):
         ordering = ["-created_at"]
         # Keep using original table name from mission_control
         db_table = "mission_control_range"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        scope_kind="", account_id__isnull=True, organization_id__isnull=True, workspace_id__isnull=False
+                    )
+                    | models.Q(
+                        scope_kind="installation",
+                        account_id__isnull=True,
+                        organization_id__isnull=True,
+                        workspace_id__isnull=True,
+                    )
+                    | (
+                        models.Q(scope_kind="account", account_id__isnull=False)
+                        & (models.Q(workspace_id__isnull=True) | models.Q(organization_id__isnull=False))
+                    )
+                ),
+                name="engine_range_resource_scope_shape",
+            ),
+        ]
 
     def __str__(self) -> str:
         """Return a human-readable label with id, scenario, and status."""
