@@ -2,6 +2,18 @@
 
 This repo has repo-local architecture enforcement. Use it.
 
+## Repository metadata and review attribution
+
+Do not add assistant/vendor branding to branch names, commit messages, issue or
+PR titles, changelog entries, or promotional repository metadata.
+
+Canonical Ground Control review, finding, decision, readiness and final-report
+records may identify the reviewer engine. The required review attestation in a
+PR body's Ground Control Checks section may also name that engine (for example,
+"Pre-push Codex review completed; all findings fixed or dispositioned"). Keep the
+identifier confined to that factual review attestation; this exception does not
+permit promotional wording, generated-by footers or AI co-author trailers.
+
 ## Ground Control Context
 
 This repo's Ground Control project is `shifter` (id

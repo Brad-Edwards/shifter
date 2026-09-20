@@ -59,9 +59,32 @@ spec:
               mountPath: /tmp
             - name: media
               mountPath: /app/media
+            {{- if .Values.openfga.enabled }}
+            - name: openfga-token
+              mountPath: /run/secrets/openfga
+              readOnly: true
+            - name: openfga-ca
+              mountPath: /run/secrets/openfga-ca
+              readOnly: true
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: platform-runtime
+          {{- if .Values.openfga.enabled }}
+          env:
+            - name: OPENFGA_ENABLED
+              value: "true"
+            - name: OPENFGA_API_URL
+              value: {{ printf "https://%s" .Values.openfga.hostname | quote }}
+            - name: OPENFGA_STORE_ID
+              value: {{ .Values.openfga.storeId | quote }}
+            - name: OPENFGA_MODEL_ID
+              value: {{ .Values.openfga.modelId | quote }}
+            - name: OPENFGA_API_TOKEN_FILE
+              value: /run/secrets/openfga/token
+            - name: OPENFGA_CA_CERT_PATH
+              value: /run/secrets/openfga-ca/ca.crt
+          {{- end }}
           ports:
             - name: http
               containerPort: 8000
@@ -86,3 +109,17 @@ spec:
         - name: media
           emptyDir:
             sizeLimit: {{ .Values.mediaVolume.sizeLimit | quote }}
+        {{- if .Values.openfga.enabled }}
+        - name: openfga-token
+          secret:
+            secretName: {{ .Values.openfga.runtimeSecretName }}
+            items:
+              - key: runtime-preshared-key
+                path: token
+        - name: openfga-ca
+          configMap:
+            name: {{ .Values.openfga.caConfigMapName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}

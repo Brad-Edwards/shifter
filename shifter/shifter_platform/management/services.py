@@ -33,6 +33,8 @@ bind_principal_provider_identity = _principals.bind_principal_provider_identity
 create_service_principal = _principals.create_service_principal
 ensure_human_principal = _principals.ensure_human_principal
 principal_for_user = _principals.principal_for_user
+resolve_principal = _principals.resolve_principal
+resolve_principal_uuid = _principals.resolve_principal_uuid
 set_service_contact = _principals.set_service_contact
 
 ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView

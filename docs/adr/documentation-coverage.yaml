@@ -80,6 +80,13 @@
       "technical_docs": ["technical/shifter_platform/ctf.md"]
     },
     {
+      "id": "authorization-policies-and-groups",
+      "title": "Authorization policies and groups",
+      "requirement": "GEN-001",
+      "user_docs": ["features/authorization-policies-and-groups.md"],
+      "technical_docs": ["technical/shifter_platform/authorization.md"]
+    },
+    {
       "id": "workspaces",
       "title": "Workspace membership",
       "requirement": "PLAT-2011",

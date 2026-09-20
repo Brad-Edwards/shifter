@@ -85,6 +85,14 @@ export type WorkspaceQuota = components["schemas"]["WorkspaceQuota"];
 export type WorkspaceQuotaResource = components["schemas"]["WorkspaceQuotaResource"];
 export type WorkspaceQuotaDecision = components["schemas"]["WorkspaceQuotaDecision"];
 
+/** OpenFGA-backed workspace authorization administration contracts (#2315). */
+export type AuthorizationAction = components["schemas"]["AuthorizationAction"];
+export type PredefinedAuthorizationPolicy = components["schemas"]["PredefinedAuthorizationPolicy"];
+export type AuthorizationMetadata = components["schemas"]["AuthorizationMetadata"];
+export type AuthorizationMutation = components["schemas"]["AuthorizationMutation"];
+export type AuthorizationOperation = components["schemas"]["AuthorizationOperation"];
+export type AuthorizationEffect = components["schemas"]["EffectEnum"];
+
 /**
  * Workspace membership & roles types (#1941, PLAT-234), re-exported from the
  * generated OpenAPI schema. The `workspaces.services` membership seam + DRF

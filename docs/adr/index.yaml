@@ -67,7 +67,7 @@
       },
       {
         "id": "ADR-002-R2",
-        "description": "Commit messages and tracked text must not contain AI/agent attribution markers (Co-authored-by agent lines, Cursor marketing footers, Claude Code branding, etc.).",
+        "description": "Commit messages and tracked text must not contain AI/agent promotional or authorship attribution markers. Canonical Ground Control review, finding, decision, readiness and final-report records, and the required factual review attestation in a PR body's Ground Control Checks section, may identify the reviewer engine. This narrow review exception does not permit branded branch or issue/PR titles, promotional wording, generated-by footers or AI co-author trailers.",
         "checks": [
           "no-agent-attribution"
         ]
@@ -4185,7 +4185,7 @@
       },
       {
         "id": "ADR-066-R3",
-        "description": "Account, organization, and workspace membership targets a principal and remains explicit at its own scope. workspaces.services owns customer authorization; cross-domain consumers use validated scalar projections. Provider groups, Django groups, token scopes, CTF roles, cloud IAM, UI capabilities, and policy tuples are not alternate membership stores or implicit grants.",
+        "description": "Account, organization, and workspace membership targets a principal and remains explicit at its own scope. workspaces.services owns SQL resource-ancestry resolution; cross-domain consumers use validated scalar projections. Delegation proofs enumerate a bounded complete descendant set through SQL-owning domain service boundaries before OpenFGA evaluates it; provider graph discovery is never authoritative ancestry. At S8, OpenFGA is authoritative for application permission relationships while SQL owns identities, resource state/ancestry, and display metadata. SQL does not mirror or evaluate OpenFGA relationships. Provider groups, Django groups, token scopes, CTF roles, cloud IAM, and UI capabilities are not alternate application permission stores or implicit grants. A blocking quality job runs released OpenFGA/PostgreSQL conformance for platform changes and fails when the harness is not configured.",
         "checks": []
       },
       {
@@ -4212,8 +4212,12 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/2308",
       "https://github.com/Brad-Edwards/shifter/issues/2314",
+      "https://github.com/Brad-Edwards/shifter/issues/2315",
       "docs/adr/066-account-principal-resource-scope.md",
       "docs/architecture/account-principal-scope-preflight-2314.md",
+      "docs/architecture/openfga-authorization-preflight-2315.md",
+      ".github/workflows/_quality.yml",
+      "shifter/shifter_platform/scripts/run_openfga_integration.sh",
       "shifter/shifter_platform/workspaces",
       "shifter/shifter_platform/management",
       "shifter/shifter_platform/shared/verified_identity.py",
