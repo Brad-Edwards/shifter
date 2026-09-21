@@ -47,7 +47,11 @@ def project_event_model_scope(
 
             sponsorship = project_event_model_sources(current)
             system = _system_preparation(current, spare_id) if spare_id is not None else None
-            refs: tuple[OwnedReference, ...] = (OwnedReference(owner="ctf", reference=f"event:{current.pk}"),)
+            # Selector membership changes as participant ranges materialize, but
+            # the launch's event demand/window authority is generation-stable.
+            refs: tuple[OwnedReference, ...] = (
+                OwnedReference(owner="ctf", reference=f"event-launch:{current.pk}"),
+            )
             if system is not None:
                 refs += (system.authority_ref,)
             revisions = cms_project_model_launch_authority(
