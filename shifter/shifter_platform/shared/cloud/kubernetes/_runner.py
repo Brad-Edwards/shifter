@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from shared.cloud.exceptions import CloudTaskError
 
@@ -168,10 +168,10 @@ class KubernetesTaskRunner:
             status = getattr(job, "status", None)
             if not (getattr(status, "succeeded", 0) or getattr(status, "failed", 0)):
                 raise CloudTaskError("Task cleanup requires terminal evidence")
-            batch_api.delete_namespaced_job(
+            cast(Any, batch_api).delete_namespaced_job(
                 name=job_name,
                 namespace=namespace,
-                body=client_lib.V1DeleteOptions(propagation_policy="Background"),
+                body=cast(Any, client_lib).V1DeleteOptions(propagation_policy="Background"),
                 _request_timeout=30,
             )
         except CloudTaskError:
