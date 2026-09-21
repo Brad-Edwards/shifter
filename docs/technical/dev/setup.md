@@ -521,6 +521,29 @@ EOF
 For CI deploys the equivalent values come from GitHub secrets; see
 [`docs/dev/deploy-secrets.md`](../../dev/deploy-secrets.md).
 
+The CI deployment also reads the committed tenant overlay at
+`platform/k8s/gcp/overlays/<environment>/`; GitHub Environment values do not
+rewrite its image or Workload Identity references. Before the tenant's first CI
+deploy, verify both account-bound surfaces in that overlay:
+
+- every `images[].newName` in `kustomization.yaml` uses the tenant project and
+  the Artifact Registry repositories created for that environment
+- every `iam.gke.io/gcp-service-account` annotation in
+  `patch-serviceaccounts.patch` uses the tenant project and the service-account
+  localpart created by the platform Terraform naming contract
+
+Render the overlay before pushing the tenant branch and inspect the resulting
+image names and service-account annotations:
+
+```bash
+kubectl kustomize platform/k8s/gcp/overlays/<environment> > /tmp/<environment>-rendered.yaml
+```
+
+Do not copy an existing tenant overlay without replacing both surfaces. A stale
+project in either file can leave Terraform and GitHub correctly configured while
+the CI Kubernetes deploy still pulls from another project's registry or binds
+pods to another project's identities.
+
 ### 4. Deploy
 
 The first clean install runs locally under your own credentials (Workload Identity

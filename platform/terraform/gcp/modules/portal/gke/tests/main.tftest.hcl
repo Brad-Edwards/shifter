@@ -77,3 +77,16 @@ run "untrusted_plugin_sandbox_pool" {
     error_message = "The plugin pool must keep warm capacity and bounded autoscaling."
   }
 }
+
+run "shared_pool_pod_range_contract" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      google_container_node_pool.web.network_config[0].pod_range == var.gke_pods_secondary_range_name,
+      google_container_node_pool.workers.network_config[0].pod_range == var.gke_pods_secondary_range_name,
+      google_container_node_pool.runtime_plugins.network_config[0].pod_range == var.gke_pods_secondary_range_name,
+    ])
+    error_message = "Web, worker, and runtime-plugin pools must explicitly use the primary pod range so GKE cannot assign them to a dedicated access or provisioner range."
+  }
+}
