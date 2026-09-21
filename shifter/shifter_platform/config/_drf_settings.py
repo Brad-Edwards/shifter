@@ -47,6 +47,9 @@ SPECTACULAR_SETTINGS = {
         "CommunicationTriggerKindEnum": "ctf.enums_communication.TriggerKind",
         "ResourceStatusEnum": "mission_control.api.serializers.RESOURCE_STATUS_VALUES",
         "WorkspaceRoleEnum": "workspaces.roles.WorkspaceRole",
+        "AuthorizationOperationStateEnum": "workspaces.api.serializers.AUTHORIZATION_OPERATION_STATES",
+        "AuthorizationAssignmentSubjectKindEnum": ["principal", "group"],
+        "AuthorizationActionSubjectKindEnum": ["principal", "group", "role"],
     },
 }
 

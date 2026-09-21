@@ -40,15 +40,18 @@ discovery tag (`gce-<image-id>`), and provenance annotations binding it to its
 protected build (`org.opencontainers.image.revision`, `com.shifter.image.role`).
 Tags are for discovery only; the immutable digest is the contract.
 
-At bootstrap time `./scripts/bootstrap/deploy.py gcp-images` discovers these
-packages, validates each artifact and its provenance, pins the digest, and
-imports the disk as a native GCE image in the target project with
+At bootstrap time `gdc-bootstrap --import-public-base-images` discovers the
+complete base set, validates every artifact and its provenance before mutation,
+pins each digest, and imports the disks as native GCE images in the target project with
 `gcloud compute images create --source-uri` (no conversion). An unchanged
 digest reuses the existing image; a changed digest creates a new, traceably
-named image and moves the `shifter-<role>` family head. It then writes
-`GCP_RANGE_{LINUX,KALI,DC}_IMAGE` into the deployment Environment. The staging
-object used for the transfer is removed on success and failure, leaving no
-drift.
+named image and moves the `shifter-<role>` family head. The importer uses a
+private per-invocation bucket in the selected project and region with uniform
+bucket access, public-access prevention, and soft delete disabled. It deletes
+every transfer object and the bucket on success or failure. It then writes
+`GCP_RANGE_{LINUX,KALI,DC}_IMAGE` into the deployment Environment and overlays
+the exact same values for the first local platform bootstrap. The standalone
+`gcp-images` command retains the same import/publication behavior for refreshes.
 
 Publish the base packages **public** so the import pulls them credential-free;
 private-package credentials are tracked in #2312. The DC image is
@@ -64,7 +67,8 @@ packer-gcp.yml ─┬─ build   → GCE image  shifter-<type>-<timestamp>  (fam
                 └─ export  → gs://<bucket>/<type>-<id>.tar.gz  (disk.raw)
                    publish → ghcr.io/brad-edwards/shifter-gce-<type>@sha256:<digest>
                                    │
-bootstrap: deploy.py gcp-images  → discover + validate + import into the tenant project
+bootstrap: gdc-bootstrap --import-public-base-images
+                                → discover + validate + import into the tenant project
                                    → gcloud compute images create --source-uri gs://…/<type>.tar.gz
                                    → GCP_RANGE_<TYPE>_IMAGE = projects/<project>/global/images/<name>
                                    │
@@ -83,11 +87,13 @@ range provisioner → GCE instance source_image = GCP_RANGE_<TYPE>_IMAGE
    (`--compute-service-account`) are pinned to the `…-packer` build SA—this
    project's builds otherwise default to the Compute Engine default SA, which
    the build SA cannot `actAs`.
-3. **Import + wire**—`deploy.py gcp-images` discovers the GHCR packages,
+3. **Import + wire**—the opted-in `gdc-bootstrap` path (or standalone
+   `gcp-images` refresh) discovers the GHCR packages,
    validates each artifact and its provenance, pins the digest, and imports the
    disk as a native GCE image (`gcloud compute images create --source-uri`,
-   reusing an unchanged digest), then writes `GCP_RANGE_<TYPE>_IMAGE` into the
-   deployment Environment.
+   reusing an unchanged `READY` digest), then writes exact
+   `GCP_RANGE_<TYPE>_IMAGE` values into the deployment Environment. The fresh
+   bootstrap overlays those same values before running platform preconditions.
 4. **Launch**—the range provisioner creates each GCE guest with
    `source_image = GCP_RANGE_<TYPE>_IMAGE`.
 
@@ -250,12 +256,20 @@ gh workflow run packer-gcp.yml -f image_type=dc-prebaked -f dc_profile=<profile>
 ```
 
 These run only from `dev`/`main` (the workflow rejects other refs). After all
-three are published to GHCR, import them and wire the range image references,
-then (re)deploy so the range provisioner picks them up:
+three are published to GHCR, a fresh tenant imports, wires, and deploys them in
+one invocation:
 
 ```bash
-./scripts/bootstrap/deploy.py gcp-images --project-id <project> --environment gcp-dev
+./scripts/bootstrap/deploy.py gdc-bootstrap \
+  --project-id <project> --environment gcp-dev \
+  --region <region> --zone <zone> \
+  --shifter-config /path/to/shifter.yaml \
+  --import-public-base-images --yes
 ```
+
+For an existing platform, refresh only the imported set with
+`./scripts/bootstrap/deploy.py gcp-images --project-id <project> --environment
+gcp-dev --region <region>`.
 
 For the GCE range-cell path, a dev image must pass the candidate-boot gate
 before it can ship: run `packer-gcp-validate.yml` for the built image, then

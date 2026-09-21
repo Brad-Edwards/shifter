@@ -14927,6 +14927,781 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/direct-assignments/": {
+      "post": {
+        "operationId": "workspaces_authorization_direct_assignments_create",
+        "description": "Change a direct principal or group action assignment.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectActionAssignmentMutation"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationMutation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/groups/": {
+      "get": {
+        "operationId": "workspaces_authorization_groups_list",
+        "description": "List or create display-only groups within an authorized workspace.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuthorizationMetadata"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "workspaces_authorization_groups_create",
+        "description": "List or create display-only groups within an authorized workspace.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAuthorizationMetadata"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationMetadata"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/groups/{group_uuid}/memberships/": {
+      "post": {
+        "operationId": "workspaces_authorization_groups_memberships_create",
+        "description": "Accept exact-principal membership changes for a scoped native group.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeMembershipMutation"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationMutation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/operations/{operation_uuid}/": {
+      "get": {
+        "operationId": "workspaces_authorization_operations_retrieve",
+        "description": "Read or explicitly reconcile an authorized workspace mutation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationOperation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "workspaces_authorization_operations_create",
+        "description": "Read or explicitly reconcile an authorized workspace mutation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationOperation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/policies/": {
+      "get": {
+        "operationId": "workspaces_authorization_policies_list",
+        "description": "List or create display-only policies within an authorized workspace.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuthorizationMetadata"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "workspaces_authorization_policies_create",
+        "description": "List or create display-only policies within an authorized workspace.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAuthorizationMetadata"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationMetadata"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/policies/{policy_uuid}/actions/": {
+      "post": {
+        "operationId": "workspaces_authorization_policies_actions_create",
+        "description": "Change the explicit actions granted to a scoped custom policy.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyActionMutation"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationMutation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/policies/{policy_uuid}/assignments/": {
+      "post": {
+        "operationId": "workspaces_authorization_policies_assignments_create",
+        "description": "Accept principal or group assignments to a scoped custom policy.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleAssignmentMutation"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationMutation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/authorization/predefined-assignments/": {
+      "post": {
+        "operationId": "workspaces_authorization_predefined_assignments_create",
+        "description": "Accept assignment of closed administrator policies at workspace scope.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredefinedRoleMutation"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationMutation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspace_uuid}/egress-policy/": {
       "put": {
         "operationId": "api_v1_workspace_set_egress_policy",
@@ -16087,6 +16862,110 @@
         }
       }
     },
+    "/api/v1/workspaces/authorization/catalog/": {
+      "get": {
+        "operationId": "workspaces_authorization_catalog_list",
+        "description": "Expose the closed action vocabulary to authenticated callers.",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuthorizationAction"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/authorization/predefined-catalog/": {
+      "get": {
+        "operationId": "workspaces_authorization_predefined_catalog_list",
+        "description": "Expose immutable predefined policy definitions to authenticated callers.",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PredefinedAuthorizationPolicy"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/context/": {
       "get": {
         "operationId": "api_v1_workspaces_principal_context",
@@ -16972,6 +17851,168 @@
         ],
         "type": "string",
         "description": "* `workload-identity` - workload-identity\n* `stored-credential` - stored-credential"
+      },
+      "AuthorizationAction": {
+        "type": "object",
+        "description": "One closed action-catalog entry.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "readOnly": true
+          },
+          "target_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "administrative": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "delegable": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "principal_kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "administrative",
+          "code",
+          "delegable",
+          "principal_kinds",
+          "target_type"
+        ]
+      },
+      "AuthorizationAssignmentSubjectKindEnum": {
+        "enum": [
+          "principal",
+          "group"
+        ],
+        "type": "string",
+        "description": "* `principal` - principal\n* `group` - group"
+      },
+      "AuthorizationMetadata": {
+        "type": "object",
+        "description": "UUID-only group/policy display metadata.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "description": {
+            "type": "string",
+            "readOnly": true
+          },
+          "predefined_code": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_active": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "description",
+          "is_active",
+          "name",
+          "predefined_code",
+          "uuid"
+        ]
+      },
+      "AuthorizationMutation": {
+        "type": "object",
+        "description": "Bounded durable-operation projection.",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthorizationOperationStateEnum"
+              }
+            ],
+            "readOnly": true
+          }
+        },
+        "required": [
+          "operation_id",
+          "state"
+        ]
+      },
+      "AuthorizationOperation": {
+        "type": "object",
+        "description": "Bounded operation-status projection with no provider payload.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "relationship_kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipKindEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "action": {
+            "type": "string",
+            "readOnly": true
+          },
+          "effect": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EffectEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthorizationOperationStateEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "outcome_reason": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "action",
+          "effect",
+          "outcome_reason",
+          "relationship_kind",
+          "state",
+          "uuid"
+        ]
+      },
+      "AuthorizationOperationStateEnum": {
+        "enum": [
+          "requested",
+          "confirmed",
+          "denied",
+          "unresolved"
+        ],
+        "type": "string",
+        "description": "* `requested` - requested\n* `confirmed` - confirmed\n* `denied` - denied\n* `unresolved` - unresolved"
       },
       "Award": {
         "type": "object",
@@ -18402,6 +19443,24 @@
           "uuid"
         ]
       },
+      "CreateAuthorizationMetadata": {
+        "type": "object",
+        "description": "Closed custom group/policy creation command.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "default": "",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "CreateWorkspace": {
         "type": "object",
         "description": "Create-workspace command: an organization UUID and a display name.\n\nThe serializer owns HTTP shape (presence, length, UUID form);\n``workspaces.services`` owns authority and the name invariants.",
@@ -18658,6 +19717,37 @@
           "success"
         ]
       },
+      "DirectActionAssignmentMutation": {
+        "type": "object",
+        "description": "Assign an action directly to a principal or group.",
+        "properties": {
+          "subject_kind": {
+            "$ref": "#/components/schemas/AuthorizationAssignmentSubjectKindEnum"
+          },
+          "subject_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "effect": {
+            "$ref": "#/components/schemas/EffectEnum"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "action",
+          "effect",
+          "idempotency_key",
+          "subject_kind",
+          "subject_uuid"
+        ]
+      },
       "Drain": {
         "type": "object",
         "description": "Drain request: the binding id and its expected definition revision.",
@@ -18675,6 +19765,14 @@
           "expected_definition_revision",
           "sharing_binding_id"
         ]
+      },
+      "EffectEnum": {
+        "enum": [
+          "grant",
+          "revoke"
+        ],
+        "type": "string",
+        "description": "* `grant` - grant\n* `revoke` - revoke"
       },
       "EffectivePolicyResponse": {
         "type": "object",
@@ -20612,6 +21710,28 @@
           "ngfws"
         ]
       },
+      "NativeMembershipMutation": {
+        "type": "object",
+        "description": "Closed group-member command; subjects are public principal UUIDs.",
+        "properties": {
+          "principal_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "effect": {
+            "$ref": "#/components/schemas/EffectEnum"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "effect",
+          "idempotency_key",
+          "principal_uuid"
+        ]
+      },
       "NotificationListItem": {
         "type": "object",
         "description": "List projection of one notification for an event.",
@@ -22501,6 +23621,28 @@
           }
         }
       },
+      "PolicyActionMutation": {
+        "type": "object",
+        "description": "Change an action on the policy identified only by the route.",
+        "properties": {
+          "action": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "effect": {
+            "$ref": "#/components/schemas/EffectEnum"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "action",
+          "effect",
+          "idempotency_key"
+        ]
+      },
       "PolicyConflict": {
         "type": "object",
         "description": "One priority/facet conflict in the compiled effective policy.",
@@ -22560,6 +23702,73 @@
           "priority",
           "routing_revision",
           "sharing_binding_id"
+        ]
+      },
+      "PredefinedAuthorizationPolicy": {
+        "type": "object",
+        "description": "Closed built-in policy/assignment-group catalog entry.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "assignment_group_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "target_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "actions",
+          "assignment_group_name",
+          "code",
+          "name",
+          "target_type"
+        ]
+      },
+      "PredefinedRoleMutation": {
+        "type": "object",
+        "description": "Assign one catalogued administrator policy at the route's workspace.",
+        "properties": {
+          "subject_kind": {
+            "$ref": "#/components/schemas/AuthorizationAssignmentSubjectKindEnum"
+          },
+          "subject_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "effect": {
+            "$ref": "#/components/schemas/EffectEnum"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "policy_code": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "effect",
+          "idempotency_key",
+          "policy_code",
+          "subject_kind",
+          "subject_uuid"
         ]
       },
       "PreparationRequest": {
@@ -24217,6 +25426,16 @@
           "username"
         ]
       },
+      "RelationshipKindEnum": {
+        "enum": [
+          "action",
+          "group_member",
+          "role_assign",
+          "predefined"
+        ],
+        "type": "string",
+        "description": "* `action` - action\n* `group_member` - group_member\n* `role_assign` - role_assign\n* `predefined` - predefined"
+      },
       "ReplaceLeasePolicy": {
         "type": "object",
         "description": "Strict full replacement plus expected revision.",
@@ -24314,6 +25533,32 @@
           "definition_revision",
           "sharing_binding_id",
           "state"
+        ]
+      },
+      "RoleAssignmentMutation": {
+        "type": "object",
+        "description": "Closed policy assignment command for a principal or group.",
+        "properties": {
+          "subject_kind": {
+            "$ref": "#/components/schemas/AuthorizationAssignmentSubjectKindEnum"
+          },
+          "subject_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "effect": {
+            "$ref": "#/components/schemas/EffectEnum"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "effect",
+          "idempotency_key",
+          "subject_kind",
+          "subject_uuid"
         ]
       },
       "RuntimePluginAction": {

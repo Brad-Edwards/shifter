@@ -18,6 +18,7 @@ from ctf.services.attachment import (
     get_download_url,
     remove_challenge_file,
 )
+from ctf.services.authorization_inventory import list_authorization_event_uuids
 from ctf.services.award import (
     get_event_awards,
     get_participant_awards,
@@ -211,6 +212,7 @@ __all__ = [
     "grant_award",
     "hash_flag",
     "hydrate_event_ctf_content",
+    "list_authorization_event_uuids",
     "list_brackets",
     "list_challenges_for_event",
     "list_participants_for_event",

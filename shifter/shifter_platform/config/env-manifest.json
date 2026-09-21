@@ -478,6 +478,41 @@
       "source_file": "config/_oidc_settings.py"
     },
     {
+      "default": "''",
+      "name": "OPENFGA_API_TOKEN_FILE",
+      "source_file": "config/_openfga_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "OPENFGA_API_URL",
+      "source_file": "config/_openfga_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "OPENFGA_CA_CERT_PATH",
+      "source_file": "config/_openfga_settings.py"
+    },
+    {
+      "default": "'false'",
+      "name": "OPENFGA_ENABLED",
+      "source_file": "config/_openfga_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "OPENFGA_MODEL_ID",
+      "source_file": "config/_openfga_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "OPENFGA_STORE_ID",
+      "source_file": "config/_openfga_settings.py"
+    },
+    {
+      "default": "'1500'",
+      "name": "OPENFGA_TIMEOUT_MS",
+      "source_file": "config/_openfga_settings.py"
+    },
+    {
       "default": "'False'",
       "name": "PORTAL_CAPACITY_METRICS_ENABLED",
       "source_file": "config/_capacity_settings.py"
