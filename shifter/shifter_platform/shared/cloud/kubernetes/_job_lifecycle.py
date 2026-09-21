@@ -149,6 +149,11 @@ def _observe_reserved_job(launch: _JobLaunch) -> object | None:
     )
 
 
+def _is_retryable_create_conflict(launch: _JobLaunch, create_exc: Exception, attempt: int) -> bool:
+    """Return whether a deterministic create hit a transient admission conflict."""
+    return launch.identity is not None and getattr(create_exc, "status", None) == 409 and attempt < 2
+
+
 def _create_or_observe_job(launch: _JobLaunch) -> tuple[object, str, str | None, bool]:
     """Create a Job or reconcile the same deterministic Job after ambiguity."""
     for attempt in range(3):
@@ -166,7 +171,7 @@ def _create_or_observe_job(launch: _JobLaunch) -> tuple[object, str, str | None,
             if observed is not None:
                 return _accept_observed_job(launch, observed)
             status = getattr(create_exc, "status", None)
-            if launch.identity is not None and status == 409 and attempt < 2:
+            if _is_retryable_create_conflict(launch, create_exc, attempt):
                 # ResourceQuota admission can return an optimistic-concurrency
                 # conflict when several Jobs are created together. The Job was
                 # not accepted, so retry its deterministic create after a short
