@@ -260,11 +260,10 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     if source.organization_uuid is not None:
         from workspaces.services import WorkspaceOperation, authorize_bound_workspace
 
-        content_actor = content_authorizer or user
-        content_workspace_id = resolve_launch_workspace(content_actor, content_workspace_uuid)
-        authorization = authorize_bound_workspace(content_actor, content_workspace_id, WorkspaceOperation.LAUNCH_RANGE)
-        if authorization.organization_uuid != source.organization_uuid:
-            raise CMSError("The pack is unavailable in this workspace")
+        if content_authorizer is None:
+            authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+            if authorization.organization_uuid != source.organization_uuid:
+                raise CMSError("The pack is unavailable in this workspace")
     admit_workspace_launch(
         workspace_id=workspace_id,
         user=user,
