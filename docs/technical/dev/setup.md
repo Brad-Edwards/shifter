@@ -608,6 +608,13 @@ Then run:
   --import-public-base-images --yes
 ```
 
+Keep the kubeconfig current context pinned to this tenant for the entire local
+bootstrap, including the DNS/TLS wait. The bootstrap obtains the target Connect
+Gateway context itself, but subsequent `kubectl` polls use the shared current
+context. Do not run another cluster's `get-credentials` or `use-context` against
+the same kubeconfig concurrently; use a separate `KUBECONFIG` for parallel
+cluster work.
+
 Despite the command name, the default `--range-backend gce` deploys the GKE control
 plane and the GCE range plane and skips the GDC/ABM VM Runtime substrate. That
 substrate is built only with `--range-backend gdc`. With the default

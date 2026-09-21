@@ -218,6 +218,12 @@ default; their state addresses and existing image network remain unchanged.
    root's `range_host_service_account_email` output and use that exact value in
    the GitHub Environment and every local retry.
 
+   Leave the current kubeconfig context on this tenant until the command exits.
+   The bootstrap selects the tenant's Connect Gateway context, and its later
+   migration, Helm, and certificate polls use that shared current context. Run
+   concurrent work against another cluster with a separate `KUBECONFIG` rather
+   than changing the bootstrap process's context.
+
    This first discovers and validates the complete public Kali, Ubuntu, and DC
    base set. It imports missing digests through a private per-run bucket in the
    selected project and region, removes that bucket and every transfer object on
