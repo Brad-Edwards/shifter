@@ -1065,8 +1065,7 @@ class TestGdcControlPlaneHelmValues:
         assert container["args"] == [
             "/bin/sh",
             "-c",
-            "python manage.py bootstrap_inbox_catalog "
-            "&& python manage.py seed_raes_image_registry",
+            "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
         ]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"

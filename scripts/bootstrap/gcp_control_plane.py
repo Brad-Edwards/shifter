@@ -1996,8 +1996,7 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                             "args": [
                                 "/bin/sh",
                                 "-c",
-                                "python manage.py bootstrap_inbox_catalog "
-                                "&& python manage.py seed_raes_image_registry",
+                                "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
                             ],
                             "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
                             "env": [
