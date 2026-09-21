@@ -175,7 +175,12 @@ def _launch_pack(
     except RaesPackageError as exc:
         raise CMSError(f"RAES package could not be launched: {exc}") from exc
     if not result.accepted:
-        logger.warning("create_raes_native_range: dispatch not accepted request_id=%s", request_id)
+        logger.warning(
+            "create_raes_native_range: dispatch not accepted request_id=%s status=%s diagnostics=%s",
+            request_id,
+            result.status,
+            result.diagnostics,
+        )
         raise CMSError("RAES provisioning was not accepted")
 
 
