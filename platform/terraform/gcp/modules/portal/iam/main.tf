@@ -101,8 +101,8 @@ locals {
     # The CTF scheduler polls Postgres for due tasks and triggers range
     # provisioning via cms.services.create_range, which publishes a request to
     # Pub/Sub for the provisioner to consume. It reads platform secrets at
-    # startup (bound per named secret below) but never subscribes or touches
-    # storage, so its project identity is bounded to publish.
+    # startup and immutable tenant packages while retrying a launch; both are
+    # bound to named resources below. Its project identity remains publish-only.
     "ctf-scheduler" = toset([
       "roles/pubsub.publisher",
     ])
@@ -178,7 +178,8 @@ locals {
     # Tenant installation stores validated immutable pack archives and removes
     # failed uploads. Authority is bound to this explicit content bucket only.
     var.raes_package_bucket_name == "" ? {} : {
-      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectUser" }
+      "portal:raes-packages"        = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectUser" }
+      "ctf-scheduler:raes-packages" = { workload = "ctf-scheduler", bucket = var.raes_package_bucket_name, role = "roles/storage.objectViewer" }
     },
     # Native CTF content bundles are a distinct deployment concern from RAES
     # packages. The portal needs read-only access to the explicitly configured
