@@ -285,7 +285,10 @@ jobs:
         # converge without requiring out-of-band resource deletion.
         run: |
           set -euo pipefail
-          max_attempts=4
+          # Five backoff intervals (1+2+3+4+5 minutes) cover the observed
+          # Service Networking producer-detachment window without retrying
+          # indefinitely.
+          max_attempts=6
           for attempt in $(seq 1 "${max_attempts}"); do
             if terraform destroy -auto-approve; then
               exit 0
