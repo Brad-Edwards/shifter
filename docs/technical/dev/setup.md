@@ -573,6 +573,20 @@ export RANGE_NETWORK_ZONE=<zone>
 export GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=<range-host-service-account>
 ```
 
+Use the exact Terraform identity, not a hand-normalized variant of the
+environment name. The standard module removes hyphens from the
+`shifter-<environment>` account-id prefix (for example, `gcp-dev` becomes the
+prefix `shiftergcpdev`). After the first platform apply, read back the canonical
+value:
+
+```bash
+terraform -chdir=platform/terraform/gcp/environments/<environment> \
+  output -raw range_host_service_account_email
+```
+
+Publish that exact value to the GitHub Environment and reuse it for local
+retries.
+
 When exact first-operator credentials are supplied in the process environment,
 set `SHIFTER_BOOTSTRAP_ENV_SOURCE=process` with
 `GCP_BOOTSTRAP_ADMIN_EMAIL` and `GCP_BOOTSTRAP_ADMIN_PASSWORD`. This prevents a

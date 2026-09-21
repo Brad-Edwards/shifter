@@ -211,6 +211,13 @@ default; their state addresses and existing image network remain unchanged.
      --import-public-base-images --yes
    ```
 
+   Supply `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` using the Terraform naming
+   contract, which removes hyphens from the `shifter-<environment>` account-id
+   prefix. Do not preserve the environment's hyphens when guessing the localpart.
+   After the first apply, read the authoritative value from the environment
+   root's `range_host_service_account_email` output and use that exact value in
+   the GitHub Environment and every local retry.
+
    This first discovers and validates the complete public Kali, Ubuntu, and DC
    base set. It imports missing digests through a private per-run bucket in the
    selected project and region, removes that bucket and every transfer object on
