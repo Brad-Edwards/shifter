@@ -279,7 +279,25 @@ jobs:
 
       - name: Terraform destroy
         working-directory: ${{ env.TF_DIR }}
-        run: terraform destroy -auto-approve
+        # Cloud SQL, Memorystore, and GKE can report deletion complete before
+        # Service Networking and load-balancer dependencies observe the release.
+        # Re-running destroy is idempotent and lets those provider-side links
+        # converge without requiring out-of-band resource deletion.
+        run: |
+          set -euo pipefail
+          max_attempts=4
+          for attempt in $(seq 1 "${max_attempts}"); do
+            if terraform destroy -auto-approve; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq "${max_attempts}" ]; then
+              echo "::error::Terraform destroy failed after ${max_attempts} attempts."
+              exit 1
+            fi
+            delay=$((attempt * 60))
+            echo "::warning::Terraform destroy attempt ${attempt} failed; retrying in ${delay}s for GCP dependency convergence."
+            sleep "${delay}"
+          done
 
       - name: Remove ephemeral deployment inputs
         if: always()
