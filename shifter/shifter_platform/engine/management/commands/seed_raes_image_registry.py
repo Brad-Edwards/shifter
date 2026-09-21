@@ -28,15 +28,19 @@ from engine.services import RaesImageMappingError, RaesImageMappingOptions, upse
 
 logger = logging.getLogger(__name__)
 
-# RAES source name -> (image ref, machine type, disk size, disk type) env vars.
+# RAES source name -> (image ref, machine type, disk size, disk type) env vars
+# plus the matching GCE base-profile default disk size. Registry-backed RAES
+# launches do not consult the legacy role profile after resolving a mapping, so
+# the seeded row must carry the same safe default when no tenant override exists.
 # The ``ubuntu`` base is the platform's generic Linux image (GCP_RANGE_LINUX_*).
-_IMAGE_SOURCES: tuple[tuple[str, str, str, str, str], ...] = (
+_IMAGE_SOURCES: tuple[tuple[str, str, str, str, str, int], ...] = (
     (
         "kali",
         "GCP_RANGE_KALI_IMAGE",
         "GCP_RANGE_KALI_MACHINE_TYPE",
         "GCP_RANGE_KALI_DISK_SIZE_GB",
         "GCP_RANGE_KALI_DISK_TYPE",
+        80,
     ),
     (
         "ubuntu",
@@ -44,6 +48,7 @@ _IMAGE_SOURCES: tuple[tuple[str, str, str, str, str], ...] = (
         "GCP_RANGE_LINUX_MACHINE_TYPE",
         "GCP_RANGE_LINUX_DISK_SIZE_GB",
         "GCP_RANGE_LINUX_DISK_TYPE",
+        50,
     ),
     (
         "windows",
@@ -51,21 +56,29 @@ _IMAGE_SOURCES: tuple[tuple[str, str, str, str, str], ...] = (
         "GCP_RANGE_WINDOWS_MACHINE_TYPE",
         "GCP_RANGE_WINDOWS_DISK_SIZE_GB",
         "GCP_RANGE_WINDOWS_DISK_TYPE",
+        100,
     ),
-    ("dc", "GCP_RANGE_DC_IMAGE", "GCP_RANGE_DC_MACHINE_TYPE", "GCP_RANGE_DC_DISK_SIZE_GB", "GCP_RANGE_DC_DISK_TYPE"),
+    (
+        "dc",
+        "GCP_RANGE_DC_IMAGE",
+        "GCP_RANGE_DC_MACHINE_TYPE",
+        "GCP_RANGE_DC_DISK_SIZE_GB",
+        "GCP_RANGE_DC_DISK_TYPE",
+        100,
+    ),
 )
 
 
-def _parse_disk_size(raw: str, source_name: str) -> int | None:
-    """Parse a disk-size env value into a positive int, or None when unset.
+def _parse_disk_size(raw: str, source_name: str, default: int) -> int:
+    """Parse a disk-size env value into a positive int, or use the role default.
 
-    A blank/absent value returns None so the provisioner applies its own default;
-    a non-integer or non-positive value raises ``CommandError`` so a misconfigured
+    A blank/absent value uses the same default as the GCE base profile. A
+    non-integer or non-positive value raises ``CommandError`` so a misconfigured
     ``GCP_RANGE_*_DISK_SIZE_GB`` fails the deploy hook loudly rather than silently.
     """
     value = raw.strip()
     if not value:
-        return None
+        return default
     try:
         parsed = int(value)
     except ValueError as exc:
@@ -90,7 +103,7 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         provider = str(options["provider"]).strip() or "gce"
         seeded = 0
-        for source_name, image_env, machine_env, disk_size_env, disk_type_env in _IMAGE_SOURCES:
+        for source_name, image_env, machine_env, disk_size_env, disk_type_env, default_disk_size in _IMAGE_SOURCES:
             image_ref = os.environ.get(image_env, "").strip()
             if not image_ref:
                 self.stdout.write(f"skip {source_name}: {image_env} is unset")
@@ -98,7 +111,7 @@ class Command(BaseCommand):
             options_obj = RaesImageMappingOptions(
                 source_version="",
                 machine_type=os.environ.get(machine_env, "").strip(),
-                disk_size_gb=_parse_disk_size(os.environ.get(disk_size_env, ""), source_name),
+                disk_size_gb=_parse_disk_size(os.environ.get(disk_size_env, ""), source_name, default_disk_size),
                 disk_type=os.environ.get(disk_type_env, "").strip(),
                 notes=f"seeded from {image_env}",
             )
