@@ -2054,6 +2054,28 @@ class TestGcpPlatformCoreContracts:
         assert "'sensitivity': 1" in module_main
         assert "opt_out_rule_ids" not in module_main
 
+    def test_cloud_armor_bypasses_raw_multipart_only_for_tenant_pack_uploads(self):
+        """Binary pack archives must not disable SQLi/XSS inspection outside their exact upload route."""
+        module_path = (
+            Path(__file__).resolve().parents[3]
+            / "platform"
+            / "terraform"
+            / "gcp"
+            / "modules"
+            / "portal"
+            / "ingress"
+            / "main.tf"
+        )
+        module_main = module_path.read_text()
+
+        assert "tenant_pack_upload" in module_main
+        assert "request.method == 'POST'" in module_main
+        assert "/api/v1/cms/organizations/" in module_main
+        assert "/packs/$" in module_main
+        assert "multipart/form-data;" in module_main
+        assert "evaluatePreconfiguredWaf('sqli-v33-stable'" in module_main
+        assert "evaluatePreconfiguredWaf('xss-v33-stable') && !(${local.tenant_pack_upload})" in module_main
+
 
 class TestGcpBootstrapIdentityPlatform:
     """Tests for Identity Platform bootstrap user sourcing and seeding."""
