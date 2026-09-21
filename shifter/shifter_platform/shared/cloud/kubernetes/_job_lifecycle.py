@@ -8,6 +8,8 @@ recovery in ``_create_or_observe_job``.
 
 from __future__ import annotations
 
+import time
+
 from shared.cloud.exceptions import CloudTaskError
 
 from ._helpers import (
@@ -149,22 +151,31 @@ def _observe_reserved_job(launch: _JobLaunch) -> object | None:
 
 def _create_or_observe_job(launch: _JobLaunch) -> tuple[object, str, str | None, bool]:
     """Create a Job or reconcile the same deterministic Job after ambiguity."""
-    try:
-        created = _api_call(
-            launch.apis.batch,
-            "create_namespaced_job",
-            namespace=launch.namespace,
-            body=launch.job,
-            _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
-        )
-    except Exception as create_exc:
-        observed = _observe_reserved_job(launch)
-        if observed is None:
+    for attempt in range(3):
+        try:
+            created = _api_call(
+                launch.apis.batch,
+                "create_namespaced_job",
+                namespace=launch.namespace,
+                body=launch.job,
+                _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
+            )
+            break
+        except Exception as create_exc:
+            observed = _observe_reserved_job(launch)
+            if observed is not None:
+                return _accept_observed_job(launch, observed)
             status = getattr(create_exc, "status", None)
+            if launch.identity is not None and status == 409 and attempt < 2:
+                # ResourceQuota admission can return an optimistic-concurrency
+                # conflict when several Jobs are created together. The Job was
+                # not accepted, so retry its deterministic create after a short
+                # bounded delay.
+                time.sleep(0.1 * (attempt + 1))
+                continue
             if launch.identity is None or status in {400, 401, 403, 405, 406, 415, 422}:
                 _cleanup_sensitive_secret(launch.apis.core, launch.secret_name, launch.namespace)
             raise
-        return _accept_observed_job(launch, observed)
 
     job_name = getattr(getattr(created, "metadata", None), "name", None)
     if job_name:
