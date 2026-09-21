@@ -71,9 +71,9 @@ class FakeRunCmd:
             ref = next((c for c in cmd if "shifter-gce-" in c), "shifter-gce-kali")
             role = ref.split("shifter-gce-", 1)[1].split("@")[0].split(":")[0]
             return _completed(stdout=json.dumps(_manifest(role=role)))
-        if cmd[:2] == ["oras", "pull"]:
-            dest = Path(cmd[cmd.index("-o") + 1])
-            (dest / "disk.tar.gz").write_bytes(b"rawdisk")
+        if cmd[:3] == ["oras", "blob", "fetch"]:
+            dest = Path(cmd[cmd.index("--output") + 1])
+            dest.write_bytes(b"rawdisk")
             return _completed()
         if cmd[:4] == ["gcloud", "compute", "images", "describe"]:
             if "--format=json(description,labels,status)" in cmd:
@@ -165,6 +165,7 @@ class TestResolveArtifact:
         artifact = gbi.resolve_artifact("kali")
         assert artifact.package == "ghcr.io/brad-edwards/shifter-gce-kali"
         assert artifact.digest == DIGEST
+        assert artifact.disk_digest == "sha256:" + "b" * 64
         assert artifact.revision == "c" * 40
         assert artifact.pinned_reference == f"oci://ghcr.io/brad-edwards/shifter-gce-kali@{DIGEST}"
         assert fake_run.ran(["oras", "repo", "tags"])
@@ -186,6 +187,7 @@ class TestImportBaseImage:
             role=role,
             package=f"ghcr.io/brad-edwards/shifter-gce-{role}",
             digest=DIGEST,
+            disk_digest="sha256:" + "b" * 64,
             revision="c" * 40,
         )
 
@@ -203,6 +205,9 @@ class TestImportBaseImage:
         assert f"oci://ghcr.io/brad-edwards/shifter-gce-kali@{DIGEST}" in create
         # Staging object is removed after a successful import (no drift).
         assert fake_run.ran(["gcloud", "storage", "rm"])
+        fetch = next(c for c in fake_run.calls if c[:3] == ["oras", "blob", "fetch"])
+        assert fetch[-1] == "ghcr.io/brad-edwards/shifter-gce-kali@sha256:" + "b" * 64
+        assert Path(fetch[fetch.index("--output") + 1]).name == "kali-aaaaaaaaaaaa.tar.gz"
 
     def test_import_reuses_matching_existing_image(self, fake_run):
         fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
@@ -210,7 +215,7 @@ class TestImportBaseImage:
         assert imported.reused is True
         assert fake_run.ran(["gcloud", "compute", "images", "describe"])
         assert not fake_run.ran(["gcloud", "compute", "images", "create"])
-        assert not fake_run.ran(["oras", "pull"])
+        assert not fake_run.ran(["oras", "blob", "fetch"])
 
     def test_import_reconciles_owned_failed_status(self, fake_run):
         fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
@@ -273,7 +278,7 @@ class TestImportBaseImage:
         # F4: --dry-run must not pull payloads or mutate the cloud.
         imported = gbi.import_base_image(self._artifact("kali"), project="proj", staging_bucket="stage", dry_run=True)
         assert imported.reused is False
-        assert not fake_run.ran(["oras", "pull"])
+        assert not fake_run.ran(["oras", "blob", "fetch"])
         assert not fake_run.ran(["gcloud", "compute", "images", "create"])
         assert not fake_run.ran(["gcloud", "storage", "cp"])
 
@@ -294,7 +299,7 @@ class TestDiscoverAndImport:
 
     def test_dry_run_discovers_without_transfer(self, fake_run):
         gbi.discover_and_import(project="proj", dry_run=True)
-        assert not fake_run.ran(["oras", "pull"])
+        assert not fake_run.ran(["oras", "blob", "fetch"])
         assert not fake_run.ran(["gcloud", "compute", "images", "create"])
 
     def test_resolves_entire_base_set_before_first_cloud_mutation(self, fake_run, monkeypatch):
@@ -341,7 +346,7 @@ class TestDiscoverAndImport:
     @pytest.mark.parametrize(
         ("failure", "status", "expected_error"),
         [
-            ("oras pull", "READY", SystemExit),
+            ("oras blob fetch", "READY", SystemExit),
             ("storage cp", "READY", SystemExit),
             ("images create", "READY", SystemExit),
             (None, "PENDING", gbi.BaseImageError),
@@ -370,7 +375,7 @@ class TestDiscoverAndImport:
         gbi.discover_and_import(project="proj", region="us-central1", dry_run=True)
 
         assert len(fake_run.ran(["oras", "repo", "tags"])) == len(gbi.BASE_IMAGE_ROLES)
-        assert not fake_run.ran(["oras", "pull"])
+        assert not fake_run.ran(["oras", "blob", "fetch"])
         assert not fake_run.ran(["gcloud", "storage", "buckets", "create"])
         assert not fake_run.ran(["gcloud", "storage", "rm"])
         assert not fake_run.ran(["gcloud", "compute", "images", "create"])

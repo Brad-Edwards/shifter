@@ -6,6 +6,7 @@ import shutil
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from urllib.parse import quote
 
 from account_recovery import account_recovery
 from aws_bootstrap import AWS_ENVIRONMENTS, BootstrapConfig, bootstrap_account
@@ -273,8 +274,56 @@ def _publish_range_image_env(
     """Publish one complete exact image mapping to a GitHub Environment."""
     if set(range_image_env) != _RANGE_IMAGE_ENV_KEYS:
         raise BaseImageError("public base-image import did not return the complete range-image environment")
+
+    if dry_run:
+        for name, ref in sorted(range_image_env.items()):
+            command_runner(["gh", "variable", "set", name, "--env", environment, "--body", ref], dry_run=True)
+        return
+
+    repo_result = command_runner(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+        capture=True,
+    )
+    repo = (getattr(repo_result, "stdout", "") or "").strip()
+    if not repo:
+        raise BaseImageError("could not resolve the current GitHub repository for Environment variable publication")
+
+    environment_path = quote(environment, safe="")
+    collection = f"repos/{repo}/environments/{environment_path}/variables"
+    existing_result = command_runner(
+        ["gh", "api", collection, "--paginate", "--jq", ".variables[].name"],
+        capture=True,
+    )
+    if existing_result is None:
+        raise BaseImageError(f"could not list GitHub Environment variables for {environment}")
+    existing = set((getattr(existing_result, "stdout", "") or "").splitlines())
+
     for name, ref in sorted(range_image_env.items()):
-        command_runner(["gh", "variable", "set", name, "--env", environment, "--body", ref], dry_run=dry_run)
+        if name in existing:
+            command = [
+                "gh",
+                "api",
+                "--method",
+                "PATCH",
+                f"{collection}/{quote(name, safe='')}",
+                "-f",
+                f"name={name}",
+                "-f",
+                f"value={ref}",
+            ]
+        else:
+            command = [
+                "gh",
+                "api",
+                "--method",
+                "POST",
+                collection,
+                "-f",
+                f"name={name}",
+                "-f",
+                f"value={ref}",
+            ]
+        command_runner(command)
 
 
 def _missing_dependency_lines(commands: dict[str, str]) -> list[str]:
