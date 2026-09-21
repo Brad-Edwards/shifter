@@ -549,7 +549,33 @@ pods to another project's identities.
 The first clean install runs locally under your own credentials (Workload Identity
 Federation is only needed for CI). Subsequent deploys run through CI with
 `gh workflow run deploy.yml --ref gcp-dev -f environment=gcp-dev`. The local
-bootstrap entrypoint is:
+bootstrap entrypoint is below. GitHub Environment variables are not imported into
+the operator's shell, so export the range-plane values locally even when CI is
+already configured. Refresh both the `gcloud` user credential and Application
+Default Credentials before a long bootstrap, and verify the Artifact Registry
+Docker credential helper is on `PATH`:
+
+```bash
+gcloud auth print-access-token >/dev/null
+gcloud auth application-default print-access-token >/dev/null
+command -v docker-credential-gcloud >/dev/null
+
+export RANGE_NETWORK_ZONE=<zone>
+export GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=<range-host-service-account>
+```
+
+When exact first-operator credentials are supplied in the process environment,
+set `SHIFTER_BOOTSTRAP_ENV_SOURCE=process` with
+`GCP_BOOTSTRAP_ADMIN_EMAIL` and `GCP_BOOTSTRAP_ADMIN_PASSWORD`. This prevents a
+file-backed value from taking precedence unexpectedly. Do not set
+`SHIFTER_SKIP_OPERATOR_BOOTSTRAP` unless omitting the first human operator is an
+explicit deployment decision.
+
+The public DC artifact can require substantially more temporary space than a
+memory-backed `/tmp`. Set `TMPDIR` to a filesystem with enough free space for the
+largest compressed and expanded image before using `--import-public-base-images`.
+
+Then run:
 
 ```bash
 ./scripts/bootstrap/deploy.py gdc-bootstrap \
