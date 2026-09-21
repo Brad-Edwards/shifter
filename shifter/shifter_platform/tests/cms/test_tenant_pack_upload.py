@@ -263,6 +263,44 @@ def test_ctf_event_owner_binds_tenant_adapter_for_participant_workspace(upload, 
     assert captured["scope"].pack_id == source.scenario_id
 
 
+def test_rejected_launch_logs_bounded_diagnostics(upload, tenant, monkeypatch, caplog):
+    from cms.exceptions import CMSError
+    from cms.services._raes_dispatch import _launch_pack
+    from shared.raes.package_loader import ShifterLaunchResult
+    from shared.runtime_plugin_binding import RuntimePluginScope
+    from workspaces.services import resolve_personal_workspace
+
+    _, organization, root, _ = upload
+    owner, _ = tenant
+    workspace = resolve_personal_workspace(owner)
+    request_id = uuid4()
+    diagnostic = "shifter-provisioner.dispatch-failed @ plan: allocation unavailable"
+
+    monkeypatch.setattr(
+        "shared.raes.package_loader.launch_raes_package",
+        lambda **_kwargs: ShifterLaunchResult(
+            accepted=False,
+            status="rejected",
+            diagnostics=(diagnostic,),
+        ),
+    )
+    scope = RuntimePluginScope(
+        organization_uuid=organization.uuid,
+        pack_id="example",
+        pack_digest="sha256:" + "a" * 64,
+    )
+
+    with (
+        caplog.at_level("WARNING", logger="cms.services._raes_dispatch"),
+        pytest.raises(CMSError, match="RAES provisioning was not accepted"),
+    ):
+        _launch_pack(request_id, owner, root, None, workspace.workspace_id, "status-quo", scope)
+
+    assert str(request_id) in caplog.text
+    assert "status=rejected" in caplog.text
+    assert diagnostic in caplog.text
+
+
 def test_pack_revision_requires_existing_identity(upload):
     client, organization, root, storage = upload
     response = _post(client, organization, root, expected_digest="sha256:" + "f" * 64)
