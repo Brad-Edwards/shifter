@@ -61,6 +61,34 @@ runtimeEnv: {}
 guacamoleRuntimeSecret:
   name: guacamole-runtime
 
+# S7 OpenFGA deployment contract. Disabled for this S2 slice: enabling the
+# server does not activate the S8 application cutover. Secret values are
+# provisioned out of band and never enter Helm values or release history.
+openfga:
+  enabled: false
+  image: "openfga/openfga@sha256:d53ce5c48413d01e75ecf375f3f74eb35c50f155fc028c41d03dbc7c9838fb38"
+  replicas: 2
+  hostname: openfga.shifter-platform.svc.cluster.local
+  storeId: ""
+  modelId: ""
+  runtimeSecretName: openfga-runtime
+  caConfigMapName: openfga-ca
+  databaseCidrs: []
+  databasePort: 5432
+  pools:
+    minOpen: 5
+    minIdle: 3
+    maxOpen: 20
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+      ephemeral-storage: 64Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 128Mi
+
 images:
   platform: "registry.example.invalid/shifter/platform@sha256:0000000000000000000000000000000000000000000000000000000000000000"
   guacd: "registry.example.invalid/shifter/guacd@sha256:0000000000000000000000000000000000000000000000000000000000000000"

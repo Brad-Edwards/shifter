@@ -19,6 +19,7 @@ Detailed guides for each Shifter feature.
 ## Governance
 
 - [Workspace Membership](workspaces) - Manage workspace members and fixed roles
+- [Authorization policies and groups](authorization-policies-and-groups) - Scoped groups, policies, grants and revocations
 - [Organization/workspace admin console](org-workspace-admin-console) - Staff console shell for administering organizations and workspaces
 - [User lifecycle administration](user-lifecycle-administration) - Activate, deactivate, suspend, reset, and transfer ownership for user accounts
 - [Range-to-workspace scoping administration](range-workspace-scoping-administration) - View ranges scoped to a workspace and reassign a range's workspace scope

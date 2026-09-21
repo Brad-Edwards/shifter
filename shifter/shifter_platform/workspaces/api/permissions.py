@@ -35,3 +35,10 @@ WORKSPACE_MEMBERSHIP_PERMISSIONS: list[PermissionClass] = [
         scopes.WORKSPACES_MEMBERSHIP_WRITE,
     ),
 ]
+
+# Action-specific credential ceilings are enforced by the authorization service;
+# this gate admits only a valid active session/token principal.
+AUTHORIZATION_PERMISSIONS: list[PermissionClass] = [
+    IsAuthenticatedSessionOrApiToken,
+    HasActiveWorkspaceActor,
+]
