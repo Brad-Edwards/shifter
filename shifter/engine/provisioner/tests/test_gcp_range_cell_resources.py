@@ -324,3 +324,25 @@ class TestInstanceResource:
         ]
         assert body["service_accounts"][0]["email"] == "sh-range-host-4@test-project.iam.gserviceaccount.com"
         assert _metadata_map(body)["ssh-keys"] == "hostadmin:ssh-ed25519 AAAAkey"
+
+    def test_machine_image_instance_clears_inherited_identity_when_none_is_authorized(self):
+        instance = _instance(attach_service_account=False)
+        instance["profile"] = GCERangeImageProfile(
+            source_machine_image="projects/test/global/machineImages/nested-host-v1",
+            machine_type="n2-standard-8",
+            bootstrap_capability="preconfigured-machine-host",
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            host_ssh_port=2222,
+        )
+        instance["service_account_email"] = ""
+
+        body = instance_resource(
+            _plan(),
+            instance,
+            _config(service_account_email="deployment-wide@test-project.iam.gserviceaccount.com"),
+            ssh_public_key="ssh-ed25519 AAAAkey",
+        )
+
+        assert body["service_accounts"] == []
