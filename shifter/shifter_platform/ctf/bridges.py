@@ -84,9 +84,6 @@ class CTFRangeLaunchOptions:
     # CTF ranges belong to participants, while private pack visibility is
     # authorized by the event owner who selected the pack.
     content_authorizer: User | None = None
-    # Used only to validate the event owner's organization-scoped pack access;
-    # the resulting range remains in the participant's own workspace.
-    content_workspace_uuid: str | None = None
 
 
 def cms_declare_event_capacity(
@@ -211,7 +208,6 @@ def cms_create_range(
         model_admission_subject=options.model_admission_subject,
         model_launch_scope=options.model_launch_scope,
         content_authorizer=options.content_authorizer,
-        content_workspace_uuid=options.content_workspace_uuid,
     )
     return RangeProvisionResult(request_id=result.request_id)
 

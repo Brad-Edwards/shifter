@@ -197,7 +197,6 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     model_launch_scope: ModelLaunchScope | None = None,
     model_sources: dict | None = None,
     content_authorizer: User | None = None,
-    content_workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -391,7 +390,6 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
     model_launch_scope: ModelLaunchScope | None = None,
     model_sources: dict | None = None,
     content_authorizer: User | None = None,
-    content_workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
@@ -416,7 +414,6 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
             model_launch_scope=model_launch_scope,
             model_sources=model_sources,
             content_authorizer=content_authorizer,
-            content_workspace_uuid=content_workspace_uuid,
         ),
     )
 
@@ -451,5 +448,4 @@ def dispatch_range_launch(
         model_launch_scope=options.model_launch_scope,
         model_sources=options.model_sources,
         content_authorizer=options.content_authorizer,
-        content_workspace_uuid=options.content_workspace_uuid,
     )
