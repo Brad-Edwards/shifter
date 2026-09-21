@@ -132,7 +132,6 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
     the rest of a top-up.
     """
     from ctf.bridges import CTFRangeLaunchOptions, cms_create_range, cms_find_range_instance_id
-    from ctf.services.range.workspace import event_launch_workspace_uuid
 
     spare_user = create_managed_spare_user()
     agents_by_os = event.range_config.get("agents_by_os", {}) if event.range_config else {}
@@ -178,7 +177,6 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
                     spare_id=spare.pk,
                 ),
                 content_authorizer=event.created_by,
-                content_workspace_uuid=event_launch_workspace_uuid(event),
             ),
         )
     except Exception:

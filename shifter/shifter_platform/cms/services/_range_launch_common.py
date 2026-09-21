@@ -52,9 +52,6 @@ class LaunchOptions:
     # CTF ranges belong to a participant, while private scenario visibility is
     # authorized by the event owner who selected the tenant pack.
     content_authorizer: User | None = None
-    # Validates a CTF event owner's content scope without changing the range's
-    # participant-owned workspace binding.
-    content_workspace_uuid: str | UUID | None = None
 
 
 def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR
