@@ -65,10 +65,13 @@ def test_gcp_dev_workflow_declares_post_deploy_smoke_job() -> None:
     assert "SMOKE_TEST_USER_EMAIL" in block
 
 
-def test_gcp_migration_job_bootstraps_the_shipped_smoke_pack() -> None:
+def test_gcp_migration_job_bootstraps_smoke_pack_and_image_registry() -> None:
     text = GCP_DEV_WORKFLOW.read_text(encoding="utf-8")
     migration = text[text.index("Run database migrations and bootstrap") : text.index("Sync Guacamole runtime secret")]
-    assert 'args: ["python", "manage.py", "bootstrap_inbox_catalog"]' in migration
+    assert (
+        'args: ["/bin/sh", "-c", "python manage.py bootstrap_inbox_catalog '
+        '&& python manage.py seed_raes_image_registry"]' in migration
+    )
     assert 'args: ["/bin/true"]' not in migration
 
 
