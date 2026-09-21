@@ -392,21 +392,16 @@ class Command(BaseCommand):
         )
 
     def _reconcile_model_access(self, batch_size: int) -> None:
-        """Run the bounded M04 request-accounting pass on the existing scheduled reconciler.
+        """Run bounded model-allocation and request cleanup on the scheduled reconciler.
 
-        Settling unknown holds and closing expired revocation fences ships on this
-        incumbent worker rather than a new daemon (ADR-060/061, #2121). The pass is
-        failure-isolated so a model-access error never stops range reconciliation.
+        Release revoked or terminal range allocations before their event-scoped
+        commitments can block a replacement range. Request settlement remains part
+        of the allocation reconciler's isolated pass (ADR-060/061, #2121). A
+        model-access error never stops range reconciliation.
         """
-        from engine.services import (
-            close_expired_revocations,
-            reconcile_expired_dispatches,
-            reconcile_model_requests,
-        )
+        from engine.services import reconcile_model_allocations
 
         try:
-            reconcile_expired_dispatches(limit=batch_size)
-            reconcile_model_requests(limit=batch_size)
-            close_expired_revocations(limit=batch_size)
+            reconcile_model_allocations(limit=batch_size)
         except Exception:
-            logger.exception("reconcile_range_events: model-access request reconciliation failed")
+            logger.exception("reconcile_range_events: model-access reconciliation failed")
