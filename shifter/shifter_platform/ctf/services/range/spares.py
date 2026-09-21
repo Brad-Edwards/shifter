@@ -131,7 +131,7 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
     ``failed`` spare rather than raised, so one bad attempt does not abort
     the rest of a top-up.
     """
-    from ctf.bridges import cms_create_range, cms_find_range_instance_id
+    from ctf.bridges import CTFRangeLaunchOptions, cms_create_range, cms_find_range_instance_id
 
     spare_user = create_managed_spare_user()
     agents_by_os = event.range_config.get("agents_by_os", {}) if event.range_config else {}
@@ -168,14 +168,16 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
             agents_by_os=agents_by_os,
             ngfw_enabled=ngfw_enabled,
             remote_access_teardown_at=event.get_cleanup_time(),
-            model_admission_subject=subject,
-            model_launch_scope=project_event_model_scope(
-                event,
-                draw_key,
-                subject,
-                spare_id=spare.pk,
+            launch_options=CTFRangeLaunchOptions(
+                model_admission_subject=subject,
+                model_launch_scope=project_event_model_scope(
+                    event,
+                    draw_key,
+                    subject,
+                    spare_id=spare.pk,
+                ),
+                content_authorizer=event.created_by,
             ),
-            content_authorizer=event.created_by,
         )
     except Exception:
         logger.exception(
