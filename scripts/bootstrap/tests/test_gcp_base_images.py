@@ -48,8 +48,17 @@ class FakeRunCmd:
         self.status = "READY"
         self.existing_description: str | None = None
         self.existing_role: str | None = None
+        self.existing_guest_os_features: list[str] | None = None
         self.fail_substr: str | None = None
         self.fail_cleanup = False
+
+    def _guest_features(self, inferred_role: str) -> list[str]:
+        if self.existing_guest_os_features is not None:
+            return self.existing_guest_os_features
+        features = ["UEFI_COMPATIBLE"]
+        if inferred_role == "dc":
+            features.append("WINDOWS")
+        return features
 
     def __call__(self, cmd, dry_run=False, check=True, capture=False, profile=None):
         cmd = [str(c) for c in cmd]
@@ -76,11 +85,12 @@ class FakeRunCmd:
             dest.write_bytes(b"rawdisk")
             return _completed()
         if cmd[:4] == ["gcloud", "compute", "images", "describe"]:
-            if "--format=json(description,labels,status)" in cmd:
+            if "--format=json(description,labels,status,guestOsFeatures)" in cmd:
                 if self.existing_description is None:
                     return _completed(returncode=1, stderr="not found")
                 image_name = cmd[4]
                 inferred_role = image_name.removeprefix("shifter-").rsplit("-", 1)[0]
+                guest_features = self._guest_features(inferred_role)
                 return _completed(
                     stdout=json.dumps(
                         {
@@ -90,6 +100,7 @@ class FakeRunCmd:
                                 "shifter-base-digest": "a" * 12,
                             },
                             "status": self.status,
+                            "guestOsFeatures": [{"type": feature} for feature in guest_features],
                         }
                     )
                 )
@@ -201,6 +212,7 @@ class TestImportBaseImage:
         assert "gs://stage/base-images/shifter-kali-aaaaaaaaaaaa.tar.gz" in create
         assert "shifter-base-role=kali,shifter-base-digest=" + "a" * 12 in create
         assert "--family" in create and "shifter-kali" in create
+        assert create[create.index("--guest-os-features") + 1] == "UEFI_COMPATIBLE"
         # The full OCI reference is recorded so reuse can verify it (F6).
         assert f"oci://ghcr.io/brad-edwards/shifter-gce-kali@{DIGEST}" in create
         # Staging object is removed after a successful import (no drift).
@@ -216,6 +228,17 @@ class TestImportBaseImage:
         assert fake_run.ran(["gcloud", "compute", "images", "describe"])
         assert not fake_run.ran(["gcloud", "compute", "images", "create"])
         assert not fake_run.ran(["oras", "blob", "fetch"])
+
+    def test_import_replaces_owned_ready_image_missing_uefi(self, fake_run):
+        fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
+        fake_run.existing_guest_os_features = []
+
+        imported = gbi.import_base_image(self._artifact("ubuntu"), project="proj", staging_bucket="stage")
+
+        assert imported.reused is False
+        assert fake_run.ran(["gcloud", "compute", "images", "delete"])
+        create = next(c for c in fake_run.calls if c[:4] == ["gcloud", "compute", "images", "create"])
+        assert create[create.index("--guest-os-features") + 1] == "UEFI_COMPATIBLE"
 
     def test_import_reconciles_owned_failed_status(self, fake_run):
         fake_run.existing_description = f"oci://ghcr.io/brad-edwards/shifter-gce-ubuntu@{DIGEST}"
@@ -261,7 +284,7 @@ class TestImportBaseImage:
         gbi.import_base_image(self._artifact("dc"), project="proj", staging_bucket="stage")
         create = next(c for c in fake_run.calls if c[:4] == ["gcloud", "compute", "images", "create"])
         assert "--guest-os-features" in create
-        assert "WINDOWS,UEFI_COMPATIBLE" in create
+        assert "UEFI_COMPATIBLE,WINDOWS" in create
 
     def test_import_cleans_staging_even_when_create_fails(self, fake_run):
         fake_run.fail_substr = "images create"

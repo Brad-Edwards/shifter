@@ -63,9 +63,11 @@ _ROLE_TO_RANGE_ENV = {
     "dc": "GCP_RANGE_DC_IMAGE",
 }
 
-# Windows-family roles need the WINDOWS guest OS feature on re-import. The
-# premium Windows license is not carried by a raw disk export/import, so the DC
-# image imported from GHCR is verified for boot/licensing in the #2309 proof-2
+# Raw disk export/import does not retain image-level guest OS features. Every
+# runtime range guest uses Shielded VM Secure Boot, so all imported bases must
+# be marked UEFI compatible. Windows-family roles additionally need WINDOWS.
+# The premium Windows license is not carried by a raw disk export/import, so the
+# DC image imported from GHCR is verified for boot/licensing in the #2309 proof-2
 # tenant run.
 _WINDOWS_ROLES = frozenset({"dc"})
 
@@ -197,6 +199,26 @@ def render_range_image_env(imported: dict[str, ImportedImage]) -> dict[str, str]
     return {_ROLE_TO_RANGE_ENV[role]: image.image_ref for role, image in imported.items() if role in _ROLE_TO_RANGE_ENV}
 
 
+def _required_guest_os_features(role: str) -> frozenset[str]:
+    """Return image features required by the range runtime posture."""
+    features = {"UEFI_COMPATIBLE"}
+    if role in _WINDOWS_ROLES:
+        features.add("WINDOWS")
+    return frozenset(features)
+
+
+def _guest_os_feature_types(metadata: dict[str, object]) -> frozenset[str]:
+    """Read normalized guest feature names from GCE image metadata."""
+    raw = metadata.get("guestOsFeatures") or []
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(
+        str(item.get("type", "")).strip()
+        for item in raw
+        if isinstance(item, dict) and str(item.get("type", "")).strip()
+    )
+
+
 # --- Registry / GCE boundary (mocked in tests via bootstrap_core.run_cmd) -----
 
 
@@ -264,7 +286,7 @@ def resolve_artifact(role: str) -> ResolvedArtifact:
 
 
 def _existing_image_metadata(project: str, image_name: str) -> dict[str, object] | None:
-    """Return code-owned provenance/status fields for an existing image."""
+    """Return code-owned provenance, status, and boot features for an existing image."""
     result = run_cmd(
         [
             "gcloud",
@@ -274,7 +296,7 @@ def _existing_image_metadata(project: str, image_name: str) -> dict[str, object]
             image_name,
             "--project",
             project,
-            "--format=json(description,labels,status)",
+            "--format=json(description,labels,status,guestOsFeatures)",
         ],
         check=False,
         capture=True,
@@ -303,7 +325,7 @@ def _verify_image_ready(project: str, image_name: str) -> None:
 
 
 def _existing_image_is_reusable(artifact: ResolvedArtifact, metadata: dict[str, object], image_name: str) -> bool:
-    """Return true only for an exact code-owned, READY image."""
+    """Return true only for an exact code-owned, READY, runtime-compatible image."""
     labels = metadata.get("labels") or {}
     if not isinstance(labels, dict):
         labels = {}
@@ -315,11 +337,13 @@ def _existing_image_is_reusable(artifact: ResolvedArtifact, metadata: dict[str, 
             f"GCE image {image_name} already exists without the exact source and role metadata; "
             "refusing to reuse an image this import did not create"
         )
-    return str(metadata.get("status", "")).strip() == "READY"
+    return str(metadata.get("status", "")).strip() == "READY" and _required_guest_os_features(artifact.role).issubset(
+        _guest_os_feature_types(metadata)
+    )
 
 
-def _delete_owned_partial_image(project: str, image_name: str) -> None:
-    """Delete a proven code-owned image that did not reach READY."""
+def _delete_owned_image(project: str, image_name: str) -> None:
+    """Delete a proven code-owned image before converging its import contract."""
     run_cmd(["gcloud", "compute", "images", "delete", image_name, "--project", project, "--quiet"])
 
 
@@ -350,8 +374,9 @@ def import_base_image(
 ) -> ImportedImage:
     """Import (or reuse) a validated artifact as a native GCE image.
 
-    An unchanged digest reuses the existing digest-named image; a changed digest
-    creates a new, traceably named image and moves the ``shifter-<role>`` family
+    An unchanged digest reuses the existing digest-named image when its runtime
+    guest features match. A changed digest or incompatible owned image is
+    imported as a traceably named image and moves the ``shifter-<role>`` family
     head. The staging object is removed on success and failure.
     """
     image_name = image_name_for(artifact.role, artifact.short_digest)
@@ -365,13 +390,16 @@ def import_base_image(
             info(f"Reusing existing GCE image {image_name} for role '{artifact.role}' (digest unchanged)")
             return ImportedImage(artifact.role, image_name, image_ref, artifact.digest, reused=True)
         status = str(metadata.get("status", "")).strip() or "unknown"
-        if status != "FAILED":
+        missing_features = _required_guest_os_features(artifact.role) - _guest_os_feature_types(metadata)
+        if status not in {"FAILED", "READY"}:
             raise BaseImageError(f"code-owned GCE image {image_name} is not READY (status={status}); retry later")
         if dry_run:
-            info(f"[DRY-RUN] Would replace code-owned non-READY GCE image {image_name} (status={status})")
+            reason = f"missing guest features {sorted(missing_features)}" if missing_features else f"status={status}"
+            info(f"[DRY-RUN] Would replace code-owned GCE image {image_name} ({reason})")
         else:
-            info(f"Replacing code-owned non-READY GCE image {image_name} (status={status})")
-            _delete_owned_partial_image(project, image_name)
+            reason = f"missing guest features {sorted(missing_features)}" if missing_features else f"status={status}"
+            info(f"Replacing code-owned GCE image {image_name} ({reason})")
+            _delete_owned_image(project, image_name)
 
     if dry_run:
         info(f"[DRY-RUN] Would import {artifact.pinned_reference} as native GCE image {image_name}")
@@ -402,11 +430,10 @@ def import_base_image(
                 "--description",
                 artifact.pinned_reference,
             ]
-            if artifact.role in _WINDOWS_ROLES:
-                # Mark the re-imported disk Windows/UEFI-bootable. The premium
-                # Windows license is not carried by a raw export; DC boot and
-                # licensing are verified in the #2309 proof-2 tenant run.
-                create_cmd += ["--guest-os-features", "WINDOWS,UEFI_COMPATIBLE"]
+            create_cmd += [
+                "--guest-os-features",
+                ",".join(sorted(_required_guest_os_features(artifact.role))),
+            ]
             run_cmd(create_cmd)
             _verify_image_ready(project, image_name)
         finally:

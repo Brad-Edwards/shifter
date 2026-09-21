@@ -44,8 +44,9 @@ At bootstrap time `gdc-bootstrap --import-public-base-images` discovers the
 complete base set, validates every artifact and its provenance before mutation,
 pins each digest, and imports the disks as native GCE images in the target project with
 `gcloud compute images create --source-uri` (no conversion). An unchanged
-digest reuses the existing image; a changed digest creates a new, traceably
-named image and moves the `shifter-<role>` family head. The importer uses a
+digest reuses the existing image when its runtime guest features also match; a
+changed digest or missing required feature creates a traceably named compatible
+image and moves the `shifter-<role>` family head. The importer uses a
 private per-invocation bucket in the selected project and region with uniform
 bucket access, public-access prevention, and soft delete disabled. It deletes
 every transfer object and the bucket on success or failure. It then writes
@@ -54,9 +55,11 @@ the exact same values for the first local platform bootstrap. The standalone
 `gcp-images` command retains the same import/publication behavior for refreshes.
 
 Publish the base packages **public** so the import pulls them credential-free;
-private-package credentials are tracked in #2312. The DC image is
-Windows-based: it is re-imported with the `WINDOWS` guest OS feature, and its
-boot and premium licensing are verified in the #2309 proof tenant run. As an
+private-package credentials are tracked in #2312. Raw disk export does not carry
+GCE image-level guest features, so every base is re-imported with
+`UEFI_COMPATIBLE` for the runtime Secure Boot posture. The DC image is also
+marked with the `WINDOWS` guest OS feature; its boot and premium licensing are
+verified in the #2309 proof tenant run. As an
 alternative to GHCR, `packer-gcp.yml publish_target=tenant` leaves the built
 native image in the target project's family with no registry copy.
 
