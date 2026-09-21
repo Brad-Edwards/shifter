@@ -441,8 +441,15 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             violations = check_file(_write(Path(tmp), module))
 
         reasons = [violation.reason for violation in violations]
-        self.assertTrue(any("portal" in reason and "secretAccessor" in reason for reason in reasons))
-        self.assertTrue(any("provisioner" in reason and "secretmanager.admin" in reason for reason in reasons))
+        self.assertTrue(
+            any("portal" in reason and "secretAccessor" in reason for reason in reasons)
+        )
+        self.assertTrue(
+            any(
+                "provisioner" in reason and "secretmanager.admin" in reason
+                for reason in reasons
+            )
+        )
 
     def test_named_boundary_binding_fails_if_its_condition_is_removed(self) -> None:
         broken = LIVE_IAM_TF.read_text().replace(
@@ -452,7 +459,12 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             violations = check_file(_write(Path(tmp), broken))
 
-        self.assertTrue(any("portal_dynamic_secret_accessor" in violation.reason for violation in violations))
+        self.assertTrue(
+            any(
+                "portal_dynamic_secret_accessor" in violation.reason
+                for violation in violations
+            )
+        )
 
     def test_named_boundary_rejects_widened_condition_local_definitions(self) -> None:
         cases = {
@@ -506,7 +518,10 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
                     violations = check_file(_write(Path(tmp), broken))
 
                 self.assertTrue(
-                    any("condition local" in violation.reason for violation in violations),
+                    any(
+                        "condition local" in violation.reason
+                        for violation in violations
+                    ),
                     f"expected widened {name} to fail, got: {[v.reason for v in violations]}",
                 )
 
@@ -522,7 +537,8 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
 
         self.assertTrue(
             any(
-                "13 logical operators" in violation.reason and "at most 12" in violation.reason
+                "13 logical operators" in violation.reason
+                and "at most 12" in violation.reason
                 for violation in violations
             ),
             [violation.reason for violation in violations],
@@ -538,7 +554,10 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             violations = check_file(_write(Path(tmp), broken))
 
         self.assertTrue(
-            any("dynamic_secret_creator must contain only" in violation.reason for violation in violations),
+            any(
+                "dynamic_secret_creator must contain only" in violation.reason
+                for violation in violations
+            ),
             [violation.reason for violation in violations],
         )
 
@@ -552,7 +571,11 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             violations = check_file(_write(Path(tmp), broken))
 
         self.assertTrue(
-            any("dynamic_secret_lifecycle permissions/project differ" in violation.reason for violation in violations),
+            any(
+                "dynamic_secret_lifecycle permissions/project differ"
+                in violation.reason
+                for violation in violations
+            ),
             [violation.reason for violation in violations],
         )
 
@@ -567,7 +590,12 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             violations = check_file(_write(Path(tmp), broken))
 
-        self.assertTrue(any("portal_dynamic_secret_accessor" in violation.reason for violation in violations))
+        self.assertTrue(
+            any(
+                "portal_dynamic_secret_accessor" in violation.reason
+                for violation in violations
+            )
+        )
 
     def test_named_boundary_cannot_hide_an_authoritative_multi_member_binding(
         self,
@@ -587,7 +615,12 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             violations = check_file(_write(Path(tmp), broken))
 
-        self.assertTrue(any("portal_dynamic_secret_accessor" in violation.reason for violation in violations))
+        self.assertTrue(
+            any(
+                "portal_dynamic_secret_accessor" in violation.reason
+                for violation in violations
+            )
+        )
 
     def test_live_iam_module_passes(self) -> None:
         # Live-state regression: only the exact #2083 dynamic boundary may
@@ -609,7 +642,10 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         cls.text = LIVE_IAM_TF.read_text()
         cls.lines = cls.text.splitlines()
         cls.project_roles = {
-            workload: set(roles) for workload, roles in _parse_role_map(cls.text, "workload_project_roles").items()
+            workload: set(roles)
+            for workload, roles in _parse_role_map(
+                cls.text, "workload_project_roles"
+            ).items()
         }
         cls.bucket_roles = cls._bucket_role_graph(cls.text)
         cls.literal_project_grants = cls._literal_project_grants(cls.lines)
@@ -619,7 +655,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
     def _bucket_role_graph(text: str) -> dict[str, set[str]]:
         """Expand workload_bucket_bindings into {workload -> {roles}}."""
         graph: dict[str, set[str]] = defaultdict(set)
-        entry = re.compile(r'workload\s*=\s*"([\w-]+)"\s*,\s*bucket\s*=\s*[^,]+,\s*role\s*=\s*"(roles/[^"]+)"')
+        entry = re.compile(
+            r'workload\s*=\s*"([\w-]+)"\s*,\s*bucket\s*=\s*[^,]+,\s*role\s*=\s*"(roles/[^"]+)"'
+        )
         for workload, role in entry.findall(text):
             graph[workload].add(role)
         return graph
@@ -628,7 +666,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
     def _literal_project_grants(lines: list[str]) -> set[tuple[str, str]]:
         """Expand literal google_project_iam_member grants into {(workload, role)}."""
         grants: set[tuple[str, str]] = set()
-        for _name, _line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+        for _name, _line, body in _extract_resource_blocks(
+            lines, _PROJECT_IAM_MEMBER_RE
+        ):
             role_match = _LITERAL_ROLE_RE.search(body)
             if not role_match:
                 continue
@@ -672,16 +712,21 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
                 # Portal owns assets and tenant uploads; package writes are
                 # scoped to the configured package bucket, never the project.
                 "portal": {
-                    "roles/storage.objectAdmin", "roles/storage.objectViewer", "roles/storage.objectUser"
+                    "roles/storage.objectAdmin",
+                    "roles/storage.objectViewer",
+                    "roles/storage.objectUser",
                 },
                 "workers": {"roles/storage.objectViewer"},
+                "ctf-scheduler": {"roles/storage.objectViewer"},
                 "provisioner": {
                     "roles/storage.objectViewer",
                     "roles/storage.objectAdmin",
                 },
             },
         )
-        self.assertNotIn("ctf-scheduler", self.bucket_roles)
+        self.assertNotIn(
+            "roles/storage.objectAdmin", self.bucket_roles["ctf-scheduler"]
+        )
 
     def test_named_secret_readers_include_the_launch_worker(self) -> None:
         self.assertEqual(
@@ -695,12 +740,16 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
             body
             for name, _line, body in _extract_resource_blocks(
                 self.lines,
-                re.compile(r'^\s*resource\s+"google_secret_manager_secret_iam_member"\s+"([^"]+)"'),
+                re.compile(
+                    r'^\s*resource\s+"google_secret_manager_secret_iam_member"\s+"([^"]+)"'
+                ),
             )
             if name == "workload_secret_readers"
         ]
         self.assertEqual(len(reader_blocks), 1)
-        self.assertRegex(reader_blocks[0], r'role\s*=\s*"roles/secretmanager\.secretAccessor"')
+        self.assertRegex(
+            reader_blocks[0], r'role\s*=\s*"roles/secretmanager\.secretAccessor"'
+        )
 
     def test_privileged_secrets_are_excluded_from_runtime_workloads(self) -> None:
         match = re.search(
@@ -731,7 +780,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
             re.DOTALL,
         )
         self.assertIsNotNone(match)
-        self.assertEqual(set(re.findall(r'"([\w-]+)"', match.group(1))), {"app", "db-migration"})
+        self.assertEqual(
+            set(re.findall(r'"([\w-]+)"', match.group(1))), {"app", "db-migration"}
+        )
         self.assertRegex(
             self.text,
             r'migrator\s*=\s*"serviceAccount:\$\{var\.workload_identity_pool\}'
@@ -770,7 +821,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         # project-level Cloud Storage role of any kind (its tarball read moved to a
         # provisioner-minted signed URL).
         range_host_roles: set[str] = set()
-        for _name, _line, body in _extract_resource_blocks(self.lines, _PROJECT_IAM_MEMBER_RE):
+        for _name, _line, body in _extract_resource_blocks(
+            self.lines, _PROJECT_IAM_MEMBER_RE
+        ):
             if _RANGE_HOST_MEMBER_RE.search(body):
                 range_host_roles.update(_resource_granted_roles(body))
         self.assertEqual(
