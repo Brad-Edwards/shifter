@@ -75,6 +75,17 @@ class RangeProvisionResult:
     request_id: UUID
 
 
+@dataclass(frozen=True)
+class CTFRangeLaunchOptions:
+    """Optional CTF launch facts forwarded to the CMS range boundary."""
+
+    model_admission_subject: OwnedReference | None = None
+    model_launch_scope: ModelLaunchScope | None = None
+    # CTF ranges belong to participants, while private pack visibility is
+    # authorized by the event owner who selected the pack.
+    content_authorizer: User | None = None
+
+
 def cms_declare_event_capacity(
     *,
     event_ref: UUID,
@@ -168,9 +179,7 @@ def cms_create_range(
     agents_by_os: dict[str, int],
     ngfw_enabled: bool,
     remote_access_teardown_at: datetime | None,
-    model_admission_subject: OwnedReference | None = None,
-    model_launch_scope: ModelLaunchScope | None = None,
-    content_authorizer: User | None = None,
+    launch_options: CTFRangeLaunchOptions | None = None,
 ) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
@@ -189,15 +198,16 @@ def cms_create_range(
     # RAES packages own topology; agents_by_os is accepted for caller back-compat
     # but does not shape the plan.
     del agents_by_os
+    options = launch_options or CTFRangeLaunchOptions()
     result = cms_services.create_range_dispatch(
         user=user,
         scenario=scenario,
         ngfw_enabled=ngfw_enabled,
         range_source=RangeSource.CTF,
         remote_access_teardown_at=remote_access_teardown_at,
-        model_admission_subject=model_admission_subject,
-        model_launch_scope=model_launch_scope,
-        content_authorizer=content_authorizer,
+        model_admission_subject=options.model_admission_subject,
+        model_launch_scope=options.model_launch_scope,
+        content_authorizer=options.content_authorizer,
     )
     return RangeProvisionResult(request_id=result.request_id)
 
