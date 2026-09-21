@@ -555,6 +555,13 @@
         "id": "ADR-008-R10",
         "description": "Ephemeral GCP provisioner Jobs must authenticate to PostgreSQL as the dedicated provisioner_runtime login, inheriting only the reviewed provisioner_lambda capability role. The credential bundle is a named Secret Manager resource readable only by the provisioner-launcher workload identity; portal runtime credentials must not be projected into provisioner Jobs. The launcher must fail closed when the dedicated bundle is missing, and admission must bind the Job's DB_USER to the generated PROVISIONER_DB_USER runtime parameter.",
         "checks": []
+      },
+      {
+        "id": "ADR-008-R11",
+        "description": "Cloud Armor SQLi and XSS inspection remains enabled for the public edge. The authenticated tenant-pack upload endpoint may bypass preconfigured raw-body inspection only for POST requests to the exact UUID-scoped packs route with a multipart/form-data content type, because Cloud Armor treats multipart archives as an undecoded byte string and valid archives can match attack signatures. Authentication, CSRF, upload-size, and archive-schema validation remain enforced by the application; every other method, path, and content type remains WAF-inspected.",
+        "checks": [
+          "scripts/bootstrap/tests/test_gcp_control_plane.py::TestGcpPlatformCoreContracts::test_cloud_armor_bypasses_raw_multipart_only_for_tenant_pack_uploads"
+        ]
       }
     ],
     "exceptions": [],

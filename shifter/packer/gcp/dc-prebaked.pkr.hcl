@@ -120,7 +120,12 @@ build {
   provisioner "powershell" {
     elevated_user     = "Administrator"
     elevated_password = var.winrm_bootstrap_password
-    script            = "scripts/dc-prebaked/finalize.ps1"
+    // A content seed may intentionally rotate the built-in Administrator
+    // password. The elevated scheduled task still runs finalize.ps1 through
+    // its fail-closed cleanup, but Windows reports 16001 when Packer queries
+    // the completed task with the superseded credential.
+    valid_exit_codes = [0, 16001]
+    script           = "scripts/dc-prebaked/finalize.ps1"
   }
 
   post-processor "manifest" {
