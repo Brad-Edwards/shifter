@@ -139,7 +139,8 @@ class TestProvisionParticipantRange:
         assert result["status"] == "provisioning"
         mock_create.assert_called_once()
         assert mock_create.call_args.kwargs["user"] == ctf_participant.user
-        assert mock_create.call_args.kwargs["launch_options"].content_authorizer == ctf_participant.event.created_by
+        launch_options = mock_create.call_args.kwargs["launch_options"]
+        assert launch_options.content_authorizer == ctf_participant.event.created_by
 
         ctf_participant.refresh_from_db()
         assert ctf_participant.range_instance_id == 99
@@ -730,7 +731,7 @@ class TestCmsBridgeRangeSource:
 
         monkeypatch.setattr("engine.services._raes_range.start_raes_range_provisioning", lambda *_a, **_kw: None)
 
-        def dispatch(request_id, user, _source, backend_admission, workspace_id, egress_mode):
+        def dispatch(request_id, user, _source, backend_admission, workspace_id, egress_mode, **_kwargs):
             from engine.services import create_raes_range
 
             create_raes_range(
