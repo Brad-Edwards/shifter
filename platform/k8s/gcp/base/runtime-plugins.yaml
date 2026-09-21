@@ -34,7 +34,9 @@ metadata:
 spec:
   hard:
     pods: "16"
-    count/jobs.batch: "32"
+    # One-time headroom for clusters retaining pre-fix terminal Jobs. New
+    # plugin probes are deleted immediately after their result is accepted.
+    count/jobs.batch: "64"
     count/secrets: "96"
     requests.cpu: "2"
     requests.memory: 1Gi
