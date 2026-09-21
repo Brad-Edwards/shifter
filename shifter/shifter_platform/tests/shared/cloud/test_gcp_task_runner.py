@@ -195,6 +195,33 @@ class TestGCPTaskRunnerRunTask:
         assert batch_api.create_namespaced_job.call_args.kwargs["_request_timeout"] == 30
         assert task_id == f"shifter-jobs/{job.metadata.name}"
 
+    def test_task_identity_retries_transient_resource_quota_conflict(self, monkeypatch) -> None:
+        batch_api = MagicMock()
+        batch_api.read_namespaced_job.side_effect = _ApiException(404)
+        expected_name = build_idempotent_job_name("pulumi-provisioner", "intent-1")
+        batch_api.create_namespaced_job.side_effect = [
+            _ApiException(409),
+            SimpleNamespace(metadata=SimpleNamespace(name=expected_name)),
+        ]
+        runner = GCPTaskRunner()
+        runner._load_kubernetes_api = MagicMock(
+            return_value=(batch_api, MagicMock(), _make_fake_k8s_client(), _ApiException)
+        )
+        sleep = MagicMock()
+        monkeypatch.setattr("shared.cloud.kubernetes._job_lifecycle.time.sleep", sleep)
+
+        task_id = runner.run_task(
+            task_definition="provisioner:latest",
+            cluster="shifter-jobs",
+            command=["range", "provision"],
+            container_name="pulumi-provisioner",
+            task_identity="intent-1",
+        )
+
+        assert task_id == f"shifter-jobs/{expected_name}"
+        assert batch_api.create_namespaced_job.call_count == 2
+        sleep.assert_called_once_with(0.1)
+
     def test_redelivery_observes_existing_idempotent_job(self) -> None:
         batch_api = MagicMock()
         batch_api.read_namespaced_job.return_value = _observed_job(
