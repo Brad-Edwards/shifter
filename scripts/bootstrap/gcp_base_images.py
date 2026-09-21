@@ -365,6 +365,38 @@ def _pull_disk_tarball(artifact: ResolvedArtifact, destination: Path) -> Path:
     return tarball
 
 
+def _reconcile_existing_owned_image(
+    artifact: ResolvedArtifact,
+    metadata: dict[str, object],
+    *,
+    image_name: str,
+    image_ref: str,
+    project: str,
+    dry_run: bool,
+) -> ImportedImage | None:
+    """Reuse, or clear for reimport, an existing code-owned image.
+
+    Returns the reusable image when its digest and runtime guest features
+    match; otherwise deletes the incompatible owned image (unless ``dry_run``)
+    and returns ``None`` so the caller reimports.
+    """
+    if _existing_image_is_reusable(artifact, metadata, image_name):
+        _verify_image_ready(project, image_name)
+        info(f"Reusing existing GCE image {image_name} for role '{artifact.role}' (digest unchanged)")
+        return ImportedImage(artifact.role, image_name, image_ref, artifact.digest, reused=True)
+    status = str(metadata.get("status", "")).strip() or "unknown"
+    if status not in {"FAILED", "READY"}:
+        raise BaseImageError(f"code-owned GCE image {image_name} is not READY (status={status}); retry later")
+    missing_features = _required_guest_os_features(artifact.role) - _guest_os_feature_types(metadata)
+    reason = f"missing guest features {sorted(missing_features)}" if missing_features else f"status={status}"
+    if dry_run:
+        info(f"[DRY-RUN] Would replace code-owned GCE image {image_name} ({reason})")
+    else:
+        info(f"Replacing code-owned GCE image {image_name} ({reason})")
+        _delete_owned_image(project, image_name)
+    return None
+
+
 def import_base_image(
     artifact: ResolvedArtifact,
     *,
@@ -385,21 +417,16 @@ def import_base_image(
 
     metadata = _existing_image_metadata(project, image_name)
     if metadata is not None:
-        if _existing_image_is_reusable(artifact, metadata, image_name):
-            _verify_image_ready(project, image_name)
-            info(f"Reusing existing GCE image {image_name} for role '{artifact.role}' (digest unchanged)")
-            return ImportedImage(artifact.role, image_name, image_ref, artifact.digest, reused=True)
-        status = str(metadata.get("status", "")).strip() or "unknown"
-        missing_features = _required_guest_os_features(artifact.role) - _guest_os_feature_types(metadata)
-        if status not in {"FAILED", "READY"}:
-            raise BaseImageError(f"code-owned GCE image {image_name} is not READY (status={status}); retry later")
-        if dry_run:
-            reason = f"missing guest features {sorted(missing_features)}" if missing_features else f"status={status}"
-            info(f"[DRY-RUN] Would replace code-owned GCE image {image_name} ({reason})")
-        else:
-            reason = f"missing guest features {sorted(missing_features)}" if missing_features else f"status={status}"
-            info(f"Replacing code-owned GCE image {image_name} ({reason})")
-            _delete_owned_image(project, image_name)
+        reused = _reconcile_existing_owned_image(
+            artifact,
+            metadata,
+            image_name=image_name,
+            image_ref=image_ref,
+            project=project,
+            dry_run=dry_run,
+        )
+        if reused is not None:
+            return reused
 
     if dry_run:
         info(f"[DRY-RUN] Would import {artifact.pinned_reference} as native GCE image {image_name}")
