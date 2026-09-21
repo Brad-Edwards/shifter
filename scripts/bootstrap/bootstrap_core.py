@@ -104,12 +104,16 @@ def assume_yes_enabled() -> bool:
 def confirm(msg: str, default_yes: bool = False) -> bool:
     """Prompt for yes/no confirmation.
 
-    Non-interactive: returns True when --yes/assume-yes was set (issue #1639),
-    otherwise the caller's ``default_yes`` fallback.
+    Returns True without prompting when --yes/assume-yes was set (issue #1639).
+    Without --yes, a non-interactive caller receives its ``default_yes``
+    fallback and an interactive caller receives the normal prompt.
     """
+    if _ASSUME_YES["enabled"]:
+        return True
+
     # Check if we're in a non-interactive environment
     if not sys.stdin.isatty():
-        return True if _ASSUME_YES["enabled"] else default_yes
+        return default_yes
 
     while True:
         response = input(f"{Colors.YELLOW}{msg} [y/N]: {Colors.END}").strip().lower()
