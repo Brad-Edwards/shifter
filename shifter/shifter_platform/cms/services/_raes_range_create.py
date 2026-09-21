@@ -197,6 +197,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     model_launch_scope: ModelLaunchScope | None = None,
     model_sources: dict | None = None,
     content_authorizer: User | None = None,
+    content_workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -259,7 +260,9 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     if source.organization_uuid is not None:
         from workspaces.services import WorkspaceOperation, authorize_bound_workspace
 
-        authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+        content_actor = content_authorizer or user
+        content_workspace_id = resolve_launch_workspace(content_actor, content_workspace_uuid)
+        authorization = authorize_bound_workspace(content_actor, content_workspace_id, WorkspaceOperation.LAUNCH_RANGE)
         if authorization.organization_uuid != source.organization_uuid:
             raise CMSError("The pack is unavailable in this workspace")
     admit_workspace_launch(
@@ -389,6 +392,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
     model_launch_scope: ModelLaunchScope | None = None,
     model_sources: dict | None = None,
     content_authorizer: User | None = None,
+    content_workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
@@ -413,6 +417,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
             model_launch_scope=model_launch_scope,
             model_sources=model_sources,
             content_authorizer=content_authorizer,
+            content_workspace_uuid=content_workspace_uuid,
         ),
     )
 
@@ -447,4 +452,5 @@ def dispatch_range_launch(
         model_launch_scope=options.model_launch_scope,
         model_sources=options.model_sources,
         content_authorizer=options.content_authorizer,
+        content_workspace_uuid=options.content_workspace_uuid,
     )

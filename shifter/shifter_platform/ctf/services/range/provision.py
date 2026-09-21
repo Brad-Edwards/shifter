@@ -180,6 +180,7 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
             from ctf.bridges import CTFRangeLaunchOptions, cms_create_range, cms_find_range_instance_id
             from ctf.services.model_access_sharing import participant_model_admission_subject
             from ctf.services.range.model_allocation import project_event_model_scope
+            from ctf.services.range.workspace import event_launch_workspace_uuid
 
             result = cms_create_range(
                 user=participant.user,
@@ -196,6 +197,7 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
                         event, participant.pk, participant_model_admission_subject(participant)
                     ),
                     content_authorizer=event.created_by,
+                    content_workspace_uuid=event_launch_workspace_uuid(event),
                 ),
             )
         except Exception as e:
