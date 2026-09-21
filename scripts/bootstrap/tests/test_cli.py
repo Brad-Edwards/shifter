@@ -11,14 +11,95 @@ All external dependencies are mocked. No actual AWS calls, file operations,
 or subprocess executions occur during tests.
 """
 
+import json
+import os
 import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 import deploy
+import gcp_base_images as gbi
 
 PINNED_IMAGE_TAG = "abc1234"
+
+
+class _StopAfterImageHandoff(RuntimeError):
+    """Test sentinel raised at the first platform-cloud boundary."""
+
+
+class _GcpBootstrapProcess:
+    """Simulate the public-image and first-platform process boundaries."""
+
+    def __init__(self, *, fail_publication: bool = False):
+        self.calls: list[list[str]] = []
+        self.observed_image_env: dict[str, str | None] = {}
+        self.fail_publication = fail_publication
+        self.publication_count = 0
+
+    def __call__(self, cmd, **_kwargs):
+        cmd = [str(token) for token in cmd]
+        self.calls.append(cmd)
+        if cmd[:3] == ["gcloud", "auth", "list"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="operator@example.test\n", stderr="")
+        if cmd[0] == "gh":
+            return self._run_gh(cmd)
+        if cmd[:3] == ["oras", "repo", "tags"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="gce-1\n", stderr="")
+        if cmd[:3] == ["oras", "manifest", "fetch"]:
+            if "--descriptor" in cmd:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    0,
+                    stdout='{"digest":"sha256:' + ("a" * 64) + '"}',
+                    stderr="",
+                )
+            reference = next(token for token in cmd if "shifter-gce-" in token)
+            role = reference.split("shifter-gce-", 1)[1].split("@", 1)[0]
+            manifest = {
+                "artifactType": gbi.GCE_IMAGE_ARTIFACT_TYPE,
+                "layers": [{"mediaType": gbi.GCE_IMAGE_MEDIA_TYPE, "digest": "sha256:" + ("b" * 64)}],
+                "annotations": {
+                    "com.shifter.image.role": role,
+                    "org.opencontainers.image.revision": "c" * 40,
+                },
+            }
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(manifest), stderr="")
+        if cmd[:3] == ["oras", "blob", "fetch"]:
+            destination = Path(cmd[cmd.index("--output") + 1])
+            destination.write_bytes(b"rawdisk")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        if cmd[:4] == ["gcloud", "compute", "images", "describe"]:
+            if "--format=json(description,labels,status,guestOsFeatures)" in cmd:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not found")
+            if "--format=value(status)" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="READY\n", stderr="")
+            if "--format=value(name)" in cmd:
+                keys = ("GCP_RANGE_LINUX_IMAGE", "GCP_RANGE_KALI_IMAGE", "GCP_RANGE_DC_IMAGE")
+                self.observed_image_env = {key: os.environ.get(key) for key in keys}
+                return subprocess.CompletedProcess(cmd, 0, stdout=f"{cmd[4]}\n", stderr="")
+        if cmd[:4] == ["gcloud", "storage", "buckets", "describe"] and "terraform-state" in cmd[4]:
+            raise _StopAfterImageHandoff("platform boundary reached")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def _run_gh(self, cmd):
+        if cmd[:4] == ["gh", "repo", "view", "--json"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="Brad-Edwards/shifter\n", stderr="")
+        if cmd[:2] == ["gh", "api"] and "--paginate" in cmd:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout="GCP_RANGE_DC_IMAGE\nGCP_RANGE_KALI_IMAGE\nGCP_RANGE_LINUX_IMAGE\n",
+                stderr="",
+            )
+        if cmd[:3] == ["gh", "api", "--method"]:
+            self.publication_count += 1
+            if self.fail_publication and self.publication_count == 2:
+                raise subprocess.CalledProcessError(1, cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
 
 # =============================================================================
 # Test Fixtures
@@ -470,6 +551,143 @@ class TestMainCLI:
             deploy.main()
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
+
+    def test_gdc_bootstrap_imports_public_images_and_hands_exact_refs_to_platform(self, tmp_path):
+        runner = _GcpBootstrapProcess()
+        keys = ("GCP_RANGE_LINUX_IMAGE", "GCP_RANGE_KALI_IMAGE", "GCP_RANGE_DC_IMAGE")
+        expected = {
+            "GCP_RANGE_LINUX_IMAGE": "projects/proj/global/images/shifter-ubuntu-aaaaaaaaaaaa",
+            "GCP_RANGE_KALI_IMAGE": "projects/proj/global/images/shifter-kali-aaaaaaaaaaaa",
+            "GCP_RANGE_DC_IMAGE": "projects/proj/global/images/shifter-dc-aaaaaaaaaaaa",
+        }
+        shifter_config = tmp_path / "shifter.yaml"
+        shifter_config.write_text("version: 1\nbackend: gcp\n")
+        config = deploy.GDCBootstrapConfig(
+            project_id="proj",
+            environment="gcp-dev",
+            region="us-east1",
+            shifter_config_path=str(shifter_config),
+        )
+        deploy.set_assume_yes(True)
+        try:
+            with (
+                patch("subprocess.run", side_effect=runner),
+                patch.dict(
+                    os.environ,
+                    dict.fromkeys(keys, "before")
+                    | {
+                        "RANGE_NETWORK_ZONE": "us-east1-b",
+                        "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@example.test",
+                    },
+                    clear=False,
+                ),
+            ):
+                with pytest.raises(_StopAfterImageHandoff):
+                    deploy.gcp_bootstrap_with_public_images(config, dry_run=False)
+
+                assert runner.observed_image_env == expected
+                assert {key: os.environ.get(key) for key in keys} == dict.fromkeys(keys, "before")
+                assert runner.publication_count == 3
+                assert any(call[:3] == ["gcloud", "storage", "rm"] and "--recursive" in call for call in runner.calls)
+        finally:
+            deploy.set_assume_yes(False)
+
+    def test_combined_image_bootstrap_rejects_before_any_external_command(self):
+        deploy.set_assume_yes(False)
+
+        def unexpected_command(*_args, **_kwargs):
+            raise AssertionError("external command ran before combined bootstrap confirmation")
+
+        with (
+            patch("sys.stdin.isatty", return_value=False),
+            patch("subprocess.run", side_effect=unexpected_command),
+            pytest.raises(SystemExit) as exc,
+        ):
+            deploy.gcp_bootstrap_with_public_images(
+                deploy.GDCBootstrapConfig(project_id="proj"),
+                dry_run=False,
+            )
+
+        assert exc.value.code == 0
+
+    def test_gdc_bootstrap_does_not_start_platform_after_image_publication_failure(self):
+        runner = _GcpBootstrapProcess(fail_publication=True)
+        deploy.set_assume_yes(True)
+        try:
+            with patch("subprocess.run", side_effect=runner), pytest.raises(SystemExit):
+                deploy.gcp_bootstrap_with_public_images(
+                    deploy.GDCBootstrapConfig(project_id="proj"),
+                    dry_run=False,
+                )
+        finally:
+            deploy.set_assume_yes(False)
+
+        assert runner.publication_count == 2
+        assert runner.observed_image_env == {}
+        assert not any(
+            call[:4] == ["gcloud", "storage", "buckets", "describe"] and "terraform-state" in call[4]
+            for call in runner.calls
+        )
+
+    def test_standalone_gcp_images_uses_code_owned_bucket_region(self):
+        args = deploy._build_parser().parse_args(
+            [
+                "gcp-images",
+                "--project-id",
+                "proj",
+                "--environment",
+                "tenant",
+                "--region",
+                "europe-west1",
+            ]
+        )
+
+        assert args.project_id == "proj"
+        assert args.environment == "tenant"
+        assert args.region == "europe-west1"
+        assert not hasattr(args, "staging_bucket")
+
+    def test_gcp_images_publishes_exact_rendered_refs(self):
+        refs = {
+            "GCP_RANGE_LINUX_IMAGE": "projects/proj/global/images/linux-digest",
+            "GCP_RANGE_KALI_IMAGE": "projects/proj/global/images/kali-digest",
+            "GCP_RANGE_DC_IMAGE": "projects/proj/global/images/dc-digest",
+        }
+        calls = []
+
+        def fake_run(cmd, dry_run=False, **_kwargs):
+            calls.append((cmd, dry_run))
+            if cmd[:4] == ["gh", "repo", "view", "--json"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="Brad-Edwards/shifter\n", stderr="")
+            if cmd[:2] == ["gh", "api"] and "--paginate" in cmd:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    0,
+                    stdout="GCP_RANGE_DC_IMAGE\nGCP_RANGE_LINUX_IMAGE\n",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        deploy._publish_range_image_env(refs, "tenant", dry_run=False, command_runner=fake_run)
+        variable_calls = [call for call, dry_run in calls if call[:3] == ["gh", "api", "--method"]]
+        assert len(variable_calls) == 3
+        assert {
+            (
+                call[call.index("--method") + 1],
+                call[call.index("-f") + 1],
+                call[call.index("-f", call.index("-f") + 1) + 1],
+            )
+            for call in variable_calls
+        } == {
+            ("PATCH", f"name={name}", f"value={ref}") for name, ref in refs.items() if name != "GCP_RANGE_KALI_IMAGE"
+        } | {("POST", "name=GCP_RANGE_KALI_IMAGE", f"value={refs['GCP_RANGE_KALI_IMAGE']}")}
+
+    def test_gcp_images_requires_an_active_gcloud_identity_before_mutation(self):
+        def fake_run(cmd, **_kwargs):
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with pytest.raises(RuntimeError, match="gcloud authentication"):
+            deploy._validate_base_image_auth(command_runner=fake_run)
 
     def test_gdc_bootstrap_defaults_to_gce_range_backend(self):
         """gdc-bootstrap defaults to the gce range backend so no ABM substrate / SA key is built (#1716)."""

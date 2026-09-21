@@ -59,5 +59,12 @@ and request-owned destroy completed. Record the target environment, request ID,
 terminal status, probe result, and cleanup result without copying credentials
 or guest secret values.
 
+The management command prints `destroy requested` after the product accepts the
+request; provider teardown continues asynchronously. For a manual acceptance
+run, also wait for the named destroy Job in `shifter-jobs` to reach `Complete`
+and verify the request's range-owned resources are absent. Do not delete those
+resources directly to make the smoke pass. The wrapper's short-lived Job and
+identity Secret in `shifter-platform` must also be absent after it exits.
+
 Implementation lives in `cms/post_deploy_smoke/` and
 `python manage.py run_post_deploy_smoke`.

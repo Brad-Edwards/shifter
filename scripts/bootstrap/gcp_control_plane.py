@@ -1993,7 +1993,11 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                             "name": "migrate",
                             "image": platform_image,
                             "imagePullPolicy": "IfNotPresent",
-                            "args": ["python", "manage.py", "bootstrap_inbox_catalog"],
+                            "args": [
+                                "/bin/sh",
+                                "-c",
+                                "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+                            ],
                             "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
                             "env": [
                                 {
@@ -2612,6 +2616,7 @@ def gdc_bootstrap_cluster(
     dry_run: bool = False,
     *,
     allow_missing_range_images: bool = False,
+    confirmation_obtained: bool = False,
 ) -> dict[str, str]:
     """Bootstrap the repeatable GDC-on-Compute-Engine VM Runtime cluster."""
     if not config.project_id:
@@ -2629,7 +2634,7 @@ def gdc_bootstrap_cluster(
 
     confirm_prompt = _announce_gdc_bootstrap_plan(config, builds_substrate)
 
-    if not dry_run and not confirm(confirm_prompt):
+    if not dry_run and not confirmation_obtained and not confirm(confirm_prompt):
         warn("Aborted by user")
         sys.exit(0)
 

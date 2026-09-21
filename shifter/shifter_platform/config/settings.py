@@ -37,6 +37,7 @@ from config._drf_settings import *  # NOSONAR  # noqa: E402
 from config._email import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
 from config._logging_config import *  # NOSONAR  # noqa: E402
+from config._openfga_settings import *  # NOSONAR  # noqa: E402
 from config._rate_limit_settings import *  # NOSONAR  # noqa: E402
 from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment, required_runtime_env  # noqa: E402
 from config._terminal_assets import *  # NOSONAR  # noqa: E402

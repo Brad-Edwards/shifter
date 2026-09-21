@@ -300,7 +300,6 @@ def test_rejected_launch_logs_bounded_diagnostics(upload, tenant, monkeypatch, c
     assert "status=rejected" in caplog.text
     assert diagnostic in caplog.text
 
-
 def test_pack_revision_requires_existing_identity(upload):
     client, organization, root, storage = upload
     response = _post(client, organization, root, expected_digest="sha256:" + "f" * 64)

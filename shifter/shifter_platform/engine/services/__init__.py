@@ -19,6 +19,7 @@ from django.db import transaction
 from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
 from engine.ssh import SSHConnection
 
+from ._authorization_inventory import list_authorization_range_uuids
 from ._capacity import (
     EventCapacitySignal,
     latest_capacity_declaration,
@@ -365,6 +366,7 @@ __all__ = (
     "issue_model_enrollment",
     "latest_capacity_declaration",
     "latest_cleanup_verification",
+    "list_authorization_range_uuids",
     "list_backend_artifacts",
     "list_model_launch_refreshes",
     "list_model_sources",

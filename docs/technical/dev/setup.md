@@ -51,9 +51,10 @@ for the authoritative order.
 - Workload Identity Federation configured for GitHub Actions (pool, provider,
   purpose service accounts), with the explicit `GCP_*_SERVICE_ACCOUNT` value
   and `GCP_WORKLOAD_IDENTITY_PROVIDER` set in each purpose Environment.
-- Range guest images imported into the project. On a fresh project run
-  `./scripts/bootstrap/deploy.py gcp-images` to import the reusable base set
-  (Kali/Ubuntu/DC) from GHCR as native GCE images. See
+- Public Kali/Ubuntu/DC base packages available in GHCR. The first local
+  `gdc-bootstrap --import-public-base-images` invocation imports them as native
+  GCE images before platform preconditions run; no platform-owned transfer
+  bucket must already exist. See
   [`gcp-range-cell-deploy.md`](../../dev/gcp-range-cell-deploy.md) and
   [`gcp-guest-images.md`](../../architecture/gcp-guest-images.md).
 
@@ -520,15 +521,68 @@ EOF
 For CI deploys the equivalent values come from GitHub secrets; see
 [`docs/dev/deploy-secrets.md`](../../dev/deploy-secrets.md).
 
+The CI deployment also reads the committed tenant overlay at
+`platform/k8s/gcp/overlays/<environment>/`; GitHub Environment values do not
+rewrite its image or Workload Identity references. Before the tenant's first CI
+deploy, verify both account-bound surfaces in that overlay:
+
+- every `images[].newName` in `kustomization.yaml` uses the tenant project and
+  the Artifact Registry repositories created for that environment
+- every `iam.gke.io/gcp-service-account` annotation in
+  `patch-serviceaccounts.patch` uses the tenant project and the service-account
+  localpart created by the platform Terraform naming contract
+
+Render the overlay before pushing the tenant branch and inspect the resulting
+image names and service-account annotations:
+
+```bash
+kubectl kustomize platform/k8s/gcp/overlays/<environment> > /tmp/<environment>-rendered.yaml
+```
+
+Do not copy an existing tenant overlay without replacing both surfaces. A stale
+project in either file can leave Terraform and GitHub correctly configured while
+the CI Kubernetes deploy still pulls from another project's registry or binds
+pods to another project's identities.
+
 ### 4. Deploy
 
 The first clean install runs locally under your own credentials (Workload Identity
 Federation is only needed for CI). Subsequent deploys run through CI with
 `gh workflow run deploy.yml --ref gcp-dev -f environment=gcp-dev`. The local
-bootstrap entrypoint is:
+bootstrap entrypoint is below. GitHub Environment variables are not imported into
+the operator's shell, so export the range-plane values locally even when CI is
+already configured. Refresh both the `gcloud` user credential and Application
+Default Credentials before a long bootstrap, and verify the Artifact Registry
+Docker credential helper is on `PATH`:
 
 ```bash
-./scripts/bootstrap/deploy.py gdc-bootstrap --project-id <your-gcp-project-id> --shifter-config ./shifter.yaml
+gcloud auth print-access-token >/dev/null
+gcloud auth application-default print-access-token >/dev/null
+command -v docker-credential-gcloud >/dev/null
+
+export RANGE_NETWORK_ZONE=<zone>
+export GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=<range-host-service-account>
+```
+
+When exact first-operator credentials are supplied in the process environment,
+set `SHIFTER_BOOTSTRAP_ENV_SOURCE=process` with
+`GCP_BOOTSTRAP_ADMIN_EMAIL` and `GCP_BOOTSTRAP_ADMIN_PASSWORD`. This prevents a
+file-backed value from taking precedence unexpectedly. Do not set
+`SHIFTER_SKIP_OPERATOR_BOOTSTRAP` unless omitting the first human operator is an
+explicit deployment decision.
+
+The public DC artifact can require substantially more temporary space than a
+memory-backed `/tmp`. Set `TMPDIR` to a filesystem with enough free space for the
+largest compressed and expanded image before using `--import-public-base-images`.
+
+Then run:
+
+```bash
+./scripts/bootstrap/deploy.py gdc-bootstrap \
+  --project-id <your-gcp-project-id> --environment <environment> \
+  --region <region> --zone <zone> \
+  --shifter-config /path/to/shifter.yaml \
+  --import-public-base-images --yes
 ```
 
 Despite the command name, the default `--range-backend gce` deploys the GKE control
@@ -537,11 +591,22 @@ substrate is built only with `--range-backend gdc`. With the default
 `--terraform-identity operator-adc`, Terraform runs under your Application Default
 Credentials, creating no service account or key. The flow:
 
-1. applies GCP Terraform (GKE, Cloud SQL, Memorystore, Pub/Sub, and related resources)
-2. seeds the first Identity Platform operator
-3. builds and pushes control-plane images
-4. renders secure Helm values from Terraform outputs and Secret Manager
-5. installs or upgrades the Shifter Helm release
+1. validates GCP/GitHub authentication and all three public OCI manifests
+2. imports or reuses exact digest-derived `READY` GCE images through a private,
+   per-run transfer bucket that is removed on every exit
+3. publishes the exact references to the selected GitHub Environment and binds
+   those same values to the local platform bootstrap
+4. applies GCP Terraform (GKE, Cloud SQL, Memorystore, Pub/Sub, and related resources)
+5. seeds the first Identity Platform operator
+6. builds and pushes control-plane images
+7. renders secure Helm values from Terraform outputs and Secret Manager
+8. installs or upgrades the Shifter Helm release
+
+For an existing platform, refresh only the public base set with
+`./scripts/bootstrap/deploy.py gcp-images --project-id <project> --environment
+<environment> --region <region>`. Either command accepts `--dry-run`; discovery
+and read-only validation still run, while payload download and GCP/GitHub
+mutation do not.
 
 With `--range-backend gdc`, the flow first builds or reconciles the GDC substrate.
 

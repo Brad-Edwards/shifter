@@ -1141,8 +1141,8 @@ jobs:
                     image: ${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}
                     imagePullPolicy: IfNotPresent
                     # entrypoint.sh runs migrations first, then registers the
-                    # immutable shipped seed through the normal ingestion path.
-                    args: ["python", "manage.py", "bootstrap_inbox_catalog"]
+                    # immutable shipped seed and base image mappings.
+                    args: ["/bin/sh", "-c", "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry"]
                     envFrom:
                       - configMapRef:
                           name: platform-runtime

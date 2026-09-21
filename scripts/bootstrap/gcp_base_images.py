@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,14 +63,17 @@ _ROLE_TO_RANGE_ENV = {
     "dc": "GCP_RANGE_DC_IMAGE",
 }
 
-# Windows-family roles need the WINDOWS guest OS feature on re-import. The
-# premium Windows license is not carried by a raw disk export/import, so the DC
-# image imported from GHCR is verified for boot/licensing in the #2309 proof-2
+# Raw disk export/import does not retain image-level guest OS features. Every
+# runtime range guest uses Shielded VM Secure Boot, so all imported bases must
+# be marked UEFI compatible. Windows-family roles additionally need WINDOWS.
+# The premium Windows license is not carried by a raw disk export/import, so the
+# DC image imported from GHCR is verified for boot/licensing in the #2309 proof-2
 # tenant run.
 _WINDOWS_ROLES = frozenset({"dc"})
 
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _DISCOVERY_TAG_RE = re.compile(r"^gce-(\d+)$")
+_REVISION_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 class BaseImageError(RuntimeError):
@@ -83,6 +87,7 @@ class ResolvedArtifact:
     role: str
     package: str  # e.g. ghcr.io/brad-edwards/shifter-gce-kali
     digest: str  # sha256:<64 hex>
+    disk_digest: str  # sha256:<64 hex> for the validated GCE disk layer
     revision: str  # provenance: the protected build source revision
 
     @property
@@ -109,6 +114,8 @@ class ImportedImage:
 
 def package_for_role(role: str) -> str:
     """Return the GHCR package path for a base role."""
+    if role not in BASE_IMAGE_ROLES:
+        raise BaseImageError(f"unsupported public base-image role {role!r}")
     return f"ghcr.io/{GHCR_OWNER}/shifter-gce-{role}"
 
 
@@ -133,6 +140,39 @@ def _newest_discovery_tag(tags: list[str]) -> str | None:
     return max(numbered)[1]
 
 
+def _disk_layer_digest(manifest: dict[str, object]) -> str:
+    """Return the one validated, digest-pinned GCE disk layer."""
+    layers = manifest.get("layers") or []
+    if not isinstance(layers, list) or not all(isinstance(layer, dict) for layer in layers):
+        raise BaseImageError("base-image manifest layers must be an array of descriptors")
+    disk_layers = [layer for layer in layers if layer.get("mediaType") == GCE_IMAGE_MEDIA_TYPE]
+    if len(disk_layers) != 1:
+        raise BaseImageError(f"expected exactly one {GCE_IMAGE_MEDIA_TYPE} layer, found {len(disk_layers)}")
+    layer_digest = str(disk_layers[0].get("digest", "")).strip()
+    if not _DIGEST_RE.fullmatch(layer_digest):
+        raise BaseImageError("base-image disk layer is missing a full sha256 digest")
+    return layer_digest
+
+
+def _validate_disk_layer(manifest: dict[str, object]) -> None:
+    """Require exactly one digest-pinned GCE disk layer."""
+    _disk_layer_digest(manifest)
+
+
+def _validate_annotations(manifest: dict[str, object], *, role: str) -> str:
+    """Require the requested role and a protected source revision."""
+    annotations = manifest.get("annotations") or {}
+    if not isinstance(annotations, dict):
+        raise BaseImageError("base-image manifest annotations must be an object")
+    declared_role = str(annotations.get("com.shifter.image.role", "")).strip()
+    if declared_role != role:
+        raise BaseImageError(f"artifact role annotation {declared_role!r} does not match requested role {role!r}")
+    revision = str(annotations.get("org.opencontainers.image.revision", "")).strip()
+    if not _REVISION_RE.fullmatch(revision):
+        raise BaseImageError("artifact is missing a full protected-source revision (image.revision annotation)")
+    return revision
+
+
 def validate_artifact_manifest(manifest: dict[str, object], *, role: str) -> str:
     """Validate an OCI manifest against the GCE base-image contract.
 
@@ -145,18 +185,8 @@ def validate_artifact_manifest(manifest: dict[str, object], *, role: str) -> str
     artifact_type = manifest.get("artifactType", "")
     if artifact_type != GCE_IMAGE_ARTIFACT_TYPE:
         raise BaseImageError(f"unexpected artifactType {artifact_type!r}; expected {GCE_IMAGE_ARTIFACT_TYPE}")
-    layers = manifest.get("layers") or []
-    disk_layers = [layer for layer in layers if layer.get("mediaType") == GCE_IMAGE_MEDIA_TYPE]
-    if len(disk_layers) != 1:
-        raise BaseImageError(f"expected exactly one {GCE_IMAGE_MEDIA_TYPE} layer, found {len(disk_layers)}")
-    annotations = manifest.get("annotations") or {}
-    declared_role = str(annotations.get("com.shifter.image.role", "")).strip()
-    if declared_role != role:
-        raise BaseImageError(f"artifact role annotation {declared_role!r} does not match requested role {role!r}")
-    revision = str(annotations.get("org.opencontainers.image.revision", "")).strip()
-    if not revision:
-        raise BaseImageError("artifact is missing its build provenance (image.revision annotation)")
-    return revision
+    _validate_disk_layer(manifest)
+    return _validate_annotations(manifest, role=role)
 
 
 def image_name_for(role: str, short_digest: str) -> str:
@@ -167,6 +197,26 @@ def image_name_for(role: str, short_digest: str) -> str:
 def render_range_image_env(imported: dict[str, ImportedImage]) -> dict[str, str]:
     """Map imported base images to their ``GCP_RANGE_*_IMAGE`` runtime values."""
     return {_ROLE_TO_RANGE_ENV[role]: image.image_ref for role, image in imported.items() if role in _ROLE_TO_RANGE_ENV}
+
+
+def _required_guest_os_features(role: str) -> frozenset[str]:
+    """Return image features required by the range runtime posture."""
+    features = {"UEFI_COMPATIBLE"}
+    if role in _WINDOWS_ROLES:
+        features.add("WINDOWS")
+    return frozenset(features)
+
+
+def _guest_os_feature_types(metadata: dict[str, object]) -> frozenset[str]:
+    """Read normalized guest feature names from GCE image metadata."""
+    raw = metadata.get("guestOsFeatures") or []
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(
+        str(item.get("type", "")).strip()
+        for item in raw
+        if isinstance(item, dict) and str(item.get("type", "")).strip()
+    )
 
 
 # --- Registry / GCE boundary (mocked in tests via bootstrap_core.run_cmd) -----
@@ -224,30 +274,42 @@ def resolve_artifact(role: str) -> ResolvedArtifact:
     """Discover, digest-pin, and validate the GHCR base-image artifact for a role."""
     package = package_for_role(role)
     digest = _fetch_digest(package, _discover_newest_tag(package))
-    revision = validate_artifact_manifest(_fetch_manifest(package, digest), role=role)
-    return ResolvedArtifact(role=role, package=package, digest=digest, revision=revision)
+    manifest = _fetch_manifest(package, digest)
+    revision = validate_artifact_manifest(manifest, role=role)
+    return ResolvedArtifact(
+        role=role,
+        package=package,
+        digest=digest,
+        disk_digest=_disk_layer_digest(manifest),
+        revision=revision,
+    )
 
 
-def _existing_image_digest(project: str, image_name: str) -> str | None:
-    """Return the OCI digest an existing GCE image records, or None if absent.
-
-    The import writes the immutable ``oci://<package>@<digest>`` reference into
-    the image description; reuse verifies the resolved digest against it (F6),
-    refusing a pre-existing image whose recorded source does not match rather
-    than trusting the name alone. This is a name+source binding check, not a
-    cryptographic attestation - the stronger build-attestation / trusted
-    image-ID-to-digest binding is tracked as a hardening follow-up.
-    """
+def _existing_image_metadata(project: str, image_name: str) -> dict[str, object] | None:
+    """Return code-owned provenance, status, and boot features for an existing image."""
     result = run_cmd(
-        ["gcloud", "compute", "images", "describe", image_name, "--project", project, "--format=value(description)"],
+        [
+            "gcloud",
+            "compute",
+            "images",
+            "describe",
+            image_name,
+            "--project",
+            project,
+            "--format=json(description,labels,status,guestOsFeatures)",
+        ],
         check=False,
         capture=True,
     )
     if result is None or result.returncode != 0:
         return None
-    description = (getattr(result, "stdout", "") or "").strip()
-    match = re.search(r"@(sha256:[0-9a-f]{64})", description)
-    return match.group(1) if match else ""
+    try:
+        metadata = json.loads(getattr(result, "stdout", "") or "{}")
+    except json.JSONDecodeError as exc:
+        raise BaseImageError(f"GCE image {image_name} returned invalid metadata JSON") from exc
+    if not isinstance(metadata, dict):
+        raise BaseImageError(f"GCE image {image_name} returned invalid metadata")
+    return metadata
 
 
 def _verify_image_ready(project: str, image_name: str) -> None:
@@ -262,15 +324,77 @@ def _verify_image_ready(project: str, image_name: str) -> None:
         raise BaseImageError(f"imported GCE image {image_name} is not READY (status={status or 'unknown'})")
 
 
-def _pull_disk_tarball(artifact: ResolvedArtifact, destination: Path) -> Path:
-    """Pull the digest-pinned disk tarball into ``destination`` and return it."""
-    run_cmd(["oras", "pull", f"{artifact.package}@{artifact.digest}", "-o", str(destination)])
-    tarballs = sorted(destination.glob("*.tar.gz"))
-    if len(tarballs) != 1:
+def _existing_image_is_reusable(artifact: ResolvedArtifact, metadata: dict[str, object], image_name: str) -> bool:
+    """Return true only for an exact code-owned, READY, runtime-compatible image."""
+    labels = metadata.get("labels") or {}
+    if not isinstance(labels, dict):
+        labels = {}
+    exact_source = str(metadata.get("description", "")).strip() == artifact.pinned_reference
+    exact_role = str(labels.get("shifter-base-role", "")).strip() == artifact.role
+    exact_digest_label = str(labels.get("shifter-base-digest", "")).strip() == artifact.short_digest
+    if not (exact_source and exact_role and exact_digest_label):
         raise BaseImageError(
-            f"expected exactly one disk tarball from {artifact.pinned_reference}, found {len(tarballs)}"
+            f"GCE image {image_name} already exists without the exact source and role metadata; "
+            "refusing to reuse an image this import did not create"
         )
-    return tarballs[0]
+    return str(metadata.get("status", "")).strip() == "READY" and _required_guest_os_features(artifact.role).issubset(
+        _guest_os_feature_types(metadata)
+    )
+
+
+def _delete_owned_image(project: str, image_name: str) -> None:
+    """Delete a proven code-owned image before converging its import contract."""
+    run_cmd(["gcloud", "compute", "images", "delete", image_name, "--project", project, "--quiet"])
+
+
+def _pull_disk_tarball(artifact: ResolvedArtifact, destination: Path) -> Path:
+    """Fetch the validated disk blob to a caller-owned path and return it."""
+    tarball = destination / f"{artifact.role}-{artifact.short_digest}.tar.gz"
+    run_cmd(
+        [
+            "oras",
+            "blob",
+            "fetch",
+            "--output",
+            str(tarball),
+            f"{artifact.package}@{artifact.disk_digest}",
+        ]
+    )
+    if not tarball.is_file():
+        raise BaseImageError(f"disk blob fetch produced no tarball for {artifact.pinned_reference}")
+    return tarball
+
+
+def _reconcile_existing_owned_image(
+    artifact: ResolvedArtifact,
+    metadata: dict[str, object],
+    *,
+    image_name: str,
+    image_ref: str,
+    project: str,
+    dry_run: bool,
+) -> ImportedImage | None:
+    """Reuse, or clear for reimport, an existing code-owned image.
+
+    Returns the reusable image when its digest and runtime guest features
+    match; otherwise deletes the incompatible owned image (unless ``dry_run``)
+    and returns ``None`` so the caller reimports.
+    """
+    if _existing_image_is_reusable(artifact, metadata, image_name):
+        _verify_image_ready(project, image_name)
+        info(f"Reusing existing GCE image {image_name} for role '{artifact.role}' (digest unchanged)")
+        return ImportedImage(artifact.role, image_name, image_ref, artifact.digest, reused=True)
+    status = str(metadata.get("status", "")).strip() or "unknown"
+    if status not in {"FAILED", "READY"}:
+        raise BaseImageError(f"code-owned GCE image {image_name} is not READY (status={status}); retry later")
+    missing_features = _required_guest_os_features(artifact.role) - _guest_os_feature_types(metadata)
+    reason = f"missing guest features {sorted(missing_features)}" if missing_features else f"status={status}"
+    if dry_run:
+        info(f"[DRY-RUN] Would replace code-owned GCE image {image_name} ({reason})")
+    else:
+        info(f"Replacing code-owned GCE image {image_name} ({reason})")
+        _delete_owned_image(project, image_name)
+    return None
 
 
 def import_base_image(
@@ -282,34 +406,40 @@ def import_base_image(
 ) -> ImportedImage:
     """Import (or reuse) a validated artifact as a native GCE image.
 
-    An unchanged digest reuses the existing digest-named image; a changed digest
-    creates a new, traceably named image and moves the ``shifter-<role>`` family
+    An unchanged digest reuses the existing digest-named image when its runtime
+    guest features match. A changed digest or incompatible owned image is
+    imported as a traceably named image and moves the ``shifter-<role>`` family
     head. The staging object is removed on success and failure.
     """
     image_name = image_name_for(artifact.role, artifact.short_digest)
     family = f"shifter-{artifact.role}"
     image_ref = f"projects/{project}/global/images/{image_name}"
 
-    recorded_digest = _existing_image_digest(project, image_name)
-    if recorded_digest is not None:
-        if recorded_digest != artifact.digest:
-            raise BaseImageError(
-                f"GCE image {image_name} already exists but records source {recorded_digest or '(none)'}, "
-                f"not the resolved digest {artifact.digest}; refusing to reuse an image this import did not create"
-            )
-        info(f"Reusing existing GCE image {image_name} for role '{artifact.role}' (digest unchanged)")
-        return ImportedImage(artifact.role, image_name, image_ref, artifact.digest, reused=True)
+    metadata = _existing_image_metadata(project, image_name)
+    if metadata is not None:
+        reused = _reconcile_existing_owned_image(
+            artifact,
+            metadata,
+            image_name=image_name,
+            image_ref=image_ref,
+            project=project,
+            dry_run=dry_run,
+        )
+        if reused is not None:
+            return reused
 
     if dry_run:
         info(f"[DRY-RUN] Would import {artifact.pinned_reference} as native GCE image {image_name}")
         return ImportedImage(artifact.role, image_name, image_ref, artifact.digest, reused=False)
+    if not staging_bucket:
+        raise BaseImageError("base-image import requires a run-owned transfer bucket")
 
     subheader(f"Importing '{artifact.role}' base image as native GCE image {image_name}")
     staging_uri = f"gs://{staging_bucket}/base-images/{image_name}.tar.gz"
     with tempfile.TemporaryDirectory(prefix="shifter-gce-base-") as tmp:
         tarball = _pull_disk_tarball(artifact, Path(tmp))
         try:
-            run_cmd(["gcloud", "storage", "cp", "--quiet", str(tarball), staging_uri])
+            run_cmd(["gcloud", "storage", "cp", "--quiet", str(tarball), staging_uri, "--project", project])
             create_cmd = [
                 "gcloud",
                 "compute",
@@ -327,25 +457,64 @@ def import_base_image(
                 "--description",
                 artifact.pinned_reference,
             ]
-            if artifact.role in _WINDOWS_ROLES:
-                # Mark the re-imported disk Windows/UEFI-bootable. The premium
-                # Windows license is not carried by a raw export; DC boot and
-                # licensing are verified in the #2309 proof-2 tenant run.
-                create_cmd += ["--guest-os-features", "WINDOWS,UEFI_COMPATIBLE"]
+            create_cmd += [
+                "--guest-os-features",
+                ",".join(sorted(_required_guest_os_features(artifact.role))),
+            ]
             run_cmd(create_cmd)
             _verify_image_ready(project, image_name)
         finally:
             # Always clear the staging object so no transfer drift is left behind.
-            run_cmd(["gcloud", "storage", "rm", "--quiet", staging_uri], check=False)
+            run_cmd(["gcloud", "storage", "rm", "--quiet", staging_uri, "--project", project], check=False)
 
     success(f"Imported '{artifact.role}' as native GCE image {image_name}")
     return ImportedImage(artifact.role, image_name, image_ref, artifact.digest, reused=False)
 
 
+def _run_checked(cmd: list[str], *, failure: str) -> None:
+    """Run a command while retaining domain-specific failure handling."""
+    result = run_cmd(cmd, check=False, capture=True)
+    if result is None or result.returncode != 0:
+        raise BaseImageError(failure)
+
+
+def _create_transfer_bucket(project: str, region: str) -> str:
+    """Create and return one private, run-owned transfer bucket."""
+    bucket = f"shifter-base-import-{project}-{uuid.uuid4().hex[:12]}"
+    if len(bucket) > 63:
+        raise BaseImageError("project ID is too long for the run-owned transfer bucket name")
+    _run_checked(
+        [
+            "gcloud",
+            "storage",
+            "buckets",
+            "create",
+            f"gs://{bucket}",
+            "--project",
+            project,
+            "--location",
+            region,
+            "--uniform-bucket-level-access",
+            "--public-access-prevention",
+            "--soft-delete-duration=0",
+        ],
+        failure=f"failed to create run-owned base-image transfer bucket {bucket}",
+    )
+    return bucket
+
+
+def _delete_transfer_bucket(project: str, bucket: str) -> None:
+    """Delete every object/version and the exact run-owned bucket."""
+    _run_checked(
+        ["gcloud", "storage", "rm", "--recursive", f"gs://{bucket}/", "--project", project, "--quiet"],
+        failure=f"base-image transfer cleanup failed for run-owned bucket {bucket}",
+    )
+
+
 def discover_and_import(
     *,
     project: str,
-    staging_bucket: str,
+    region: str = "us-central1",
     roles: tuple[str, ...] = BASE_IMAGE_ROLES,
     dry_run: bool = False,
 ) -> dict[str, ImportedImage]:
@@ -357,9 +526,32 @@ def discover_and_import(
     Packer bake, no blind accept).
     """
     header("Reusable GCE base images (GHCR -> native GCE)")
-    imported: dict[str, ImportedImage] = {}
+    artifacts: list[ResolvedArtifact] = []
     for role in roles:
         artifact = resolve_artifact(role)
         info(f"Resolved '{role}' -> {artifact.pinned_reference} (build {artifact.revision[:12]})")
-        imported[role] = import_base_image(artifact, project=project, staging_bucket=staging_bucket, dry_run=dry_run)
-    return imported
+        artifacts.append(artifact)
+
+    if dry_run:
+        return {
+            artifact.role: import_base_image(
+                artifact,
+                project=project,
+                staging_bucket="",
+                dry_run=True,
+            )
+            for artifact in artifacts
+        }
+
+    bucket = _create_transfer_bucket(project, region)
+    try:
+        return {
+            artifact.role: import_base_image(
+                artifact,
+                project=project,
+                staging_bucket=bucket,
+            )
+            for artifact in artifacts
+        }
+    finally:
+        _delete_transfer_bucket(project, bucket)
