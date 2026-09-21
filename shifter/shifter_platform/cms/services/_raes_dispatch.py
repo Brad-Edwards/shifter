@@ -153,6 +153,7 @@ def _launch_pack(
     """Select the single SDL entry, dispatch through the port, assert acceptance."""
     from cms.raes.dispatch import CmsRaesDispatchPort
     from shared.raes.package_loader import RaesPackageError, launch_raes_package, resolve_pack_scenario_path
+
     try:
         scenario_path = resolve_pack_scenario_path(pack_root)
     except RaesPackageError as exc:
