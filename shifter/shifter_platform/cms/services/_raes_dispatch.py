@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
     from cms.models import RaesPackageSource
     from shared.range_instantiation_policy import BackendAdmission
+    from shared.runtime_plugin_binding import RuntimePluginScope
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,7 @@ def dispatch_repo_raes_package(
         backend_admission,
         workspace_id,
         egress_mode,
-        source,
-        content_authorizer=content_authorizer,
+        _runtime_plugin_scope(user, workspace_id, source, content_authorizer),
     )
 
 
@@ -128,8 +128,7 @@ def dispatch_object_raes_package(
                 backend_admission,
                 workspace_id,
                 egress_mode,
-                source,
-                content_authorizer=content_authorizer,
+                _runtime_plugin_scope(user, workspace_id, source, content_authorizer),
             )
     except RaesPackageError as exc:
         raise CMSError(f"RAES object package could not be resolved: {exc}") from exc
@@ -149,36 +148,11 @@ def _launch_pack(
     backend_admission: BackendAdmission | None,
     workspace_id: int,
     egress_mode: str,
-    source: RaesPackageSource,
-    *,
-    content_authorizer: User | None = None,
+    plugin_scope: RuntimePluginScope,
 ) -> None:
     """Select the single SDL entry, dispatch through the port, assert acceptance."""
     from cms.raes.dispatch import CmsRaesDispatchPort
     from shared.raes.package_loader import RaesPackageError, launch_raes_package, resolve_pack_scenario_path
-    from shared.runtime_plugin_binding import RuntimePluginScope
-    from workspaces.services import WorkspaceOperation, authorize_bound_workspace
-
-    authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
-    organization_uuid = authorization.organization_uuid
-    if source.organization_uuid is not None and content_authorizer is not None:
-        from cms.scenarios.registry import check_scenario_access
-
-        # Re-prove the explicit CTF event owner's tenant-pack access at the
-        # dispatch boundary. Keep the range in the participant's personal
-        # workspace while binding the adapter in the pack's owning organization.
-        check_scenario_access(source.scenario_id, content_authorizer)
-        organization_uuid = source.organization_uuid
-    elif source.organization_uuid is not None and source.organization_uuid != organization_uuid:
-        raise CMSError("The pack is unavailable in this workspace")
-    if organization_uuid is None:
-        raise CMSError("The workspace has no organization binding")
-    plugin_scope = RuntimePluginScope(
-        organization_uuid=organization_uuid,
-        pack_id=source.scenario_id,
-        pack_digest=source.package_digest,
-    )
-
     try:
         scenario_path = resolve_pack_scenario_path(pack_root)
     except RaesPackageError as exc:
@@ -202,3 +176,33 @@ def _launch_pack(
     if not result.accepted:
         logger.warning("create_raes_native_range: dispatch not accepted request_id=%s", request_id)
         raise CMSError("RAES provisioning was not accepted")
+
+
+def _runtime_plugin_scope(
+    user: User,
+    workspace_id: int,
+    source: RaesPackageSource,
+    content_authorizer: User | None,
+) -> RuntimePluginScope:
+    """Authorize the workspace and bind the pack's tenant adapter scope."""
+    from cms.scenarios.registry import check_scenario_access
+    from shared.runtime_plugin_binding import RuntimePluginScope
+    from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+    authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+    organization_uuid = authorization.organization_uuid
+    if source.organization_uuid is not None and content_authorizer is not None:
+        # Re-prove the explicit CTF event owner's tenant-pack access at the
+        # dispatch boundary. Keep the range in the participant's personal
+        # workspace while binding the adapter in the pack's owning organization.
+        check_scenario_access(source.scenario_id, content_authorizer)
+        organization_uuid = source.organization_uuid
+    elif source.organization_uuid is not None and source.organization_uuid != organization_uuid:
+        raise CMSError("The pack is unavailable in this workspace")
+    if organization_uuid is None:
+        raise CMSError("The workspace has no organization binding")
+    return RuntimePluginScope(
+        organization_uuid=organization_uuid,
+        pack_id=source.scenario_id,
+        pack_digest=source.package_digest,
+    )
