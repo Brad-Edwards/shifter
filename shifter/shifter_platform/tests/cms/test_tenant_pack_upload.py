@@ -3,6 +3,7 @@
 import io
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -217,7 +218,7 @@ def test_failed_registration_cleans_only_its_new_upload(upload):
 
 def test_pack_cannot_be_launched_in_another_organization_workspace(upload, tenant):
     from cms.exceptions import CMSError
-    from cms.services._raes_dispatch import _launch_pack
+    from cms.services._raes_dispatch import _runtime_plugin_scope
     from workspaces.models import Workspace, WorkspaceMembership
 
     client, organization, root, _ = upload
@@ -226,8 +227,40 @@ def test_pack_cannot_be_launched_in_another_organization_workspace(upload, tenan
     workspace = Workspace.objects.create(organization=other, name="Other workspace")
     WorkspaceMembership.objects.create(workspace=workspace, user=tenant[0], role="owner")
     with pytest.raises(CMSError, match="unavailable in this workspace"):
-        _launch_pack(uuid4(), tenant[0], root, None, workspace.pk, "status-quo", RaesPackageSource.objects.get())
+        _runtime_plugin_scope(tenant[0], workspace.pk, RaesPackageSource.objects.get(), None)
     assert not Range.objects.exists()
+
+
+def test_ctf_event_owner_binds_tenant_adapter_for_participant_workspace(upload, tenant, monkeypatch):
+    from cms.services._raes_dispatch import _launch_pack, _runtime_plugin_scope
+    from workspaces.services import resolve_personal_workspace
+
+    client, organization, root, _ = upload
+    owner, _ = tenant
+    _post(client, organization, root)
+    source = RaesPackageSource.objects.get()
+    participant = User.objects.create_user(username="ctf-participant")
+    workspace = resolve_personal_workspace(participant)
+    captured = {}
+
+    def launch(**kwargs):
+        captured["scope"] = kwargs["port"].runtime_plugin_scope
+        return SimpleNamespace(accepted=True)
+
+    monkeypatch.setattr("shared.raes.package_loader.launch_raes_package", launch)
+    plugin_scope = _runtime_plugin_scope(participant, workspace.workspace_id, source, owner)
+    _launch_pack(
+        uuid4(),
+        participant,
+        root,
+        None,
+        workspace.workspace_id,
+        "status-quo",
+        plugin_scope,
+    )
+
+    assert captured["scope"].organization_uuid == organization.uuid
+    assert captured["scope"].pack_id == source.scenario_id
 
 
 def test_pack_revision_requires_existing_identity(upload):
