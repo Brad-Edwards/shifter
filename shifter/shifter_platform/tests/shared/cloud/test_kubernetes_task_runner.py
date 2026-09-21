@@ -294,6 +294,50 @@ class TestStatusAndInterrupt:
         assert disposition == TaskInterruptDisposition.TERMINAL_ABSENT
         assert batch_api.delete_namespaced_job.call_args.kwargs["body"].propagation_policy == "Foreground"
 
+    def test_completed_task_cleanup_background_deletes_exact_terminal_job(self) -> None:
+        task_identity = "11111111-1111-1111-1111-111111111111"
+        observed = _observed_job(task_identity=task_identity, image="img:1", command=["c"], service_account_name="sa")
+        observed.status = SimpleNamespace(succeeded=1, failed=0)
+        batch_api = MagicMock()
+        batch_api.read_namespaced_job_status.return_value = observed
+        runner = _runner(_profile(), batch_api, MagicMock())
+
+        runner.delete_completed_task(
+            "ns",
+            f"ns/{observed.metadata.name}",
+            {
+                "task_identity": task_identity,
+                "image": "img:1",
+                "command": ["c"],
+                "container_name": "pulumi-provisioner",
+                "service_account_name": "sa",
+            },
+        )
+
+        assert batch_api.delete_namespaced_job.call_args.kwargs["body"].propagation_policy == "Background"
+
+    def test_completed_task_cleanup_rejects_an_active_job(self) -> None:
+        task_identity = "11111111-1111-1111-1111-111111111111"
+        observed = _observed_job(task_identity=task_identity, image="img:1", command=["c"], service_account_name="sa")
+        observed.status = SimpleNamespace(succeeded=0, failed=0)
+        batch_api = MagicMock()
+        batch_api.read_namespaced_job_status.return_value = observed
+        runner = _runner(_profile(), batch_api, MagicMock())
+
+        with pytest.raises(CloudTaskError, match="terminal evidence"):
+            runner.delete_completed_task(
+                "ns",
+                f"ns/{observed.metadata.name}",
+                {
+                    "task_identity": task_identity,
+                    "image": "img:1",
+                    "command": ["c"],
+                    "container_name": "pulumi-provisioner",
+                    "service_account_name": "sa",
+                },
+            )
+        batch_api.delete_namespaced_job.assert_not_called()
+
 
 class TestNeutralPackageHasNoProviderCoupling:
     """Structural gate for the #1824 acceptance criterion: the shared runner has

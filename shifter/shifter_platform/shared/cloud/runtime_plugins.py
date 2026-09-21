@@ -79,8 +79,14 @@ def launch_plugin(
 def observe_plugin(request: RuntimeInput | InspectionInput) -> RuntimePlan | InspectionResult | None:
     """A malformed or replayed response never becomes an accepted result."""
     runner = KubernetesTaskRunner(plugin_task_profile())
-    raw = runner.get_task_output(PLUGIN_NAMESPACE, plugin_task_ref(request), plugin_task_identity(request))
-    return None if raw is None else parse_result(raw, request)
+    task_ref = plugin_task_ref(request)
+    identity = plugin_task_identity(request)
+    raw = runner.get_task_output(PLUGIN_NAMESPACE, task_ref, identity)
+    if raw is None:
+        return None
+    result = parse_result(raw, request)
+    runner.delete_completed_task(PLUGIN_NAMESPACE, task_ref, identity)
+    return result
 
 
 def interrupt_plugin(request: RuntimeInput | InspectionInput) -> str:
