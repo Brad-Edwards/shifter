@@ -512,11 +512,20 @@ the real values via a gitignored `local.auto.tfvars` (Terraform auto-loads
 ```bash
 cat > platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars <<'EOF'
 project_id                  = "<your-gcp-project-id>"
+dynamic_secret_project_id   = "<your-gcp-project-id>"
 public_hostname             = "shifter.<your-domain>"
 enable_managed_tls          = true
 gke_master_authorized_cidrs = []
 EOF
 ```
+
+Treat an existing `local.auto.tfvars` as deployment state, not as a reusable
+sample. Before bootstrap, replace every tenant-bound value left by an earlier
+project, especially `project_id`, `dynamic_secret_project_id`, and
+`public_hostname`. Terraform auto-loads this file and its values drive the
+ingress and managed certificate; selecting a different `shifter.yaml` does not
+override a stale hostname here. Confirm the hostname in both inputs agrees
+before applying so bootstrap does not stop at DNS/TLS for the previous tenant.
 
 For CI deploys the equivalent values come from GitHub secrets; see
 [`docs/dev/deploy-secrets.md`](../../dev/deploy-secrets.md).

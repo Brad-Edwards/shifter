@@ -197,7 +197,11 @@ default; their state addresses and existing image network remain unchanged.
 4. Bootstrap the GKE control plane and GCE range plane with one local command.
    On a fresh project, opt into the public base-image import so the exact image
    references are available to the same process before platform preconditions
-   run:
+   run. Before invoking it, replace any stale tenant values in the gitignored
+   `platform/terraform/gcp/environments/<env>/local.auto.tfvars`; in particular,
+   `project_id`, `dynamic_secret_project_id`, and `public_hostname` must describe
+   the selected tenant. Terraform auto-loads that file, and `shifter.yaml` does
+   not override its ingress hostname:
 
    ```bash
    ./scripts/bootstrap/deploy.py gdc-bootstrap \
