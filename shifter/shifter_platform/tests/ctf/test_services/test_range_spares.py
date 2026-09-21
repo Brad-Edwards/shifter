@@ -43,7 +43,7 @@ def spare_pool_scenario(organizer_user, monkeypatch) -> RaesPackageSource:
     """A conformance-passed RAES source with cloud dispatch held at the seam."""
     monkeypatch.setattr("engine.services._raes_range.start_raes_range_provisioning", lambda *_a, **_kw: None)
 
-    def dispatch(request_id, user, _source, backend_admission, workspace_id, egress_mode):
+    def dispatch(request_id, user, _source, backend_admission, workspace_id, egress_mode, **_kwargs):
         from engine.services import create_raes_range
 
         create_raes_range(

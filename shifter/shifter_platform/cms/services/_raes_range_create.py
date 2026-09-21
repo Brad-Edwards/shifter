@@ -75,6 +75,8 @@ def _dispatch_raes_package(
     backend_admission: BackendAdmission | None,
     workspace_id: int,
     egress_mode: str,
+    *,
+    content_authorizer: User | None = None,
 ) -> None:
     """Resolve, verify, load, plan, and dispatch one registered RAES pack.
 
@@ -90,9 +92,25 @@ def _dispatch_raes_package(
     from cms.services._raes_dispatch import dispatch_object_raes_package, dispatch_repo_raes_package
 
     if source.source_kind == _OBJECT_SOURCE_KIND:
-        dispatch_object_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        dispatch_object_raes_package(
+            request_id,
+            user,
+            source,
+            backend_admission,
+            workspace_id,
+            egress_mode,
+            content_authorizer=content_authorizer,
+        )
     else:
-        dispatch_repo_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        dispatch_repo_raes_package(
+            request_id,
+            user,
+            source,
+            backend_admission,
+            workspace_id,
+            egress_mode,
+            content_authorizer=content_authorizer,
+        )
 
 
 def _audit_raes_range_provision(request_id: UUID, scenario: str, user: User, range_source: RangeSource) -> None:
@@ -361,7 +379,18 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
             subject=model_admission_subject,
             package_digest=source.package_digest,
         )
-        _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        if content_authorizer is None:
+            _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        else:
+            _dispatch_raes_package(
+                request_id,
+                user,
+                source,
+                backend_admission,
+                workspace_id,
+                egress_mode,
+                content_authorizer=content_authorizer,
+            )
     except Exception:
         # Dispatch failed before an Engine lifecycle can converge, so mark the
         # range FAILED and release the open concurrent-range reservation as one
