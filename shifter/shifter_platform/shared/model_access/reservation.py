@@ -161,9 +161,7 @@ class ModelLaunchScope(ClosedModel):
         expected_kind = "event" if self.system_preparation.kind == "ctf_spare" else "warm"
         if self.kind != expected_kind or authority not in refs:
             raise ValueError("system preparation scope authority missing")
-        if self.kind == "event" and OwnedReference(
-            owner="ctf", reference=f"event-launch:{self.scope_id}"
-        ) not in refs:
+        if self.kind == "event" and OwnedReference(owner="ctf", reference=f"event-launch:{self.scope_id}") not in refs:
             raise ValueError("system preparation requires event authority")
 
     @model_validator(mode="after")
