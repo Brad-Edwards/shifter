@@ -68,6 +68,7 @@ def _rebuild_replacement(participant: CTFParticipant, model_subject: OwnedRefere
     published range-scoped restriction.
     """
     from ctf.bridges import CTFRangeLaunchOptions, cms_create_range, cms_find_range_instance_id
+    from ctf.services.range.workspace import event_launch_workspace_uuid
 
     user = _participant_user(participant)
     event = participant.event
@@ -87,6 +88,7 @@ def _rebuild_replacement(participant: CTFParticipant, model_subject: OwnedRefere
                 model_admission_subject=model_subject,
                 model_launch_scope=project_event_model_scope(event, participant.pk, model_subject),
                 content_authorizer=event.created_by,
+                content_workspace_uuid=event_launch_workspace_uuid(event),
             ),
         )
     except Exception as e:
