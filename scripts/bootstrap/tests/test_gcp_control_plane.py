@@ -1060,9 +1060,13 @@ class TestGdcControlPlaneHelmValues:
         pod = job["spec"]["template"]["spec"]
         assert pod["serviceAccountName"] == "migrator"
         container = pod["containers"][0]
-        # Entrypoint migrates first; then register the shipped catalog through
-        # the same idempotent command used by the deploy workflow.
-        assert container["args"] == ["python", "manage.py", "bootstrap_inbox_catalog"]
+        # Entrypoint migrates first; then register the shipped catalog and base
+        # image mappings through the same idempotent commands used by deploy.
+        assert container["args"] == [
+            "/bin/sh",
+            "-c",
+            "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+        ]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
         temp_dir = next(item for item in container["env"] if item["name"] == "TMPDIR")["value"]

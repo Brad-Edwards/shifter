@@ -71,7 +71,7 @@ class _GcpBootstrapProcess:
             destination.write_bytes(b"rawdisk")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         if cmd[:4] == ["gcloud", "compute", "images", "describe"]:
-            if "--format=json(description,labels,status)" in cmd:
+            if "--format=json(description,labels,status,guestOsFeatures)" in cmd:
                 return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not found")
             if "--format=value(status)" in cmd:
                 return subprocess.CompletedProcess(cmd, 0, stdout="READY\n", stderr="")
