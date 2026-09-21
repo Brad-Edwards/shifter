@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import GCERangeCellConfig, GCERangeImageProfile
+from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
 from raes_account_credentials import RaesAccountCredentialOps, install_instance_account_credentials
@@ -390,6 +390,48 @@ class TestApply:
         secret_ops, _ = _secret_ops()
         apply_raes_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
         assert not clients.instances.insert.called
+
+    def test_machine_image_clone_uses_source_and_owns_every_attached_disk(self):
+        profile = GCERangeImageProfile(
+            source_machine_image="projects/proj-1/global/machineImages/nested-host-v1",
+            machine_type="n2-standard-8",
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            host_ssh_port=2222,
+        )
+        clients = _clients()
+        created = SimpleNamespace(
+            disks=[
+                SimpleNamespace(device_name="boot", auto_delete=True),
+                SimpleNamespace(device_name="nested-data", auto_delete=False),
+            ]
+        )
+        clients.instances.get.side_effect = [_NotFound(), created]
+        clients.instances.set_disk_auto_delete.return_value = SimpleNamespace(name="op")
+        secret_ops, _ = _secret_ops()
+        plan = _plan()
+        plan = replace(plan, nodes=(replace(plan.nodes[0], count=1),))
+
+        apply_raes_range_cell(
+            "req-1",
+            7,
+            plan,
+            lambda _node: profile,
+            _apply_options(_config(), clients, secret_ops),
+        )
+
+        request = clients.instances.insert.call_args.kwargs["request"]
+        assert request["source_machine_image"] == profile.source_machine_image
+        assert "disks" not in request["instance_resource"]
+        clients.instances.set_disk_auto_delete.assert_called_once_with(
+            project="proj-1",
+            zone="us-east1-b",
+            instance=request["instance_resource"]["name"],
+            device_name="nested-data",
+            auto_delete=True,
+        )
 
     def test_apply_failure_triggers_cleanup_and_reraises(self):
         clients = _clients(instance_insert_error=RuntimeError("boom"))

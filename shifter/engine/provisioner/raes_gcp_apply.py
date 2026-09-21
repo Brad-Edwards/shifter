@@ -37,6 +37,7 @@ from gcp_range_cell_resources import instance_resource
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cells import (
     _ensure_address,
+    _ensure_attached_disks_auto_delete,
     _ensure_firewall,
     _ensure_network,
     _ensure_router_nat,
@@ -149,14 +150,16 @@ def _ensure_raes_instance(
         verify_prepared_source(plan, instance, clients)
     secret_ref, public_key = secret_ops.ensure_ssh(plan["range_id"], instance["uuid"])
     if existing is not None:
+        if instance["profile"].source_machine_image:
+            _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return secret_ref, public_key, _host_public_key_from_instance(existing)
 
     host_private_key, host_public_key = generate_ssh_host_keypair()
     host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
-    operation = clients.instances.insert(
-        project=plan["project_id"],
-        zone=plan["zone"],
-        instance_resource=instance_resource(
+    insert_kwargs: dict[str, object] = {
+        "project": plan["project_id"],
+        "zone": plan["zone"],
+        "instance_resource": instance_resource(
             plan,
             instance,
             config,
@@ -165,8 +168,24 @@ def _ensure_raes_instance(
             host_public_key=host_public_key,
             composition_script=bootstrap_by_node.get(_node_address_of(instance), ""),
         ),
-    )
+    }
+    if instance["profile"].source_machine_image:
+        operation = clients.instances.insert(
+            request={
+                **insert_kwargs,
+                "source_machine_image": instance["profile"].source_machine_image,
+            }
+        )
+    else:
+        operation = clients.instances.insert(**insert_kwargs)
     _wait_for_operation(plan, clients, operation, "zone")
+    if instance["profile"].source_machine_image:
+        created = clients.instances.get(
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=name,
+        )
+        _ensure_attached_disks_auto_delete(plan, clients, name, created)
     return secret_ref, public_key, host_public_key
 
 
