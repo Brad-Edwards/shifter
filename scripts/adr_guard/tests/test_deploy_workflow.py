@@ -796,6 +796,14 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn("${RUNNER_TEMP}/gcp-release-security/running-pods.json", workflow)
         self.assertIn("Remove ephemeral deployment evidence", workflow)
 
+    def test_gcp_deploy_waits_for_superseded_pods_before_image_evidence(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+
+        wait = "select(.metadata.deletionTimestamp != null)"
+        record = "Record running workload image IDs"
+        self.assertIn(wait, workflow)
+        self.assertLess(workflow.index(wait), workflow.index(record))
+
     def test_gcp_promotion_authenticates_redacted_verdict_before_private_evidence(self):
         validate = (REPO_ROOT / ".github/workflows/packer-gcp-validate.yml").read_text(encoding="utf-8")
         promote = (REPO_ROOT / ".github/workflows/packer-gcp-promote.yml").read_text(encoding="utf-8")

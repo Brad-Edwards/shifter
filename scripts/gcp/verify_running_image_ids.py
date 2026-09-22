@@ -114,6 +114,8 @@ def _pod_identity(
     labels = metadata.get("labels", {})
     if not pod_name or not isinstance(labels, dict):
         raise ValueError("pod inventory contains an unnamed or unlabeled pod")
+    if metadata.get("deletionTimestamp") is not None:
+        raise ValueError(f"terminating release pod remains in the runtime inventory: {pod_name}")
     if labels.get("app.kubernetes.io/part-of") != "shifter":
         raise ValueError(f"unexpected pod outside the closed Shifter release set: {pod_name}")
     component = str(labels.get("app.kubernetes.io/component", ""))
