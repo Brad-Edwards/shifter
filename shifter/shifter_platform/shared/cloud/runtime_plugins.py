@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 PLUGIN_NAMESPACE = "shifter-plugins"
 PLUGIN_CONTAINER = "runtime-plugin"
 PLUGIN_SERVICE_ACCOUNT = "plugin-worker"
+_CLEANUP_FAILURE_REASONS = {
+    "Task cleanup identity mismatch": "identity-mismatch",
+    "Task cleanup requires terminal evidence": "not-terminal",
+    "Task cleanup is unavailable": "provider-unavailable",
+}
 
 
 def plugin_task_profile(*, image_pull_secret: str = "") -> KubernetesTaskProfile:
@@ -96,12 +101,13 @@ def observe_plugin(request: RuntimeInput | InspectionInput) -> RuntimePlan | Ins
     result = parse_result(raw, request)
     try:
         runner.delete_completed_task(PLUGIN_NAMESPACE, task_ref, identity)
-    except CloudTaskError:
+    except CloudTaskError as exc:
         # Do not turn an already-consumed, valid plugin response into an
         # installation/provisioning failure. The Job has a bounded TTL, and the
         # stable task reference is sufficient for operators to diagnose cleanup
         # without exposing plugin output or provider diagnostics.
-        logger.warning("observe_plugin: terminal cleanup deferred task_ref=%s", task_ref)
+        reason = _CLEANUP_FAILURE_REASONS.get(str(exc), "unavailable")
+        logger.warning("observe_plugin: terminal cleanup deferred task_ref=%s reason=%s", task_ref, reason)
     return result
 
 

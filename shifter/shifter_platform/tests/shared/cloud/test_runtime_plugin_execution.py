@@ -46,4 +46,5 @@ def test_valid_result_survives_deferred_terminal_cleanup(monkeypatch, caplog):
 
     assert observe_plugin(request) == expected
     assert "terminal cleanup deferred" in caplog.text
+    assert "reason=unavailable" in caplog.text
     assert "provider detail" not in caplog.text
