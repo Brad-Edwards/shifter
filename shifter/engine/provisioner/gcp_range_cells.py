@@ -215,6 +215,39 @@ def _ensure_attached_disks_auto_delete(
         _wait_for_operation(plan, clients, operation, "zone")
 
 
+def _insert_instance(
+    plan: RangeCellPlan,
+    clients: GCEClients,
+    instance: InstancePlan,
+    instance_body: ResourceDict,
+) -> None:
+    """Insert an instance and finalize ownership of machine-image disks."""
+    insert_kwargs: dict[str, object] = {
+        "project": plan["project_id"],
+        "zone": plan["zone"],
+        "instance_resource": instance_body,
+    }
+    if instance["profile"].source_machine_image:
+        # The generated Compute client does not expose source_machine_image as
+        # a flattened keyword. It is accepted only through InsertInstanceRequest.
+        operation = clients.instances.insert(
+            request={
+                **insert_kwargs,
+                "source_machine_image": instance["profile"].source_machine_image,
+            }
+        )
+    else:
+        operation = clients.instances.insert(**insert_kwargs)
+    _wait_for_operation(plan, clients, operation, "zone")
+    if instance["profile"].source_machine_image:
+        created = clients.instances.get(
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=instance["resource_name"],
+        )
+        _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], created)
+
+
 def _ensure_instance(
     plan: RangeCellPlan,
     clients: GCEClients,
@@ -270,10 +303,11 @@ def _ensure_instance(
 
     host_private_key, host_public_key = generate_ssh_host_keypair()
     host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
-    insert_kwargs: dict[str, object] = {
-        "project": plan["project_id"],
-        "zone": plan["zone"],
-        "instance_resource": instance_resource(
+    _insert_instance(
+        plan,
+        clients,
+        instance,
+        instance_resource(
             plan,
             instance,
             config,
@@ -281,26 +315,7 @@ def _ensure_instance(
             host_private_key_b64=host_private_key_b64,
             host_public_key=host_public_key,
         ),
-    }
-    if instance["profile"].source_machine_image:
-        # The generated Compute client does not expose source_machine_image as
-        # a flattened keyword. It is accepted only through InsertInstanceRequest.
-        operation = clients.instances.insert(
-            request={
-                **insert_kwargs,
-                "source_machine_image": instance["profile"].source_machine_image,
-            }
-        )
-    else:
-        operation = clients.instances.insert(**insert_kwargs)
-    _wait_for_operation(plan, clients, operation, "zone")
-    if instance["profile"].source_machine_image:
-        created = clients.instances.get(
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=name,
-        )
-        _ensure_attached_disks_auto_delete(plan, clients, name, created)
+    )
     return host_secret_ref, participant_ssh_secret_ref, rdp_password_secret_ref, scenario_public_key, host_public_key
 
 

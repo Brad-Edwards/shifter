@@ -25,7 +25,27 @@ def test_event_scope_carries_server_window_draw_and_authority(ctf_event, setting
     assert scope.draw_key == draw
     assert scope.subject_ref == subject
     assert scope.window_end == ctf_event.get_cleanup_time()
-    assert scope.authority_revisions[0].authority_ref.reference == f"event:{ctf_event.pk}"
+    assert scope.authority_revisions[0].authority_ref.reference == f"event-launch:{ctf_event.pk}"
+
+
+def test_participant_range_realization_refreshes_selectors_without_revoking_launch(ctf_participant, monkeypatch):
+    from ctf.signals import _PARTICIPANT_AUTHORITY_FIELDS, invalidate_participant_model_access
+
+    captured = []
+    monkeypatch.setattr("ctf.bridges.cms_invalidate_model_access_authority", captured.append)
+    ctf_participant._model_access_authority_before = {  # type: ignore[attr-defined]
+        field: getattr(ctf_participant, field) for field in _PARTICIPANT_AUTHORITY_FIELDS
+    }
+    ctf_participant.range_instance_id = 41
+
+    invalidate_participant_model_access(type(ctf_participant), ctf_participant)
+
+    assert len(captured) == 1
+    assert captured[0].allocation_effect == "selector_only"
+    references = {item.reference for item in captured[0].authority_refs}
+    assert f"event:{ctf_participant.event_id}" in references
+    assert f"participant:{ctf_participant.pk}" not in references
+    assert f"event-launch:{ctf_participant.event_id}" not in references
 
 
 def test_invalid_demand_is_not_dropped_by_enforcing_path(ctf_event, settings):
