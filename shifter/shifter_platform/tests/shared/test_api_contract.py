@@ -72,30 +72,6 @@ class TestExclusionHook:
 
 
 class TestPublishedContract:
-    def test_personal_credential_operations_advertise_only_session_auth(self, openapi_document):
-        paths = openapi_document["paths"]
-        collection = paths["/api/v1/credentials/personal/"]
-        operations = [collection["get"], collection["post"]]
-        for action in ("revoke", "rotate"):
-            operations.append(paths[f"/api/v1/credentials/personal/{{credential_uuid}}/{action}/"]["post"])
-        assert all(operation["security"] == [{"cookieAuth": []}] for operation in operations)
-
-    @pytest.mark.parametrize("collection", ["personal", "services"])
-    def test_credential_collections_publish_bounded_pagination(self, openapi_document, collection):
-        operation = openapi_document["paths"][f"/api/v1/credentials/{collection}/"]["get"]
-        parameters = {item["name"]: item for item in operation.get("parameters", [])}
-        for name, default, minimum, maximum in (("offset", 0, 0, 100000), ("limit", 50, 1, 200)):
-            assert name in parameters
-            parameter = parameters[name]
-            assert parameter["in"] == "query"
-            assert not parameter.get("required", False)
-            assert parameter["schema"] == {
-                "type": "integer",
-                "default": default,
-                "minimum": minimum,
-                "maximum": maximum,
-            }
-
     def test_ctf_surface_published(self, openapi_document: dict[str, Any]) -> None:
         # CTF joined the published contract when its SPA consumer (#1372) landed.
         paths = openapi_document["paths"]

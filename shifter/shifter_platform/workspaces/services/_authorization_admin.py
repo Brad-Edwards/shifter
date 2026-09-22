@@ -168,7 +168,6 @@ def _audit_metadata(item: AuthorizationGroup | AuthorizationPolicy, audit: Reque
             action=AuditAction.CREATE,
             actor_type=audit.actor_type or "system",
             actor_id=audit.actor_id,
-            actor_principal_uuid=audit.actor_principal_uuid,
             new_state={"name": item.name, "scope_kind": item.scope_kind},
             context="authorization_admin",
             source_ip=audit.source_ip,

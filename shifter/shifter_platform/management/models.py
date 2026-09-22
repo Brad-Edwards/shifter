@@ -320,37 +320,3 @@ class ProviderBinding(models.Model):
             ):
                 raise PrincipalConflictError("Provider binding is immutable")
         super().save(*args, **kwargs)
-
-
-class ServiceCredentialAdmission(models.Model):
-    """Administrator-configured limits for one native service identity."""
-
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    binding = models.ForeignKey(ProviderBinding, on_delete=models.PROTECT, related_name="service_admissions")
-    audience = models.URLField(max_length=500)
-    scopes = models.JSONField(default=list)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        """Service credentials store admission metadata, never provider secrets."""
-
-        db_table = "management_service_credential_admission"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["binding", "audience"],
-                condition=models.Q(is_active=True),
-                name="unique_active_service_admission",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"service-credential:{self.uuid}"
-
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        if self.pk:
-            fields = ("binding_id", "audience", "scopes", "uuid")
-            previous = type(self).objects.filter(pk=self.pk).values(*fields).first()
-            if previous is None or any(previous[field] != getattr(self, field) for field in fields):
-                raise PrincipalConflictError("Service admission is immutable; disable and register a new binding")
-        super().save(*args, **kwargs)

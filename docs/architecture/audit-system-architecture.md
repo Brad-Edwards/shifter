@@ -50,7 +50,7 @@ Django admin exposes the same rows as read-only records. Neither interface
 offers update or delete operations.
 
 The API accepts filters for `entity_type`, `entity_id`, `action`, `actor_type`,
-`actor_id`, `actor_principal_uuid`, `request_id`, `from_date`, and `to_date`. Action and entity values
+`actor_id`, `request_id`, `from_date`, and `to_date`. Action and entity values
 are serialized as strings so rows written with historical vocabulary remain
 readable after the active vocabulary changes.
 
@@ -63,17 +63,6 @@ sequence, recorded time, predecessor digest, target and actor attribution,
 request correlation, state summaries, context, source IP, and user agent. JSON
 object keys are sorted, timestamps are UTC with microsecond precision, NaN and
 non-JSON values are rejected, and the encoded bytes are hashed with SHA-256.
-
-Version 2 adds `actor_principal_uuid` to the hashed payload. Neutral credential
-mutations use `actor_type=principal`, a nonzero principal UUID and no integer
-actor ID. HTTP user/API-key attribution keeps its incumbent type and integer ID
-and supplements it with the authenticated principal UUID. System events cannot
-carry a principal UUID. This indexed field is validated by the writer, exported
-with each record, and available through the staff API and audit UI; it is never
-inferred from client-provided actor fields or buried in state summaries.
-
-The verifier supports historical v1 followed by v2 in the same chain, refuses
-version regression or unknown versions, and preserves the exact v1 byte profile.
 
 The event validator accepts only active vocabulary for new writes, bounded
 single-line context/reference fields, non-negative identifiers, recursively
@@ -152,17 +141,6 @@ privileges. It resolves the audit table's owned identity sequence instead of
 assuming a sequence name, preserving upgrades whose table was renamed from the
 retired app. It fails the migration rather than omitting an uncanonicalizable
 legacy row.
-
-Migration `shared.0029_principal_audit_attribution` adds the nullable, indexed
-actor UUID and advances only the head's future append profile to v2. It never
-rewrites historical rows or digests. The migration owner briefly changes the head
-under its exclusive lock inside the atomic migration and reinstates the same
-guard before commit; runtime privileges are unchanged. Downgrade refuses once
-any v2 record exists because dropping the UUID would destroy committed evidence.
-The corresponding workspace journal migration also refuses downgrade after
-principal attribution has been recorded in an authorization operation.
-This source ships under ADR-066's coordinated S8 cutover: old writers reject a
-v2 head, so a mixed-writer rolling deployment is not supported.
 
 ## Adding an event
 

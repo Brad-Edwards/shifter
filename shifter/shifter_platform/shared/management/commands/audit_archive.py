@@ -116,9 +116,6 @@ class Command(BaseCommand):
                         "action": record.action,
                         "actor_type": record.actor_type,
                         "actor_id": record.actor_id,
-                        "actor_principal_uuid": str(record.actor_principal_uuid)
-                        if record.actor_principal_uuid
-                        else None,
                         "timestamp": record.timestamp.isoformat(),
                         "previous_state": record.previous_state,
                         "new_state": record.new_state,

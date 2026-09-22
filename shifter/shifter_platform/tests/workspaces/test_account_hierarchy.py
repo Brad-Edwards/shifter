@@ -27,16 +27,6 @@ pytestmark = pytest.mark.django_db
 User = get_user_model()
 
 
-def test_account_credential_target_rejects_invalid_individual_subdivisions():
-    from workspaces.services import hierarchy_target_scope
-
-    account = create_account(kind="individual", name="Person", owner=PrincipalRef(uuid4(), "human"))
-    assert hierarchy_target_scope("account", account.uuid) == ResourceScope("account", account.uuid)
-    Organization.objects.create(account_id=account.id, name="Invalid subdivision")
-    with pytest.raises(AccountScopeError):
-        hierarchy_target_scope("account", account.uuid)
-
-
 def test_individual_account_has_direct_owner_and_no_subdivisions_or_implicit_grant():
     owner = PrincipalRef(uuid=uuid4(), kind="human")
     account = create_account(kind="individual", name="A person", owner=owner)
@@ -99,10 +89,7 @@ def test_service_account_membership_survives_contact_removal_without_rekeying():
     add_account_member(account.uuid, service)
 
     set_service_contact(service, None)
-    from management.services import mark_user_deleted
-
-    mark_user_deleted(creator)
-    assert creator.identity_principal.user_id == creator.pk
+    creator.delete()
 
     assert AccountMembership.objects.filter(account_id=account.id, principal_uuid=service.uuid).count() == 1
     assert resolve_resource_scope(ResourceScope(kind="account", account_uuid=account.uuid)).account_id == account.id

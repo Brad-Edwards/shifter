@@ -185,7 +185,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     { audience: "organizer", permissionPolicy: "authenticated", ownerApp: "mission_control", external: true },
     [
       { surface: "Overview", routeName: "home", ownerApp: "config", purpose: "Role-aware operational dashboard.", routePath: "/", iconKey: "layout-dashboard", external: false },
-      { surface: "Access credentials", routeName: "access_credentials", ownerApp: "management", purpose: "Manage personal tokens and independent service identities.", routePath: "/access-credentials/", iconKey: "key-round", external: false },
       { surface: "Ranges", routeName: "mission_control:dashboard", purpose: "Launch and monitor ranges.", routePath: "/mission-control/", iconKey: "server", activeContext: "range", external: false },
       { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_admin", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event", external: false },
       {

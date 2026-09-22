@@ -63,7 +63,6 @@ if (configScript) {
               projectId: config.projectId,
           });
     const auth = getAuth(app);
-    if (config.tenantId) auth.tenantId = config.tenantId;
 
     let handlingAuthState = false;
     let pendingTotpSecret = null;

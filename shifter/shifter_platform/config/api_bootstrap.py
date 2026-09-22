@@ -37,7 +37,6 @@ from shared.auth import (
     is_ctf_participant,
     is_ctf_participant_only,
 )
-from shared.credentials import CredentialContext
 from workspaces.services import list_administrable_organizations
 
 if TYPE_CHECKING:
@@ -172,19 +171,7 @@ class BootstrapView(APIView):
     @extend_schema(responses=BootstrapSerializer, operation_id="api_v1_bootstrap_retrieve")
     def get(self, request: Request) -> Response:
         auth = getattr(request, "auth", None)
-        principal: dict[str, object]
-        if isinstance(auth, CredentialContext):
-            principal = {
-                "id": None,
-                "username": str(auth.principal.uuid),
-                "display_name": "Service principal",
-                "is_authenticated": True,
-                "is_staff": False,
-                "is_superuser": False,
-            }
-            can_threat = False
-            session_user = None
-        elif isinstance(auth, ApiToken):
+        if isinstance(auth, ApiToken):
             principal, can_threat = _principal_from_token(auth)
             session_user = None
         else:

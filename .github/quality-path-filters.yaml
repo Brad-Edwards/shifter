@@ -51,7 +51,6 @@ quality_units:
     paths:
       - shifter/shifter_platform/**
       - shifter/shifter_adapter_sdk/**
-      - shifter/shifter_client/**
       - .importlinter
     packages:
       - engine

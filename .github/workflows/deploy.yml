@@ -19,7 +19,6 @@ on:
           - nazgul
           - orthanc
           - sauron
-          - balrog
       gcp_require_active_certificate:
         description: >-
           Fail the GCP deploy if the GKE ManagedCertificate is not Active for the
@@ -276,7 +275,7 @@ jobs:
                 RUN_AWS="true"
                 APPLY_AWS="true"
                 ;;
-              gcp-dev|nazgul|orthanc|sauron|balrog)
+              gcp-dev|nazgul|orthanc|sauron)
                 GCP_ENV="$ENVIRONMENT"
                 GCP_GITHUB_ENV="$ENVIRONMENT"
                 GCP_RELEASE_SCAN_GITHUB_ENV="gcp-release-scan-${ENVIRONMENT#gcp-}"

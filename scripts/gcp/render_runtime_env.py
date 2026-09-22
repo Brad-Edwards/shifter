@@ -468,12 +468,6 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "CLOUD_PROJECT_ID": real_project,
         "IDENTITY_PLATFORM_API_KEY": identity_platform_api_key,
         "IDENTITY_PLATFORM_PROJECT_ID": identity_platform_project_id,
-        # Native service ID tokens are admitted only for this exact portal.
-        "GCP_SERVICE_TOKEN_AUDIENCE": site_url,
-        "IDENTITY_PLATFORM_TENANT_ID": os.environ.get("IDENTITY_PLATFORM_TENANT_ID", "").strip(),
-        "IDENTITY_SESSION_ABSOLUTE_SECONDS": os.environ.get("IDENTITY_SESSION_ABSOLUTE_SECONDS", "28800"),
-        "IDENTITY_SESSION_IDLE_SECONDS": os.environ.get("IDENTITY_SESSION_IDLE_SECONDS", "1800"),
-        "IDENTITY_SESSION_RECHECK_SECONDS": os.environ.get("IDENTITY_SESSION_RECHECK_SECONDS", "300"),
         "IDENTITY_PLATFORM_AUTH_DOMAIN": f"{identity_platform_project_id}.firebaseapp.com",
         # Allow-list rendered from the same Terraform outputs the provider-side
         # blocking function uses, so both enforce one policy.

@@ -18,7 +18,7 @@ from shared.enums import RangeSource, RequestType, ResourceStatus
 from shared.models import AuditLog
 from tests.engine.services.conftest import boto3_secrets, make_secrets_client
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
+pytestmark = pytest.mark.django_db
 
 URL = "/api/v1/ctf/range/vpn-profile/"
 STATUS_URL = "/api/v1/ctf/range/status/"

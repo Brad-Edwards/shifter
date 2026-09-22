@@ -9,7 +9,7 @@ from shared.api_tokens.models import ApiToken
 from tests.engine.services.test_preparation_adapters import administrator, grant
 from tests.shared.raes.test_preparation_contract import manifest_payload
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
+pytestmark = pytest.mark.django_db
 __all__ = ["administrator", "grant"]
 URL = "/api/v1/cms/preparation-adapters/"
 

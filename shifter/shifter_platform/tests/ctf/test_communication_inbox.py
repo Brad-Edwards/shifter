@@ -9,7 +9,7 @@ from ctf.models import CTFParticipant, ParticipantReceipt
 from ctf.services.communication import CampaignDraft, create_campaign, release_campaign
 from shared.api_tokens.models import ApiToken
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
+pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture

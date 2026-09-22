@@ -51,7 +51,7 @@ class FakeProvider:
 @pytest.fixture
 def authorization_context(monkeypatch, settings):
     user = get_user_model().objects.create_user(username="authorization-admin", password="test-pass")
-    principal = user.identity_principal
+    principal = Principal.objects.create(kind=Principal.Kind.HUMAN, user=user)
     service = Principal.objects.create(kind=Principal.Kind.SERVICE, name="automation")
     account = Account.objects.create(kind=Account.Kind.TEAM, name="Account")
     organization = Organization.objects.create(account=account, name="Organization")
@@ -59,97 +59,11 @@ def authorization_context(monkeypatch, settings):
     provider = FakeProvider()
     settings.OPENFGA_MODEL_ID = "01J00000000000000000000000"
     monkeypatch.setattr(authorization_views, "configured_authorization_provider", lambda: provider)
-    from shared.authorization import port
-
-    monkeypatch.setattr(port, "_provider_factory", lambda: provider)
     return user, principal, service, workspace, provider
 
 
 def _url(workspace: Workspace, suffix: str) -> str:
     return f"/api/v1/workspaces/{workspace.uuid}/authorization/{suffix}"
-
-
-def test_native_service_authorization_writes_preserve_canonical_actor(authorization_context, monkeypatch, settings):
-    from config import service_identity
-    from management import services
-    from management.models import ProviderBinding, ServiceCredentialAdmission
-    from shared.audit.integrity import verify_audit_chain
-    from workspaces.models import AuthorizationOperation
-
-    _user, _human, service, workspace, _provider = authorization_context
-    principal = services.resolve_principal_uuid(service.uuid)
-    settings.GCP_SERVICE_TOKEN_AUDIENCE = "https://portal.example.test"
-    subject = "123456789012345678901"
-    services.bind_principal_provider_identity(principal, "https://accounts.google.com", subject)
-    ServiceCredentialAdmission.objects.create(
-        binding=ProviderBinding.objects.get(principal=service),
-        audience=settings.GCP_SERVICE_TOKEN_AUDIENCE,
-        scopes=list(AUTHORIZATION_ACTION_SCOPES.values()),
-    )
-    claims = {
-        "iss": "https://accounts.google.com",
-        "sub": subject,
-        "aud": settings.GCP_SERVICE_TOKEN_AUDIENCE,
-        "email": "operator@synthetic.iam.gserviceaccount.com",
-        "email_verified": True,
-    }
-    monkeypatch.setattr(service_identity.id_token, "verify_oauth2_token", lambda *_args, **_kwargs: claims)
-    client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION="Bearer header.payload.signature", HTTP_X_REQUEST_ID="service-write")
-    created = client.post(_url(workspace, "groups/"), {"name": "Service operators"}, format="json")
-    assert created.status_code == 201
-    operation = client.post(
-        _url(workspace, f"groups/{created.json()['uuid']}/memberships/"),
-        {"principal_uuid": str(_human.uuid), "effect": "grant", "idempotency_key": str(uuid4())},
-        format="json",
-    )
-    assert operation.status_code == 202
-    assert operation.json()["state"] == "confirmed"
-    rows = list(AuditLog.objects.filter(request_id="service-write"))
-    assert len(rows) == 3
-    assert all(row.actor_type == "principal" and row.actor_id is None for row in rows)
-    assert all(row.actor_principal_uuid == service.uuid for row in rows)
-    assert (
-        AuthorizationOperation.objects.get(id=operation.json()["operation_id"]).audit_actor_principal_uuid
-        == service.uuid
-    )
-    verify_audit_chain()
-
-    # The registered reverse migration cannot silently erase journal identity.
-    from importlib import import_module
-
-    from django.db import connection
-    from django.db.migrations.exceptions import IrreversibleError
-    from django.db.migrations.executor import MigrationExecutor
-
-    migration = import_module("workspaces.migrations.0019_principal_audit_attribution").Migration
-    state = MigrationExecutor(connection).loader.project_state()
-    with pytest.raises(IrreversibleError):
-        migration.operations[-1].database_backwards("workspaces", connection.schema_editor(), state, state)
-
-
-def test_personal_credential_cannot_cross_its_issuance_target(authorization_context):
-    from django.utils import timezone
-
-    user, _principal, _service, workspace, _provider = authorization_context
-    other = Workspace.objects.create(organization=workspace.organization, name="Other workspace")
-    client = APIClient()
-    client.force_login(user, backend="config.auth.PlatformModelBackend")
-    response = client.post(
-        "/api/v1/credentials/personal/",
-        {
-            "name": "One workspace",
-            "scopes": ["authorization:workspace.manage_authorization"],
-            "expires_at": (timezone.now() + timezone.timedelta(hours=1)).isoformat(),
-            "target_type": "workspace",
-            "target_uuid": str(workspace.uuid),
-        },
-        format="json",
-    )
-    assert response.status_code == 201
-    client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.json()['token']}")
-    assert client.get(_url(workspace, "groups/")).status_code == 200
-    assert client.get(_url(other, "groups/")).status_code == 403
 
 
 def test_catalog_is_closed_and_contains_no_provider_contract(authorization_context) -> None:
@@ -203,7 +117,6 @@ def test_group_creation_and_service_membership_return_bounded_operations(authori
     )
     assert metadata_audit.actor_type == AuditActorType.USER
     assert metadata_audit.actor_id == user.id
-    assert metadata_audit.actor_principal_uuid == _principal.uuid
     assert metadata_audit.request_id == "metadata-request"
     assert metadata_audit.user_agent == "authorization-test"
 
@@ -239,7 +152,6 @@ def test_api_token_operation_audit_uses_token_attribution_not_principal_kind(aut
     confirmed = AuditLog.objects.get(action=AuditAction.AUTHORIZATION_CONFIRMED)
     assert {requested.actor_type, confirmed.actor_type} == {AuditActorType.APIKEY}
     assert {requested.actor_id, confirmed.actor_id} == {token.id}
-    assert {requested.actor_principal_uuid, confirmed.actor_principal_uuid} == {_principal.uuid}
     assert {requested.request_id, confirmed.request_id} == {"token-request"}
     assert provider.changes
 

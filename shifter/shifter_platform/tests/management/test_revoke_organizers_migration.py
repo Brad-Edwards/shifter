@@ -78,7 +78,7 @@ def test_migration_revokes_and_audits_existing_organizers(monkeypatch):
     assert CTF_ORGANIZER_GROUP in row.previous_state["groups"]
     assert CTF_ORGANIZER_GROUP not in row.new_state["groups"]
     # A non-organizer is unaffected: no organizer change, so no audit row at all.
-    assert AuditLog.objects.filter(entity_type="user", entity_id=plain_participant.id).count() == 0
+    assert AuditLog.objects.filter(entity_id=plain_participant.id).count() == 0
 
 
 @pytest.mark.django_db

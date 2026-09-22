@@ -12,15 +12,13 @@ User = get_user_model()
 
 
 @pytest.mark.django_db
-def test_delete_user_preserves_a_durable_human_principal() -> None:
+def test_delete_user_removes_matching_user() -> None:
     user = User.objects.create_user(username="delme", email="delme@test.example", password="x")
     user_id = user.id
 
-    with pytest.raises(CommandError, match="protected related records"):
-        call_command("delete_user", "delme@test.example")
+    call_command("delete_user", "delme@test.example")
 
-    assert User.objects.filter(pk=user_id).exists()
-    assert user.identity_principal.user_id == user_id
+    assert not User.objects.filter(pk=user_id).exists()
 
 
 @pytest.mark.django_db
@@ -28,10 +26,9 @@ def test_delete_user_is_case_insensitive() -> None:
     user = User.objects.create_user(username="delme2", email="DelMe2@Test.Example", password="x")
     user_id = user.id
 
-    with pytest.raises(CommandError, match="protected related records"):
-        call_command("delete_user", "delme2@test.example")
+    call_command("delete_user", "delme2@test.example")
 
-    assert User.objects.filter(pk=user_id).exists()
+    assert not User.objects.filter(pk=user_id).exists()
 
 
 @pytest.mark.django_db

@@ -15,7 +15,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from shared.audit.attribution import (
-    request_audit,
+    get_actor_from_request,
+    get_client_ip,
+    get_request_id,
 )
 from shared.audit.events import AuditEvent, AuthPrincipal, RequestAudit, SessionInfo, StateChange
 from shared.audit.health import mark_audit_degraded
@@ -164,7 +166,7 @@ def audit_log_from_request(
     Returns:
         True when the event was persisted; False on non-strict failure.
     """
-    audit = request_audit(request)
+    actor_type, actor_id = get_actor_from_request(request)
 
     return audit_log(
         AuditEvent(
@@ -172,15 +174,14 @@ def audit_log_from_request(
             entity_id=target.entity_id,
             entity_ref=target.entity_ref,
             action=action,
-            actor_type=audit.actor_type,
-            actor_id=audit.actor_id,
-            actor_principal_uuid=audit.actor_principal_uuid,
+            actor_type=actor_type,
+            actor_id=actor_id,
             previous_state=previous_state,
             new_state=new_state,
             context=context,
-            source_ip=audit.source_ip,
-            user_agent=audit.user_agent,
-            request_id=audit.request_id,
+            source_ip=get_client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+            request_id=get_request_id(request),
         )
     )
 

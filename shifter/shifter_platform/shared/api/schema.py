@@ -34,12 +34,8 @@ class ApiTokenAuthenticationScheme(OpenApiAuthenticationExtension):
         return {
             "type": "http",
             "scheme": "bearer",
-            "bearerFormat": "Knox opaque credential or native Google ID token",
-            "description": (
-                "Personal Knox credential with live authorization, or explicitly admitted audience-bound "
-                "Google service ID token. Cloud access tokens and human provider ID tokens are not "
-                "application bearer credentials."
-            ),
+            "bearerFormat": "shf",
+            "description": "Platform API token with scopes from shared.api_tokens.scopes.",
         }
 
 

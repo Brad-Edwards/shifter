@@ -31,7 +31,6 @@ from config._cache_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
-from config._credential_settings import *  # NOSONAR  # noqa: E402
 from config._ctf_communication_settings import *  # NOSONAR  # noqa: E402
 from config._ctf_content_settings import *  # NOSONAR  # noqa: E402
 from config._drf_settings import *  # NOSONAR  # noqa: E402
@@ -142,7 +141,6 @@ INSTALLED_APPS = [
     "health_check.storage",
     "config.apps.PortalConfig",
     "rest_framework",
-    "knox",
     "drf_spectacular",
     "drf_spectacular_sidecar",
     # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
@@ -178,7 +176,6 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "config.session_credentials.CredentialSessionMiddleware",
     "config.middleware.CTFAccountBoundaryMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

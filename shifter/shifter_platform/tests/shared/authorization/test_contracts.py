@@ -77,24 +77,6 @@ def test_request_rejects_action_outside_credential_ceiling() -> None:
         )
 
 
-def test_credential_target_is_an_independent_immutable_ceiling():
-    from uuid import uuid4
-
-    target = TargetRef("workspace", WORKSPACE_ID)
-    credential = CredentialCeiling(frozenset({"workspace.read"}), target)
-    assert credential.permits("workspace.read", target)
-    assert not credential.permits("workspace.read")
-    assert not credential.permits("workspace.read", TargetRef("workspace", uuid4()))
-    with pytest.raises(AuthorizationContractError, match="credential ceiling"):
-        AuthorizationRequest(
-            PrincipalRef(PRINCIPAL_ID, "human"),
-            "workspace.read",
-            target,
-            _workspace_scope(),
-            CredentialCeiling(credential.actions, TargetRef("workspace", uuid4())),
-        )
-
-
 def test_installation_target_has_no_object_id_or_customer_scope() -> None:
     request = AuthorizationRequest(
         principal=PrincipalRef(PRINCIPAL_ID, "service"),

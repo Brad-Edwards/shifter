@@ -7,7 +7,7 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
 from shared.audit.integrity import digest_for_row
-from shared.models import AuditChainHead
+from shared.models import AuditChainHead, AuditLog
 
 BEFORE = [("shared", "0019_alter_auditlog_entity_type")]
 AFTER = [("shared", "0020_audit_integrity_chain")]
@@ -51,10 +51,9 @@ def test_upgrade_backfills_every_legacy_row_into_one_verifiable_chain(historical
         context="second legacy row",
     )
 
-    after_apps = _migrate(AFTER)
+    _migrate(AFTER)
 
-    # Query the historical model, whose table predates newer actor columns.
-    rows = list(after_apps.get_model("shared", "AuditLog").objects.order_by("sequence"))
+    rows = list(AuditLog.objects.order_by("sequence"))
     assert [row.pk for row in rows] == [first.pk, second.pk]
     assert [row.sequence for row in rows] == [1, 2]
     assert rows[0].previous_digest == ""

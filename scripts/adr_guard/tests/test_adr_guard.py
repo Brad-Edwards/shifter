@@ -1036,9 +1036,7 @@ class SymbolFacadeAllowlistTests(unittest.TestCase):
                 "engine": {
                     "workspaces.services": ["OrganizationAuthorizationError", "get_organization_profile"]
                 },
-                "config": {
-                    "workspaces.services": ["list_administrable_organizations", "hierarchy_target_scope"]
-                },
+                "config": {"workspaces.services": ["list_administrable_organizations"]},
                 "mission_control": {
                     "engine.services": [
                         "SSHConnection",

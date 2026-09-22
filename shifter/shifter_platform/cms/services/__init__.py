@@ -85,7 +85,6 @@ from ._agents import (
     max_agent_file_size_bytes,
 )
 from ._content_ingestion import PackRegistrationRequest, RegisteredPack, register_pack
-from ._credential_scope import range_credential_scope
 from ._credentials import (
     create_credential,
     delete_credential,
@@ -356,7 +355,6 @@ __all__ = (
     "project_range_cleanup_outcome",
     "project_scenario_images",
     "project_scenario_model_demands",
-    "range_credential_scope",
     "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",

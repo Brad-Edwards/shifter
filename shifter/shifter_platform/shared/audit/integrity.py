@@ -15,7 +15,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
 
 from shared.audit.events import AuditEvent
 from shared.audit.vocabulary import AuditAction, AuditActorType, AuditEntityType
@@ -23,8 +22,7 @@ from shared.audit.vocabulary import AuditAction, AuditActorType, AuditEntityType
 if TYPE_CHECKING:
     from shared.models import AuditChainHead, AuditLog
 
-CANONICALIZATION_VERSION = 2
-SUPPORTED_CANONICALIZATION_VERSIONS = frozenset({1, 2})
+CANONICALIZATION_VERSION = 1
 CHAIN_GENERATION = 1
 CHAIN_HEAD_SINGLETON = 1
 MAX_ENTITY_REF_LENGTH = 255
@@ -124,40 +122,18 @@ def _validate_state(name: str, value: object) -> None:
         raise ValueError(f"{name} exceeds {MAX_STATE_BYTES} canonical bytes")
 
 
-def _validate_audit_vocabulary(event: AuditEvent) -> None:
-    """Require active entity, action, and actor vocabulary values."""
+def validate_audit_event(event: AuditEvent) -> None:
+    """Validate the one accepted shape before persistence and hashing."""
     if event.entity_type not in AuditEntityType.values:
         raise ValueError("entity_type is not active audit vocabulary")
     if event.action not in AuditAction.values:
         raise ValueError("action is not active audit vocabulary")
     if event.actor_type not in AuditActorType.values:
         raise ValueError("actor_type is not active audit vocabulary")
-
-
-def _validate_audit_actor(event: AuditEvent) -> None:
-    """Validate integer and principal actor attribution invariants."""
     if not _is_database_integer(event.entity_id):
         raise ValueError("entity_id must fit a non-negative database integer")
     if event.actor_id is not None and not _is_database_integer(event.actor_id):
         raise ValueError("actor_id must fit a non-negative database integer or null")
-    _validate_principal_attribution(event)
-
-
-def _validate_principal_attribution(event: AuditEvent) -> None:
-    """Keep UUID actor attribution disjoint from legacy integer actors."""
-    principal_uuid = event.actor_principal_uuid
-    if principal_uuid is not None and (not isinstance(principal_uuid, UUID) or not principal_uuid.int):
-        raise ValueError("actor_principal_uuid must be a nonzero UUID or null")
-    if event.actor_type == AuditActorType.PRINCIPAL and (principal_uuid is None or event.actor_id is not None):
-        raise ValueError("principal actor requires UUID attribution without an integer actor_id")
-    if event.actor_type == AuditActorType.SYSTEM and principal_uuid is not None:
-        raise ValueError("system actor cannot carry principal attribution")
-
-
-def validate_audit_event(event: AuditEvent) -> None:
-    """Validate the one accepted shape before persistence and hashing."""
-    _validate_audit_vocabulary(event)
-    _validate_audit_actor(event)
     _validate_scalar_text("entity_ref", event.entity_ref, maximum=MAX_ENTITY_REF_LENGTH)
     _validate_scalar_text("context", event.context, maximum=MAX_CONTEXT_LENGTH)
     _validate_scalar_text("user_agent", event.user_agent, maximum=MAX_USER_AGENT_LENGTH)
@@ -192,11 +168,11 @@ def _normalized_source_ip(value: object) -> str | None:
 
 
 def canonical_record_payload(record: Mapping[str, Any]) -> dict[str, object]:
-    """Keep v1 bytes frozen; v2 additionally authenticates the principal UUID."""
+    """Return the exact version-1 evidence object."""
     canonicalization_version = int(record["canonicalization_version"])
-    if canonicalization_version not in SUPPORTED_CANONICALIZATION_VERSIONS:
+    if canonicalization_version != CANONICALIZATION_VERSION:
         raise ValueError(f"unsupported canonicalization version {canonicalization_version}")
-    payload = {
+    return {
         "action": record["action"],
         "actor_id": record["actor_id"],
         "actor_type": record["actor_type"],
@@ -217,13 +193,6 @@ def canonical_record_payload(record: Mapping[str, Any]) -> dict[str, object]:
         "source_ip": _normalized_source_ip(record["source_ip"]),
         "user_agent": record["user_agent"],
     }
-    principal_uuid = record.get("actor_principal_uuid")
-    if canonicalization_version == 1:
-        if principal_uuid is not None:
-            raise ValueError("v1 audit records cannot carry principal attribution")
-    else:
-        payload["actor_principal_uuid"] = str(principal_uuid) if principal_uuid is not None else None
-    return payload
 
 
 def canonical_record_digest(record: Mapping[str, Any]) -> str:
@@ -256,7 +225,6 @@ def digest_for_row(row: AuditLog) -> str:
             "action": row.action,
             "actor_type": row.actor_type,
             "actor_id": row.actor_id,
-            "actor_principal_uuid": getattr(row, "actor_principal_uuid", None),
             "previous_state": row.previous_state,
             "new_state": row.new_state,
             "context": row.context,
@@ -281,10 +249,7 @@ def _verify_row(
         raise AuditIntegrityError(f"deployment scope mismatch at sequence {row.sequence}")
     if row.chain_generation != head.chain_generation:
         raise AuditIntegrityError(f"chain generation mismatch at sequence {row.sequence}")
-    if (
-        row.canonicalization_version not in SUPPORTED_CANONICALIZATION_VERSIONS
-        or row.canonicalization_version > head.canonicalization_version
-    ):
+    if row.canonicalization_version != head.canonicalization_version:
         raise AuditIntegrityError(f"canonicalization version mismatch at sequence {row.sequence}")
     if row.previous_digest != expected_previous:
         raise AuditIntegrityError(f"predecessor mismatch at sequence {row.sequence}")
@@ -307,12 +272,7 @@ def verify_audit_chain() -> AuditVerificationResult:
         expected_sequence = 1
         expected_previous = ""
         count = 0
-        previous_version = 1
-        if head.canonicalization_version not in SUPPORTED_CANONICALIZATION_VERSIONS:
-            raise AuditIntegrityError("unsupported audit head canonicalization version")
         for row in AuditLog.objects.order_by("sequence").iterator():
-            if row.canonicalization_version < previous_version:
-                raise AuditIntegrityError(f"canonicalization version regressed at sequence {row.sequence}")
             _verify_row(
                 row,
                 head,
@@ -320,7 +280,6 @@ def verify_audit_chain() -> AuditVerificationResult:
                 expected_previous=expected_previous,
             )
             expected_previous = row.record_digest
-            previous_version = row.canonicalization_version
             expected_sequence += 1
             count += 1
 

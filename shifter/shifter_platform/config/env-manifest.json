@@ -339,11 +339,6 @@
     },
     {
       "default": "''",
-      "name": "GCP_SERVICE_TOKEN_AUDIENCE",
-      "source_file": "config/_credential_settings.py"
-    },
-    {
-      "default": "''",
       "name": "GOOGLE_CLOUD_PROJECT",
       "source_file": "config/_cloud.py"
     },
@@ -423,29 +418,9 @@
       "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "''",
-      "name": "IDENTITY_PLATFORM_TENANT_ID",
-      "source_file": "config/_credential_settings.py"
-    },
-    {
       "default": "'Shifter Authenticator'",
       "name": "IDENTITY_PLATFORM_TOTP_DISPLAY_NAME",
       "source_file": "config/_oidc_settings.py"
-    },
-    {
-      "default": "'28800'",
-      "name": "IDENTITY_SESSION_ABSOLUTE_SECONDS",
-      "source_file": "config/_credential_settings.py"
-    },
-    {
-      "default": "'1800'",
-      "name": "IDENTITY_SESSION_IDLE_SECONDS",
-      "source_file": "config/_credential_settings.py"
-    },
-    {
-      "default": "'300'",
-      "name": "IDENTITY_SESSION_RECHECK_SECONDS",
-      "source_file": "config/_credential_settings.py"
     },
     {
       "default": "''",

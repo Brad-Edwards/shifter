@@ -361,17 +361,6 @@ class TestForceDeleteEvent:
 class TestApiForceDeleteEvent:
     """Tests for api_force_delete_event endpoint."""
 
-    @pytest.fixture
-    def organizer_client(self, organizer_user):
-        """Exercise the real session and principal admission boundary."""
-        client = Client()
-        client.force_login(organizer_user)
-        return client
-
-    @pytest.fixture
-    def mock_event(self, organizer_user):
-        return _make_mock_event(created_by_id=organizer_user.pk)
-
     def test_api_force_delete_success(self, organizer_client, mock_event):
         """POST with valid confirmation should return 200 and summary."""
         url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})

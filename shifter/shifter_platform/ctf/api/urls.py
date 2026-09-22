@@ -4,22 +4,12 @@ from __future__ import annotations
 
 from django.urls import path
 
-from ctf.api import communication_inbox, organizer, participant_views, principal_participants, team_views, views
+from ctf.api import communication_inbox, organizer, participant_views, team_views, views
 from ctf.api.organizer import communication
 
 app_name = "ctf"
 
 urlpatterns = [
-    path(
-        "events/<uuid:event_id>/principal-participants/",
-        principal_participants.PrincipalParticipantAdmissionView.as_view(),
-        name="api_principal_participant_admission",
-    ),
-    path(
-        "me/events/<uuid:event_id>/participant/",
-        principal_participants.PrincipalParticipantCurrentEventView.as_view(),
-        name="api_principal_participant_current_event",
-    ),
     path(
         "me/events/<uuid:event_id>/communications/",
         communication_inbox.CommunicationInboxView.as_view(),

@@ -13,22 +13,16 @@ updated_at: 2026-03-26T06:33:32.118062Z
 
 ## Statement
 
-The CTF layer shall manage event-scoped participant lifecycle from onboarding through event completion, providing organizers with controls over who can participate and in what capacity. Participants resolve Management-owned principals; isolated email-free human accounts retain their restricted login/recovery flow, while independently authorized service principals may participate for QA without dummy human users. CTF owns event-scoped participation state, roles, team membership and lifecycle predicates. Temporary credentials cannot escape their event or acquire platform/credential administration authority.
+The CTF layer shall manage event-scoped participant lifecycle from onboarding through event completion, providing organizers with controls over who can participate and in what capacity. CTF participants are platform users managed by the Management layer; CTF adds event-scoped participation state, roles, and team membership.
 
 ## Rationale
 
-Participant management is the gatekeeping layer for CTF events. Isolated-account login and established password recovery are preserved. The old participant magic-link flow was retired by migration 0033 (#1206), not restored by #2316. Event-scoped lifecycle remains distinct from platform administration, and a service's participant authority does not inherit its creator's authority.
+Participant management is the gatekeeping layer for CTF events. Shifter consultants need frictionless onboarding via the platform's authentication (OIDC/SSO or magic links via PLAT-101) since they cannot install software on work laptops. Role separation ensures organizers can manage events without granting admin access. Event-scoped participation state is the CTF-specific addition on top of platform user management.
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/api/principal_participants.py` (Explicit event-scoped admission and participant-safe read through neutral credentials)
-
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/principal_participation.py` (Explicit service participation and live event/credential predicates)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/config/credential_scope.py` (Temporary credential context restricted to one event)
-- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_service_participation.py`
-
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums_registration.py` (ParticipantStatus enum - registered/active/completed/disqualified/banned lifecycle states)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/admin_people.py` (Organizer participant CRUD and role-based access control)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/admin_people.py` (CTF views - organizer participant CRUD, magic link registration, role-based access control)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/lifecycle.py` (Participant lifecycle service - organizer add via immediate provisioning, resend login info, delete)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/accounts.py` (Isolated participant account provisioning - provision_participant_seat seam shared by add/import/generated-seat creation)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/credentials.py` (Volatile password issuance and non-secret ledger login notices; legacy dispatch retired by ADR-065)

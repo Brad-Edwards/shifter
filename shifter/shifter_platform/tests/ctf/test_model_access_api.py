@@ -18,7 +18,7 @@ from ctf.api._base import _CtfApiError
 from shared.api_tokens.models import ApiToken
 from shared.api_tokens.scopes import CTF_PLAY_READ, MODEL_ACCESS_EVENT_READ, MODEL_ACCESS_PARTICIPANT_READ
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
+pytestmark = pytest.mark.django_db
 
 User = get_user_model()
 

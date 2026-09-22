@@ -22,7 +22,7 @@ from shared.api_tokens.models import ApiToken
 from shared.audit import AuditAction, AuditEntityType
 from shared.models import AuditLog
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
+pytestmark = pytest.mark.django_db
 
 PACKS_URL = "/api/v1/cms/catalog/packs/"
 

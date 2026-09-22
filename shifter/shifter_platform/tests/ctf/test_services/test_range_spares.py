@@ -102,29 +102,6 @@ class TestManagedSpareUser:
         assert delete_managed_spare_user(organizer_user) is False
         assert User.objects.filter(pk=organizer_user.pk).exists()
 
-    @pytest.mark.django_db
-    def test_delete_managed_spare_user_refuses_activated_placeholder(self):
-        user = create_managed_spare_user()
-        user.is_active = True
-        user.save(update_fields=["is_active"])
-
-        assert delete_managed_spare_user(user) is False
-        assert User.objects.filter(pk=user.pk).exists()
-
-    @pytest.mark.django_db
-    def test_delete_managed_spare_user_refuses_bound_identity(self):
-        from management.models import ProviderBinding
-
-        user = create_managed_spare_user()
-        ProviderBinding.objects.create(
-            principal=user.identity_principal,
-            issuer="https://issuer.example.test",
-            subject=f"pooled-{user.pk}",
-        )
-
-        assert delete_managed_spare_user(user) is False
-        assert User.objects.filter(pk=user.pk).exists()
-
     def test_delete_managed_spare_user_none_is_a_safe_no_op(self):
         assert delete_managed_spare_user(None) is False
 

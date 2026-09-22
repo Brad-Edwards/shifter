@@ -26,7 +26,6 @@ from config.api_model_access import (
 app_name = "api"
 
 urlpatterns = [
-    path("credentials/", include("management.api.credential_urls")),
     path("schema/", SpectacularAPIView.as_view(api_version="v1"), name="openapi-schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="v1:openapi-schema"), name="api-docs"),
     path("bootstrap/", BootstrapView.as_view(), name="bootstrap"),

@@ -17,7 +17,6 @@ from rest_framework import permissions
 
 from shared.api_tokens.models import ApiToken
 from shared.api_tokens.scopes import has_scope
-from shared.credentials import CredentialContext
 
 if TYPE_CHECKING:
     from rest_framework.request import Request
@@ -43,7 +42,7 @@ def require_scope(read_scope: str, write_scope: str | None = None) -> type[permi
 
         def has_permission(self, request: Request, view: APIView) -> bool:
             auth = getattr(request, "auth", None)
-            if not isinstance(auth, (ApiToken, CredentialContext)):
+            if not isinstance(auth, ApiToken):
                 # Not a token request; session authz is enforced elsewhere.
                 return True
             required = read_scope if request.method in permissions.SAFE_METHODS else required_write

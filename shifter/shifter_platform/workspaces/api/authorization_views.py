@@ -11,9 +11,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shared.api.errors import api_error_response
-from shared.api.principals import authenticated_credential
+from shared.api.principals import active_actor_user
 from shared.api.strict_json import ClosedJSONParser
-from shared.audit import RequestAudit, request_audit
+from shared.api_tokens.models import ApiToken
+from shared.api_tokens.scopes import AUTHORIZATION_ACTION_SCOPES
+from shared.audit import RequestAudit, get_actor_from_request, get_client_ip, get_request_id
 from shared.authorization import (
     ACTION_CATALOG,
     PREDEFINED_POLICIES,
@@ -30,7 +32,7 @@ from shared.authorization import (
     configured_authorization_provider,
 )
 from shared.identity_scope import PrincipalRef, ResourceScope
-from shared.principal_port import PrincipalResolutionError
+from shared.principal_port import PrincipalResolutionError, principal_for_user
 from workspaces import services
 from workspaces.api.permissions import AUTHORIZATION_PERMISSIONS
 from workspaces.api.serializers import (
@@ -61,25 +63,44 @@ class AuthorizationAPIError(RuntimeError):
         self.status_code = status_code
 
 
+def _credential_ceiling(request: Request) -> CredentialCeiling:
+    """Derive permitted actions from the admitted token or authenticated session."""
+    auth = getattr(request, "auth", None)
+    if isinstance(auth, ApiToken):
+        by_scope = {value: action for action, value in AUTHORIZATION_ACTION_SCOPES.items()}
+        return CredentialCeiling(frozenset(by_scope[item] for item in auth.scopes if item in by_scope))
+    return CredentialCeiling(frozenset(item.code for item in ACTION_CATALOG))
+
+
 def _context(
     request: Request,
     workspace_uuid: UUID,
 ) -> tuple[PrincipalRef, CredentialCeiling, ResourceScope, AuthorizationProvider]:
     """Resolve the active actor, trusted workspace scope, and configured evaluator."""
+    actor_user = active_actor_user(request)
+    if actor_user is None:
+        raise AuthorizationAPIError("authorization_denied", 403)
     try:
-        credential = authenticated_credential(request)
+        actor = principal_for_user(actor_user)
         scope = services.workspace_authorization_scope(workspace_uuid)
         provider = configured_authorization_provider()
-    except (ValueError, PrincipalResolutionError, services.AuthorizationAdminError):
+    except (PrincipalResolutionError, services.AuthorizationAdminError):
         raise AuthorizationAPIError("authorization_denied", 403) from None
     except AuthorizationProviderBindingError:
         raise AuthorizationAPIError("authorization_unavailable", 503) from None
-    return credential.principal, credential.ceiling, scope, provider
+    return actor, _credential_ceiling(request), scope, provider
 
 
 def _request_audit(request: Request) -> RequestAudit:
     """Capture server-owned actor and bounded HTTP request attribution."""
-    return request_audit(request, credential=authenticated_credential(request))
+    actor_type, actor_id = get_actor_from_request(request)
+    return RequestAudit(
+        actor_type=actor_type,
+        actor_id=actor_id,
+        source_ip=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+        request_id=get_request_id(request)[:128],
+    )
 
 
 class _AuthorizationAPIView(APIView):

@@ -20,7 +20,7 @@ from workspaces.models import Organization, OrganizationMembership, Workspace, W
 from workspaces.roles import OrganizationRole, WorkspaceRole
 from workspaces.services import create_account
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
+pytestmark = pytest.mark.django_db
 
 _COLLECTION = "/api/v1/workspaces/"
 

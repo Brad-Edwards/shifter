@@ -13,8 +13,6 @@ from shared.audit.attribution import (
     get_actor_from_request,
     get_client_ip,
     get_request_id,
-    principal_actor_fields,
-    request_audit,
     select_trusted_client_ip,
 )
 from shared.audit.events import (
@@ -80,8 +78,6 @@ __all__ = [
     "get_client_ip",
     "get_request_id",
     "mark_audit_degraded",
-    "principal_actor_fields",
-    "request_audit",
     "reset_audit_health",
     "reset_audit_writer",
     "select_trusted_client_ip",

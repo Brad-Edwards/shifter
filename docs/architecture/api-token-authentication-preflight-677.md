@@ -1,8 +1,5 @@
 # API Token Authentication Preflight (PLAT-102 / #677)
 
-Historical preflight. Its custom verifier and staff-based issuance proposals are
-superseded by the [#2316 credential preflight](unified-credential-auth-preflight-2316.md).
-
 Status: pre-implementation guidance
 
 Date: 2026-06-22
