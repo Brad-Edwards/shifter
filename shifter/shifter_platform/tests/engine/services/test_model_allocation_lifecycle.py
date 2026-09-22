@@ -84,6 +84,24 @@ def test_expiry_retains_unresolved_liability_and_original_references(django_user
     assert allocation.snapshot == snapshot
 
 
+def test_scheduled_worker_releases_revoked_allocation_capacity(django_user_model):
+    from cms.management.commands.reconcile_range_events import Command
+    from engine.services._model_allocation_lifecycle import revoke_model_generation
+
+    allocation = allocate(allocation_inputs(django_user_model))
+    draw = allocation.draws.select_related("reservation").get()
+    revoke_model_generation(allocation.range_id)
+
+    Command()._run_once(stale_seconds=300, batch_size=100)
+
+    allocation.refresh_from_db()
+    draw.refresh_from_db()
+    draw.reservation.refresh_from_db()
+    assert allocation.released_at is not None
+    assert draw.released_at is not None
+    assert draw.reservation.consumed == 0
+
+
 def test_reconcile_expires_only_unused_capacity_past_its_window(django_user_model):
     from engine.models import ModelCapacityReservation
     from engine.services._model_allocation_lifecycle import reconcile_model_allocations

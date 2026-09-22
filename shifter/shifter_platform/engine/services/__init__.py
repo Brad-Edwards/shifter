@@ -12,6 +12,8 @@ The re-exports also rebind a few names that tests historically patch at
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from django.db import transaction
 
 from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
@@ -235,6 +237,14 @@ from ._warm_pool import (
     warm_capacity_scope_ref,
 )
 
+
+def reconcile_model_allocations(*, now: datetime | None = None, limit: int = 100) -> int:
+    """Lazily expose allocation cleanup without importing models during app setup."""
+    from ._model_allocation_lifecycle import reconcile_model_allocations as reconcile
+
+    return reconcile(now=now, limit=limit)
+
+
 __all__ = (
     "CLEANUP_NOT_APPLICABLE",
     "CLEANUP_PENDING",
@@ -390,6 +400,7 @@ __all__ = (
     "rebind_range_workspace_by_request",
     "reconcile_capacity_budgets",
     "reconcile_expired_dispatches",
+    "reconcile_model_allocations",
     "reconcile_model_requests",
     "reconcile_preparations",
     "reconcile_runtime_plugin_operations",

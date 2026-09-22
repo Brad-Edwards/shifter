@@ -75,6 +75,8 @@ def _dispatch_raes_package(
     backend_admission: BackendAdmission | None,
     workspace_id: int,
     egress_mode: str,
+    *,
+    content_authorizer: User | None = None,
 ) -> None:
     """Resolve, verify, load, plan, and dispatch one registered RAES pack.
 
@@ -90,9 +92,25 @@ def _dispatch_raes_package(
     from cms.services._raes_dispatch import dispatch_object_raes_package, dispatch_repo_raes_package
 
     if source.source_kind == _OBJECT_SOURCE_KIND:
-        dispatch_object_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        dispatch_object_raes_package(
+            request_id,
+            user,
+            source,
+            backend_admission,
+            workspace_id,
+            egress_mode,
+            content_authorizer=content_authorizer,
+        )
     else:
-        dispatch_repo_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        dispatch_repo_raes_package(
+            request_id,
+            user,
+            source,
+            backend_admission,
+            workspace_id,
+            egress_mode,
+            content_authorizer=content_authorizer,
+        )
 
 
 def _audit_raes_range_provision(request_id: UUID, scenario: str, user: User, range_source: RangeSource) -> None:
@@ -196,6 +214,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     model_admission_subject: OwnedReference | None = None,
     model_launch_scope: ModelLaunchScope | None = None,
     model_sources: dict | None = None,
+    content_authorizer: User | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -216,7 +235,7 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     if source.organization_uuid is not None:
         from cms.scenarios.registry import check_scenario_access
 
-        check_scenario_access(scenario, user)
+        check_scenario_access(scenario, content_authorizer or user)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
@@ -258,9 +277,10 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
     if source.organization_uuid is not None:
         from workspaces.services import WorkspaceOperation, authorize_bound_workspace
 
-        authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
-        if authorization.organization_uuid != source.organization_uuid:
-            raise CMSError("The pack is unavailable in this workspace")
+        if content_authorizer is None:
+            authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+            if authorization.organization_uuid != source.organization_uuid:
+                raise CMSError("The pack is unavailable in this workspace")
     admit_workspace_launch(
         workspace_id=workspace_id,
         user=user,
@@ -359,7 +379,18 @@ def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch serv
             subject=model_admission_subject,
             package_digest=source.package_digest,
         )
-        _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        if content_authorizer is None:
+            _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        else:
+            _dispatch_raes_package(
+                request_id,
+                user,
+                source,
+                backend_admission,
+                workspace_id,
+                egress_mode,
+                content_authorizer=content_authorizer,
+            )
     except Exception:
         # Dispatch failed before an Engine lifecycle can converge, so mark the
         # range FAILED and release the open concurrent-range reservation as one
@@ -387,6 +418,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
     model_admission_subject: OwnedReference | None = None,
     model_launch_scope: ModelLaunchScope | None = None,
     model_sources: dict | None = None,
+    content_authorizer: User | None = None,
 ) -> RangeContext:
     """Launch a registered RAES scenario through the authoritative path.
 
@@ -410,6 +442,7 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
             model_admission_subject=model_admission_subject,
             model_launch_scope=model_launch_scope,
             model_sources=model_sources,
+            content_authorizer=content_authorizer,
         ),
     )
 
@@ -443,4 +476,5 @@ def dispatch_range_launch(
         model_admission_subject=options.model_admission_subject,
         model_launch_scope=options.model_launch_scope,
         model_sources=options.model_sources,
+        content_authorizer=options.content_authorizer,
     )

@@ -1141,8 +1141,8 @@ jobs:
                     image: ${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}
                     imagePullPolicy: IfNotPresent
                     # entrypoint.sh runs migrations first, then registers the
-                    # immutable shipped seed through the normal ingestion path.
-                    args: ["python", "manage.py", "bootstrap_inbox_catalog"]
+                    # immutable shipped seed and base image mappings.
+                    args: ["/bin/sh", "-c", "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry"]
                     envFrom:
                       - configMapRef:
                           name: platform-runtime
@@ -1279,6 +1279,21 @@ jobs:
           fi
           for deployment in "${deployments[@]}"; do
             kubectl rollout status "deployment/${deployment}" -n shifter-platform --timeout=15m
+          done
+          deadline=$((SECONDS + 300))
+          while true; do
+            mapfile -t terminating_pods < <(
+              kubectl get pods -n shifter-platform -o json \
+                | jq -r '.items[] | select(.metadata.deletionTimestamp != null) | .metadata.name'
+            )
+            if [ "${#terminating_pods[@]}" -eq 0 ]; then
+              break
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::Timed out waiting for superseded release pods to terminate."
+              exit 1
+            fi
+            sleep 5
           done
       - name: Record running workload image IDs
         env:

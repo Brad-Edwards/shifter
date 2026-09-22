@@ -1060,9 +1060,13 @@ class TestGdcControlPlaneHelmValues:
         pod = job["spec"]["template"]["spec"]
         assert pod["serviceAccountName"] == "migrator"
         container = pod["containers"][0]
-        # Entrypoint migrates first; then register the shipped catalog through
-        # the same idempotent command used by the deploy workflow.
-        assert container["args"] == ["python", "manage.py", "bootstrap_inbox_catalog"]
+        # Entrypoint migrates first; then register the shipped catalog and base
+        # image mappings through the same idempotent commands used by deploy.
+        assert container["args"] == [
+            "/bin/sh",
+            "-c",
+            "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+        ]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
         temp_dir = next(item for item in container["env"] if item["name"] == "TMPDIR")["value"]
@@ -2053,6 +2057,28 @@ class TestGcpPlatformCoreContracts:
         assert "evaluatePreconfiguredWaf('sqli-v33-stable'" in module_main
         assert "'sensitivity': 1" in module_main
         assert "opt_out_rule_ids" not in module_main
+
+    def test_cloud_armor_bypasses_raw_multipart_only_for_tenant_pack_uploads(self):
+        """Binary pack archives must not disable SQLi/XSS inspection outside their exact upload route."""
+        module_path = (
+            Path(__file__).resolve().parents[3]
+            / "platform"
+            / "terraform"
+            / "gcp"
+            / "modules"
+            / "portal"
+            / "ingress"
+            / "main.tf"
+        )
+        module_main = module_path.read_text()
+
+        assert "tenant_pack_upload" in module_main
+        assert "request.method == 'POST'" in module_main
+        assert "/api/v1/cms/organizations/" in module_main
+        assert "/packs/$" in module_main
+        assert "multipart/form-data;" in module_main
+        assert "evaluatePreconfiguredWaf('sqli-v33-stable'" in module_main
+        assert "evaluatePreconfiguredWaf('xss-v33-stable') && !(${local.tenant_pack_upload})" in module_main
 
 
 class TestGcpBootstrapIdentityPlatform:

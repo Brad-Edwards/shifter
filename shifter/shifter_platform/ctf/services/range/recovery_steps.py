@@ -67,7 +67,7 @@ def _rebuild_replacement(participant: CTFParticipant, model_subject: OwnedRefere
     fall back to the draw because the old range is already DESTROYING, dropping a
     published range-scoped restriction.
     """
-    from ctf.bridges import cms_create_range, cms_find_range_instance_id
+    from ctf.bridges import CTFRangeLaunchOptions, cms_create_range, cms_find_range_instance_id
 
     user = _participant_user(participant)
     event = participant.event
@@ -83,8 +83,11 @@ def _rebuild_replacement(participant: CTFParticipant, model_subject: OwnedRefere
             agents_by_os=agents_by_os,
             ngfw_enabled=ngfw_enabled,
             remote_access_teardown_at=event.get_cleanup_time(),
-            model_admission_subject=model_subject,
-            model_launch_scope=project_event_model_scope(event, participant.pk, model_subject),
+            launch_options=CTFRangeLaunchOptions(
+                model_admission_subject=model_subject,
+                model_launch_scope=project_event_model_scope(event, participant.pk, model_subject),
+                content_authorizer=event.created_by,
+            ),
         )
     except Exception as e:
         raise _range_error(

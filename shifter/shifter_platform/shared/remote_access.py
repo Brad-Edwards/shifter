@@ -19,6 +19,16 @@ OPENVPN_PROFILE_VERSION = "openvpn-profile-v1"
 OPENVPN_PROFILE_MEDIA_TYPE = "application/x-openvpn-profile"
 OPENVPN_PROFILE_MAX_BYTES = 64 * 1024
 
+# A terminal target is either a legacy UUID-shaped instance id or the exact
+# single-instance member key emitted for a declared RAES node.  Keep this
+# closed segment grammar shared by routing and the temporary-CTF account
+# boundary so neither surface admits a broader path than the other.
+TERMINAL_TARGET_SEGMENT_PATTERN = (
+    r"(?:[a-f0-9-]+|provision\.node\."
+    r"[a-z0-9](?:[a-z0-9_-]{0,62})(?:\.[a-z0-9](?:[a-z0-9_-]{0,62})){0,7}#0)"
+)
+TERMINAL_TARGET_PATH_RE = re.compile(rf"^/ws/terminal/{TERMINAL_TARGET_SEGMENT_PATTERN}/$")
+
 _BINDING_KEYS = {
     "version",
     "channel",

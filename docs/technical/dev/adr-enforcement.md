@@ -420,7 +420,8 @@ The first slice intentionally stays small:
 
   The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
   environment deploys are a `workflow_dispatch` naming the `environment` input
-  (a closed `choice` of `aws-dev` / `aws-proof` / `gcp-dev`), that the `Set
+  (a closed `choice` of `aws-dev` / `aws-proof` / `gcp-dev` / `nazgul` /
+  `orthanc` / `sauron` / `balrog`), that the `Set
   environment` step keys on that input rather than a branch-name `case` router,
   and that `push` / `pull_request` run validation only (no run/apply flags).
 
@@ -430,7 +431,7 @@ The first slice intentionally stays small:
   `TF_DIR`, `TF_BACKEND_PREFIX`, and the destroy `environment`
   (`<environment>-destroy`) all derive from the `environment` dispatch input
   rather than being hardcoded to gcp-dev, so every GCP tenant
-  (gcp-dev / nazgul / orthanc / sauron) tears down through the one workflow. It
+  (gcp-dev / nazgul / orthanc / sauron / balrog) tears down through the one workflow. It
   runs on `ubuntu-latest` because teardown deletes resources through the GCP
   APIs over WIF and needs no in-VPC or self-hosted runner access. Each GCP env
   root declares `cloud_sql_deletion_protection` (default true) so the workflow's

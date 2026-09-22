@@ -123,6 +123,16 @@ def test_one_stale_container_fails_even_when_another_container_matches() -> None
         module.build_evidence(pods, _EXPECTED, source_sha=_SHA)
 
 
+def test_terminating_release_pod_cannot_enter_runtime_evidence() -> None:
+    module = _load_module()
+    pods = _valid_pods(module)
+    portal = _pod_for(pods, "portal")
+    portal["metadata"]["deletionTimestamp"] = "2026-09-22T00:00:00Z"
+
+    with pytest.raises(ValueError, match=r"terminating release pod remains.*portal"):
+        module.build_evidence(pods, _EXPECTED, source_sha=_SHA)
+
+
 def test_runtime_repository_must_match_even_when_declared_image_and_digest_match() -> None:
     module = _load_module()
     pods = _valid_pods(module)

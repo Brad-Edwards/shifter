@@ -260,3 +260,54 @@ def test_source_observation_preserves_incumbent_usage_and_deadline():
             incumbent,
             incumbent.valid_until,
         )
+
+
+def test_source_application_cap_bootstraps_matching_incumbent_pool_without_legacy_reading(source_tenant):
+    """A first tenant source can safely cap the matching deployment pool."""
+    from uuid import uuid4
+
+    from cms.services import resolve_model_source_selection
+    from engine.services import create_model_source
+    from engine.services._model_source_observations import launch_model_observations
+    from shared.model_access.reservation import ModelQuotaObservation
+    from shared.model_access.sources import ModelSourceSelection
+
+    admin, member, org, _ = source_tenant
+    base = direct_source_catalog(uuid4())
+    source = create_model_source(
+        admin,
+        org.uuid,
+        configuration(
+            name="Tenant Vertex source",
+            provider="vertex-v1",
+            authentication="workload-identity",
+            model="publishers/anthropic/models/claude-sonnet",
+            region="europe-west4",
+            project="models-a",
+            principal="model-invoke@models-a.iam.gserviceaccount.com",
+            count_region="europe-west4",
+            quota_identity="cloud-account-region",
+            context_window_tokens=200_000,
+            tokens_per_minute=750_000,
+            allow_organization_members=True,
+        ),
+    )
+    selection = ModelSourceSelection.model_validate(
+        {
+            "aliases": [
+                {
+                    "logical_alias": "coding-main",
+                    "sources": [{"source_id": str(source.id), "revision": source.revision}],
+                }
+            ]
+        }
+    )
+    compiled, _ = resolve_model_source_selection(member, org.uuid, selection, catalog=base)
+
+    observations = tuple(ModelQuotaObservation.model_validate(value) for value in launch_model_observations(compiled))
+
+    assert {item.quota_pool_id for item in observations} >= {"vertex-tokens-eu"}
+    incumbent = next(item for item in observations if item.quota_pool_id == "vertex-tokens-eu")
+    assert incumbent.source == "application_cap"
+    assert incumbent.limit == 750_000
+    assert any(shard.startswith(f"source-{source.id.hex}-v1-") for shard in incumbent.healthy_shard_ids)
