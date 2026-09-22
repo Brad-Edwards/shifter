@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Mapping
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -413,14 +414,7 @@ class CTFParticipant(CTFBaseModel):
         from shared.principal_port import principal_for_user
 
         previous = type(self).all_objects.filter(pk=self.pk).values("principal_uuid", "user_id").first()
-        mapped = False
-        if previous is not None:
-            mapped = previous["principal_uuid"] is not None
-            if mapped and (
-                self.principal_uuid != previous["principal_uuid"]
-                or (self.user_id is not None and self.user_id != previous["user_id"])
-            ):
-                raise ValueError("Participant principal is immutable")
+        mapped = self._validate_existing_identity(previous)
         if self.user_id and not mapped:
             if self.user is None:
                 raise ValueError("Participant user is unavailable")
@@ -431,6 +425,18 @@ class CTFParticipant(CTFBaseModel):
             if kwargs.get("update_fields") is not None:
                 kwargs["update_fields"] = set(kwargs["update_fields"]) | {"principal_uuid"}
         super().save(*args, **kwargs)
+
+    def _validate_existing_identity(self, previous: Mapping[str, object] | None) -> bool:
+        """A mapped participant cannot silently switch human identity."""
+        mapped = False
+        if previous is not None:
+            mapped = previous["principal_uuid"] is not None
+            if mapped and (
+                self.principal_uuid != previous["principal_uuid"]
+                or (self.user_id is not None and self.user_id != previous["user_id"])
+            ):
+                raise ValueError("Participant principal is immutable")
+        return mapped
 
     def clean(self) -> None:
         """Validate participant data."""

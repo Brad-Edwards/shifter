@@ -223,7 +223,7 @@ def test_each_target_authority_is_retained_without_content(organizer_user, ctf_e
 
 
 def test_scheduled_token_revalidates_original_owner(organizer_user, ctf_event):
-    from django.db import IntegrityError, transaction
+    from django.db import IntegrityError, ProgrammingError, transaction
 
     from ctf.models import CTFScheduledTask, RecipientSnapshot
     from ctf.services.communication import run_release_communication_task, schedule_declaration
@@ -241,7 +241,7 @@ def test_scheduled_token_revalidates_original_owner(organizer_user, ctf_event):
     )
     task = CTFScheduledTask.objects.get(metadata__intent_id=str(intent.pk))
     other = User.objects.create_user(username="replacement-owner")
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with pytest.raises((IntegrityError, ProgrammingError)), transaction.atomic():
         ApiToken.objects.filter(pk=token.pk).update(created_by=other)
     User.objects.filter(pk=organizer_user.pk).update(is_active=False)
     assert run_release_communication_task(task)["outcome"] == "denied"

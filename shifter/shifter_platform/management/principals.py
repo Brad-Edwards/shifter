@@ -73,6 +73,38 @@ def principal_for_user(user: User) -> PrincipalRef:
     return _principal_ref(principal)
 
 
+def delete_managed_pool_user(user: User, *, domain: str) -> None:
+    """Remove an uncredentialed, inactive pool placeholder and its principal.
+
+    This is deliberately not a general account-deletion path: real human
+    principals remain protected even when their Django account is inactive.
+    """
+    from django.contrib.auth.models import User as DjangoUser
+
+    if domain not in {"ctf-spare.invalid", "warm-pool.invalid"} or user.pk is None:
+        raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+    with transaction.atomic():
+        account = DjangoUser.objects.select_for_update().get(pk=user.pk)
+        marker = account.email.partition("@")
+        if (
+            account.is_active
+            or account.has_usable_password()
+            or marker[2] != domain
+            or account.username != f"{'ctf-spare' if domain == 'ctf-spare.invalid' else 'warm'}-{marker[0]}"
+        ):
+            raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+        principal = Principal.objects.select_for_update().get(user=account, kind=Principal.Kind.HUMAN)
+        if principal.provider_bindings.exists():
+            raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+        from shared.api_tokens.models import ApiToken
+
+        if ApiToken.objects.filter(principal_uuid=principal.uuid).exists():
+            raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+        _audit(AuditEntityType.PRINCIPAL, principal.pk, AuditAction.DELETE, {"managed_pool": domain})
+        principal.delete()
+        account.delete()
+
+
 def _active_principals() -> QuerySet[Principal]:
     """Limit resolution to active services and active human user accounts."""
     return Principal.objects.filter(is_active=True).filter(

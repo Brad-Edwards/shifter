@@ -31,6 +31,7 @@ from .models import ActivityLog, UserProfile
 PrincipalConflictError = _principals.PrincipalConflictError
 bind_principal_provider_identity = _principals.bind_principal_provider_identity
 create_service_principal = _principals.create_service_principal
+delete_managed_pool_user = _principals.delete_managed_pool_user
 ensure_human_principal = _principals.ensure_human_principal
 principal_for_user = _principals.principal_for_user
 resolve_principal = _principals.resolve_principal
@@ -60,9 +61,7 @@ logger = logging.getLogger(__name__)
 def log_activity(action: str, user: User | None, **metadata: Any) -> None:
     """Log an activity for audit trail.
 
-    DEPRECATED: Use shared.audit.audit_log() instead.
-    This function is retained for backward compatibility only.
-
+    DEPRECATED: Use shared.audit.audit_log(); retained for compatibility.
     Args:
         action: Action identifier (e.g., "range_launched", "agent_uploaded")
         user: User who performed the action, or None for system actions

@@ -428,6 +428,8 @@ def _delete_managed_warm_user(system_user: User | None) -> None:
         return
     try:
         if str(getattr(system_user, "email", "")).endswith(f"@{_WARM_USER_EMAIL_DOMAIN}"):
-            system_user.delete()
+            from management.services import delete_managed_pool_user
+
+            delete_managed_pool_user(system_user, domain=_WARM_USER_EMAIL_DOMAIN)
     except Exception:
         logger.exception("warm-pool cleanup: managed user delete failed")

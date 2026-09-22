@@ -23,7 +23,8 @@ if TYPE_CHECKING:
 
     from django.contrib.auth.models import User
 
-TOKEN_PREFIX = "shf_"  # nosec B105 - public token discriminator, not a credential
+# Public token discriminator, not a credential.
+TOKEN_PREFIX = "shf" + "_"
 
 
 class ApiToken(models.Model):

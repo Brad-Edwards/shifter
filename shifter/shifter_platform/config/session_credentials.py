@@ -57,15 +57,7 @@ def _validated_assurance(session: SessionBase, now: float) -> IdentityAssurance:
     expected_issuer = f"https://securetoken.google.com/{settings.IDENTITY_PLATFORM_PROJECT_ID}"
     if issuer != expected_issuer or tenant != settings.IDENTITY_PLATFORM_TENANT_ID or not isinstance(subject, str):
         raise ValueError("Identity assurance does not match provider configuration")
-    times: dict[str, float] = {}
-    for key in ("created", "seen", "checked", "auth_time"):
-        value = raw.get(key)
-        if isinstance(value, bool) or not isinstance(value, (float, int)):
-            raise ValueError("Identity assurance timestamp is invalid")
-        numeric = float(value)
-        if not math.isfinite(numeric) or numeric > now or numeric < 0:
-            raise ValueError("Identity assurance timestamp is invalid")
-        times[key] = numeric
+    times = _validated_assurance_times(raw, now)
     return {
         "issuer": issuer,
         "subject": subject,
@@ -75,6 +67,20 @@ def _validated_assurance(session: SessionBase, now: float) -> IdentityAssurance:
         "checked": times["checked"],
         "auth_time": times["auth_time"],
     }
+
+
+def _validated_assurance_times(raw: dict[str, object], now: float) -> dict[str, float]:
+    """Reject malformed, future, and non-finite session timestamps."""
+    times: dict[str, float] = {}
+    for key in ("created", "seen", "checked", "auth_time"):
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, (float, int)):
+            raise ValueError("Identity assurance timestamp is invalid")
+        numeric = float(value)
+        if not math.isfinite(numeric) or numeric > now or numeric < 0:
+            raise ValueError("Identity assurance timestamp is invalid")
+        times[key] = numeric
+    return times
 
 
 def _recheck_provider_state(state: IdentityAssurance) -> None:

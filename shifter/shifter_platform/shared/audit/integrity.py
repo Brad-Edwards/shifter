@@ -140,6 +140,11 @@ def _validate_audit_actor(event: AuditEvent) -> None:
         raise ValueError("entity_id must fit a non-negative database integer")
     if event.actor_id is not None and not _is_database_integer(event.actor_id):
         raise ValueError("actor_id must fit a non-negative database integer or null")
+    _validate_principal_attribution(event)
+
+
+def _validate_principal_attribution(event: AuditEvent) -> None:
+    """Keep UUID actor attribution disjoint from legacy integer actors."""
     principal_uuid = event.actor_principal_uuid
     if principal_uuid is not None and (not isinstance(principal_uuid, UUID) or not principal_uuid.int):
         raise ValueError("actor_principal_uuid must be a nonzero UUID or null")
