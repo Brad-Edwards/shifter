@@ -105,7 +105,10 @@ spec:
     resourceRules:
       - apiGroups: [batch]
         apiVersions: [v1]
-        operations: [CREATE, UPDATE]
+        # Job specs are immutable after creation and the launcher has no
+        # update/patch grant. Leave controller-owned finalizer updates outside
+        # this policy so TTL and garbage collection can finish deletion.
+        operations: [CREATE]
         resources: [jobs]
   matchConditions:
     - name: plugin-namespace
