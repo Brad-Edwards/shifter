@@ -47,7 +47,7 @@ def test_gcp_smoke_uses_an_ephemeral_job_instead_of_remote_exec() -> None:
     assert "render_smoke_job.py" in text
     assert 'apply -f "${job_file}"' in text
     assert 'logs "job/${job_name}"' in text
-    assert 'delete job "${job_name}" secret "${secret_name}"' in text
+    assert 'delete "job/${job_name}" "secret/${secret_name}"' in text
     assert "kubectl -n shifter-platform exec" not in text
 
 
