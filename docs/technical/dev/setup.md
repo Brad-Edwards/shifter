@@ -572,6 +572,21 @@ export RANGE_NETWORK_ZONE=<zone>
 export GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=<range-host-service-account>
 ```
 
+If `gcloud` is installed under `~/google-cloud-sdk` but the credential-helper
+check fails, load the SDK's standard path initializer and add the same guarded
+source line to the operator's shell startup file before running bootstrap:
+
+```bash
+if [ -f "$HOME/google-cloud-sdk/path.bash.inc" ]; then
+  . "$HOME/google-cloud-sdk/path.bash.inc"
+fi
+command -v docker-credential-gcloud >/dev/null
+```
+
+Do not work around a missing helper with a one-off registry login. Bootstrap
+builds and pushes several images, and the persistent SDK path initialization
+keeps the documented credential-helper flow available on later deploys.
+
 When exact first-operator credentials are supplied in the process environment,
 set `SHIFTER_BOOTSTRAP_ENV_SOURCE=process` with
 `GCP_BOOTSTRAP_ADMIN_EMAIL` and `GCP_BOOTSTRAP_ADMIN_PASSWORD`. This prevents a
