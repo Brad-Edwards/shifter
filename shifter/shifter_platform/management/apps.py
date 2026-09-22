@@ -57,6 +57,7 @@ class ManagementConfig(AppConfig):
                 on_user_saved,
                 sender=settings.AUTH_USER_MODEL,
                 dispatch_uid="management_save_user_profile",
+                weak=False,
             )
             logger.debug("Registered user profile signal handlers")
         except Exception:

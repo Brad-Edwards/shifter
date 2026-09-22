@@ -7,11 +7,15 @@ from shared.api_tokens.scopes import AUTHORIZATION_ACTION_SCOPES, KNOWN_SCOPES
 
 
 class CredentialPageQuerySerializer(ClosedSerializer):
+    """Validate bounded offset pagination for credential collections."""
+
     offset = serializers.IntegerField(default=0, min_value=0, max_value=100000)
     limit = serializers.IntegerField(default=50, min_value=1, max_value=200)
 
 
 class PersonalCredentialSerializer(serializers.Serializer):
+    """Project non-secret personal credential lifecycle metadata."""
+
     credential_uuid = serializers.UUIDField()
     name = serializers.CharField()
     scopes = serializers.ListField(child=serializers.CharField())
@@ -24,16 +28,22 @@ class PersonalCredentialSerializer(serializers.Serializer):
 
 
 class IssuedPersonalCredentialSerializer(PersonalCredentialSerializer):
+    """Return a newly issued proof exactly once with its safe metadata."""
+
     token = serializers.CharField(help_text="Shown once. Never returned by list or detail operations.")
 
 
 class PersonalCredentialPageSerializer(serializers.Serializer):
+    """Project one bounded page of personal credential metadata."""
+
     count = serializers.IntegerField()
     next_offset = serializers.IntegerField(allow_null=True)
     results = PersonalCredentialSerializer(many=True)
 
 
 class IssuePersonalCredentialSerializer(ClosedSerializer):
+    """Validate a closed personal credential issue or rotation command."""
+
     name = serializers.CharField(max_length=100)
     scopes = serializers.ListField(
         child=serializers.ChoiceField(choices=sorted(AUTHORIZATION_ACTION_SCOPES.values())),
@@ -48,6 +58,8 @@ class IssuePersonalCredentialSerializer(ClosedSerializer):
 
 
 class ServiceCredentialSerializer(serializers.Serializer):
+    """Project non-secret native service admission metadata."""
+
     credential_uuid = serializers.UUIDField()
     principal_uuid = serializers.UUIDField()
     name = serializers.CharField()
@@ -61,6 +73,8 @@ class ServiceCredentialSerializer(serializers.Serializer):
 
 
 class CreateServiceCredentialSerializer(ClosedSerializer):
+    """Validate a closed native service admission command."""
+
     name = serializers.CharField(max_length=200)
     subject = serializers.RegexField(r"^[0-9]{10,32}$")
     scopes = serializers.ListField(
@@ -70,12 +84,16 @@ class CreateServiceCredentialSerializer(ClosedSerializer):
 
 
 class ServiceCredentialPageSerializer(serializers.Serializer):
+    """Project one bounded page of native service admissions."""
+
     count = serializers.IntegerField()
     next_offset = serializers.IntegerField(allow_null=True)
     results = ServiceCredentialSerializer(many=True)
 
 
 class ServicePrincipalUpdateSerializer(ClosedSerializer):
+    """Validate lifecycle and responsible-contact changes for a service."""
+
     is_active = serializers.BooleanField()
     responsible_user_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 

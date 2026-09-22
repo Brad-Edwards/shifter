@@ -11,6 +11,33 @@ from shared.authorization import CredentialCeiling, TargetRef
 from shared.identity_scope import PrincipalRef, ResourceScope
 
 
+def _validate_credential_shape(context: CredentialContext) -> None:
+    """Validate provider-neutral identity, ceiling, proof ID, and scope shapes."""
+    if not isinstance(context.principal, PrincipalRef) or not isinstance(context.ceiling, CredentialCeiling):
+        raise ValueError("Invalid credential context")
+    expected_kind = {"session": "human", "personal": "human", "temporary": "human", "service": "service"}
+    if expected_kind.get(context.kind) != context.principal.kind:
+        raise ValueError("Credential and principal kinds disagree")
+    if not isinstance(context.credential_uuid, UUID) or not context.credential_uuid.int:
+        raise ValueError("Invalid credential identity")
+    if not isinstance(context.scopes, frozenset) or any(not isinstance(scope, str) for scope in context.scopes):
+        raise ValueError("Credential scopes must be immutable")
+
+
+def _validate_event_binding(context: CredentialContext) -> None:
+    """Require exact event binding only for temporary participant proofs."""
+    if context.kind != "temporary":
+        if context.event_uuid is not None:
+            raise ValueError("Only temporary credentials fix an authentication event")
+        return
+    if not isinstance(context.event_uuid, UUID) or not context.event_uuid.int:
+        raise ValueError("Temporary credentials require an explicit event")
+    if not context.ceiling.actions <= {"event.read", "event.participate"}:
+        raise ValueError("Temporary credential cannot leave event scope")
+    if context.ceiling.target != TargetRef("event", context.event_uuid):
+        raise ValueError("Temporary credential ceiling must match its event")
+
+
 @dataclass(frozen=True, slots=True)
 class CredentialContext:
     """Admission evidence; application policy and domain lifecycle still apply."""
@@ -23,24 +50,8 @@ class CredentialContext:
     event_uuid: UUID | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.principal, PrincipalRef) or not isinstance(self.ceiling, CredentialCeiling):
-            raise ValueError("Invalid credential context")
-        expected_kind = {"session": "human", "personal": "human", "temporary": "human", "service": "service"}
-        if expected_kind.get(self.kind) != self.principal.kind:
-            raise ValueError("Credential and principal kinds disagree")
-        if not isinstance(self.credential_uuid, UUID) or not self.credential_uuid.int:
-            raise ValueError("Invalid credential identity")
-        if not isinstance(self.scopes, frozenset) or any(not isinstance(scope, str) for scope in self.scopes):
-            raise ValueError("Credential scopes must be immutable")
-        if self.kind == "temporary":
-            if not isinstance(self.event_uuid, UUID) or not self.event_uuid.int:
-                raise ValueError("Temporary credentials require an explicit event")
-            if not self.ceiling.actions <= {"event.read", "event.participate"}:
-                raise ValueError("Temporary credential cannot leave event scope")
-            if self.ceiling.target != TargetRef("event", self.event_uuid):
-                raise ValueError("Temporary credential ceiling must match its event")
-        elif self.event_uuid is not None:
-            raise ValueError("Only temporary credentials fix an authentication event")
+        _validate_credential_shape(self)
+        _validate_event_binding(self)
 
 
 _service_verifier: Callable[[str], CredentialContext] | None = None

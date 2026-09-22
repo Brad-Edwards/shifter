@@ -1,7 +1,10 @@
 """Explicit event-scoped participant admission and reads for neutral credentials."""
 
+from uuid import UUID
+
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -19,21 +22,27 @@ from shared.principal_port import PrincipalResolutionError
 
 
 class AdmitPrincipalParticipantSerializer(ClosedSerializer):
+    """Validate admission of one existing service principal into an event."""
+
     principal_uuid = serializers.UUIDField()
     name = serializers.CharField(max_length=100)
 
 
 class PrincipalParticipantSerializer(serializers.Serializer):
+    """Project neutral principal participation identifiers."""
+
     participant_uuid = serializers.UUIDField()
     principal_uuid = serializers.UUIDField()
     event_uuid = serializers.UUIDField()
 
 
 class PrincipalParticipantView(APIView):
+    """Normalize fail-closed participation errors at the HTTP boundary."""
+
     permission_classes = [IsAuthenticatedSessionOrApiToken]
     parser_classes = [ClosedJSONParser]
 
-    def handle_exception(self, exc):
+    def handle_exception(self, exc: Exception) -> Response:
         if isinstance(exc, (ValueError, PrincipalResolutionError, AuthorizationProviderBindingError)):
             return api_error_response(
                 code="participation_denied", message="Participation denied", status_code=403, request=self.request
@@ -45,7 +54,8 @@ class PrincipalParticipantAdmissionView(PrincipalParticipantView):
     """Grant event participation to an existing service, never a synthetic user."""
 
     @extend_schema(request=AdmitPrincipalParticipantSerializer, responses={201: PrincipalParticipantSerializer})
-    def post(self, request, event_id):
+    def post(self, request: Request, event_id: UUID) -> Response:
+        """Admit an existing service principal into one event."""
         command = AdmitPrincipalParticipantSerializer(data=request.data)
         command.is_valid(raise_exception=True)
         participant = services.admit_service_participant(
@@ -70,6 +80,7 @@ class PrincipalParticipantCurrentEventView(PrincipalParticipantView):
     """Use the ordinary participant-safe projection with an explicit event target."""
 
     @extend_schema(responses=ParticipantCurrentEventSerializer)
-    def get(self, request, event_id):
+    def get(self, request: Request, event_id: UUID) -> Response:
+        """Return the current-event projection for the authenticated principal."""
         participant = services.participant_for_credential(authenticated_credential(request), event_id)
         return Response(ParticipantCurrentEventSerializer(projections.participant_current_event(participant)).data)

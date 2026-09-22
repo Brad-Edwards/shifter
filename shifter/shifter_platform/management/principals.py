@@ -27,17 +27,18 @@ def _audit(
     entity_type: str, entity_id: int, action: str, state: dict[str, object], *, actor: PrincipalRef | None = None
 ) -> None:
     """Write a strict identity-lifecycle audit event."""
-    audit_log(
-        AuditEvent(
-            entity_type=entity_type,
-            entity_id=entity_id,
-            action=action,
-            new_state=state,
-            context="principal_identity",
-            **(principal_actor_fields(actor) if actor is not None else {}),
-        ),
-        strict=True,
+    actor_fields = principal_actor_fields(actor) if actor is not None else None
+    event = AuditEvent(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        new_state=state,
+        context="principal_identity",
+        actor_type=actor_fields["actor_type"] if actor_fields is not None else "system",
+        actor_id=actor_fields["actor_id"] if actor_fields is not None else None,
+        actor_principal_uuid=actor_fields["actor_principal_uuid"] if actor_fields is not None else None,
     )
+    audit_log(event, strict=True)
 
 
 def _principal_ref(principal: Principal) -> PrincipalRef:

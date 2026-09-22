@@ -270,7 +270,8 @@ Current mechanisms:
   handles, then consume the resulting ECR digest through SSM/ECS
   `repo@sha256` references. Static Guacamole images are pushed only when
   the version tag is absent, and Terraform resolves that tag to a digest.
-- `.github/dependabot.yml`: weekly dependency PRs across every uv,
+- `.github/dependabot.yml`: weekly dependency PRs across every uv (including
+  the standalone `shifter_client` transport),
   npm, github-actions, and pre-commit package root in the repo; every
   block targets the `dev` integration branch. One block per package
   root, and a block's directory must name a root that actually holds a

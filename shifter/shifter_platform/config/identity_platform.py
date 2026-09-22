@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import firebase_admin
 import requests
@@ -219,7 +219,15 @@ def verify_identity_token(id_token: str) -> dict[str, Any]:
         raise IdentityPlatformAuthError("Unable to verify Identity Platform token") from exc
 
 
-def provider_user_state(subject: str):
+class ProviderUserState(Protocol):
+    """Provider lifecycle fields required by the bounded session recheck."""
+
+    disabled: bool
+    email_verified: bool
+    tokens_valid_after_timestamp: int
+
+
+def provider_user_state(subject: str) -> ProviderUserState:
     """Fetch native revocation/lifecycle state under the configured tenant."""
     _ensure_firebase_app()
     provider = (
@@ -400,6 +408,7 @@ def login_with_identity_token(request: HttpRequest | None, id_token: str) -> Dja
     if user is None:
         raise IdentityPlatformAuthError("Identity Platform login did not return a user")
     if request is not None:
-        request.verified_session_claims = {key: claims_payload[key] for key in ("iss", "sub", "auth_time")}
-        request.verified_session_claims["tenant"] = settings.IDENTITY_PLATFORM_TENANT_ID
+        verified_claims = {key: claims_payload[key] for key in ("iss", "sub", "auth_time")}
+        verified_claims["tenant"] = settings.IDENTITY_PLATFORM_TENANT_ID
+        request.verified_session_claims = verified_claims  # type: ignore[attr-defined]
     return user

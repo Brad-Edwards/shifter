@@ -14,6 +14,9 @@ type ASGIReceive = Callable[[], Awaitable[ASGIMessage]]
 type ASGISend = Callable[[ASGIMessage], Awaitable[None]]
 type ASGIApplication = Callable[[ASGIScope, ASGIReceive, ASGISend], Awaitable[None]]
 
+_WEBSOCKET_CLOSE = "websocket.close"
+_WEBSOCKET_DISCONNECT = "websocket.disconnect"
+
 
 class CredentialSessionWebSocketBoundary:
     """Apply the HTTP assurance check at connection and every socket message."""
@@ -23,39 +26,43 @@ class CredentialSessionWebSocketBoundary:
 
     async def __call__(self, scope: ASGIScope, receive: ASGIReceive, send: ASGISend) -> None:
         async def allowed() -> bool:
+            """Revalidate the session against current account and provider state."""
             from config.session_credentials import validate_socket_session
 
             return await database_sync_to_async(validate_socket_session)(scope)
 
         if not await allowed():
-            await send({"type": "websocket.close", "code": WebSocketCloseCode.NOT_AUTHENTICATED})
+            await send({"type": _WEBSOCKET_CLOSE, "code": WebSocketCloseCode.NOT_AUTHENTICATED})
             return
 
         closed = False
 
         async def close_revoked() -> None:
+            """Close the socket once when its credential is no longer valid."""
             nonlocal closed
             if not closed:
                 closed = True
-                await send({"type": "websocket.close", "code": WebSocketCloseCode.NOT_AUTHENTICATED})
+                await send({"type": _WEBSOCKET_CLOSE, "code": WebSocketCloseCode.NOT_AUTHENTICATED})
 
         async def guarded_receive() -> ASGIMessage:
+            """Reject the next client message after session revocation."""
             if closed:
-                return {"type": "websocket.disconnect", "code": WebSocketCloseCode.NOT_AUTHENTICATED}
+                return {"type": _WEBSOCKET_DISCONNECT, "code": WebSocketCloseCode.NOT_AUTHENTICATED}
             message = await receive()
-            if message.get("type") != "websocket.disconnect" and not await allowed():
+            if message.get("type") != _WEBSOCKET_DISCONNECT and not await allowed():
                 await close_revoked()
-                return {"type": "websocket.disconnect", "code": WebSocketCloseCode.NOT_AUTHENTICATED}
+                return {"type": _WEBSOCKET_DISCONNECT, "code": WebSocketCloseCode.NOT_AUTHENTICATED}
             return message
 
         async def guarded_send(message: ASGIMessage) -> None:
+            """Suppress application messages after session revocation."""
             nonlocal closed
             if closed:
                 return
-            if message.get("type") != "websocket.close" and not await allowed():
+            if message.get("type") != _WEBSOCKET_CLOSE and not await allowed():
                 await close_revoked()
                 return
-            if message.get("type") == "websocket.close":
+            if message.get("type") == _WEBSOCKET_CLOSE:
                 closed = True
             await send(message)
 
@@ -74,7 +81,7 @@ class CTFAccountWebSocketBoundary:
             path = str(scope.get("path", ""))
             allowed_path = bool(TERMINAL_TARGET_PATH_RE.fullmatch(path)) or path == "/ws/notifications/"
             if not allowed_path or not await self._may_access_terminal(user):
-                await send({"type": "websocket.close", "code": 4403})
+                await send({"type": _WEBSOCKET_CLOSE, "code": 4403})
                 return
         await self.application(scope, receive, send)
 

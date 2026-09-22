@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import ipaddress
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
+from uuid import UUID
 
 from django.conf import settings
 
@@ -21,11 +22,20 @@ from shared.audit.vocabulary import AuditActorType
 if TYPE_CHECKING:
     from django.http import HttpRequest
 
+    from shared.audit.events import RequestAudit
     from shared.credentials import CredentialContext
     from shared.identity_scope import PrincipalRef
 
 
-def principal_actor_fields(principal: PrincipalRef) -> dict[str, object]:
+class PrincipalActorFields(TypedDict):
+    """Keyword fields that identify a principal actor on an audit event."""
+
+    actor_type: str
+    actor_id: int | None
+    actor_principal_uuid: UUID
+
+
+def principal_actor_fields(principal: PrincipalRef) -> PrincipalActorFields:
     """Canonical attribution for an already-authorized neutral principal."""
     from shared.identity_scope import PrincipalRef
 
@@ -34,7 +44,7 @@ def principal_actor_fields(principal: PrincipalRef) -> dict[str, object]:
     return {"actor_type": AuditActorType.PRINCIPAL, "actor_id": None, "actor_principal_uuid": principal.uuid}
 
 
-def request_audit(request: HttpRequest, *, credential: CredentialContext | None = None):
+def request_audit(request: HttpRequest, *, credential: CredentialContext | None = None) -> RequestAudit:
     """Capture trusted identity and HTTP metadata, never caller-supplied actor fields.
 
     Preserve legacy user/token attribution when available and supplement it with
@@ -48,8 +58,9 @@ def request_audit(request: HttpRequest, *, credential: CredentialContext | None 
         candidate = getattr(request, "credential_context", None)
         if isinstance(candidate, CredentialContext):
             credential = candidate
-    if credential is None and isinstance(getattr(request, "auth", None), CredentialContext):
-        credential = request.auth
+    request_auth = getattr(request, "auth", None)
+    if credential is None and isinstance(request_auth, CredentialContext):
+        credential = request_auth
     actor_type, actor_id = get_actor_from_request(request)
     principal_uuid = None
     if credential is not None:

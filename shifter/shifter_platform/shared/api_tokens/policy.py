@@ -4,7 +4,7 @@ from shared.authorization import AuthorizationRequest, CredentialCeiling, Target
 from shared.identity_scope import PrincipalRef, ResourceScope
 from shared.principal_port import resolve_principal
 
-PERSONAL_TOKEN_GRANT = "installation.use_personal_tokens"
+PERSONAL_TOKEN_GRANT = "installation.use_personal_tokens"  # nosec B105 - authorization action identifier
 
 
 def require_personal_token_grant(principal: PrincipalRef) -> None:

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-KNOX_TOKEN_MODEL = "knox.AuthToken"
-REST_KNOX = {"AUTH_HEADER_PREFIX": "Bearer", "TOKEN_PREFIX": "shf_", "AUTO_REFRESH": False}
+KNOX_TOKEN_MODEL = "knox.AuthToken"  # nosec B105 - dotted model label, not a credential
+REST_KNOX = {
+    "AUTH_HEADER_PREFIX": "Bearer",
+    "TOKEN_PREFIX": "shf_",  # nosec B105 - public token discriminator, not a credential
+    "AUTO_REFRESH": False,
+}
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

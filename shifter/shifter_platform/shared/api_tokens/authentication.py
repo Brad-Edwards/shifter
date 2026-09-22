@@ -106,7 +106,10 @@ class ApiTokenAuthentication(authentication.BaseAuthentication):
 
         self._reject_ineligible_owner(token)
         try:
-            principal = principal_for_user(token.created_by)
+            owner = token.created_by
+            if owner is None:
+                raise ValueError("Credential owner unavailable")
+            principal = principal_for_user(owner)
             if token.principal_uuid != principal.uuid:
                 raise ValueError("Credential owner mismatch")
             require_personal_token_grant(principal)

@@ -47,9 +47,7 @@ resolve_model_access_users = _model_access_authority.resolve_model_access_users
 resolve_model_preparation_user = _model_access_authority.resolve_model_preparation_user
 set_model_access_group_eligibility = _model_access_authority.set_model_access_group_eligibility
 
-# SonarCloud S1192: extracted duplicated string literals.
 USER_PK_REQUIRED_MSG = "user must have a primary key"
-
 if TYPE_CHECKING:
     from uuid import UUID
 

@@ -1,6 +1,7 @@
 """Read-only legacy admin projection; credential mutations use the authorized API."""
 
 from django.contrib import admin
+from django.http import HttpRequest
 from knox.models import AuthToken
 
 from shared.api_tokens.models import ApiToken
@@ -33,11 +34,14 @@ class ApiTokenAdmin(admin.ModelAdmin):
     readonly_fields = fields
     actions = None
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Forbid minting credentials through Django admin."""
         return False
 
-    def has_change_permission(self, request, obj=None):
+    def has_change_permission(self, request: HttpRequest, obj: ApiToken | None = None) -> bool:
+        """Forbid editing credential metadata through Django admin."""
         return False
 
-    def has_delete_permission(self, request, obj=None):
+    def has_delete_permission(self, request: HttpRequest, obj: ApiToken | None = None) -> bool:
+        """Forbid bypassing the audited revocation lifecycle."""
         return False

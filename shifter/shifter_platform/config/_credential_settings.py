@@ -14,6 +14,7 @@ __all__ = [
 
 
 def _bounded_seconds(value: str, minimum: int, maximum: int) -> int:
+    """Parse one bounded positive credential-assurance duration."""
     try:
         parsed = int(value)
     except ValueError as exc:

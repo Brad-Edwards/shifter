@@ -1,14 +1,16 @@
-"""Behavior tests for the management app's user-profile signals.
+"""Behavior tests for the management app's identity-row signals.
 
 The ``ManagementConfig.ready()`` post_save wiring is verified through its real
-effect — creating/saving a user (auto-)provisions a ``UserProfile`` — rather than
+effect — creating/saving a user (auto-)provisions identity rows — rather than
 patching ``post_save`` and asserting registration call shapes.
 """
+
+import gc
 
 import pytest
 from django.contrib.auth import get_user_model
 
-from management.models import UserProfile
+from management.models import Principal, UserProfile
 
 pytestmark = pytest.mark.django_db
 
@@ -16,6 +18,15 @@ User = get_user_model()
 
 
 class TestUserProfileSignals:
+    def test_receiver_survives_garbage_collection(self):
+        """Startup must retain the local receiver for long-running workers."""
+        gc.collect()
+
+        user = User.objects.create_user(username="apps-gc@e.com", email="apps-gc@e.com")
+
+        assert UserProfile.objects.filter(user=user).exists()
+        assert Principal.objects.filter(user=user).exists()
+
     def test_creating_user_auto_creates_profile(self):
         """The save signal provisions a profile for a new user."""
         user = User.objects.create_user(username="apps-create@e.com", email="apps-create@e.com")

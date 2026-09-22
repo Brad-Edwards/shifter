@@ -48,7 +48,7 @@ function PersonalCredentialsPanel() {
       const issued = await apiFetch<IssuedCredential>(path, { method: "POST", body });
       setSecret(issued.token); setRotation(null);
       await queryClient.invalidateQueries({ queryKey: ["access-credentials", "personal"] });
-    } catch (failure) { setError(describeMutationError(failure, "Token issuance denied.") ?? "Token issuance denied."); }
+    } catch (error_) { setError(describeMutationError(error_, "Token issuance denied.") ?? "Token issuance denied."); }
     finally { setBusy(false); }
   }
 
@@ -57,7 +57,7 @@ function PersonalCredentialsPanel() {
     try {
       await apiFetch(`/credentials/personal/${uuid}/revoke/`, { method: "POST", body: {} });
       await queryClient.invalidateQueries({ queryKey: ["access-credentials", "personal"] });
-    } catch (failure) { setError(describeMutationError(failure, "Revocation failed.") ?? "Revocation failed."); }
+    } catch (error_) { setError(describeMutationError(error_, "Revocation failed.") ?? "Revocation failed."); }
     finally { setBusy(false); }
   }
 
@@ -65,7 +65,7 @@ function PersonalCredentialsPanel() {
     <h2 id="personal-credentials" className="text-xl font-semibold">Personal tokens</h2>
     <p>Issuance and use require your live personal-token grant. A token cannot exceed your current authority or create more credentials. You can still revoke your own tokens after losing issuance rights.</p>
     {queryError || error ? <p role="alert">{error || queryError}</p> : null}
-    {credentials.isPending ? <p role="status">Loading tokens…</p> : null}
+    {credentials.isPending ? <output>Loading tokens…</output> : null}
     {secret ? <div className="space-y-2 rounded border p-4">
       <Label htmlFor="one-time-token">Copy this token now. It will not be shown again.</Label>
       <Input id="one-time-token" readOnly value={secret} autoComplete="off" />

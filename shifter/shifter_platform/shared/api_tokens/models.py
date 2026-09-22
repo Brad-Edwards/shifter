@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 from django.conf import settings
@@ -15,14 +15,15 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from shared.api_tokens.scopes import KNOWN_SCOPES, validate_scopes
 from shared.authorization import TargetRef
+from shared.authorization.catalog import TargetType
 from shared.principal_port import principal_for_user
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from django.contrib.auth.models import AbstractBaseUser
+    from django.contrib.auth.models import User
 
-TOKEN_PREFIX = "shf_"
+TOKEN_PREFIX = "shf_"  # nosec B105 - public token discriminator, not a credential
 
 
 class ApiToken(models.Model):
@@ -87,7 +88,7 @@ class ApiToken(models.Model):
         """Return the immutable issuance target; historical/internal metadata may lack one."""
         if not self.target_type and self.target_uuid is None:
             return None
-        return TargetRef(self.target_type, self.target_uuid)
+        return TargetRef(cast(TargetType, self.target_type), self.target_uuid)
 
     @property
     def is_active(self) -> bool:
@@ -148,7 +149,7 @@ class ApiToken(models.Model):
         cls,
         *,
         name: str,
-        created_by: AbstractBaseUser | None,
+        created_by: User | None,
         scopes: list[str],
         expires_at: datetime | None = None,
         target: TargetRef | None = None,
@@ -187,7 +188,7 @@ class ApiToken(models.Model):
             return None
         try:
             _user, native = TokenAuthentication().authenticate_credentials(raw_token.encode())
-        except (AuthenticationFailed, UnicodeError, ValueError):
+        except (AuthenticationFailed, ValueError):
             return None
         token = cls.objects.select_related("created_by").filter(knox_token=native).first()
         return token if token is not None and token.is_active and token.has_usable_scope else None

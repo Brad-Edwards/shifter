@@ -1,5 +1,7 @@
 """Authorized management of native service admission; no cloud keys or IAM writes."""
 
+from uuid import UUID
+
 from django.conf import settings
 from django.db import transaction
 
@@ -12,13 +14,20 @@ from shared.identity_scope import ResourceScope
 from .models import Principal, ProviderBinding, ServiceCredentialAdmission
 from .principals import bind_principal_provider_identity, create_service_principal, resolve_principal
 
-_UNCHANGED = object()
+
+class _Unchanged:
+    """Sentinel type distinguishing an omitted contact from an explicit null."""
+
+
+_UNCHANGED = _Unchanged()
+_CREDENTIAL_ADMINISTRATION_DENIED = "Credential administration denied"
 
 
 def _authorize(actor: CredentialContext) -> None:
+    """Require a currently authorized non-personal management credential."""
     resolve_principal(actor.principal)
     if actor.kind in {"personal", "temporary"}:
-        raise ValueError("Credential administration denied")
+        raise ValueError(_CREDENTIAL_ADMINISTRATION_DENIED)
     request = AuthorizationRequest(
         actor.principal,
         "installation.manage_service_credentials",
@@ -27,10 +36,11 @@ def _authorize(actor: CredentialContext) -> None:
         actor.ceiling,
     )
     if not configured_authorization_provider().check(request).allowed:
-        raise ValueError("Credential administration denied")
+        raise ValueError(_CREDENTIAL_ADMINISTRATION_DENIED)
 
 
 def _view(admission: ServiceCredentialAdmission) -> dict[str, object]:
+    """Project safe service-admission metadata without any proof material."""
     return {
         "credential_uuid": admission.uuid,
         "principal_uuid": admission.binding.principal.uuid,
@@ -46,7 +56,7 @@ def _view(admission: ServiceCredentialAdmission) -> dict[str, object]:
 
 
 def create_service_credential(
-    actor: CredentialContext, *, name: str, subject: str, scopes: list[str], principal_uuid=None
+    actor: CredentialContext, *, name: str, subject: str, scopes: list[str], principal_uuid: UUID | None = None
 ) -> dict[str, object]:
     """Create an independent identity and immutable native admission, without grants."""
     _authorize(actor)
@@ -89,15 +99,19 @@ def create_service_credential(
 
 
 def update_service_principal(
-    actor: CredentialContext, principal_uuid, *, is_active: bool, responsible_user_id=_UNCHANGED
+    actor: CredentialContext,
+    principal_uuid: UUID,
+    *,
+    is_active: bool,
+    responsible_user_id: int | None | _Unchanged = _UNCHANGED,
 ) -> None:
     """Administer independent lifecycle/contact without transferring identity."""
     from django.contrib.auth.models import User
 
     _authorize(actor)
-    contact_changed = responsible_user_id is not _UNCHANGED
+    contact_changed = not isinstance(responsible_user_id, _Unchanged)
     contact = None
-    if contact_changed and responsible_user_id is not None:
+    if isinstance(responsible_user_id, int):
         contact = User.objects.filter(pk=responsible_user_id, is_active=True, profile__deleted_at__isnull=True).first()
         if contact is None:
             raise ValueError("Service contact unavailable")
@@ -126,7 +140,8 @@ def update_service_principal(
         )
 
 
-def list_service_credentials(actor: CredentialContext, *, offset: int = 0, limit: int = 50):
+def list_service_credentials(actor: CredentialContext, *, offset: int = 0, limit: int = 50) -> dict[str, object]:
+    """List bounded safe admission metadata after live authorization."""
     _authorize(actor)
     from .credential_pagination import credential_page
 
@@ -138,13 +153,13 @@ def list_service_credentials(actor: CredentialContext, *, offset: int = 0, limit
     )
 
 
-def disable_service_credential(actor: CredentialContext, credential_uuid) -> None:
+def disable_service_credential(actor: CredentialContext, credential_uuid: UUID) -> None:
     """Disable admission without erasing the immutable provider identity."""
     _authorize(actor)
     with transaction.atomic():
         admission = ServiceCredentialAdmission.objects.select_for_update().filter(uuid=credential_uuid).first()
         if admission is None:
-            raise ValueError("Credential administration denied")
+            raise ValueError(_CREDENTIAL_ADMINISTRATION_DENIED)
         if admission.is_active:
             admission.is_active = False
             admission.save(update_fields=["is_active"])

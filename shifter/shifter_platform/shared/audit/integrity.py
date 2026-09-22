@@ -124,14 +124,18 @@ def _validate_state(name: str, value: object) -> None:
         raise ValueError(f"{name} exceeds {MAX_STATE_BYTES} canonical bytes")
 
 
-def validate_audit_event(event: AuditEvent) -> None:
-    """Validate the one accepted shape before persistence and hashing."""
+def _validate_audit_vocabulary(event: AuditEvent) -> None:
+    """Require active entity, action, and actor vocabulary values."""
     if event.entity_type not in AuditEntityType.values:
         raise ValueError("entity_type is not active audit vocabulary")
     if event.action not in AuditAction.values:
         raise ValueError("action is not active audit vocabulary")
     if event.actor_type not in AuditActorType.values:
         raise ValueError("actor_type is not active audit vocabulary")
+
+
+def _validate_audit_actor(event: AuditEvent) -> None:
+    """Validate integer and principal actor attribution invariants."""
     if not _is_database_integer(event.entity_id):
         raise ValueError("entity_id must fit a non-negative database integer")
     if event.actor_id is not None and not _is_database_integer(event.actor_id):
@@ -143,6 +147,12 @@ def validate_audit_event(event: AuditEvent) -> None:
         raise ValueError("principal actor requires UUID attribution without an integer actor_id")
     if event.actor_type == AuditActorType.SYSTEM and principal_uuid is not None:
         raise ValueError("system actor cannot carry principal attribution")
+
+
+def validate_audit_event(event: AuditEvent) -> None:
+    """Validate the one accepted shape before persistence and hashing."""
+    _validate_audit_vocabulary(event)
+    _validate_audit_actor(event)
     _validate_scalar_text("entity_ref", event.entity_ref, maximum=MAX_ENTITY_REF_LENGTH)
     _validate_scalar_text("context", event.context, maximum=MAX_CONTEXT_LENGTH)
     _validate_scalar_text("user_agent", event.user_agent, maximum=MAX_USER_AGENT_LENGTH)

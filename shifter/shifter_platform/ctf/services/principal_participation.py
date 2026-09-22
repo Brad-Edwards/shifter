@@ -15,6 +15,8 @@ from shared.credentials import CredentialContext
 from shared.identity_scope import PrincipalRef
 from shared.principal_port import resolve_principal
 
+_PARTICIPATION_DENIED = "Participation denied"
+
 
 def admit_service_participant(
     actor: CredentialContext, event_uuid: UUID, principal: PrincipalRef, *, name: str
@@ -23,7 +25,7 @@ def admit_service_participant(
     resolve_principal(actor.principal)
     resolve_principal(principal)
     if actor.kind == "temporary" or principal.kind != "service" or not name.strip() or len(name) > 100:
-        raise ValueError("Participation denied")
+        raise ValueError(_PARTICIPATION_DENIED)
     request = AuthorizationRequest(
         actor.principal,
         "event.manage_participants",
@@ -32,11 +34,11 @@ def admit_service_participant(
         actor.ceiling,
     )
     if not configured_authorization_provider().check(request).allowed:
-        raise ValueError("Participation denied")
+        raise ValueError(_PARTICIPATION_DENIED)
     with transaction.atomic():
         event = CTFEvent.objects.select_for_update().filter(pk=event_uuid).first()
         if event is None or event.status in EVENT_TERMINAL_STATUSES:
-            raise ValueError("Participation denied")
+            raise ValueError(_PARTICIPATION_DENIED)
         if CTFParticipant.objects.filter(event=event, principal_uuid=principal.uuid).exists():
             raise ValueError("Participation already exists")
         participant = CTFParticipant.objects.create(
@@ -64,10 +66,10 @@ def participant_for_credential(credential: CredentialContext, event_uuid: UUID) 
     """Resolve exact participation under current proof, live policy and lifecycle."""
     resolve_principal(credential.principal)
     if not credential.ceiling.permits("event.participate", TargetRef("event", event_uuid)):
-        raise ValueError("Participation denied")
+        raise ValueError(_PARTICIPATION_DENIED)
     if credential.kind == "temporary":
         if credential.event_uuid != event_uuid:
-            raise ValueError("Participation denied")
+            raise ValueError(_PARTICIPATION_DENIED)
     else:
         request = AuthorizationRequest(
             credential.principal,
@@ -77,7 +79,7 @@ def participant_for_credential(credential: CredentialContext, event_uuid: UUID) 
             credential.ceiling,
         )
         if not configured_authorization_provider().check(request).allowed:
-            raise ValueError("Participation denied")
+            raise ValueError(_PARTICIPATION_DENIED)
     now = timezone.now()
     participant = CTFParticipant.objects.filter(
         eligible_participant_q(),
@@ -88,5 +90,5 @@ def participant_for_credential(credential: CredentialContext, event_uuid: UUID) 
         event__event_end__gt=now,
     ).first()
     if participant is None:
-        raise ValueError("Participation denied")
+        raise ValueError(_PARTICIPATION_DENIED)
     return participant

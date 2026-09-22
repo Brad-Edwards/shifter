@@ -15,6 +15,28 @@ _DENIED = "Scope unavailable"
 _DEFAULT_NAME = "Default"
 
 
+def _validated_organization(account: Account, organization_id: int | None) -> Organization | None:
+    """Resolve an optional organization only within the selected account."""
+    if organization_id is None:
+        return None
+    organization = Organization.objects.filter(pk=organization_id, account=account).first()
+    if organization is None:
+        raise AccountScopeError(_DENIED)
+    return organization
+
+
+def _validated_workspace(organization: Organization | None, workspace_id: int | None) -> Workspace | None:
+    """Resolve an optional workspace only within the selected organization."""
+    if workspace_id is None:
+        return None
+    if organization is None:
+        raise AccountScopeError(_DENIED)
+    workspace = Workspace.objects.filter(pk=workspace_id, organization=organization).first()
+    if workspace is None:
+        raise AccountScopeError(_DENIED)
+    return workspace
+
+
 def resource_scope_from_ids(
     *, kind: str, account_id: int | None, organization_id: int | None, workspace_id: int | None
 ) -> ResourceScope:
@@ -26,14 +48,8 @@ def resource_scope_from_ids(
     account = Account.objects.filter(pk=account_id).first()
     if account is None:
         raise AccountScopeError(_DENIED)
-    organization = Organization.objects.filter(pk=organization_id, account=account).first() if organization_id else None
-    workspace = (
-        Workspace.objects.filter(pk=workspace_id, organization=organization).first()
-        if workspace_id and organization
-        else None
-    )
-    if (organization_id is not None and organization is None) or (workspace_id is not None and workspace is None):
-        raise AccountScopeError(_DENIED)
+    organization = _validated_organization(account, organization_id)
+    workspace = _validated_workspace(organization, workspace_id)
     scope = ResourceScope(
         "account", account.uuid, organization.uuid if organization else None, workspace.uuid if workspace else None
     )

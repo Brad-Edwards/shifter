@@ -27,7 +27,7 @@ export function ServiceCredentialsPanel() {
     try {
       await apiFetch(path, { method: "POST", body });
       await queryClient.invalidateQueries({ queryKey: ["access-credentials", "services"] });
-    } catch (failure) { setError(describeMutationError(failure, "Service credential operation denied.") ?? "Service credential operation denied."); }
+    } catch (error_) { setError(describeMutationError(error_, "Service credential operation denied.") ?? "Service credential operation denied."); }
     finally { setBusy(false); }
   }
   function create() {
@@ -39,7 +39,7 @@ export function ServiceCredentialsPanel() {
     <p>Register the Google service account’s immutable numeric unique ID, not its email. Admission grants no application policy or cloud IAM roles. Assign those separately. Services remain independent of their creator.</p>
     <p>Use the supported shifter-client transport with attached workload identity, local impersonation, or external-account federation. No static service-account key upload is supported.</p>
     {error || queryError ? <p role="alert">{error || queryError}</p> : null}
-    {credentials.isPending ? <p role="status">Loading service identities…</p> : null}
+    {credentials.isPending ? <output>Loading service identities…</output> : null}
     {credentials.isSuccess ? <>
       <form className="grid gap-3 max-w-xl" onSubmit={event => { event.preventDefault(); void create(); }}>
         <Label htmlFor="service-name">Service name</Label><Input id="service-name" value={name} onChange={event => setName(event.target.value)} required maxLength={200} />

@@ -172,6 +172,7 @@ class BootstrapView(APIView):
     @extend_schema(responses=BootstrapSerializer, operation_id="api_v1_bootstrap_retrieve")
     def get(self, request: Request) -> Response:
         auth = getattr(request, "auth", None)
+        principal: dict[str, object]
         if isinstance(auth, CredentialContext):
             principal = {
                 "id": None,

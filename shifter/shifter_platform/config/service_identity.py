@@ -10,6 +10,16 @@ from management.services import resolve_service_credential
 from shared.credentials import CredentialContext
 
 
+def _valid_service_subject(value: object) -> bool:
+    """Return whether a Google service-account numeric identity is bounded."""
+    return isinstance(value, str) and value.isascii() and value.isdecimal() and 10 <= len(value) <= 32
+
+
+def _valid_service_email(value: object) -> bool:
+    """Return whether claims identify a Google service-account address."""
+    return isinstance(value, str) and value.endswith(".gserviceaccount.com")
+
+
 def verify_service_credential(raw_token: str) -> CredentialContext:
     """Require exact Google proof, configured audience and explicit SQL admission."""
     audience = getattr(settings, "GCP_SERVICE_TOKEN_AUDIENCE", "")
@@ -18,16 +28,12 @@ def verify_service_credential(raw_token: str) -> CredentialContext:
     claims = id_token.verify_oauth2_token(raw_token, partial(Request(), timeout=10), audience=audience)
     subject = claims.get("sub")
     email = claims.get("email")
-    if (
-        claims.get("iss") != "https://accounts.google.com"
-        or claims.get("aud") != audience
-        or claims.get("email_verified") is not True
-        or not isinstance(subject, str)
-        or not subject.isascii()
-        or not subject.isdecimal()
-        or not 10 <= len(subject) <= 32
-        or not isinstance(email, str)
-        or not email.endswith(".gserviceaccount.com")
-    ):
+    trusted_claims = (
+        claims.get("iss") == "https://accounts.google.com"
+        and claims.get("aud") == audience
+        and claims.get("email_verified") is True
+    )
+    if not trusted_claims or not _valid_service_subject(subject) or not _valid_service_email(email):
         raise ValueError("Service authentication denied")
+    assert isinstance(subject, str)
     return resolve_service_credential(issuer=claims["iss"], subject=subject, audience=audience)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TypedDict, Unpack
 from uuid import UUID
 
 from django.contrib.auth.models import User
@@ -19,6 +20,20 @@ from shared.identity_scope import ResourceScope
 
 from .principals import principal_for_user
 
+_CREDENTIAL_OPERATION_DENIED = "Credential operation denied"
+
+
+class RotateArguments(TypedDict):
+    """Closed arguments shared by personal issue and rotation operations."""
+
+    actor: CredentialContext
+    user: User
+    name: str
+    scopes: list[str]
+    expires_at: datetime
+    target: TargetRef
+    scope: ResourceScope
+
 
 def _session_owner(actor: CredentialContext, user: User) -> None:
     """The only human credential-management admission, also used for own revoke."""
@@ -29,12 +44,13 @@ def _session_owner(actor: CredentialContext, user: User) -> None:
         or getattr(getattr(user, "profile", None), "is_ctf_account", False)
         or actor.principal != principal_for_user(user)
     ):
-        raise ValueError("Credential operation denied")
+        raise ValueError(_CREDENTIAL_OPERATION_DENIED)
 
 
 def _authorize_issue(
     actor: CredentialContext, user: User, scopes: list[str], target: TargetRef, scope: ResourceScope
 ) -> list[str]:
+    """Validate issuance authority and normalize the requested scope list."""
     _session_owner(actor, user)
     require_personal_token_grant(actor.principal)
     normalized = validate_scopes(scopes)
@@ -103,7 +119,7 @@ def _persist_issue(
     return token, raw
 
 
-def list_own_tokens(actor: CredentialContext, user: User, *, offset: int = 0, limit: int = 50):
+def list_own_tokens(actor: CredentialContext, user: User, *, offset: int = 0, limit: int = 50) -> dict[str, object]:
     """Listing safe metadata remains available without an issuance grant."""
     _session_owner(actor, user)
     from .credential_pagination import credential_page
@@ -125,7 +141,7 @@ def revoke_own_token(actor: CredentialContext, user: User, credential_uuid: UUID
             .first()
         )
         if token is None:
-            raise ValueError("Credential operation denied")
+            raise ValueError(_CREDENTIAL_OPERATION_DENIED)
         if token.revoked_at is None:
             token.revoke()
             record_token_event(
@@ -137,7 +153,7 @@ def revoke_own_token(actor: CredentialContext, user: User, credential_uuid: UUID
             )
 
 
-def rotate_personal_token(credential_uuid: UUID, **kwargs) -> tuple[ApiToken, str]:
+def rotate_personal_token(credential_uuid: UUID, **kwargs: Unpack[RotateArguments]) -> tuple[ApiToken, str]:
     """Authorize before locks, then atomically replace and retire the old proof."""
     normalized = _authorize_issue(kwargs["actor"], kwargs["user"], kwargs["scopes"], kwargs["target"], kwargs["scope"])
     with transaction.atomic():
@@ -147,7 +163,7 @@ def rotate_personal_token(credential_uuid: UUID, **kwargs) -> tuple[ApiToken, st
             .first()
         )
         if previous is None:
-            raise ValueError("Credential operation denied")
+            raise ValueError(_CREDENTIAL_OPERATION_DENIED)
         token, raw = _persist_issue(
             actor=kwargs["actor"],
             user=kwargs["user"],
