@@ -112,6 +112,7 @@ from ctf.services.participant import (
     set_participant_role,
     unban_participant,
 )
+from ctf.services.principal_participation import admit_service_participant, participant_for_credential
 from ctf.services.public_registration import (
     approve_public_registration_request,
     list_pending_public_registration_requests,
@@ -156,6 +157,7 @@ __all__ = [
     "add_hint",
     "add_participant",
     "add_prerequisite",
+    "admit_service_participant",
     "approve_public_registration_request",
     "archive_event",
     "assert_event_content_hydration_ready",
@@ -218,6 +220,7 @@ __all__ = [
     "list_participants_for_event",
     "list_pending_public_registration_requests",
     "open_registration",
+    "participant_for_credential",
     "pause_event",
     "provision_participant_range",
     "purge_expired_public_registration_requests",

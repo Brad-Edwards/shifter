@@ -15,8 +15,12 @@ ownership. Principal and binding changes use strict audit writes.
 The `management.services` facade creates and resolves principals through its
 same-domain `management.principals` implementation. The data
 migration maps existing users to human principals and maps only complete,
-unambiguous legacy provider tuples. Legacy authentication and token behavior
-remain active until the S8 cutover.
+unambiguous legacy provider tuples. S3 (#2316) introduces the
+[unified credential boundary](access-credentials.md): Knox personal credentials,
+native Google service admissions, and bounded human session assurance. This
+source change is deployed with the coordinated S8 cutover, not as a dual-verifier
+compatibility period. Isolated-account login and recovery remain supported;
+retired participant magic-link authentication is not restored.
 
 ## Models
 
@@ -38,4 +42,4 @@ remain active until the S8 cutover.
 
 | Command | Purpose |
 |---------|---------|
-| `delete_user <email>` | Hard-delete a user by email (testing utility; also invoked by `scripts/delete-user.sh`) |
+| `delete_user <email>` | Hard-delete utility; refuses users protected by durable principals or other retained records. Normal offboarding uses the soft-delete lifecycle. |

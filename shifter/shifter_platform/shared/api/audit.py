@@ -34,6 +34,7 @@ _AUDIT_FILTERS = {
     "action": "action",
     "actor_type": "actor_type",
     "actor_id": "actor_id",
+    "actor_principal_uuid": "actor_principal_uuid",
     "request_id": "request_id",
     "from_date": "timestamp__gte",
     "to_date": "timestamp__lte",
@@ -59,6 +60,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             "action",
             "actor_type",
             "actor_id",
+            "actor_principal_uuid",
             "timestamp",
             "previous_state",
             "new_state",
@@ -88,6 +90,7 @@ class AuditLogQuerySerializer(serializers.Serializer):
     action = serializers.CharField(required=False, allow_blank=True, max_length=20)
     actor_type = serializers.CharField(required=False, allow_blank=True, max_length=10)
     actor_id = serializers.IntegerField(required=False, min_value=0)
+    actor_principal_uuid = serializers.UUIDField(required=False)
     request_id = serializers.CharField(required=False, allow_blank=True, max_length=64)
     from_date = serializers.DateTimeField(required=False)
     to_date = serializers.DateTimeField(required=False)

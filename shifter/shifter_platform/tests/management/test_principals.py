@@ -50,11 +50,19 @@ def test_service_identity_survives_creator_and_contact_changes():
     stored = Principal.objects.get(uuid=service.uuid)
     assert stored.user_id is None
     assert stored.created_by_id == creator.id
-    set_service_contact(service, None)
-    creator.delete()
+    from management.services import mark_user_deleted
+
+    mark_user_deleted(creator)
+    mark_user_deleted(contact)
     stored.refresh_from_db()
     assert stored.uuid == service.uuid
-    assert stored.created_by_id is None
+    assert stored.created_by_id == creator.pk
+    assert Principal.objects.filter(user=creator).exists()
+    assert Principal.objects.filter(user=contact).exists()
+    assert stored.responsible_user_id == contact.pk
+    assert stored.is_active is True
+    set_service_contact(service, None)
+    stored.refresh_from_db()
     assert stored.responsible_user_id is None
     assert stored.is_active is True
 

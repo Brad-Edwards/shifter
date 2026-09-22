@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Self-service cyber range platform"
 requires-python = ">=3.12"
 dependencies = [
+    # Daphne's WebSocket transport must include the decompressed message-size
+    # limit fix (CVE-2026-77528).
+    "autobahn>=26.7.1",
     "asyncssh>=2.23.1",
     # Daphne installs Autobahn transitively; require the decompressed WebSocket
     # message-size limit fix (CVE-2026-77528) in the runtime image.
@@ -22,11 +25,13 @@ dependencies = [
     "django-anymail",
     "django-encrypted-model-fields>=0.6.5",
     "django-health-check<5.0",
+    "django-rest-knox==5.0.4",
     "django-ses",
     "djangorestframework>=3.17.2",
     "drf-spectacular>=0.29.0",
     "drf-spectacular-sidecar>=2026.6.1",
     "firebase-admin",
+    "google-auth>=2.40,<3",
     # GCP Cloud Monitoring publisher for the portal capacity emitter (PLAT-002);
     # AWS uses boto3/CloudWatch. Lazy-imported so AWS flows never load it.
     "google-cloud-monitoring",

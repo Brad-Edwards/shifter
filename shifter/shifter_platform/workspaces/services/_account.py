@@ -15,6 +15,74 @@ _DENIED = "Scope unavailable"
 _DEFAULT_NAME = "Default"
 
 
+def _validated_organization(account: Account, organization_id: int | None) -> Organization | None:
+    """Resolve an optional organization only within the selected account."""
+    if organization_id is None:
+        return None
+    organization = Organization.objects.filter(pk=organization_id, account=account).first()
+    if organization is None:
+        raise AccountScopeError(_DENIED)
+    return organization
+
+
+def _validated_workspace(organization: Organization | None, workspace_id: int | None) -> Workspace | None:
+    """Resolve an optional workspace only within the selected organization."""
+    if workspace_id is None:
+        return None
+    if organization is None:
+        raise AccountScopeError(_DENIED)
+    workspace = Workspace.objects.filter(pk=workspace_id, organization=organization).first()
+    if workspace is None:
+        raise AccountScopeError(_DENIED)
+    return workspace
+
+
+def resource_scope_from_ids(
+    *, kind: str, account_id: int | None, organization_id: int | None, workspace_id: int | None
+) -> ResourceScope:
+    """Project persisted scalar ancestry only after validating every relationship."""
+    if kind == "installation" and (account_id, organization_id, workspace_id) == (None, None, None):
+        return ResourceScope("installation")
+    if kind != "account" or account_id is None:
+        raise AccountScopeError(_DENIED)
+    account = Account.objects.filter(pk=account_id).first()
+    if account is None:
+        raise AccountScopeError(_DENIED)
+    organization = _validated_organization(account, organization_id)
+    workspace = _validated_workspace(organization, workspace_id)
+    scope = ResourceScope(
+        "account", account.uuid, organization.uuid if organization else None, workspace.uuid if workspace else None
+    )
+    resolve_resource_scope(scope)
+    return scope
+
+
+def hierarchy_target_scope(target_type: str, target_uuid: UUID) -> ResourceScope:
+    """Resolve an exact account, organization or workspace public identity."""
+    if target_type == "account":
+        account = Account.objects.filter(uuid=target_uuid).first()
+        if account:
+            return resource_scope_from_ids(
+                kind="account", account_id=account.pk, organization_id=None, workspace_id=None
+            )
+    elif target_type == "organization":
+        organization = Organization.objects.filter(uuid=target_uuid).first()
+        if organization:
+            return resource_scope_from_ids(
+                kind="account", account_id=organization.account_id, organization_id=organization.pk, workspace_id=None
+            )
+    elif target_type == "workspace":
+        workspace = Workspace.objects.select_related("organization").filter(uuid=target_uuid).first()
+        if workspace:
+            return resource_scope_from_ids(
+                kind="account",
+                account_id=workspace.organization.account_id,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace.pk,
+            )
+    raise AccountScopeError(_DENIED)
+
+
 def _audit_create(entity_type: str, entity_id: int, state: dict[str, object]) -> None:
     """Keep structural mutation evidence bounded and in the caller transaction."""
     audit_log(
