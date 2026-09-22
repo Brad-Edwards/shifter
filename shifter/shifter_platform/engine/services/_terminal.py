@@ -142,23 +142,26 @@ def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None
     from engine.models import Instance, Range
 
     user_id = getattr(user, "id", None)
-    if user_id is None or not instance_uuid:
-        return None
-    range_obj = Range.resolve_active_for_instance(user, instance_uuid)
-    if range_obj is not None and range_obj.request is not None:
-        return str(range_obj.request.request_id)
-    try:
-        instance = (
-            Instance.objects.select_related("request").filter(uuid=instance_uuid, request__user_id=user_id).first()
-        )
-    except (DjangoValidationError, ValueError):
-        instance = None
-    # ``request`` is nullable on the model, so an instance whose request row was
-    # detached resolves to no ref rather than raising. A malformed uuid (caught
-    # above) lands here as ``instance = None`` and resolves to no ref too.
-    if instance is None or instance.request is None:
-        return None
-    return str(instance.request.request_id)
+    request_ref = None
+    if user_id is not None and instance_uuid:
+        range_obj = Range.resolve_active_for_instance(user, instance_uuid)
+        if range_obj is not None and range_obj.request is not None:
+            request_ref = str(range_obj.request.request_id)
+        else:
+            try:
+                instance = (
+                    Instance.objects.select_related("request")
+                    .filter(uuid=instance_uuid, request__user_id=user_id)
+                    .first()
+                )
+            except (DjangoValidationError, ValueError):
+                instance = None
+            # ``request`` is nullable on the model, so an instance whose request
+            # row was detached resolves to no ref rather than raising. A malformed
+            # uuid (caught above) also resolves to no ref.
+            if instance is not None and instance.request is not None:
+                request_ref = str(instance.request.request_id)
+    return request_ref
 
 
 def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
