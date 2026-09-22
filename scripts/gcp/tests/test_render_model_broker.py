@@ -84,6 +84,57 @@ def test_combining_manifests_replaces_shared_policies_before_any_apply():
     assert combined == [unrelated, narrow]
 
 
+def test_normal_apply_projects_selected_capacity_profile():
+    path = Path(__file__).resolve().parents[1] / "render_model_broker.py"
+    spec = importlib.util.spec_from_file_location("render_model_broker_capacity", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    documents = [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": name, "namespace": "shifter-platform"},
+            "spec": {
+                "replicas": 1,
+                "template": {
+                    "metadata": {},
+                    "spec": {
+                        "containers": [{"name": container, "resources": {}}],
+                    },
+                },
+            },
+        }
+        for name, container in (
+            ("portal-web", "portal"),
+            ("guacd", "guacd"),
+            ("guacamole-client", "guacamole-client"),
+        )
+    ]
+    documents.append(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "platform-runtime", "namespace": "shifter-platform"},
+            "data": {},
+        }
+    )
+
+    applied = list(
+        yaml.safe_load_all(module.apply_capacity_profile(yaml.safe_dump_all(documents), "gcp-shared-v1-p10"))
+    )
+    portal = next(document for document in applied if document.get("metadata", {}).get("name") == "portal-web")
+    assert portal["spec"]["replicas"] == 2
+    assert portal["spec"]["template"]["spec"]["containers"][0]["resources"] == {
+        "requests": {"cpu": "500m", "memory": "2Gi", "ephemeral-storage": "256Mi"},
+        "limits": {"cpu": "2", "memory": "4Gi", "ephemeral-storage": "256Mi"},
+    }
+    assert portal["metadata"]["annotations"]["shifter.dev/capacity-profile"] == "gcp-shared-v1-p10"
+    assert portal["spec"]["template"]["metadata"]["labels"]["shifter.dev/capacity-profile"] == ("gcp-shared-v1-p10")
+    runtime = next(document for document in applied if document.get("kind") == "ConfigMap")
+    assert runtime["data"]["SHARED_SERVICE_CAPACITY_PROFILE"] == "gcp-shared-v1-p10"
+    assert runtime["data"]["PORTAL_WEB_WORKERS"] == "4"
+
+
 def test_deploy_job_installs_renderer_dependencies_before_use():
     root = Path(__file__).resolve().parents[3]
     workflow = yaml.safe_load((root / ".github/workflows/_gcp-dev.yml").read_text())
