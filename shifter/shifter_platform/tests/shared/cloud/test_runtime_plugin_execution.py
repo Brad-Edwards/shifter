@@ -5,7 +5,7 @@ from uuid import uuid4
 from shifter_adapter_sdk.runtime import PROTOCOL, InspectionInput, InspectionResult, PluginManifest
 
 from shared.cloud.exceptions import CloudTaskError
-from shared.cloud.runtime_plugins import observe_plugin
+from shared.cloud.runtime_plugins import PLUGIN_CONTAINER, PLUGIN_NAMESPACE, launch_plugin, observe_plugin
 
 
 def _request() -> InspectionInput:
@@ -22,6 +22,27 @@ def _request() -> InspectionInput:
         }
     )
     return InspectionInput(protocol=PROTOCOL, phase="inspect", invocation_id=uuid4(), manifest=manifest)
+
+
+def test_launch_uses_pinned_worker_identity(monkeypatch):
+    request = _request()
+    captured = {}
+
+    def run_task(_runner, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("shared.cloud.runtime_plugins.KubernetesTaskRunner.run_task", run_task)
+
+    launch_plugin(request, image_pull_secret="tenant-registry")
+
+    assert captured == {
+        "task_definition": request.manifest.worker_image,
+        "cluster": PLUGIN_NAMESPACE,
+        "command": [],
+        "container_name": PLUGIN_CONTAINER,
+        "env_overrides": {"SHIFTER_PLUGIN_INPUT": request.model_dump_json()},
+        "task_identity": str(request.invocation_id),
+    }
 
 
 def test_valid_result_survives_deferred_terminal_cleanup(monkeypatch, caplog):
