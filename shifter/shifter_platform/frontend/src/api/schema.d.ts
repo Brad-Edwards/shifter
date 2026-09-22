@@ -868,8 +868,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List the current user's safe personal credential metadata. */
         get: operations["credentials_personal_retrieve"];
         put?: never;
+        /** @description Issue one bounded personal credential and return its proof once. */
         post: operations["credentials_personal_create"];
         delete?: never;
         options?: never;
@@ -886,6 +888,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Idempotently revoke an owned personal credential. */
         post: operations["credentials_personal_revoke_create"];
         delete?: never;
         options?: never;
@@ -902,6 +905,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Issue a replacement and revoke the selected old credential. */
         post: operations["credentials_personal_rotate_create"];
         delete?: never;
         options?: never;
@@ -916,8 +920,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List safe service-principal admission metadata. */
         get: operations["credentials_services_retrieve"];
         put?: never;
+        /** @description Register a native Google service identity admission. */
         post: operations["credentials_services_create"];
         delete?: never;
         options?: never;
@@ -934,6 +940,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Disable admission while retaining its audit identity. */
         post: operations["credentials_services_disable_create"];
         delete?: never;
         options?: never;
@@ -950,6 +957,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Apply lifecycle or contact changes without transferring identity. */
         post: operations["credentials_services_principals_create"];
         delete?: never;
         options?: never;
@@ -1536,7 +1544,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Grant event participation to an existing service, never a synthetic user. */
+        /** @description Admit an existing service principal into one event. */
         post: operations["ctf_events_principal_participants_create"];
         delete?: never;
         options?: never;
@@ -1978,7 +1986,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Use the ordinary participant-safe projection with an explicit event target. */
+        /** @description Return the current-event projection for the authenticated principal. */
         get: operations["ctf_me_events_participant_retrieve"];
         put?: never;
         post?: never;
@@ -3953,7 +3961,7 @@ export interface components {
             /** Format: date-time */
             readonly last_login: string | null;
         };
-        /** @description Reject unrecognized write fields before ordinary field validation. */
+        /** @description Validate admission of one existing service principal into an event. */
         AdmitPrincipalParticipant: {
             /** Format: uuid */
             principal_uuid: string;
@@ -4500,7 +4508,7 @@ export interface components {
             /** @default  */
             description: string;
         };
-        /** @description Reject unrecognized write fields before ordinary field validation. */
+        /** @description Validate a closed native service admission command. */
         CreateServiceCredential: {
             name: string;
             subject: string;
@@ -5096,7 +5104,7 @@ export interface components {
          * @enum {string}
          */
         InstancePresentationRoleEnum: "attacker" | "victim" | "dc" | "ngfw";
-        /** @description Reject unrecognized write fields before ordinary field validation. */
+        /** @description Validate a closed personal credential issue or rotation command. */
         IssuePersonalCredential: {
             name: string;
             scopes: components["schemas"]["IssuePersonalCredentialScopesEnum"][];
@@ -5164,6 +5172,7 @@ export interface components {
             email: string;
             role: components["schemas"]["WorkspaceRoleEnum"];
         };
+        /** @description Return a newly issued proof exactly once with its safe metadata. */
         IssuedPersonalCredential: {
             /** Format: uuid */
             credential_uuid: string;
@@ -6038,6 +6047,7 @@ export interface components {
             enabled?: boolean;
             staff_only?: boolean;
         };
+        /** @description Project non-secret personal credential lifecycle metadata. */
         PersonalCredential: {
             /** Format: uuid */
             credential_uuid: string;
@@ -6054,6 +6064,7 @@ export interface components {
             /** Format: uuid */
             target_uuid: string | null;
         };
+        /** @description Project one bounded page of personal credential metadata. */
         PersonalCredentialPage: {
             count: number;
             next_offset: number | null;
@@ -6138,6 +6149,7 @@ export interface components {
             /** Format: uuid */
             required_challenge_id: string;
         };
+        /** @description Project neutral principal participation identifiers. */
         PrincipalParticipant: {
             /** Format: uuid */
             participant_uuid: string;
@@ -6961,6 +6973,7 @@ export interface components {
             matched: number;
             members: components["schemas"]["Member"][];
         };
+        /** @description Project non-secret native service admission metadata. */
         ServiceCredential: {
             /** Format: uuid */
             credential_uuid: string;
@@ -6976,12 +6989,13 @@ export interface components {
             principal_active: boolean;
             responsible_user_id: number | null;
         };
+        /** @description Project one bounded page of native service admissions. */
         ServiceCredentialPage: {
             count: number;
             next_offset: number | null;
             results: components["schemas"]["ServiceCredential"][];
         };
-        /** @description Reject unrecognized write fields before ordinary field validation. */
+        /** @description Validate lifecycle and responsible-contact changes for a service. */
         ServicePrincipalUpdate: {
             is_active: boolean;
             responsible_user_id?: number | null;

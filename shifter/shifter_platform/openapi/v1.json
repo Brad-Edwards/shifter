@@ -3781,6 +3781,7 @@
     "/api/v1/credentials/personal/": {
       "get": {
         "operationId": "credentials_personal_retrieve",
+        "description": "List the current user's safe personal credential metadata.",
         "parameters": [
           {
             "in": "query",
@@ -3846,6 +3847,7 @@
       },
       "post": {
         "operationId": "credentials_personal_create",
+        "description": "Issue one bounded personal credential and return its proof once.",
         "tags": [
           "credentials"
         ],
@@ -3901,6 +3903,7 @@
     "/api/v1/credentials/personal/{credential_uuid}/revoke/": {
       "post": {
         "operationId": "credentials_personal_revoke_create",
+        "description": "Idempotently revoke an owned personal credential.",
         "parameters": [
           {
             "in": "path",
@@ -3950,6 +3953,7 @@
     "/api/v1/credentials/personal/{credential_uuid}/rotate/": {
       "post": {
         "operationId": "credentials_personal_rotate_create",
+        "description": "Issue a replacement and revoke the selected old credential.",
         "parameters": [
           {
             "in": "path",
@@ -4016,6 +4020,7 @@
     "/api/v1/credentials/services/": {
       "get": {
         "operationId": "credentials_services_retrieve",
+        "description": "List safe service-principal admission metadata.",
         "parameters": [
           {
             "in": "query",
@@ -4084,6 +4089,7 @@
       },
       "post": {
         "operationId": "credentials_services_create",
+        "description": "Register a native Google service identity admission.",
         "tags": [
           "credentials"
         ],
@@ -4142,6 +4148,7 @@
     "/api/v1/credentials/services/{credential_uuid}/disable/": {
       "post": {
         "operationId": "credentials_services_disable_create",
+        "description": "Disable admission while retaining its audit identity.",
         "parameters": [
           {
             "in": "path",
@@ -4194,6 +4201,7 @@
     "/api/v1/credentials/services/principals/{principal_uuid}/": {
       "post": {
         "operationId": "credentials_services_principals_create",
+        "description": "Apply lifecycle or contact changes without transferring identity.",
         "parameters": [
           {
             "in": "path",
@@ -7738,7 +7746,7 @@
     "/api/v1/ctf/events/{event_id}/principal-participants/": {
       "post": {
         "operationId": "ctf_events_principal_participants_create",
-        "description": "Grant event participation to an existing service, never a synthetic user.",
+        "description": "Admit an existing service principal into one event.",
         "parameters": [
           {
             "in": "path",
@@ -9724,7 +9732,7 @@
     "/api/v1/ctf/me/events/{event_id}/participant/": {
       "get": {
         "operationId": "ctf_me_events_participant_retrieve",
-        "description": "Use the ordinary participant-safe projection with an explicit event target.",
+        "description": "Return the current-event projection for the authenticated principal.",
         "parameters": [
           {
             "in": "path",
@@ -18177,7 +18185,7 @@
       },
       "AdmitPrincipalParticipant": {
         "type": "object",
-        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "description": "Validate admission of one existing service principal into an event.",
         "properties": {
           "principal_uuid": {
             "type": "string",
@@ -20102,7 +20110,7 @@
       },
       "CreateServiceCredential": {
         "type": "object",
-        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "description": "Validate a closed native service admission command.",
         "properties": {
           "name": {
             "type": "string",
@@ -21697,7 +21705,7 @@
       },
       "IssuePersonalCredential": {
         "type": "object",
-        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "description": "Validate a closed personal credential issue or rotation command.",
         "properties": {
           "name": {
             "type": "string",
@@ -21805,6 +21813,7 @@
       },
       "IssuedPersonalCredential": {
         "type": "object",
+        "description": "Return a newly issued proof exactly once with its safe metadata.",
         "properties": {
           "credential_uuid": {
             "type": "string",
@@ -24530,6 +24539,7 @@
       },
       "PersonalCredential": {
         "type": "object",
+        "description": "Project non-secret personal credential lifecycle metadata.",
         "properties": {
           "credential_uuid": {
             "type": "string",
@@ -24585,6 +24595,7 @@
       },
       "PersonalCredentialPage": {
         "type": "object",
+        "description": "Project one bounded page of personal credential metadata.",
         "properties": {
           "count": {
             "type": "integer"
@@ -24902,6 +24913,7 @@
       },
       "PrincipalParticipant": {
         "type": "object",
+        "description": "Project neutral principal participation identifiers.",
         "properties": {
           "participant_uuid": {
             "type": "string",
@@ -27268,6 +27280,7 @@
       },
       "ServiceCredential": {
         "type": "object",
+        "description": "Project non-secret native service admission metadata.",
         "properties": {
           "credential_uuid": {
             "type": "string",
@@ -27322,6 +27335,7 @@
       },
       "ServiceCredentialPage": {
         "type": "object",
+        "description": "Project one bounded page of native service admissions.",
         "properties": {
           "count": {
             "type": "integer"
@@ -27345,7 +27359,7 @@
       },
       "ServicePrincipalUpdate": {
         "type": "object",
-        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "description": "Validate lifecycle and responsible-contact changes for a service.",
         "properties": {
           "is_active": {
             "type": "boolean"
