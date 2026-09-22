@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - only the fixed Terraform and gcloud CLIs are invoked.
 import sys
 import tempfile
 from pathlib import Path
@@ -15,7 +15,9 @@ _ROOT = Path(__file__).resolve().parents[2] / "platform/terraform/gcp/global/cic
 
 
 def _run(command: list[str], *, env: dict[str, str]) -> str:
-    result = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+    result = subprocess.run(  # nosec B603 - argv only, with no shell or executable from input.
+        command, capture_output=True, text=True, check=False, env=env
+    )
     if result.returncode:
         # Terraform's plan and state output can contain sensitive foundation
         # values. Keep diagnostics on the runner; never emit them to Actions.
