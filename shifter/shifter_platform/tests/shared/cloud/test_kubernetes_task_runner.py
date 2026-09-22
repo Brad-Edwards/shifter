@@ -338,6 +338,95 @@ class TestStatusAndInterrupt:
             )
         batch_api.delete_namespaced_job.assert_not_called()
 
+    def test_completed_task_cleanup_rejects_invalid_reference(self) -> None:
+        runner = _runner(_profile(), MagicMock(), MagicMock())
+
+        with pytest.raises(CloudTaskError, match="identity mismatch"):
+            runner.delete_completed_task("ns", "other/job-1", {})
+
+    def test_completed_task_cleanup_treats_missing_job_as_complete(self) -> None:
+        batch_api = MagicMock()
+        batch_api.read_namespaced_job_status.return_value = None
+        runner = _runner(_profile(), batch_api, MagicMock())
+
+        runner.delete_completed_task("ns", "ns/job-1", {})
+
+        batch_api.delete_namespaced_job.assert_not_called()
+
+    def test_completed_task_cleanup_rejects_mismatched_reservation(self) -> None:
+        observed = _observed_job(
+            task_identity="11111111-1111-1111-1111-111111111111",
+            image="img:1",
+            command=["c"],
+            service_account_name="sa",
+        )
+        observed.status = SimpleNamespace(succeeded=1, failed=0)
+        batch_api = MagicMock()
+        batch_api.read_namespaced_job_status.return_value = observed
+        runner = _runner(_profile(), batch_api, MagicMock())
+
+        with pytest.raises(CloudTaskError, match="identity mismatch"):
+            runner.delete_completed_task(
+                "ns",
+                f"ns/{observed.metadata.name}",
+                {
+                    "task_identity": "other",
+                    "image": "img:1",
+                    "command": ["c"],
+                    "container_name": "pulumi-provisioner",
+                    "service_account_name": "sa",
+                },
+            )
+
+        batch_api.delete_namespaced_job.assert_not_called()
+
+    @pytest.mark.parametrize("status", [404, 500])
+    def test_completed_task_cleanup_handles_provider_delete_status(self, status: int) -> None:
+        task_identity = "11111111-1111-1111-1111-111111111111"
+        observed = _observed_job(task_identity=task_identity, image="img:1", command=["c"], service_account_name="sa")
+        observed.status = SimpleNamespace(succeeded=1, failed=0)
+        batch_api = MagicMock()
+        batch_api.read_namespaced_job_status.return_value = observed
+        batch_api.delete_namespaced_job.side_effect = _ApiException(status)
+        runner = _runner(_profile(), batch_api, MagicMock())
+        identity = {
+            "task_identity": task_identity,
+            "image": "img:1",
+            "command": ["c"],
+            "container_name": "pulumi-provisioner",
+            "service_account_name": "sa",
+        }
+
+        if status == 404:
+            runner.delete_completed_task("ns", f"ns/{observed.metadata.name}", identity)
+        else:
+            with pytest.raises(CloudTaskError, match="cleanup is unavailable"):
+                runner.delete_completed_task("ns", f"ns/{observed.metadata.name}", identity)
+
+    def test_completed_task_cleanup_sanitizes_unexpected_provider_error(self) -> None:
+        task_identity = "11111111-1111-1111-1111-111111111111"
+        observed = _observed_job(task_identity=task_identity, image="img:1", command=["c"], service_account_name="sa")
+        observed.status = SimpleNamespace(succeeded=1, failed=0)
+        batch_api = MagicMock()
+        batch_api.read_namespaced_job_status.return_value = observed
+        batch_api.delete_namespaced_job.side_effect = RuntimeError("private provider detail")
+        runner = _runner(_profile(), batch_api, MagicMock())
+
+        with pytest.raises(CloudTaskError, match="cleanup is unavailable") as exc_info:
+            runner.delete_completed_task(
+                "ns",
+                f"ns/{observed.metadata.name}",
+                {
+                    "task_identity": task_identity,
+                    "image": "img:1",
+                    "command": ["c"],
+                    "container_name": "pulumi-provisioner",
+                    "service_account_name": "sa",
+                },
+            )
+
+        assert "private provider detail" not in str(exc_info.value)
+
 
 class TestNeutralPackageHasNoProviderCoupling:
     """Structural gate for the #1824 acceptance criterion: the shared runner has

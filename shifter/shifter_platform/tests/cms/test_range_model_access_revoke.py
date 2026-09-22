@@ -18,7 +18,7 @@ from shared.api_tokens.scopes import MODEL_ACCESS_RANGE_READ, MODEL_ACCESS_RANGE
 from shared.model_access import ContractError
 from workspaces.services import WorkspaceAuthorizationError
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
 
 User = get_user_model()
 

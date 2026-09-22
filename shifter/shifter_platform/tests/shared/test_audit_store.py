@@ -157,6 +157,7 @@ def test_non_staff_session_is_denied_and_denial_is_audited(client, regular_user)
     assert AuditLog.objects.filter(action=AuditAction.ACCESS_DENIED).exists()
 
 
+@pytest.mark.usefixtures("personal_token_use_grant")
 def test_platform_token_cannot_read_audit_rows(client, staff_user):
     _, raw = ApiToken.create_token(
         name="range-reader",

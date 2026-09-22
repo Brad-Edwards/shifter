@@ -9,6 +9,7 @@ the leaf of the CMS model dependency graph.
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
 from django.db import models
 
@@ -63,6 +64,7 @@ class RangeInstance(SoftDeleteMixin, models.Model):
         deleted_at: When this record was soft-deleted (null if active)
     """
 
+    uuid = models.UUIDField(default=uuid4, unique=True, editable=False)
     request = models.ForeignKey(
         "Request",
         on_delete=models.CASCADE,

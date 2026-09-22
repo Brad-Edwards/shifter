@@ -122,6 +122,8 @@ allowed_symbols:
   config:
     workspaces.services:
       - list_administrable_organizations
+      # Credential issuance resolves SQL-owned target ancestry (ADR-066, S3).
+      - hierarchy_target_scope
   # mission_control (presentation) reaches engine.services directly only for
   # realized runtime/data-plane operations (issue #994): live terminal creation,
   # SSH/RDP connection resolution, NGFW terminal access, and the NGFW range read.

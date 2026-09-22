@@ -37,15 +37,18 @@ class CredentialCeiling:
     """Server-derived exact action ceiling for the admitted credential."""
 
     actions: frozenset[str]
+    target: TargetRef | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.actions, frozenset):
             raise AuthorizationContractError("Credential ceiling must be immutable")
+        if self.target is not None and not isinstance(self.target, TargetRef):
+            raise AuthorizationContractError("Credential target must be an exact target reference")
         for action in self.actions:
             action_definition(action)
 
-    def permits(self, action: str) -> bool:
-        return action in self.actions
+    def permits(self, action: str, target: TargetRef | None = None) -> bool:
+        return action in self.actions and (self.target is None or self.target == target)
 
 
 def _validate_target_scope(target: TargetRef, scope: ResourceScope) -> None:
@@ -82,7 +85,7 @@ class AuthorizationRequest:
         if definition.target_type != self.target.type:
             raise AuthorizationContractError("Action target type does not match target")
         _validate_target_scope(self.target, self.scope)
-        if not self.credential.permits(self.action):
+        if not self.credential.permits(self.action, self.target):
             raise AuthorizationContractError("Action exceeds credential ceiling")
 
 

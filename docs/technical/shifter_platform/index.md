@@ -2,6 +2,8 @@
 
 Django application architecture for the Shifter cyber range platform.
 
+- [Unified access credentials](access-credentials.md)—admission, lifecycle and renewable client setup.
+
 ## Domains
 
 Five bounded contexts, each a Django app with distinct responsibilities.
