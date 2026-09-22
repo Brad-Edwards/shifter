@@ -425,6 +425,15 @@ The first slice intentionally stays small:
   environment` step keys on that input rather than a branch-name `case` router,
   and that `push` / `pull_request` run validation only (no run/apply flags).
 
+  The optional `gcp_reconcile_foundation_image_network` dispatch input is
+  forwarded only to the selected tenant's reusable GCP deploy workflow. Its
+  foundation stage runs on that tenant's protected runner and Environment,
+  authenticates with the existing deploy identity, and checks a saved
+  `cicd-oidc` plan with `scripts/gcp/check_image_network_plan.py` before apply.
+  The checker permits only the six image-network address moves and the exact
+  IAP TCP port-2222 addition. Other resource or output changes fail the run;
+  ordinary deployments skip the foundation stage.
+
   The GCP teardown guardrail
   (`test_gcp_workflows_keep_sensitive_tfvars_out_of_the_checkout`) asserts that
   `gcp-dev-destroy.yml` is parameterized over the tenant: `GCP_ENVIRONMENT`,

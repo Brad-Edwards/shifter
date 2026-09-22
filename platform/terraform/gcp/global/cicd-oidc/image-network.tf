@@ -1,5 +1,5 @@
-# Optional foundation-owned image network breaks the first-bake/platform cycle.
-# It has no peering to runtime or runner networks and outlives platform teardown.
+# The image-build network is foundation-owned so it exists before the first
+# platform deployment. Keep this module in the existing cicd-oidc state.
 variable "enable_image_build_network" {
   description = "Create an isolated private image-build network before platform bootstrap."
   type        = bool
@@ -12,98 +12,55 @@ variable "image_build_subnet_cidr" {
   default     = "10.201.0.0/24"
 }
 
-resource "google_compute_network" "image_build" {
-  count                   = var.enable_image_build_network ? 1 : 0
-  project                 = var.project_id
-  name                    = "${var.name_prefix}-image-build"
-  auto_create_subnetworks = false
-  routing_mode            = "REGIONAL"
-}
+module "image_build_network" {
+  source = "../../modules/image-build-network"
 
-resource "google_compute_subnetwork" "image_build" {
-  count                    = var.enable_image_build_network ? 1 : 0
-  project                  = var.project_id
-  name                     = "${var.name_prefix}-image-build"
-  region                   = var.region
-  network                  = google_compute_network.image_build[0].id
-  ip_cidr_range            = var.image_build_subnet_cidr
-  private_ip_google_access = true
-  log_config {
-    aggregation_interval = "INTERVAL_5_SEC"
-    flow_sampling        = 0.5
-    metadata             = "INCLUDE_ALL_METADATA"
-  }
-}
-
-resource "google_compute_router" "image_build" {
-  count   = var.enable_image_build_network ? 1 : 0
-  project = var.project_id
-  name    = "${var.name_prefix}-image-build"
-  region  = var.region
-  network = google_compute_network.image_build[0].id
-}
-
-resource "google_compute_router_nat" "image_build" {
-  count                              = var.enable_image_build_network ? 1 : 0
-  project                            = var.project_id
-  name                               = "${var.name_prefix}-image-build"
+  project_id                         = var.project_id
   region                             = var.region
-  router                             = google_compute_router.image_build[0].name
-  nat_ip_allocate_option             = "AUTO_ONLY"
-  source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
-  subnetwork {
-    name                    = google_compute_subnetwork.image_build[0].id
-    source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
-  }
-  log_config {
-    enable = true
-    filter = "ERRORS_ONLY"
-  }
+  name_prefix                        = var.name_prefix
+  packer_build_service_account_email = module.cicd_oidc_identity.packer_build_service_account_email
+  enable_image_build_network         = var.enable_image_build_network
+  image_build_subnet_cidr            = var.image_build_subnet_cidr
 }
 
-resource "google_compute_firewall" "image_build_iap" {
-  count                   = var.enable_image_build_network ? 1 : 0
-  project                 = var.project_id
-  name                    = "${var.name_prefix}-image-build-iap"
-  network                 = google_compute_network.image_build[0].id
-  direction               = "INGRESS"
-  source_ranges           = ["35.235.240.0/20"] # Google IAP TCP forwarding.
-  target_service_accounts = [module.cicd_oidc_identity.packer_build_service_account_email]
-  allow {
-    protocol = "tcp"
-    # Linux bake hosts expose their dedicated management SSH endpoint on 2222.
-    # Keep the Windows build endpoint on 5986 and the standard SSH endpoint for
-    # generic image tooling.
-    ports = ["22", "2222", "5986"]
-  }
-  log_config {
-    metadata = "INCLUDE_ALL_METADATA"
-  }
+# These address-only moves keep every existing foundation object in the same
+# state. Retain them for tenants that have not applied the module refactor yet.
+moved {
+  from = google_compute_network.image_build
+  to   = module.image_build_network.google_compute_network.image_build
 }
 
-resource "google_compute_firewall" "image_validate_iap" {
-  count         = var.enable_image_build_network ? 1 : 0
-  project       = var.project_id
-  name          = "${var.name_prefix}-image-validate-iap"
-  network       = google_compute_network.image_build[0].id
-  direction     = "INGRESS"
-  source_ranges = ["35.235.240.0/20"] # Google IAP TCP forwarding.
-  target_tags   = ["shifter-validation"]
-  allow {
-    protocol = "tcp"
-    ports    = ["22", "389", "2222"]
-  }
-  log_config {
-    metadata = "INCLUDE_ALL_METADATA"
-  }
+moved {
+  from = google_compute_subnetwork.image_build
+  to   = module.image_build_network.google_compute_subnetwork.image_build
+}
+
+moved {
+  from = google_compute_router.image_build
+  to   = module.image_build_network.google_compute_router.image_build
+}
+
+moved {
+  from = google_compute_router_nat.image_build
+  to   = module.image_build_network.google_compute_router_nat.image_build
+}
+
+moved {
+  from = google_compute_firewall.image_build_iap
+  to   = module.image_build_network.google_compute_firewall.image_build_iap
+}
+
+moved {
+  from = google_compute_firewall.image_validate_iap
+  to   = module.image_build_network.google_compute_firewall.image_validate_iap
 }
 
 output "image_build_network_name" {
   description = "GCP_PACKER_NETWORK and GCP_VALIDATE_NETWORK for first-project image jobs."
-  value       = try(google_compute_network.image_build[0].name, "")
+  value       = module.image_build_network.image_build_network_name
 }
 
 output "image_build_subnetwork_name" {
   description = "GCP_PACKER_SUBNETWORK and GCP_VALIDATE_SUBNETWORK for first-project image jobs."
-  value       = try(google_compute_subnetwork.image_build[0].name, "")
+  value       = module.image_build_network.image_build_subnetwork_name
 }

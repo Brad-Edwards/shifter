@@ -163,6 +163,24 @@ the build and validate Environments, and set `GCP_PACKER_USE_INTERNAL_IP=true`
 in the build Environment. Existing foundations keep this network disabled by
 default; their state addresses and existing image network remain unchanged.
 
+The image-build network's Terraform resources live in
+`platform/terraform/gcp/modules/image-build-network`, instantiated by the
+foundation root. Six `moved` blocks keep existing networks in the same
+`cicd-oidc` state when upgrading from the former root-level resource addresses.
+For an existing tenant that needs the Linux management SSH port, set the
+tenant Environment variable `GCP_FOUNDATION_INPUTS_JSON` to its reviewed,
+non-secret foundation input JSON, then manually dispatch **Deploy** from that
+tenant branch with its matching `environment` and
+`gcp_reconcile_foundation_image_network=true`. The tenant runner uses the
+existing deploy identity to apply only an action-allowlisted saved plan; all
+other foundation resources must remain no-op. The stage checks the live
+image-build network and firewall before and after, retains the existing
+`cicd-oidc` backend, and is skipped for ordinary deployments. Its plan uses
+`-refresh=false` so the deploy identity does not need read access to the
+foundational Workload Identity pool; the live image-build resources are checked
+separately. Do not use this narrowly gated migration stage for general
+foundation identity changes.
+
 1. Create the GCP project and enable the required APIs.
 2. Apply the foundational OIDC/WIF identity root
    (`platform/terraform/gcp/global/cicd-oidc`) to create the GitHub Actions
