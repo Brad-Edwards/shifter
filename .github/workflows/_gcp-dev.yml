@@ -1280,6 +1280,21 @@ jobs:
           for deployment in "${deployments[@]}"; do
             kubectl rollout status "deployment/${deployment}" -n shifter-platform --timeout=15m
           done
+          deadline=$((SECONDS + 300))
+          while true; do
+            mapfile -t terminating_pods < <(
+              kubectl get pods -n shifter-platform -o json \
+                | jq -r '.items[] | select(.metadata.deletionTimestamp != null) | .metadata.name'
+            )
+            if [ "${#terminating_pods[@]}" -eq 0 ]; then
+              break
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::Timed out waiting for superseded release pods to terminate."
+              exit 1
+            fi
+            sleep 5
+          done
       - name: Record running workload image IDs
         env:
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}
