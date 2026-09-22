@@ -147,6 +147,25 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
         outputs_path.write_text(json.dumps(outputs))
         # Actions inherits these defaults, but only control mounts a catalog.
         base_path = tmp_path / "base.yaml"
+        capacity_workloads = [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {"name": name, "namespace": "shifter-platform"},
+                "spec": {
+                    "replicas": 1,
+                    "template": {
+                        "metadata": {},
+                        "spec": {"containers": [{"name": container, "resources": {}}]},
+                    },
+                },
+            }
+            for name, container in (
+                ("portal-web", "portal"),
+                ("guacd", "guacd"),
+                ("guacamole-client", "guacamole-client"),
+            )
+        ]
         base_path.write_text(
             yaml.safe_dump_all(
                 [
@@ -177,6 +196,7 @@ def test_control_binds_root_catalog_through_both_deployment_adapters(tmp_path, a
                             }
                         },
                     },
+                    *capacity_workloads,
                 ]
             )
         )
