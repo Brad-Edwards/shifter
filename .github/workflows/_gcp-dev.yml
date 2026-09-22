@@ -16,6 +16,10 @@ on:
       deploy_changes:
         required: true
         type: boolean
+      reconcile_foundation_image_network:
+        required: false
+        type: boolean
+        default: false
       require_active_certificate:
         description: >-
           Fail the deploy if the managed certificate is not Active for the public
@@ -173,6 +177,12 @@ jobs:
         with:
           terraform_version: "1.16.1"
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Reconcile foundation image-build network
+        if: inputs.reconcile_foundation_image_network && github.event_name == 'workflow_dispatch'
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_FOUNDATION_INPUTS_JSON: ${{ vars.GCP_FOUNDATION_INPUTS_JSON }}
+        run: python3 scripts/gcp/reconcile_foundation_image_network.py
       - name: Preflight - validate deploy prerequisites
         # Shared fail-safe gate (scripts/bootstrap/preflight.py): reports every
         # missing prerequisite up front before Terraform/Helm run, so a missing

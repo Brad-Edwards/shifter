@@ -78,6 +78,6 @@ def test_gcp_migration_job_bootstraps_smoke_pack_and_image_registry() -> None:
 def test_deploy_workflow_forwards_smoke_secret_to_gcp_dev() -> None:
     text = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     start = text.index("gcp-dev:")
-    block = text[start : start + 3200]
+    block = text[start : text.index("\n  core:", start)]
     assert "SMOKE_TEST_USER_EMAIL" in block
     assert "issues: write" in block
