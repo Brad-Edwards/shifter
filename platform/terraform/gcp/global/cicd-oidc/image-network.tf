@@ -71,7 +71,10 @@ resource "google_compute_firewall" "image_build_iap" {
   target_service_accounts = [module.cicd_oidc_identity.packer_build_service_account_email]
   allow {
     protocol = "tcp"
-    ports    = ["22", "5986"]
+    # Linux bake hosts expose their dedicated management SSH endpoint on 2222.
+    # Keep the Windows build endpoint on 5986 and the standard SSH endpoint for
+    # generic image tooling.
+    ports = ["22", "2222", "5986"]
   }
   log_config {
     metadata = "INCLUDE_ALL_METADATA"
