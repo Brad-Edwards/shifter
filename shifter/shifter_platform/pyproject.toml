@@ -5,6 +5,9 @@ description = "Self-service cyber range platform"
 requires-python = ">=3.12"
 dependencies = [
     "asyncssh>=2.23.1",
+    # Daphne installs Autobahn transitively; require the decompressed WebSocket
+    # message-size limit fix (CVE-2026-77528) in the runtime image.
+    "autobahn>=26.7.1",
     "bleach>=6.4.0",
     "boto3",
     "channels",
