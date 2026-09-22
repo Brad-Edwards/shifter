@@ -129,6 +129,16 @@ the substrate, then deploy. The maintained end-to-end walkthrough is the GCP
 Deployment section of
 `docs/technical/dev/setup.md`.
 
+> **Before starting:** In the target GCP project, enable every Google Cloud API
+> required by the selected Shifter configuration and enable every configured AI
+> model in Vertex AI Model Garden. Model enablement is separate from enabling
+> the Vertex AI API: an authorized project administrator must open each required
+> model, accept any provider or Marketplace terms, and confirm that the model is
+> available in its configured region. Complete both API and model enablement
+> before bootstrap, pack installation, or range qualification; otherwise a
+> deployment can succeed while participant model calls fail with a misleading
+> model-not-found response.
+
 For a fresh project, copy `gcp-foundation.example.tfvars.json` to an
 operator-owned file outside the repository. Supply the project ID and number,
 numeric GitHub repository and owner IDs, bucket names, and exact purpose
@@ -197,7 +207,11 @@ default; their state addresses and existing image network remain unchanged.
 4. Bootstrap the GKE control plane and GCE range plane with one local command.
    On a fresh project, opt into the public base-image import so the exact image
    references are available to the same process before platform preconditions
-   run:
+   run. Before invoking it, replace any stale tenant values in the gitignored
+   `platform/terraform/gcp/environments/<env>/local.auto.tfvars`; in particular,
+   `project_id`, `dynamic_secret_project_id`, and `public_hostname` must describe
+   the selected tenant. Terraform auto-loads that file, and `shifter.yaml` does
+   not override its ingress hostname:
 
    ```bash
    ./scripts/bootstrap/deploy.py gdc-bootstrap \
@@ -206,6 +220,19 @@ default; their state addresses and existing image network remain unchanged.
      --shifter-config /path/to/shifter.yaml \
      --import-public-base-images --yes
    ```
+
+   Supply `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` using the Terraform naming
+   contract, which removes hyphens from the `shifter-<environment>` account-id
+   prefix. Do not preserve the environment's hyphens when guessing the localpart.
+   After the first apply, read the authoritative value from the environment
+   root's `range_host_service_account_email` output and use that exact value in
+   the GitHub Environment and every local retry.
+
+   Leave the current kubeconfig context on this tenant until the command exits.
+   The bootstrap selects the tenant's Connect Gateway context, and its later
+   migration, Helm, and certificate polls use that shared current context. Run
+   concurrent work against another cluster with a separate `KUBECONFIG` rather
+   than changing the bootstrap process's context.
 
    This first discovers and validates the complete public Kali, Ubuntu, and DC
    base set. It imports missing digests through a private per-run bucket in the

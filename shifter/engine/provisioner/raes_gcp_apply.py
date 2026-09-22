@@ -31,17 +31,19 @@ from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_ops import _get_or_none, _wait_for_operation
+from gcp_range_cell_ops import _get_or_none
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cells import (
     _ensure_address,
+    _ensure_attached_disks_auto_delete,
     _ensure_firewall,
     _ensure_network,
     _ensure_router_nat,
     _ensure_subnetwork,
     _host_public_key_from_instance,
+    _insert_instance,
 )
 from raes_access import RealizedAccessBinding, join_participant_access
 from raes_account_credentials import (
@@ -149,14 +151,17 @@ def _ensure_raes_instance(
         verify_prepared_source(plan, instance, clients)
     secret_ref, public_key = secret_ops.ensure_ssh(plan["range_id"], instance["uuid"])
     if existing is not None:
+        if instance["profile"].source_machine_image:
+            _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return secret_ref, public_key, _host_public_key_from_instance(existing)
 
     host_private_key, host_public_key = generate_ssh_host_keypair()
     host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
-    operation = clients.instances.insert(
-        project=plan["project_id"],
-        zone=plan["zone"],
-        instance_resource=instance_resource(
+    _insert_instance(
+        plan,
+        clients,
+        instance,
+        instance_resource(
             plan,
             instance,
             config,
@@ -166,7 +171,6 @@ def _ensure_raes_instance(
             composition_script=bootstrap_by_node.get(_node_address_of(instance), ""),
         ),
     )
-    _wait_for_operation(plan, clients, operation, "zone")
     return secret_ref, public_key, host_public_key
 
 

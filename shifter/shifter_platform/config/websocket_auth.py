@@ -1,10 +1,11 @@
 """WebSocket account-origin authorization boundary."""
 
-import re
 from collections.abc import Awaitable, Callable
 
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser, User
+
+from shared.remote_access import TERMINAL_TARGET_PATH_RE
 
 type ASGIMessage = dict[str, object]
 type ASGIScope = dict[str, object]
@@ -16,8 +17,6 @@ type ASGIApplication = Callable[[ASGIScope, ASGIReceive, ASGISend], Awaitable[No
 class CTFAccountWebSocketBoundary:
     """Restrict temporary CTF accounts to their participant terminal socket."""
 
-    _TERMINAL_PATH = re.compile(r"^/ws/terminal/[a-f0-9-]+/$")
-
     def __init__(self, application: ASGIApplication) -> None:
         self.application = application
 
@@ -25,7 +24,7 @@ class CTFAccountWebSocketBoundary:
         user = scope.get("user")
         if isinstance(user, (User, AnonymousUser)) and await self._is_ctf_account(user):
             path = str(scope.get("path", ""))
-            allowed_path = bool(self._TERMINAL_PATH.fullmatch(path)) or path == "/ws/notifications/"
+            allowed_path = bool(TERMINAL_TARGET_PATH_RE.fullmatch(path)) or path == "/ws/notifications/"
             if not allowed_path or not await self._may_access_terminal(user):
                 await send({"type": "websocket.close", "code": 4403})
                 return

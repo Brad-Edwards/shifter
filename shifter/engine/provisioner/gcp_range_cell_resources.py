@@ -259,4 +259,9 @@ def instance_resource(
                 "scopes": list(config.service_account_scopes),
             }
         ]
+    elif profile.source_machine_image:
+        # An omitted field inherits the captured machine-image identity. Send an
+        # explicit empty list when this range node has no authorized runtime
+        # identity so the bake-time service account is never attached.
+        body["service_accounts"] = []
     return body
