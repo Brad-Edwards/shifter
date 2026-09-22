@@ -43,7 +43,7 @@ MODEL_ID = "01J00000000000000000000000"
 @pytest.fixture(autouse=True)
 def _authorization_principals(db) -> None:
     actor_user = get_user_model().objects.create_user(username="actor")
-    Principal.objects.create(uuid=ACTOR_ID, kind=Principal.Kind.HUMAN, user=actor_user)
+    Principal.objects.filter(user=actor_user).update(uuid=ACTOR_ID)
     Principal.objects.create(uuid=SUBJECT_ID, kind=Principal.Kind.SERVICE, name="Service subject")
 
 
@@ -122,7 +122,7 @@ def test_grant_records_intent_before_effect_and_confirms_only_after_readback() -
     assert row.request_digest
     assert row.fence_key
     assert provider.changes[0].effect == PolicyEffect.GRANT
-    assert set(AuditLog.objects.values_list("action", flat=True)) == {
+    assert set(AuditLog.objects.exclude(entity_type="principal").values_list("action", flat=True)) == {
         AuditAction.AUTHORIZATION_REQUESTED,
         AuditAction.AUTHORIZATION_CONFIRMED,
     }

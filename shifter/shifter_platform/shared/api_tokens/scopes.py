@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from shared.authorization import ACTION_CATALOG
+from shared.authorization import ACTION_CATALOG, CredentialCeiling, TargetRef
 
 # --- Mission Control API (PLAT-106 / issue #1120) -----------------------------
 # Wired by subsurface instead of overloading a single coarse Mission Control
@@ -143,3 +143,12 @@ def has_scope(granted_scopes: Iterable[str], required_scope: str) -> bool:
     broad-looking string never satisfies a specific required scope.
     """
     return required_scope in set(granted_scopes)
+
+
+def credential_ceiling(scopes: Iterable[str], *, target: TargetRef | None = None) -> CredentialCeiling:
+    """Project registered action scopes without inferring broad legacy authority."""
+    by_scope = {scope: action for action, scope in AUTHORIZATION_ACTION_SCOPES.items()}
+    # Exact incumbent CTF operation correspondence. Other legacy scopes remain
+    # HTTP limits until their owning S4-S6 action mapping is delivered.
+    by_scope.update({CTF_EVENT_READ: "event.read", CTF_EVENT_WRITE: "event.manage"})
+    return CredentialCeiling(frozenset(by_scope[scope] for scope in scopes if scope in by_scope), target)

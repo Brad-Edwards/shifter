@@ -60,6 +60,7 @@ def _token(user, *scopes) -> APIClient:
     return client
 
 
+@pytest.mark.usefixtures("personal_token_use_grant")
 class TestAuthenticationAndScopeParity:
     def test_unauthenticated_is_rejected(self):
         # 401: the bearer auth scheme supplies a WWW-Authenticate header.
@@ -162,6 +163,7 @@ class TestDraftSealing:
         assert pool.sharing_pool_id == "pool-a"
 
 
+@pytest.mark.usefixtures("personal_token_use_grant")
 class TestEffectivePolicyPreviewAuthority:
     """Effective-policy preview is operator-only — it must not become a cross-tenant read."""
 

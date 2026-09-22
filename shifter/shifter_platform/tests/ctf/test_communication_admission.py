@@ -128,10 +128,8 @@ def test_release_accepts_live_exact_scope_token_owner_pair(organizer_user, ctf_e
     from shared.api_tokens.models import ApiToken
 
     campaign = _campaign(organizer_user, ctf_event)
-    token = ApiToken.objects.create(
+    token, _ = ApiToken.create_token(
         name="communication",
-        token_id="communication",
-        verifier_hash="0" * 64,
         created_by=organizer_user,
         scopes=["ctf:communication:write"],
     )
@@ -152,26 +150,25 @@ def test_token_release_rechecks_live_owner_and_scope(organizer_user, ctf_event, 
     from shared.api_tokens.models import ApiToken
 
     campaign = _campaign(organizer_user, ctf_event)
-    token = ApiToken.objects.create(
+    scopes = ["ctf:communication:read", "ctf:event:write"] if denial == "scope" else ["ctf:communication:write"]
+    expiry = timezone.now() + timedelta(seconds=-1 if denial == "expired" else 3600)
+    token, _ = ApiToken.create_token(
         name="communication",
-        token_id="communication",
-        verifier_hash="0" * 64,
         created_by=organizer_user,
-        scopes=["ctf:communication:write"],
+        scopes=scopes,
+        expires_at=expiry,
     )
-    if denial == "scope":
-        token.scopes = ["ctf:communication:read", "ctf:event:write"]
-    elif denial == "revoked":
-        token.revoked_at = timezone.now()
-    elif denial == "expired":
-        token.expires_at = timezone.now() - timedelta(seconds=1)
+    actor_user = organizer_user
+    if denial == "revoked":
+        token.revoke()
     elif denial == "missing_owner":
-        token.created_by = None
+        # Owner deletion's SET_NULL transition is permitted; transfer is not.
+        ApiToken.objects.filter(pk=token.pk).update(created_by=None)
     elif denial == "wrong_owner":
-        token.created_by = User.objects.create_user(username="other-owner")
+        actor_user = User.objects.create_user(username="other-owner")
     elif denial == "inactive":
         User.objects.filter(pk=organizer_user.pk).update(is_active=False)
-    else:
+    elif denial in {"deleted", "temporary"}:
         profile = get_user_profile(organizer_user)
         if denial == "deleted":
             profile.deleted_at = timezone.now()
@@ -179,10 +176,9 @@ def test_token_release_rechecks_live_owner_and_scope(organizer_user, ctf_event, 
             profile.is_ctf_account = True
             profile.user_type = "ctf_participant"
         profile.save()
-    token.save()
     with pytest.raises(CTFCommunicationError):
         release_campaign(
-            campaign, occurrence_key="token-occ", admission=AdmissionActor(user_id=organizer_user.pk, token_id=token.pk)
+            campaign, occurrence_key="token-occ", admission=AdmissionActor(user_id=actor_user.pk, token_id=token.pk)
         )
     assert not CommunicationIntent.objects.filter(campaign=campaign).exists()
 
@@ -227,6 +223,8 @@ def test_each_target_authority_is_retained_without_content(organizer_user, ctf_e
 
 
 def test_scheduled_token_revalidates_original_owner(organizer_user, ctf_event):
+    from django.db import IntegrityError, ProgrammingError, transaction
+
     from ctf.models import CTFScheduledTask, RecipientSnapshot
     from ctf.services.communication import run_release_communication_task, schedule_declaration
     from shared.api_tokens.models import ApiToken
@@ -243,7 +241,9 @@ def test_scheduled_token_revalidates_original_owner(organizer_user, ctf_event):
     )
     task = CTFScheduledTask.objects.get(metadata__intent_id=str(intent.pk))
     other = User.objects.create_user(username="replacement-owner")
-    ApiToken.objects.filter(pk=token.pk).update(created_by=other)
+    with pytest.raises((IntegrityError, ProgrammingError)), transaction.atomic():
+        ApiToken.objects.filter(pk=token.pk).update(created_by=other)
+    User.objects.filter(pk=organizer_user.pk).update(is_active=False)
     assert run_release_communication_task(task)["outcome"] == "denied"
     assert not RecipientSnapshot.objects.filter(intent=intent).exists()
 

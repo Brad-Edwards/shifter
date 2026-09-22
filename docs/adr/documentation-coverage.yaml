@@ -3,6 +3,13 @@
   "docs_root": "docs",
   "features": [
     {
+      "id": "unified-access-credentials",
+      "title": "Personal and native service credentials",
+      "requirement": "PLAT-102",
+      "user_docs": ["features/access-credentials.md"],
+      "technical_docs": ["technical/shifter_platform/access-credentials.md"]
+    },
+    {
       "id": "ctf-communications",
       "title": "Scoped CTF communications",
       "requirement": "CTF-012",

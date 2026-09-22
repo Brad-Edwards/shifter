@@ -124,3 +124,4 @@ class AuditActorType(models.TextChoices):
     APIKEY = "apikey", API_KEY_LABEL
     SYSTEM = "system", "System"
     COGNITO = "cognito", "Cognito"
+    PRINCIPAL = "principal", "Principal"
