@@ -46,8 +46,8 @@ AWS_DEV_WAF_ACL_ARN = (
 # direct-provider configuration, capacity contracts, and isolated provider egress.
 # Regenerated for #2305 after granting namespace-scoped pod listing for cancellation.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "5f06495f31235425c10947fa9e9204504751653a8b7dc9402b2298ff74271d23",
-    "gcp-prod": "9bf07c35b38b26c57a466518a7d3301d0858a6a4d0bddda563e38f13c715fb51",
+    "gcp-dev": "ccb41287db8d41ac63b83fe30d1b6e24104b3eb3365d6a8a2b3555f4f2959d14",
+    "gcp-prod": "1f28f84e15881dcda5aea07ad8f058f02154d8444e269a8b7609d01819ce76ae",
 }
 
 

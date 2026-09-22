@@ -116,7 +116,9 @@ def test_job_admission_constrains_creation_without_blocking_controller_cleanup(p
     job_rule = next(rule for rule in rules if rule["resources"] == ["jobs"])
     assert job_rule["operations"] == ["CREATE"]
 
-    role = next(item for item in resources() if item["kind"] == "Role" and item["metadata"]["name"] == "plugin-controller")
+    role = next(
+        item for item in resources() if item["kind"] == "Role" and item["metadata"]["name"] == "plugin-controller"
+    )
     launcher_job_rule = next(rule for rule in role["rules"] if rule["resources"] == ["jobs"])
     assert launcher_job_rule["verbs"] == ["create", "get", "delete"]
     assert not {"update", "patch"}.intersection(launcher_job_rule["verbs"])
