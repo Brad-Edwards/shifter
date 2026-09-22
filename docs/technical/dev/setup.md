@@ -520,11 +520,20 @@ the real values via a gitignored `local.auto.tfvars` (Terraform auto-loads
 ```bash
 cat > platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars <<'EOF'
 project_id                  = "<your-gcp-project-id>"
+dynamic_secret_project_id   = "<your-gcp-project-id>"
 public_hostname             = "shifter.<your-domain>"
 enable_managed_tls          = true
 gke_master_authorized_cidrs = []
 EOF
 ```
+
+Treat an existing `local.auto.tfvars` as deployment state, not as a reusable
+sample. Before bootstrap, replace every tenant-bound value left by an earlier
+project, especially `project_id`, `dynamic_secret_project_id`, and
+`public_hostname`. Terraform auto-loads this file and its values drive the
+ingress and managed certificate; selecting a different `shifter.yaml` does not
+override a stale hostname here. Confirm the hostname in both inputs agrees
+before applying so bootstrap does not stop at DNS/TLS for the previous tenant.
 
 For CI deploys the equivalent values come from GitHub secrets; see
 [`docs/dev/deploy-secrets.md`](../../dev/deploy-secrets.md).
@@ -572,6 +581,20 @@ export RANGE_NETWORK_ZONE=<zone>
 export GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=<range-host-service-account>
 ```
 
+Use the exact Terraform identity, not a hand-normalized variant of the
+environment name. The standard module removes hyphens from the
+`shifter-<environment>` account-id prefix (for example, `gcp-dev` becomes the
+prefix `shiftergcpdev`). After the first platform apply, read back the canonical
+value:
+
+```bash
+terraform -chdir=platform/terraform/gcp/environments/<environment> \
+  output -raw range_host_service_account_email
+```
+
+Publish that exact value to the GitHub Environment and reuse it for local
+retries.
+
 If `gcloud` is installed under `~/google-cloud-sdk` but the credential-helper
 check fails, load the SDK's standard path initializer and add the same guarded
 source line to the operator's shell startup file before running bootstrap:
@@ -607,6 +630,13 @@ Then run:
   --shifter-config /path/to/shifter.yaml \
   --import-public-base-images --yes
 ```
+
+Keep the kubeconfig current context pinned to this tenant for the entire local
+bootstrap, including the DNS/TLS wait. The bootstrap obtains the target Connect
+Gateway context itself, but subsequent `kubectl` polls use the shared current
+context. Do not run another cluster's `get-credentials` or `use-context` against
+the same kubeconfig concurrently; use a separate `KUBECONFIG` for parallel
+cluster work.
 
 Despite the command name, the default `--range-backend gce` deploys the GKE control
 plane and the GCE range plane and skips the GDC/ABM VM Runtime substrate. That
