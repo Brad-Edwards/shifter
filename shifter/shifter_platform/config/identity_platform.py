@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 import firebase_admin
@@ -13,6 +14,7 @@ from django.contrib.auth.backends import BaseBackend
 from django.db import transaction
 from django.http import HttpRequest
 from firebase_admin import auth as firebase_auth
+from firebase_admin import tenant_mgt
 
 from config.bootstrap_admin import apply_bootstrap_admin_flags
 from config.cognito_groups import sync_cognito_groups_from_claims
@@ -187,6 +189,7 @@ def identity_platform_client_config() -> dict[str, Any]:
         "apiKey": _identity_api_key(),
         "authDomain": auth_domain,
         "projectId": project_id,
+        "tenantId": settings.IDENTITY_PLATFORM_TENANT_ID or None,
         "issuer": getattr(settings, "IDENTITY_PLATFORM_ISSUER", "Shifter"),
         "totpDisplayName": getattr(settings, "IDENTITY_PLATFORM_TOTP_DISPLAY_NAME", "Shifter Authenticator"),
     }
@@ -196,11 +199,35 @@ def verify_identity_token(id_token: str) -> dict[str, Any]:
     """Verify the Identity Platform ID token using Firebase Admin SDK."""
     _ensure_firebase_app()
     try:
-        return firebase_auth.verify_id_token(id_token, check_revoked=True)
+        tenant_id = settings.IDENTITY_PLATFORM_TENANT_ID
+        verifier = tenant_mgt.auth_for_tenant(tenant_id) if tenant_id else firebase_auth
+        claims = verifier.verify_id_token(id_token, check_revoked=True)
+        project = settings.IDENTITY_PLATFORM_PROJECT_ID
+        firebase = claims.get("firebase", {})
+        if (
+            not project
+            or claims.get("aud") != project
+            or claims.get("iss") != f"https://securetoken.google.com/{project}"
+            or not isinstance(firebase, dict)
+            or firebase.get("tenant", "") != tenant_id
+        ):
+            raise IdentityPlatformAuthError("Identity token configuration mismatch")
+        return claims
     except Exception as exc:
         # firebase_admin's exception tree is broad; normalize any verification
         # failure to our single auth error type so callers handle one thing.
         raise IdentityPlatformAuthError("Unable to verify Identity Platform token") from exc
+
+
+def provider_user_state(subject: str):
+    """Fetch native revocation/lifecycle state under the configured tenant."""
+    _ensure_firebase_app()
+    provider = (
+        tenant_mgt.auth_for_tenant(settings.IDENTITY_PLATFORM_TENANT_ID)
+        if settings.IDENTITY_PLATFORM_TENANT_ID
+        else firebase_auth
+    )
+    return provider.get_user(subject)
 
 
 def _assert_account_can_create_app_session(id_token: str) -> None:
@@ -360,9 +387,19 @@ def login_with_identity_token(request: HttpRequest | None, id_token: str) -> Dja
     claims_payload = verify_identity_token(id_token)
     _build_verified_identity(claims_payload, source="identity_platform")
     _assert_account_can_create_app_session(id_token)
+    firebase_claims = claims_payload.get("firebase")
+    if not isinstance(firebase_claims, dict) or firebase_claims.get("sign_in_second_factor") not in ("totp", "phone"):
+        raise IdentityPlatformMFAEnrollmentRequired("Sign in using an enrolled second factor.")
+
+    auth_time = claims_payload.get("auth_time")
+    if type(auth_time) is not int or not 0 <= time.time() - auth_time < settings.IDENTITY_SESSION_ABSOLUTE_SECONDS:
+        raise IdentityPlatformAuthError("Fresh provider authentication required")
 
     backend = IdentityPlatformBackend()
     user = backend.authenticate(request, identity_claims=claims_payload)
     if user is None:
         raise IdentityPlatformAuthError("Identity Platform login did not return a user")
+    if request is not None:
+        request.verified_session_claims = {key: claims_payload[key] for key in ("iss", "sub", "auth_time")}
+        request.verified_session_claims["tenant"] = settings.IDENTITY_PLATFORM_TENANT_ID
     return user

@@ -302,6 +302,16 @@ Current mechanisms:
   current Ground Control schema no longer accepts the separate reviewer.
   The configured pre-push review, pre-commit, CI, and SonarCloud gates
   remain in force.
+- `.mcp.json`: the repository MCP launch contract runs the released `grndctl`
+  package (`grndctl mcp`) instead of a mutable source checkout. This keeps the
+  server version aligned with the installed workflow skills while preserving
+  the repository's other MCP servers.
+- `.github/workflows/ground-control-phase-e.yml`: the package-generated,
+  version-pinned Ground Control finalizer. After a delivery PR merges to
+  `main` or `dev`, it replays the trusted Phase D handoff through
+  `grndctl finalize-merged-pr`; it performs no implementation verification and
+  has only read permissions plus the issue write needed for the final report
+  and issue close.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can

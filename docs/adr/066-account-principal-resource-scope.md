@@ -164,6 +164,25 @@ dependent job finishes, including first enablement on an existing deployment.
 
 ## Supersession
 
+S3's credential integration is documented in
+[the credential boundary and client contract](../technical/shifter_platform/access-credentials.md)
+and [its preflight](../architecture/unified-credential-auth-preflight-2316.md).
+It uses Knox and Google/Firebase public SDKs, immutable SQL credential metadata,
+live personal-token eligibility and shared HTTP/Channels session validation.
+Personal credentials retain an immutable exact target in their shared action
+ceiling; policy requests and mutation journals preserve that target dimension.
+Principal-based CTF admission uses an explicit event-scoped API and the existing
+participant-safe projection and registration/status eligibility predicate.
+Credential-authorized mutations propagate canonical principal UUID attribution
+through the shared audit contract and durable authorization journal. Audit v2
+hashes that indexed identity while retaining the frozen v1 historical profile;
+the migration advances the append profile without rewriting committed evidence.
+`config` may consume `workspaces.services.hierarchy_target_scope` solely for
+credential-issuance ancestry; it gains no workspace model or mutation access.
+The standalone `shifter_client` package is owned by the platform quality unit,
+with native-renewal tests in the platform test suite. These source and enforcement
+changes preserve the coordinated S8 activation boundary.
+
 This decision supersedes:
 
 - ADR-046's per-user personal organization/workspace compatibility default and

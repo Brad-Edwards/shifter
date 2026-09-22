@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+KNOX_TOKEN_MODEL = "knox.AuthToken"
+REST_KNOX = {"AUTH_HEADER_PREFIX": "Bearer", "TOKEN_PREFIX": "shf_", "AUTO_REFRESH": False}
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         # Scoped bearer tokens first (PLAT-102; fails closed), then session.
@@ -53,4 +56,4 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
-__all__ = ["REST_FRAMEWORK", "SPECTACULAR_SETTINGS"]
+__all__ = ["KNOX_TOKEN_MODEL", "REST_FRAMEWORK", "REST_KNOX", "SPECTACULAR_SETTINGS"]

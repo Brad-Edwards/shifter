@@ -21,6 +21,52 @@ from shared.audit.vocabulary import AuditActorType
 if TYPE_CHECKING:
     from django.http import HttpRequest
 
+    from shared.credentials import CredentialContext
+    from shared.identity_scope import PrincipalRef
+
+
+def principal_actor_fields(principal: PrincipalRef) -> dict[str, object]:
+    """Canonical attribution for an already-authorized neutral principal."""
+    from shared.identity_scope import PrincipalRef
+
+    if not isinstance(principal, PrincipalRef):
+        raise ValueError("Invalid audit principal")
+    return {"actor_type": AuditActorType.PRINCIPAL, "actor_id": None, "actor_principal_uuid": principal.uuid}
+
+
+def request_audit(request: HttpRequest, *, credential: CredentialContext | None = None):
+    """Capture trusted identity and HTTP metadata, never caller-supplied actor fields.
+
+    Preserve legacy user/token attribution when available and supplement it with
+    the durable principal. Native services have no integer actor and use the
+    principal form exclusively.
+    """
+    from shared.audit.events import RequestAudit
+    from shared.credentials import CredentialContext
+
+    if credential is None:
+        candidate = getattr(request, "credential_context", None)
+        if isinstance(candidate, CredentialContext):
+            credential = candidate
+    if credential is None and isinstance(getattr(request, "auth", None), CredentialContext):
+        credential = request.auth
+    actor_type, actor_id = get_actor_from_request(request)
+    principal_uuid = None
+    if credential is not None:
+        if not isinstance(credential, CredentialContext):
+            raise ValueError("Invalid audit credential")
+        principal_uuid = credential.principal.uuid
+        if credential.kind == "service" or actor_type == AuditActorType.SYSTEM:
+            actor_type, actor_id = AuditActorType.PRINCIPAL, None
+    return RequestAudit(
+        actor_type=actor_type,
+        actor_id=actor_id,
+        actor_principal_uuid=principal_uuid,
+        source_ip=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+        request_id=get_request_id(request)[:64],
+    )
+
 
 def _valid_ip(value: str | None) -> str | None:
     """Return ``value`` if it parses as an IP address, else ``None``."""

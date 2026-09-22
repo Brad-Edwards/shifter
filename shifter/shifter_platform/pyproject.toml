@@ -19,11 +19,13 @@ dependencies = [
     "django-anymail",
     "django-encrypted-model-fields>=0.6.5",
     "django-health-check<5.0",
+    "django-rest-knox==5.0.4",
     "django-ses",
     "djangorestframework>=3.17.2",
     "drf-spectacular>=0.29.0",
     "drf-spectacular-sidecar>=2026.6.1",
     "firebase-admin",
+    "google-auth>=2.40,<3",
     # GCP Cloud Monitoring publisher for the portal capacity emitter (PLAT-002);
     # AWS uses boto3/CloudWatch. Lazy-imported so AWS flows never load it.
     "google-cloud-monitoring",

@@ -172,6 +172,7 @@ class AuthorizationOperation(models.Model):
     actor_kind = models.CharField(max_length=16)
     audit_actor_type = models.CharField(max_length=16, blank=True, default="")
     audit_actor_id = models.PositiveBigIntegerField(null=True, blank=True)
+    audit_actor_principal_uuid = models.UUIDField(null=True, blank=True)
     audit_source_ip = models.GenericIPAddressField(null=True, blank=True)
     audit_user_agent = models.CharField(max_length=500, blank=True, default="")
     audit_request_id = models.CharField(max_length=128, blank=True, default="")

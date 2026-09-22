@@ -58,6 +58,14 @@ def _scope_payload(scope: ResourceScope) -> dict[str, object]:
     }
 
 
+def _credential_target_payload(request: MutationRequest) -> dict[str, object]:
+    """Bind journals to target-limited proof without changing unbounded request identities."""
+    target = request.credential.target
+    if target is None:
+        return {}
+    return {"credential_target_kind": target.type, "credential_target": str(target.uuid) if target.uuid else None}
+
+
 def _request_payload(request: MutationRequest) -> dict[str, object]:
     """Capture every authorization-relevant field for idempotency comparison."""
     common = {
@@ -66,6 +74,7 @@ def _request_payload(request: MutationRequest) -> dict[str, object]:
         "scope": _scope_payload(request.scope),
         "model_id": request.model_id,
         "credential_actions": sorted(request.credential.actions),
+        **_credential_target_payload(request),
     }
     if isinstance(request, PolicyMutationRequest):
         return {
@@ -163,6 +172,7 @@ def _audit(operation: AuthorizationOperation, action: str, reason: str) -> None:
             action=action,
             actor_type=operation.audit_actor_type or "system",
             actor_id=operation.audit_actor_id,
+            actor_principal_uuid=operation.audit_actor_principal_uuid,
             new_state={
                 "action": operation.action,
                 "effect": operation.effect,
@@ -226,6 +236,7 @@ def _reserve(
                     actor_kind=request.actor.kind,
                     audit_actor_type=request.audit.actor_type,
                     audit_actor_id=request.audit.actor_id,
+                    audit_actor_principal_uuid=request.audit.actor_principal_uuid,
                     audit_source_ip=request.audit.source_ip,
                     audit_user_agent=request.audit.user_agent,
                     audit_request_id=request.audit.request_id,
@@ -241,6 +252,12 @@ def _reserve(
                             "actions": sorted(request.credential.actions),
                             "actor_type": request.audit.actor_type,
                             "actor_id": request.audit.actor_id,
+                            **(
+                                {"actor_principal_uuid": str(request.audit.actor_principal_uuid)}
+                                if request.audit.actor_principal_uuid
+                                else {}
+                            ),
+                            **_credential_target_payload(request),
                         }
                     ),
                     outcome_reason=reason,

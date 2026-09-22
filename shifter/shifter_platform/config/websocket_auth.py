@@ -6,11 +6,60 @@ from collections.abc import Awaitable, Callable
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser, User
 
+from shared.enums import WebSocketCloseCode
+
 type ASGIMessage = dict[str, object]
 type ASGIScope = dict[str, object]
 type ASGIReceive = Callable[[], Awaitable[ASGIMessage]]
 type ASGISend = Callable[[ASGIMessage], Awaitable[None]]
 type ASGIApplication = Callable[[ASGIScope, ASGIReceive, ASGISend], Awaitable[None]]
+
+
+class CredentialSessionWebSocketBoundary:
+    """Apply the HTTP assurance check at connection and every socket message."""
+
+    def __init__(self, application: ASGIApplication) -> None:
+        self.application = application
+
+    async def __call__(self, scope: ASGIScope, receive: ASGIReceive, send: ASGISend) -> None:
+        async def allowed() -> bool:
+            from config.session_credentials import validate_socket_session
+
+            return await database_sync_to_async(validate_socket_session)(scope)
+
+        if not await allowed():
+            await send({"type": "websocket.close", "code": WebSocketCloseCode.NOT_AUTHENTICATED})
+            return
+
+        closed = False
+
+        async def close_revoked() -> None:
+            nonlocal closed
+            if not closed:
+                closed = True
+                await send({"type": "websocket.close", "code": WebSocketCloseCode.NOT_AUTHENTICATED})
+
+        async def guarded_receive() -> ASGIMessage:
+            if closed:
+                return {"type": "websocket.disconnect", "code": WebSocketCloseCode.NOT_AUTHENTICATED}
+            message = await receive()
+            if message.get("type") != "websocket.disconnect" and not await allowed():
+                await close_revoked()
+                return {"type": "websocket.disconnect", "code": WebSocketCloseCode.NOT_AUTHENTICATED}
+            return message
+
+        async def guarded_send(message: ASGIMessage) -> None:
+            nonlocal closed
+            if closed:
+                return
+            if message.get("type") != "websocket.close" and not await allowed():
+                await close_revoked()
+                return
+            if message.get("type") == "websocket.close":
+                closed = True
+            await send(message)
+
+        await self.application(scope, guarded_receive, guarded_send)
 
 
 class CTFAccountWebSocketBoundary:

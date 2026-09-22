@@ -35,6 +35,7 @@ ensure_human_principal = _principals.ensure_human_principal
 principal_for_user = _principals.principal_for_user
 resolve_principal = _principals.resolve_principal
 resolve_principal_uuid = _principals.resolve_principal_uuid
+resolve_service_credential = _principals.resolve_service_credential
 set_service_contact = _principals.set_service_contact
 
 ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView
@@ -378,10 +379,18 @@ def bind_provider_identity(user: User, issuer: str, subject: str) -> BindOutcome
     """
     _require_bind_inputs(user, issuer, subject)
 
+    from .principals import PrincipalConflictError, bind_principal_provider_identity, principal_for_user
+
     profile = get_user_profile(user)
     try:
         with transaction.atomic():
             locked_profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
+            if locked_profile.is_ctf_account:
+                raise BindingConflictError("Temporary participants cannot bind provider identities")
+            try:
+                bind_principal_provider_identity(principal_for_user(user), issuer, subject)
+            except PrincipalConflictError as exc:
+                raise BindingConflictError("Provider identity unavailable") from exc
             # issuer is non-null (default ""); "" marks an unbound/legacy row.
             stored_issuer = locked_profile.issuer
             stored_subject = locked_profile.cognito_sub or ""

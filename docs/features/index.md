@@ -18,6 +18,8 @@ Detailed guides for each Shifter feature.
 
 ## Governance
 
+- [Access credentials](access-credentials.md) - Personal tokens and independent service identities
+
 - [Workspace Membership](workspaces) - Manage workspace members and fixed roles
 - [Authorization policies and groups](authorization-policies-and-groups) - Scoped groups, policies, grants and revocations
 - [Organization/workspace admin console](org-workspace-admin-console) - Staff console shell for administering organizations and workspaces

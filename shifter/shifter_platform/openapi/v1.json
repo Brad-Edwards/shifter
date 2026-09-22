@@ -968,6 +968,14 @@
           },
           {
             "in": "query",
+            "name": "actor_principal_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
             "name": "actor_type",
             "schema": {
               "type": "string",
@@ -3746,6 +3754,481 @@
               }
             },
             "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/credentials/personal/": {
+      "get": {
+        "operationId": "credentials_personal_retrieve",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "tags": [
+          "credentials"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalCredentialPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "credentials_personal_create",
+        "tags": [
+          "credentials"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssuePersonalCredential"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedPersonalCredential"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/credentials/personal/{credential_uuid}/revoke/": {
+      "post": {
+        "operationId": "credentials_personal_revoke_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "credentials"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/credentials/personal/{credential_uuid}/rotate/": {
+      "post": {
+        "operationId": "credentials_personal_rotate_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "credentials"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssuePersonalCredential"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedPersonalCredential"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/credentials/services/": {
+      "get": {
+        "operationId": "credentials_services_retrieve",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "tags": [
+          "credentials"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCredentialPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "credentials_services_create",
+        "tags": [
+          "credentials"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceCredential"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCredential"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/credentials/services/{credential_uuid}/disable/": {
+      "post": {
+        "operationId": "credentials_services_disable_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "credentials"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/credentials/services/principals/{principal_uuid}/": {
+      "post": {
+        "operationId": "credentials_services_principals_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "principal_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "credentials"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServicePrincipalUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
           },
           "401": {
             "content": {
@@ -7252,6 +7735,76 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/principal-participants/": {
+      "post": {
+        "operationId": "ctf_events_principal_participants_create",
+        "description": "Grant event participation to an existing service, never a synthetic user.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdmitPrincipalParticipant"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipalParticipant"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/ranges/": {
       "get": {
         "operationId": "ctf_events_ranges_retrieve",
@@ -9164,6 +9717,66 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/events/{event_id}/participant/": {
+      "get": {
+        "operationId": "ctf_me_events_participant_retrieve",
+        "description": "Use the ordinary participant-safe projection with an explicit event target.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantCurrentEvent"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
           }
         }
       }
@@ -17262,10 +17875,11 @@
           "user",
           "apikey",
           "system",
-          "cognito"
+          "cognito",
+          "principal"
         ],
         "type": "string",
-        "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito"
+        "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito\n* `principal` - Principal"
       },
       "AdapterGrantView": {
         "type": "object",
@@ -17561,6 +18175,24 @@
           "username"
         ]
       },
+      "AdmitPrincipalParticipant": {
+        "type": "object",
+        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "properties": {
+          "principal_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "name",
+          "principal_uuid"
+        ]
+      },
       "AgentListItem": {
         "type": "object",
         "description": "One entry from ``cms.services.list_agents`` (``_agent_projection_dict``).",
@@ -17796,6 +18428,12 @@
             "readOnly": true,
             "nullable": true
           },
+          "actor_principal_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          },
           "timestamp": {
             "type": "string",
             "format": "date-time",
@@ -17831,6 +18469,7 @@
         "required": [
           "action",
           "actor_id",
+          "actor_principal_uuid",
           "actor_type",
           "context",
           "entity_id",
@@ -19461,6 +20100,124 @@
           "name"
         ]
       },
+      "CreateServiceCredential": {
+        "type": "object",
+        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "subject": {
+            "type": "string",
+            "pattern": "^[0-9]{10,32}$"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateServiceCredentialScopesEnum"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          },
+          "principal_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "scopes",
+          "subject"
+        ]
+      },
+      "CreateServiceCredentialScopesEnum": {
+        "enum": [
+          "authorization:account.delegate_authorization",
+          "authorization:account.delete",
+          "authorization:account.manage_authorization",
+          "authorization:account.manage_members",
+          "authorization:account.manage_organizations",
+          "authorization:account.read",
+          "authorization:account.update",
+          "authorization:event.delegate_authorization",
+          "authorization:event.manage",
+          "authorization:event.manage_challenges",
+          "authorization:event.manage_communications",
+          "authorization:event.manage_participants",
+          "authorization:event.participate",
+          "authorization:event.read",
+          "authorization:installation.delegate_authorization",
+          "authorization:installation.manage_accounts",
+          "authorization:installation.manage_adapters",
+          "authorization:installation.manage_authorization",
+          "authorization:installation.manage_cloud_authority",
+          "authorization:installation.manage_model_sources",
+          "authorization:installation.manage_principals",
+          "authorization:installation.manage_service_credentials",
+          "authorization:installation.read_audit",
+          "authorization:installation.revoke_personal_tokens",
+          "authorization:installation.use_personal_tokens",
+          "authorization:organization.delegate_authorization",
+          "authorization:organization.manage_authorization",
+          "authorization:organization.manage_members",
+          "authorization:organization.manage_workspaces",
+          "authorization:organization.read",
+          "authorization:organization.update",
+          "authorization:range.access",
+          "authorization:range.manage",
+          "authorization:range.read",
+          "authorization:workspace.archive",
+          "authorization:workspace.delegate_authorization",
+          "authorization:workspace.launch_range",
+          "authorization:workspace.manage_authorization",
+          "authorization:workspace.manage_egress",
+          "authorization:workspace.manage_invitations",
+          "authorization:workspace.manage_members",
+          "authorization:workspace.manage_quota",
+          "authorization:workspace.manage_range_scope",
+          "authorization:workspace.publish_model_access",
+          "authorization:workspace.read",
+          "authorization:workspace.restore",
+          "authorization:workspace.transfer",
+          "authorization:workspace.update",
+          "cms:authoring:read",
+          "cms:authoring:write",
+          "cms:preparation-adapters:read",
+          "cms:preparation-adapters:write",
+          "cms:preparation:read",
+          "cms:preparation:write",
+          "ctf:communication:read",
+          "ctf:communication:write",
+          "ctf:event:read",
+          "ctf:event:write",
+          "ctf:play:read",
+          "ctf:play:write",
+          "ctf:vpn-profile:read",
+          "mission_control:credentials:write",
+          "mission_control:guacamole:read",
+          "mission_control:ngfw:read",
+          "mission_control:ngfw:write",
+          "mission_control:range:read",
+          "mission_control:range:write",
+          "mission_control:upload:write",
+          "mission_control:vpn-profile:read",
+          "model-access:event:read",
+          "model-access:event:write",
+          "model-access:operator:read",
+          "model-access:operator:write",
+          "model-access:participant:read",
+          "model-access:range:read",
+          "model-access:range:write",
+          "model-access:sharing:read",
+          "model-access:sharing:write",
+          "workspaces:membership:read",
+          "workspaces:membership:write"
+        ],
+        "type": "string",
+        "description": "* `authorization:account.delegate_authorization` - authorization:account.delegate_authorization\n* `authorization:account.delete` - authorization:account.delete\n* `authorization:account.manage_authorization` - authorization:account.manage_authorization\n* `authorization:account.manage_members` - authorization:account.manage_members\n* `authorization:account.manage_organizations` - authorization:account.manage_organizations\n* `authorization:account.read` - authorization:account.read\n* `authorization:account.update` - authorization:account.update\n* `authorization:event.delegate_authorization` - authorization:event.delegate_authorization\n* `authorization:event.manage` - authorization:event.manage\n* `authorization:event.manage_challenges` - authorization:event.manage_challenges\n* `authorization:event.manage_communications` - authorization:event.manage_communications\n* `authorization:event.manage_participants` - authorization:event.manage_participants\n* `authorization:event.participate` - authorization:event.participate\n* `authorization:event.read` - authorization:event.read\n* `authorization:installation.delegate_authorization` - authorization:installation.delegate_authorization\n* `authorization:installation.manage_accounts` - authorization:installation.manage_accounts\n* `authorization:installation.manage_adapters` - authorization:installation.manage_adapters\n* `authorization:installation.manage_authorization` - authorization:installation.manage_authorization\n* `authorization:installation.manage_cloud_authority` - authorization:installation.manage_cloud_authority\n* `authorization:installation.manage_model_sources` - authorization:installation.manage_model_sources\n* `authorization:installation.manage_principals` - authorization:installation.manage_principals\n* `authorization:installation.manage_service_credentials` - authorization:installation.manage_service_credentials\n* `authorization:installation.read_audit` - authorization:installation.read_audit\n* `authorization:installation.revoke_personal_tokens` - authorization:installation.revoke_personal_tokens\n* `authorization:installation.use_personal_tokens` - authorization:installation.use_personal_tokens\n* `authorization:organization.delegate_authorization` - authorization:organization.delegate_authorization\n* `authorization:organization.manage_authorization` - authorization:organization.manage_authorization\n* `authorization:organization.manage_members` - authorization:organization.manage_members\n* `authorization:organization.manage_workspaces` - authorization:organization.manage_workspaces\n* `authorization:organization.read` - authorization:organization.read\n* `authorization:organization.update` - authorization:organization.update\n* `authorization:range.access` - authorization:range.access\n* `authorization:range.manage` - authorization:range.manage\n* `authorization:range.read` - authorization:range.read\n* `authorization:workspace.archive` - authorization:workspace.archive\n* `authorization:workspace.delegate_authorization` - authorization:workspace.delegate_authorization\n* `authorization:workspace.launch_range` - authorization:workspace.launch_range\n* `authorization:workspace.manage_authorization` - authorization:workspace.manage_authorization\n* `authorization:workspace.manage_egress` - authorization:workspace.manage_egress\n* `authorization:workspace.manage_invitations` - authorization:workspace.manage_invitations\n* `authorization:workspace.manage_members` - authorization:workspace.manage_members\n* `authorization:workspace.manage_quota` - authorization:workspace.manage_quota\n* `authorization:workspace.manage_range_scope` - authorization:workspace.manage_range_scope\n* `authorization:workspace.publish_model_access` - authorization:workspace.publish_model_access\n* `authorization:workspace.read` - authorization:workspace.read\n* `authorization:workspace.restore` - authorization:workspace.restore\n* `authorization:workspace.transfer` - authorization:workspace.transfer\n* `authorization:workspace.update` - authorization:workspace.update\n* `cms:authoring:read` - cms:authoring:read\n* `cms:authoring:write` - cms:authoring:write\n* `cms:preparation-adapters:read` - cms:preparation-adapters:read\n* `cms:preparation-adapters:write` - cms:preparation-adapters:write\n* `cms:preparation:read` - cms:preparation:read\n* `cms:preparation:write` - cms:preparation:write\n* `ctf:communication:read` - ctf:communication:read\n* `ctf:communication:write` - ctf:communication:write\n* `ctf:event:read` - ctf:event:read\n* `ctf:event:write` - ctf:event:write\n* `ctf:play:read` - ctf:play:read\n* `ctf:play:write` - ctf:play:write\n* `ctf:vpn-profile:read` - ctf:vpn-profile:read\n* `mission_control:credentials:write` - mission_control:credentials:write\n* `mission_control:guacamole:read` - mission_control:guacamole:read\n* `mission_control:ngfw:read` - mission_control:ngfw:read\n* `mission_control:ngfw:write` - mission_control:ngfw:write\n* `mission_control:range:read` - mission_control:range:read\n* `mission_control:range:write` - mission_control:range:write\n* `mission_control:upload:write` - mission_control:upload:write\n* `mission_control:vpn-profile:read` - mission_control:vpn-profile:read\n* `model-access:event:read` - model-access:event:read\n* `model-access:event:write` - model-access:event:write\n* `model-access:operator:read` - model-access:operator:read\n* `model-access:operator:write` - model-access:operator:write\n* `model-access:participant:read` - model-access:participant:read\n* `model-access:range:read` - model-access:range:read\n* `model-access:range:write` - model-access:range:write\n* `model-access:sharing:read` - model-access:sharing:read\n* `model-access:sharing:write` - model-access:sharing:write\n* `workspaces:membership:read` - workspaces:membership:read\n* `workspaces:membership:write` - workspaces:membership:write"
+      },
       "CreateWorkspace": {
         "type": "object",
         "description": "Create-workspace command: an organization UUID and a display name.\n\nThe serializer owns HTTP shape (presence, length, UUID form);\n``workspaces.services`` owns authority and the name invariants.",
@@ -20938,6 +21695,96 @@
         "type": "string",
         "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc\n* `ngfw` - ngfw"
       },
+      "IssuePersonalCredential": {
+        "type": "object",
+        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssuePersonalCredentialScopesEnum"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/TargetTypeEnum"
+          },
+          "target_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "expires_at",
+          "name",
+          "scopes",
+          "target_type"
+        ]
+      },
+      "IssuePersonalCredentialScopesEnum": {
+        "enum": [
+          "authorization:account.delegate_authorization",
+          "authorization:account.delete",
+          "authorization:account.manage_authorization",
+          "authorization:account.manage_members",
+          "authorization:account.manage_organizations",
+          "authorization:account.read",
+          "authorization:account.update",
+          "authorization:event.delegate_authorization",
+          "authorization:event.manage",
+          "authorization:event.manage_challenges",
+          "authorization:event.manage_communications",
+          "authorization:event.manage_participants",
+          "authorization:event.participate",
+          "authorization:event.read",
+          "authorization:installation.delegate_authorization",
+          "authorization:installation.manage_accounts",
+          "authorization:installation.manage_adapters",
+          "authorization:installation.manage_authorization",
+          "authorization:installation.manage_cloud_authority",
+          "authorization:installation.manage_model_sources",
+          "authorization:installation.manage_principals",
+          "authorization:installation.manage_service_credentials",
+          "authorization:installation.read_audit",
+          "authorization:installation.revoke_personal_tokens",
+          "authorization:installation.use_personal_tokens",
+          "authorization:organization.delegate_authorization",
+          "authorization:organization.manage_authorization",
+          "authorization:organization.manage_members",
+          "authorization:organization.manage_workspaces",
+          "authorization:organization.read",
+          "authorization:organization.update",
+          "authorization:range.access",
+          "authorization:range.manage",
+          "authorization:range.read",
+          "authorization:workspace.archive",
+          "authorization:workspace.delegate_authorization",
+          "authorization:workspace.launch_range",
+          "authorization:workspace.manage_authorization",
+          "authorization:workspace.manage_egress",
+          "authorization:workspace.manage_invitations",
+          "authorization:workspace.manage_members",
+          "authorization:workspace.manage_quota",
+          "authorization:workspace.manage_range_scope",
+          "authorization:workspace.publish_model_access",
+          "authorization:workspace.read",
+          "authorization:workspace.restore",
+          "authorization:workspace.transfer",
+          "authorization:workspace.update"
+        ],
+        "type": "string",
+        "description": "* `authorization:account.delegate_authorization` - authorization:account.delegate_authorization\n* `authorization:account.delete` - authorization:account.delete\n* `authorization:account.manage_authorization` - authorization:account.manage_authorization\n* `authorization:account.manage_members` - authorization:account.manage_members\n* `authorization:account.manage_organizations` - authorization:account.manage_organizations\n* `authorization:account.read` - authorization:account.read\n* `authorization:account.update` - authorization:account.update\n* `authorization:event.delegate_authorization` - authorization:event.delegate_authorization\n* `authorization:event.manage` - authorization:event.manage\n* `authorization:event.manage_challenges` - authorization:event.manage_challenges\n* `authorization:event.manage_communications` - authorization:event.manage_communications\n* `authorization:event.manage_participants` - authorization:event.manage_participants\n* `authorization:event.participate` - authorization:event.participate\n* `authorization:event.read` - authorization:event.read\n* `authorization:installation.delegate_authorization` - authorization:installation.delegate_authorization\n* `authorization:installation.manage_accounts` - authorization:installation.manage_accounts\n* `authorization:installation.manage_adapters` - authorization:installation.manage_adapters\n* `authorization:installation.manage_authorization` - authorization:installation.manage_authorization\n* `authorization:installation.manage_cloud_authority` - authorization:installation.manage_cloud_authority\n* `authorization:installation.manage_model_sources` - authorization:installation.manage_model_sources\n* `authorization:installation.manage_principals` - authorization:installation.manage_principals\n* `authorization:installation.manage_service_credentials` - authorization:installation.manage_service_credentials\n* `authorization:installation.read_audit` - authorization:installation.read_audit\n* `authorization:installation.revoke_personal_tokens` - authorization:installation.revoke_personal_tokens\n* `authorization:installation.use_personal_tokens` - authorization:installation.use_personal_tokens\n* `authorization:organization.delegate_authorization` - authorization:organization.delegate_authorization\n* `authorization:organization.manage_authorization` - authorization:organization.manage_authorization\n* `authorization:organization.manage_members` - authorization:organization.manage_members\n* `authorization:organization.manage_workspaces` - authorization:organization.manage_workspaces\n* `authorization:organization.read` - authorization:organization.read\n* `authorization:organization.update` - authorization:organization.update\n* `authorization:range.access` - authorization:range.access\n* `authorization:range.manage` - authorization:range.manage\n* `authorization:range.read` - authorization:range.read\n* `authorization:workspace.archive` - authorization:workspace.archive\n* `authorization:workspace.delegate_authorization` - authorization:workspace.delegate_authorization\n* `authorization:workspace.launch_range` - authorization:workspace.launch_range\n* `authorization:workspace.manage_authorization` - authorization:workspace.manage_authorization\n* `authorization:workspace.manage_egress` - authorization:workspace.manage_egress\n* `authorization:workspace.manage_invitations` - authorization:workspace.manage_invitations\n* `authorization:workspace.manage_members` - authorization:workspace.manage_members\n* `authorization:workspace.manage_quota` - authorization:workspace.manage_quota\n* `authorization:workspace.manage_range_scope` - authorization:workspace.manage_range_scope\n* `authorization:workspace.publish_model_access` - authorization:workspace.publish_model_access\n* `authorization:workspace.read` - authorization:workspace.read\n* `authorization:workspace.restore` - authorization:workspace.restore\n* `authorization:workspace.transfer` - authorization:workspace.transfer\n* `authorization:workspace.update` - authorization:workspace.update"
+      },
       "IssueWorkspaceInvitation": {
         "type": "object",
         "description": "Closed invitation-issuance command.",
@@ -20954,6 +21801,66 @@
         "required": [
           "email",
           "role"
+        ]
+      },
+      "IssuedPersonalCredential": {
+        "type": "object",
+        "properties": {
+          "credential_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "requires_reissue": {
+            "type": "boolean"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "target_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "token": {
+            "type": "string",
+            "description": "Shown once. Never returned by list or detail operations."
+          }
+        },
+        "required": [
+          "credential_uuid",
+          "expires_at",
+          "last_used_at",
+          "name",
+          "requires_reissue",
+          "revoked_at",
+          "scopes",
+          "target_type",
+          "target_uuid",
+          "token"
         ]
       },
       "LaunchRange": {
@@ -23621,6 +24528,84 @@
           }
         }
       },
+      "PersonalCredential": {
+        "type": "object",
+        "properties": {
+          "credential_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "requires_reissue": {
+            "type": "boolean"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "target_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "credential_uuid",
+          "expires_at",
+          "last_used_at",
+          "name",
+          "requires_reissue",
+          "revoked_at",
+          "scopes",
+          "target_type",
+          "target_uuid"
+        ]
+      },
+      "PersonalCredentialPage": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "next_offset": {
+            "type": "integer",
+            "nullable": true
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalCredential"
+            }
+          }
+        },
+        "required": [
+          "count",
+          "next_offset",
+          "results"
+        ]
+      },
       "PolicyActionMutation": {
         "type": "object",
         "description": "Change an action on the policy identified only by the route.",
@@ -23913,6 +24898,28 @@
         },
         "required": [
           "required_challenge_id"
+        ]
+      },
+      "PrincipalParticipant": {
+        "type": "object",
+        "properties": {
+          "participant_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "principal_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "event_uuid",
+          "participant_uuid",
+          "principal_uuid"
         ]
       },
       "PrincipalWorkspaceContext": {
@@ -26259,6 +27266,100 @@
           "members"
         ]
       },
+      "ServiceCredential": {
+        "type": "object",
+        "properties": {
+          "credential_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "principal_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "audience": {
+            "type": "string",
+            "format": "uri"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "admission_active": {
+            "type": "boolean"
+          },
+          "principal_active": {
+            "type": "boolean"
+          },
+          "responsible_user_id": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "admission_active",
+          "audience",
+          "credential_uuid",
+          "is_active",
+          "name",
+          "principal_active",
+          "principal_uuid",
+          "responsible_user_id",
+          "scopes",
+          "subject"
+        ]
+      },
+      "ServiceCredentialPage": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "next_offset": {
+            "type": "integer",
+            "nullable": true
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceCredential"
+            }
+          }
+        },
+        "required": [
+          "count",
+          "next_offset",
+          "results"
+        ]
+      },
+      "ServicePrincipalUpdate": {
+        "type": "object",
+        "description": "Reject unrecognized write fields before ordinary field validation.",
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          },
+          "responsible_user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          }
+        },
+        "required": [
+          "is_active"
+        ]
+      },
       "SetActiveRequest": {
         "type": "object",
         "description": "Explicit request body for the activate/deactivate operation.",
@@ -26545,6 +27646,18 @@
         "required": [
           "success"
         ]
+      },
+      "TargetTypeEnum": {
+        "enum": [
+          "installation",
+          "account",
+          "organization",
+          "workspace",
+          "event",
+          "range"
+        ],
+        "type": "string",
+        "description": "* `installation` - installation\n* `account` - account\n* `organization` - organization\n* `workspace` - workspace\n* `event` - event\n* `range` - range"
       },
       "TeamCreateRequest": {
         "type": "object",
@@ -27329,8 +28442,8 @@
       "ApiTokenAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "shf",
-        "description": "Platform API token with scopes from shared.api_tokens.scopes."
+        "bearerFormat": "Knox opaque credential or native Google ID token",
+        "description": "Personal Knox credential with live authorization, or explicitly admitted audience-bound Google service ID token. Cloud access tokens and human provider ID tokens are not application bearer credentials."
       },
       "cookieAuth": {
         "type": "apiKey",
