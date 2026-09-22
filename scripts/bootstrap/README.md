@@ -129,6 +129,16 @@ the substrate, then deploy. The maintained end-to-end walkthrough is the GCP
 Deployment section of
 `docs/technical/dev/setup.md`.
 
+> **Before starting:** In the target GCP project, enable every Google Cloud API
+> required by the selected Shifter configuration and enable every configured AI
+> model in Vertex AI Model Garden. Model enablement is separate from enabling
+> the Vertex AI API: an authorized project administrator must open each required
+> model, accept any provider or Marketplace terms, and confirm that the model is
+> available in its configured region. Complete both API and model enablement
+> before bootstrap, pack installation, or range qualification; otherwise a
+> deployment can succeed while participant model calls fail with a misleading
+> model-not-found response.
+
 For a fresh project, copy `gcp-foundation.example.tfvars.json` to an
 operator-owned file outside the repository. Supply the project ID and number,
 numeric GitHub repository and owner IDs, bucket names, and exact purpose

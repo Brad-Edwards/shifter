@@ -473,7 +473,15 @@ GCP provisions with Terraform (`platform/terraform/gcp/`, rooted at `environment
 
 ### 1. GCP Project Setup
 
-Create a GCP project and enable the APIs required by the bootstrap path.
+Create a GCP project. Before starting bootstrap, enable every Google Cloud API
+required by the selected Shifter configuration. If the configuration uses AI
+models, also enable every configured model in Vertex AI Model Garden: an
+authorized project administrator must open each model, accept any provider or
+Marketplace terms, and confirm that it is available in the configured region.
+Enabling the Vertex AI API does not enable individual models. Complete both API
+and model enablement before bootstrap, pack installation, or range
+qualification; otherwise deployment can succeed while participant model calls
+fail with a misleading model-not-found response.
 
 ### 2. Configure Workload Identity Federation
 
