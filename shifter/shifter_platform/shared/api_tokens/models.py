@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import models, transaction
 from django.utils import timezone
 from knox.auth import TokenAuthentication
@@ -128,6 +129,12 @@ class ApiToken(models.Model):
     def revoke(self) -> None:
         """Remove the library credential while retaining stable audit metadata."""
         with transaction.atomic():
+            # Admission locks the owner before the token. Match that order so
+            # the deferred FK check on the token update cannot deadlock with
+            # a concurrent admission holding the owner row.
+            owner_id = type(self).objects.filter(pk=self.pk).values_list("created_by_id", flat=True).first()
+            if owner_id is not None:
+                get_user_model().objects.select_for_update().filter(pk=owner_id).first()
             locked = type(self).objects.select_for_update().get(pk=self.pk)
             if locked.revoked_at is None:
                 locked.revoked_at = timezone.now()
