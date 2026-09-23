@@ -122,6 +122,8 @@ def test_job_admission_constrains_creation_without_blocking_controller_cleanup(p
     launcher_job_rule = next(rule for rule in role["rules"] if rule["resources"] == ["jobs"])
     assert launcher_job_rule["verbs"] == ["create", "get", "delete"]
     assert not {"update", "patch"}.intersection(launcher_job_rule["verbs"])
+    status_rule = next(rule for rule in role["rules"] if rule["resources"] == ["jobs/status"])
+    assert status_rule["verbs"] == ["get"]
 
 
 @pytest.mark.parametrize("runtime", [None, "", "runc", "other"])

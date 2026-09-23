@@ -54,6 +54,10 @@ rules:
   - apiGroups: [batch]
     resources: [jobs]
     verbs: [create, get, delete]
+  # Completed-job cleanup reads the status subresource before deletion.
+  - apiGroups: [batch]
+    resources: [jobs/status]
+    verbs: [get]
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list]
