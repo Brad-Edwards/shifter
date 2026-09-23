@@ -21,7 +21,9 @@ from ._account import (
     create_account_organization,
     create_account_workspace,
     ensure_default_hierarchy,
+    hierarchy_target_scope,
     resolve_resource_scope,
+    resource_scope_from_ids,
 )
 from ._admin_transfer import WorkspaceOwnershipTransferResult, admin_transfer_workspace_ownership
 from ._authorization import (
@@ -214,6 +216,7 @@ __all__ = [
     "get_organization_profile",
     "get_self_membership",
     "get_workspace",
+    "hierarchy_target_scope",
     "issue_workspace_invitation",
     "leave_workspace",
     "list_actor_workspace_contexts",
@@ -237,6 +240,7 @@ __all__ = [
     "resolve_model_access_workspace",
     "resolve_personal_workspace",
     "resolve_resource_scope",
+    "resource_scope_from_ids",
     "restore_workspace",
     "revoke_workspace_invitation",
     "set_workspace_egress_policy",

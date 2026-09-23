@@ -428,7 +428,7 @@ class _BatchBarrierProvider(_BoundProvider):
 
 def test_postgres_fence_unknown_outcome_and_concurrent_revoke(provider) -> None:
     actor_user = get_user_model().objects.create_user(username=f"actor-{uuid4()}")
-    actor = Principal.objects.create(kind=Principal.Kind.HUMAN, user=actor_user)
+    actor = actor_user.identity_principal
     subject = Principal.objects.create(kind=Principal.Kind.SERVICE, name=f"subject-{uuid4()}")
     account = Account.objects.create(kind=Account.Kind.TEAM, name=f"Account {uuid4()}")
     scope = ResourceScope(kind="account", account_uuid=account.uuid)

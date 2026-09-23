@@ -52,7 +52,7 @@ temporary_directory="$(mktemp -d)"
 # shellcheck disable=SC2329  # invoked by the EXIT trap below
 cleanup() {
   local result=$?
-  kubectl -n "${namespace}" delete job "${job_name}" secret "${secret_name}" \
+  kubectl -n "${namespace}" delete "job/${job_name}" "secret/${secret_name}" \
     --ignore-not-found --wait=false --request-timeout="${KUBECTL_REQUEST_TIMEOUT}" >/dev/null 2>&1 || true
   python3 - "${temporary_directory}" <<'PY'
 from pathlib import Path

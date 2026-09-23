@@ -217,7 +217,7 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc", "sauron"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc", "sauron", "balrog"}
 
     @classmethod
     def setUpClass(cls):
@@ -273,7 +273,7 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
 
     def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
-        for environment in ("gcp-dev", "nazgul", "orthanc", "sauron"):
+        for environment in ("gcp-dev", "nazgul", "orthanc", "sauron", "balrog"):
             with self.subTest(environment=environment):
                 out = self.env(
                     "workflow_dispatch",
@@ -795,6 +795,14 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn("unexpected {kind} containers", verifier)
         self.assertIn("${RUNNER_TEMP}/gcp-release-security/running-pods.json", workflow)
         self.assertIn("Remove ephemeral deployment evidence", workflow)
+
+    def test_gcp_deploy_waits_for_superseded_pods_before_image_evidence(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+
+        wait = "select(.metadata.deletionTimestamp != null)"
+        record = "Record running workload image IDs"
+        self.assertIn(wait, workflow)
+        self.assertLess(workflow.index(wait), workflow.index(record))
 
     def test_gcp_promotion_authenticates_redacted_verdict_before_private_evidence(self):
         validate = (REPO_ROOT / ".github/workflows/packer-gcp-validate.yml").read_text(encoding="utf-8")

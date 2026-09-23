@@ -420,9 +420,19 @@ The first slice intentionally stays small:
 
   The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
   environment deploys are a `workflow_dispatch` naming the `environment` input
-  (a closed `choice` of `aws-dev` / `aws-proof` / `gcp-dev`), that the `Set
+  (a closed `choice` of `aws-dev` / `aws-proof` / `gcp-dev` / `nazgul` /
+  `orthanc` / `sauron` / `balrog`), that the `Set
   environment` step keys on that input rather than a branch-name `case` router,
   and that `push` / `pull_request` run validation only (no run/apply flags).
+
+  The optional `gcp_reconcile_foundation_image_network` dispatch input is
+  forwarded only to the selected tenant's reusable GCP deploy workflow. Its
+  foundation stage runs on that tenant's protected runner and Environment,
+  authenticates with the existing deploy identity, and checks a saved
+  `cicd-oidc` plan with `scripts/gcp/check_image_network_plan.py` before apply.
+  The checker permits only the six image-network address moves and the exact
+  IAP TCP port-2222 addition. Other resource or output changes fail the run;
+  ordinary deployments skip the foundation stage.
 
   The GCP teardown guardrail
   (`test_gcp_workflows_keep_sensitive_tfvars_out_of_the_checkout`) asserts that
@@ -430,7 +440,7 @@ The first slice intentionally stays small:
   `TF_DIR`, `TF_BACKEND_PREFIX`, and the destroy `environment`
   (`<environment>-destroy`) all derive from the `environment` dispatch input
   rather than being hardcoded to gcp-dev, so every GCP tenant
-  (gcp-dev / nazgul / orthanc / sauron) tears down through the one workflow. It
+  (gcp-dev / nazgul / orthanc / sauron / balrog) tears down through the one workflow. It
   runs on `ubuntu-latest` because teardown deletes resources through the GCP
   APIs over WIF and needs no in-VPC or self-hosted runner access. Each GCP env
   root declares `cloud_sql_deletion_protection` (default true) so the workflow's

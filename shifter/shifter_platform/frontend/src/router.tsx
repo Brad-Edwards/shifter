@@ -53,6 +53,7 @@ import { CtfWorkspaceLayout } from "@/features/ctf/CtfWorkspaceLayout";
 import { CtfTerminalPage } from "@/features/ctf/CtfTerminalPage";
 import { TeamPage } from "@/features/ctf/TeamPage";
 import { HomePage } from "@/features/home/HomePage";
+import { AccessCredentialsPage } from "@/features/credentials/AccessCredentialsPage";
 import { AgentsPage } from "@/features/mission-control/AgentsPage";
 import { CredentialsPage } from "@/features/mission-control/CredentialsPage";
 import { NgfwDetailPage } from "@/features/mission-control/NgfwDetailPage";
@@ -107,6 +108,7 @@ export const router = createBrowserRouter(
       element: <RootLayout />,
       children: [
         { index: true, element: <HomePage /> },
+        { path: "access-credentials", element: <AccessCredentialsPage />, handle: { permissionPolicy: "authenticated" } },
         {
           // The F1 foundation chunk registered only the dashboard; the
           // live-access chunk added the per-instance terminal page; the

@@ -8,10 +8,12 @@ from uuid import UUID
 from django.db import IntegrityError, transaction
 from django.db.models import Q, QuerySet
 
-from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log
+from shared.api_tokens.scopes import credential_ceiling, validate_scopes
+from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log, principal_actor_fields
+from shared.credentials import CredentialContext
 from shared.identity_scope import PrincipalRef
 
-from .models import Principal, PrincipalConflictError, ProviderBinding, UserProfile
+from .models import Principal, PrincipalConflictError, ProviderBinding, ServiceCredentialAdmission, UserProfile
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -21,18 +23,22 @@ _PRINCIPAL_UNAVAILABLE = "Principal unavailable"
 _PROVIDER_IDENTITY_UNAVAILABLE = "Provider identity unavailable"
 
 
-def _audit(entity_type: str, entity_id: int, action: str, state: dict[str, object]) -> None:
+def _audit(
+    entity_type: str, entity_id: int, action: str, state: dict[str, object], *, actor: PrincipalRef | None = None
+) -> None:
     """Write a strict identity-lifecycle audit event."""
-    audit_log(
-        AuditEvent(
-            entity_type=entity_type,
-            entity_id=entity_id,
-            action=action,
-            new_state=state,
-            context="principal_identity",
-        ),
-        strict=True,
+    actor_fields = principal_actor_fields(actor) if actor is not None else None
+    event = AuditEvent(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        new_state=state,
+        context="principal_identity",
+        actor_type=actor_fields["actor_type"] if actor_fields is not None else "system",
+        actor_id=actor_fields["actor_id"] if actor_fields is not None else None,
+        actor_principal_uuid=actor_fields["actor_principal_uuid"] if actor_fields is not None else None,
     )
+    audit_log(event, strict=True)
 
 
 def _principal_ref(principal: Principal) -> PrincipalRef:
@@ -67,10 +73,43 @@ def principal_for_user(user: User) -> PrincipalRef:
     return _principal_ref(principal)
 
 
+def delete_managed_pool_user(user: User, *, domain: str) -> None:
+    """Remove an uncredentialed, inactive pool placeholder and its principal.
+
+    This is deliberately not a general account-deletion path: real human
+    principals remain protected even when their Django account is inactive.
+    """
+    from django.contrib.auth.models import User as DjangoUser
+
+    if domain not in {"ctf-spare.invalid", "warm-pool.invalid"} or user.pk is None:
+        raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+    with transaction.atomic():
+        account = DjangoUser.objects.select_for_update().get(pk=user.pk)
+        marker = account.email.partition("@")
+        if (
+            account.is_active
+            or account.has_usable_password()
+            or marker[2] != domain
+            or account.username != f"{'ctf-spare' if domain == 'ctf-spare.invalid' else 'warm'}-{marker[0]}"
+        ):
+            raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+        principal = Principal.objects.select_for_update().get(user=account, kind=Principal.Kind.HUMAN)
+        if principal.provider_bindings.exists():
+            raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+        from shared.api_tokens.models import ApiToken
+
+        if ApiToken.objects.filter(principal_uuid=principal.uuid).exists():
+            raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+        _audit(AuditEntityType.PRINCIPAL, principal.pk, AuditAction.DELETE, {"managed_pool": domain})
+        principal.delete()
+        account.delete()
+
+
 def _active_principals() -> QuerySet[Principal]:
     """Limit resolution to active services and active human user accounts."""
     return Principal.objects.filter(is_active=True).filter(
-        Q(kind=Principal.Kind.SERVICE) | Q(kind=Principal.Kind.HUMAN, user__is_active=True)
+        Q(kind=Principal.Kind.SERVICE)
+        | Q(kind=Principal.Kind.HUMAN, user__is_active=True, user__profile__deleted_at__isnull=True)
     )
 
 
@@ -100,8 +139,41 @@ def resolve_principal_uuid(principal_uuid: UUID) -> PrincipalRef:
     return _principal_ref(principal)
 
 
+def resolve_service_credential(*, issuer: str, subject: str, audience: str) -> CredentialContext:
+    """Resolve only an exact, explicitly admitted, active native service tuple."""
+    admission = (
+        ServiceCredentialAdmission.objects.select_related("binding__principal")
+        .filter(
+            binding__issuer=issuer,
+            binding__subject=subject,
+            binding__principal__kind=Principal.Kind.SERVICE,
+            binding__principal__is_active=True,
+            audience=audience,
+            is_active=True,
+        )
+        .first()
+    )
+    if admission is None:
+        raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE)
+    try:
+        scopes = validate_scopes(admission.scopes)
+        return CredentialContext(
+            principal=_principal_ref(admission.binding.principal),
+            kind="service",
+            credential_uuid=admission.uuid,
+            ceiling=credential_ceiling(scopes),
+            scopes=frozenset(scopes),
+        )
+    except ValueError as exc:
+        raise PrincipalConflictError(_PRINCIPAL_UNAVAILABLE) from exc
+
+
 def create_service_principal(
-    name: str, *, created_by: User | None = None, responsible_user: User | None = None
+    name: str,
+    *,
+    created_by: User | None = None,
+    responsible_user: User | None = None,
+    actor: PrincipalRef | None = None,
 ) -> PrincipalRef:
     """Create an independent service identity; contacts convey no authority."""
     if not isinstance(name, str) or not name.strip() or len(name) > 200:
@@ -115,7 +187,7 @@ def create_service_principal(
             created_by=created_by,
             responsible_user=responsible_user,
         )
-        _audit(AuditEntityType.PRINCIPAL, principal.pk, AuditAction.CREATE, {"kind": principal.kind})
+        _audit(AuditEntityType.PRINCIPAL, principal.pk, AuditAction.CREATE, {"kind": principal.kind}, actor=actor)
         return _principal_ref(principal)
 
 
@@ -160,7 +232,9 @@ def _legacy_identity_conflicts(principal: Principal, issuer: str, subject: str) 
     return bool(legacy is not None and legacy.issuer in ("", issuer) and legacy.user_id != principal.user_id)
 
 
-def _create_provider_binding(principal: Principal, issuer: str, subject: str) -> None:
+def _create_provider_binding(
+    principal: Principal, issuer: str, subject: str, *, actor: PrincipalRef | None = None
+) -> None:
     """Create and audit one immutable provider tuple after conflict checks."""
     existing = ProviderBinding.objects.filter(issuer=issuer, subject=subject).first()
     if existing is not None:
@@ -168,10 +242,14 @@ def _create_provider_binding(principal: Principal, issuer: str, subject: str) ->
             raise PrincipalConflictError(_PROVIDER_IDENTITY_UNAVAILABLE)
         return
     binding = ProviderBinding.objects.create(principal=principal, issuer=issuer, subject=subject)
-    _audit(AuditEntityType.PROVIDER_BINDING, binding.pk, AuditAction.CREATE, {"principal_id": principal.pk})
+    _audit(
+        AuditEntityType.PROVIDER_BINDING, binding.pk, AuditAction.CREATE, {"principal_id": principal.pk}, actor=actor
+    )
 
 
-def bind_principal_provider_identity(principal_ref: PrincipalRef, issuer: str, subject: str) -> None:
+def bind_principal_provider_identity(
+    principal_ref: PrincipalRef, issuer: str, subject: str, *, actor: PrincipalRef | None = None
+) -> None:
     """Bind an exact provider tuple once; never repair by email or subject alone."""
     if not _valid_provider_identity(principal_ref, issuer, subject):
         raise PrincipalConflictError(_PROVIDER_IDENTITY_UNAVAILABLE)
@@ -180,7 +258,7 @@ def bind_principal_provider_identity(principal_ref: PrincipalRef, issuer: str, s
             principal = _locked_bound_principal(principal_ref)
             if _legacy_identity_conflicts(principal, issuer, subject):
                 raise PrincipalConflictError(_PROVIDER_IDENTITY_UNAVAILABLE)
-            _create_provider_binding(principal, issuer, subject)
+            _create_provider_binding(principal, issuer, subject, actor=actor)
     except IntegrityError as exc:
         raise PrincipalConflictError(_PROVIDER_IDENTITY_UNAVAILABLE) from exc
 
@@ -193,5 +271,6 @@ __all__ = [
     "principal_for_user",
     "resolve_principal",
     "resolve_principal_uuid",
+    "resolve_service_credential",
     "set_service_contact",
 ]

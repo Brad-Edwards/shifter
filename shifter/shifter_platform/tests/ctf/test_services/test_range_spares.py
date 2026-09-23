@@ -43,7 +43,7 @@ def spare_pool_scenario(organizer_user, monkeypatch) -> RaesPackageSource:
     """A conformance-passed RAES source with cloud dispatch held at the seam."""
     monkeypatch.setattr("engine.services._raes_range.start_raes_range_provisioning", lambda *_a, **_kw: None)
 
-    def dispatch(request_id, user, _source, backend_admission, workspace_id, egress_mode):
+    def dispatch(request_id, user, _source, backend_admission, workspace_id, egress_mode, **_kwargs):
         from engine.services import create_raes_range
 
         create_raes_range(
@@ -101,6 +101,29 @@ class TestManagedSpareUser:
         """A real (non-``@ctf-spare.invalid``) user is never deleted, even if passed in by mistake."""
         assert delete_managed_spare_user(organizer_user) is False
         assert User.objects.filter(pk=organizer_user.pk).exists()
+
+    @pytest.mark.django_db
+    def test_delete_managed_spare_user_refuses_activated_placeholder(self):
+        user = create_managed_spare_user()
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+
+        assert delete_managed_spare_user(user) is False
+        assert User.objects.filter(pk=user.pk).exists()
+
+    @pytest.mark.django_db
+    def test_delete_managed_spare_user_refuses_bound_identity(self):
+        from management.models import ProviderBinding
+
+        user = create_managed_spare_user()
+        ProviderBinding.objects.create(
+            principal=user.identity_principal,
+            issuer="https://issuer.example.test",
+            subject=f"pooled-{user.pk}",
+        )
+
+        assert delete_managed_spare_user(user) is False
+        assert User.objects.filter(pk=user.pk).exists()
 
     def test_delete_managed_spare_user_none_is_a_safe_no_op(self):
         assert delete_managed_spare_user(None) is False

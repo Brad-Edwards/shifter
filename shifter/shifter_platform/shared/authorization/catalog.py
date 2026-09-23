@@ -53,6 +53,9 @@ def _action(
 # to exactly one entry; adding a surface without extending this tuple is caught by
 # the coverage tests introduced with that cutover.
 ACTION_CATALOG: tuple[ActionDefinition, ...] = (
+    _action("installation.use_personal_tokens", "installation", administrative=False),
+    _action("installation.revoke_personal_tokens", "installation"),
+    _action("installation.manage_service_credentials", "installation"),
     _action("installation.manage_accounts", "installation"),
     _action("installation.manage_principals", "installation"),
     _action("installation.manage_authorization", "installation"),
@@ -99,6 +102,7 @@ ACTION_CATALOG: tuple[ActionDefinition, ...] = (
     _action("workspace.launch_range", "workspace", administrative=False),
     _action("workspace.publish_model_access", "workspace"),
     _action("event.read", "event", administrative=False),
+    _action("event.participate", "event", administrative=False, delegable=False),
     _action("event.manage", "event"),
     _action("event.manage_participants", "event"),
     _action("event.manage_challenges", "event"),

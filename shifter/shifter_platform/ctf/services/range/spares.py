@@ -90,7 +90,9 @@ def delete_managed_spare_user(user: User | None) -> bool:
 
     result = True
     try:
-        user.delete()
+        from management.services import delete_managed_pool_user
+
+        delete_managed_pool_user(user, domain=_SPARE_USER_EMAIL_DOMAIN)
     except Exception:
         logger.exception(
             "delete_managed_spare_user: failed to delete spare user id=%s",

@@ -3,6 +3,7 @@
 import io
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -217,7 +218,7 @@ def test_failed_registration_cleans_only_its_new_upload(upload):
 
 def test_pack_cannot_be_launched_in_another_organization_workspace(upload, tenant):
     from cms.exceptions import CMSError
-    from cms.services._raes_dispatch import _launch_pack
+    from cms.services._raes_dispatch import _runtime_plugin_scope
     from workspaces.models import Workspace, WorkspaceMembership
 
     client, organization, root, _ = upload
@@ -226,8 +227,78 @@ def test_pack_cannot_be_launched_in_another_organization_workspace(upload, tenan
     workspace = Workspace.objects.create(organization=other, name="Other workspace")
     WorkspaceMembership.objects.create(workspace=workspace, user=tenant[0], role="owner")
     with pytest.raises(CMSError, match="unavailable in this workspace"):
-        _launch_pack(uuid4(), tenant[0], root, None, workspace.pk, "status-quo", RaesPackageSource.objects.get())
+        _runtime_plugin_scope(tenant[0], workspace.pk, RaesPackageSource.objects.get(), None)
     assert not Range.objects.exists()
+
+
+def test_ctf_event_owner_binds_tenant_adapter_for_participant_workspace(upload, tenant, monkeypatch):
+    from cms.services._raes_dispatch import _launch_pack, _runtime_plugin_scope
+    from workspaces.services import resolve_personal_workspace
+
+    client, organization, root, _ = upload
+    owner, _ = tenant
+    _post(client, organization, root)
+    source = RaesPackageSource.objects.get()
+    participant = User.objects.create_user(username="ctf-participant")
+    workspace = resolve_personal_workspace(participant)
+    captured = {}
+
+    def launch(**kwargs):
+        captured["scope"] = kwargs["port"].runtime_plugin_scope
+        return SimpleNamespace(accepted=True)
+
+    monkeypatch.setattr("shared.raes.package_loader.launch_raes_package", launch)
+    plugin_scope = _runtime_plugin_scope(participant, workspace.workspace_id, source, owner)
+    _launch_pack(
+        uuid4(),
+        participant,
+        root,
+        None,
+        workspace.workspace_id,
+        "status-quo",
+        plugin_scope,
+    )
+
+    assert captured["scope"].organization_uuid == organization.uuid
+    assert captured["scope"].pack_id == source.scenario_id
+
+
+def test_rejected_launch_logs_bounded_diagnostics(upload, tenant, monkeypatch, caplog):
+    from cms.exceptions import CMSError
+    from cms.services._raes_dispatch import _launch_pack
+    from shared.raes.package_loader import ShifterLaunchResult
+    from shared.runtime_plugin_binding import RuntimePluginScope
+    from workspaces.services import resolve_personal_workspace
+
+    _, organization, root, _ = upload
+    owner, _ = tenant
+    workspace = resolve_personal_workspace(owner)
+    request_id = uuid4()
+    diagnostic = "shifter-provisioner.dispatch-failed @ plan: allocation unavailable"
+
+    monkeypatch.setattr(
+        "shared.raes.package_loader.launch_raes_package",
+        lambda **_kwargs: ShifterLaunchResult(
+            accepted=False,
+            status="rejected",
+            diagnostics=(diagnostic,),
+        ),
+    )
+    scope = RuntimePluginScope(
+        organization_uuid=organization.uuid,
+        pack_id="example",
+        pack_digest="sha256:" + "a" * 64,
+    )
+
+    with (
+        caplog.at_level("WARNING", logger="cms.services._raes_dispatch"),
+        pytest.raises(CMSError, match="RAES provisioning was not accepted"),
+    ):
+        _launch_pack(request_id, owner, root, None, workspace.workspace_id, "status-quo", scope)
+
+    assert str(request_id) in caplog.text
+    assert "status=rejected" in caplog.text
+    assert diagnostic in caplog.text
 
 
 def test_pack_revision_requires_existing_identity(upload):

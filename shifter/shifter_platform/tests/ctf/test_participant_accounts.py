@@ -209,6 +209,21 @@ def test_ctf_websocket_boundary_admits_live_participant_terminal(ctf_event_activ
 
 
 @pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_admits_live_participant_raes_terminal(ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+
+    path = "/ws/terminal/provision.node.attack-workstation#0/"
+    calls, messages = _websocket_boundary_messages(User.objects.get(pk=participant.user_id), path)
+
+    assert calls == [path]
+    assert messages == []
+
+
+@pytest.mark.django_db(transaction=True)
 def test_ctf_websocket_boundary_denies_other_platform_socket(ctf_event_active, monkeypatch):
     from management.services import set_ctf_password_change_required
 

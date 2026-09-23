@@ -18,6 +18,12 @@ resource "google_container_node_pool" "runtime_plugins" {
     auto_upgrade = true
   }
 
+  network_config {
+    enable_private_nodes = true
+    create_pod_range     = false
+    pod_range            = var.gke_pods_secondary_range_name
+  }
+
   node_config {
     machine_type    = "e2-standard-4"
     image_type      = "COS_CONTAINERD"

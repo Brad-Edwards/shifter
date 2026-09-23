@@ -17,7 +17,7 @@ from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from shared.auth import THREAT_RESEARCH_GROUP
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
 
 LIST_CREATE_URL = "/api/v1/cms/raes-image-mappings/"
 DISABLE_URL = "/api/v1/cms/raes-image-mappings/disable/"
