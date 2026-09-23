@@ -194,10 +194,14 @@ def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
         raise ValueError(f"Instance {instance_uuid} not found in range")
 
     os_type = _first_connection_value(instance.get("os_type"), instance.get("os")).lower()
-    if os_type not in ("kali", "ubuntu", "windows"):
+    # RAES records an OS family rather than a distribution. A Linux guest may
+    # offer a desktop, but only an explicit RDP endpoint may authorize it.
+    if os_type not in ("kali", "ubuntu", "windows", "linux"):
         raise ValueError(f"RDP not available for {os_type} instances (no GUI)")
 
     _require_declared_participant_channel(instance, "rdp")
+    if os_type == "linux" and instance.get("participant_access_channels") is None:
+        raise ValueError("RDP not available for linux instances without a declared participant endpoint")
 
     host = _resolve_instance_host(instance)
     if not host:
