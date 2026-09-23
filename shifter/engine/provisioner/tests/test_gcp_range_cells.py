@@ -37,6 +37,7 @@ from gcp_range_cells import (
     _ensure_firewall,
     _ensure_instance,
     _ensure_openvpn_gateway,
+    _insert_instance,
     apply_range_cell,
     destroy_range_cell,
     render_range_cell_plan,
@@ -1045,6 +1046,92 @@ def test_machine_image_instance_clone_converges_all_attached_disks_to_auto_delet
         device_name="nested-data",
         auto_delete=True,
     )
+
+
+def test_machine_image_clone_retries_only_source_operation_rate_limit(monkeypatch):
+    plan = {"project_id": "test-project", "zone": "us-central1-b"}
+    instance = {
+        "resource_name": "shifter-r-42-host",
+        "profile": GCERangeImageProfile(source_machine_image="projects/test-project/global/machineImages/host-v1"),
+        "image_key": "",
+    }
+    clients = _mock_clients(exists=False)
+    clients.instances.get.side_effect = [NotFound(), SimpleNamespace(disks=[])]
+    wait = MagicMock(side_effect=[RuntimeError("RESOURCE_OPERATION_RATE_EXCEEDED"), None])
+    sleep = MagicMock()
+    monkeypatch.setattr("gcp_range_cells._wait_for_operation", wait)
+    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
+    monkeypatch.setattr("gcp_range_cells._machine_image_retry_jitter", lambda _name, _attempt, _delay: 0)
+
+    _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
+
+    assert clients.instances.insert.call_count == 2
+    assert clients.instances.get.call_count == 2
+    sleep.assert_called_once_with(15)
+
+
+def test_machine_image_clone_does_not_retry_other_forbidden_errors(monkeypatch):
+    plan = {"project_id": "test-project", "zone": "us-central1-b"}
+    instance = {
+        "resource_name": "shifter-r-42-host",
+        "profile": GCERangeImageProfile(source_machine_image="projects/test-project/global/machineImages/host-v1"),
+        "image_key": "",
+    }
+    clients = _mock_clients(exists=False)
+    clients.instances.insert.side_effect = RuntimeError("permission denied")
+    sleep = MagicMock()
+    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
+
+    with pytest.raises(RuntimeError, match="permission denied"):
+        _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
+
+    clients.instances.insert.assert_called_once()
+    clients.instances.get.assert_not_called()
+    sleep.assert_not_called()
+
+
+def test_machine_image_rate_limit_reconciles_created_instance_without_duplicate_insert(monkeypatch):
+    plan = {"project_id": "test-project", "zone": "us-central1-b"}
+    instance = {
+        "resource_name": "shifter-r-42-host",
+        "profile": GCERangeImageProfile(source_machine_image="projects/test-project/global/machineImages/host-v1"),
+        "image_key": "",
+    }
+    clients = _mock_clients(exists=False)
+    clients.instances.get.side_effect = None
+    clients.instances.get.return_value = SimpleNamespace(disks=[])
+    wait = MagicMock(side_effect=RuntimeError("RESOURCE_OPERATION_RATE_EXCEEDED"))
+    sleep = MagicMock()
+    monkeypatch.setattr("gcp_range_cells._wait_for_operation", wait)
+    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
+
+    _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
+
+    clients.instances.insert.assert_called_once()
+    sleep.assert_not_called()
+
+
+def test_machine_image_rate_limit_exhaustion_keeps_failure_closed(monkeypatch):
+    plan = {"project_id": "test-project", "zone": "us-central1-b"}
+    instance = {
+        "resource_name": "shifter-r-42-host",
+        "profile": GCERangeImageProfile(source_machine_image="projects/test-project/global/machineImages/host-v1"),
+        "image_key": "",
+    }
+    clients = _mock_clients(exists=False)
+    clients.instances.get.side_effect = NotFound()
+    wait = MagicMock(side_effect=RuntimeError("RESOURCE_OPERATION_RATE_EXCEEDED"))
+    sleep = MagicMock()
+    monkeypatch.setattr("gcp_range_cells._wait_for_operation", wait)
+    monkeypatch.setattr("gcp_range_cells._MACHINE_IMAGE_RATE_RETRY_DELAYS", (0,))
+    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
+    monkeypatch.setattr("gcp_range_cells._machine_image_retry_jitter", lambda _name, _attempt, _delay: 0)
+
+    with pytest.raises(RuntimeError, match="RESOURCE_OPERATION_RATE_EXCEEDED"):
+        _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
+
+    assert clients.instances.insert.call_count == 2
+    sleep.assert_called_once_with(0)
 
 
 def test_render_plan_resolves_distinct_images_for_same_role_by_ami_key():
