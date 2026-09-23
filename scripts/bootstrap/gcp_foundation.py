@@ -11,7 +11,8 @@ from bootstrap_core import confirm, gcloud_resource_exists, get_repo_root, run_c
 DESTROY_PROTECTED_REFS = ("refs/heads/dev", "refs/heads/main")
 
 
-def _require_protected_destroy_refs(purpose_contexts: dict) -> None:
+def _require_protected_destroy_refs(purpose_contexts: dict[str, list[dict[str, str]]]) -> None:
+    """Reject destroy tuples the destroy workflow's protected-ref guard can never satisfy."""
     for context in purpose_contexts.get("destroy", []):
         ref = context.get("ref")
         if ref not in DESTROY_PROTECTED_REFS or not str(context.get("workflow_ref", "")).endswith(f"@{ref}"):
