@@ -144,8 +144,12 @@ operator-owned file outside the repository. Supply the project ID and number,
 numeric GitHub repository and owner IDs, bucket names, and exact purpose
 Environment/branch/workflow tuples. Obtain IDs with `gcloud projects describe`
 and `gh api repos/<owner>/<repo>`; bootstrap verifies them before writes. Keep
-image build and validation on protected `dev`/`main` refs. Deploy and destroy
-use the selected tenant branch. No secret payload belongs in this file.
+image build and validation on protected `dev`/`main` refs. Deploy uses the
+selected tenant branch. Destroy must bind protected `refs/heads/dev` or
+`refs/heads/main`, because `gcp-dev-destroy.yml` rejects every other dispatch
+ref before authentication; bootstrap rejects any other destroy tuple before
+writes. Configure the `<environment>-destroy` GitHub Environment branch policy
+to allow that same protected branch. No secret payload belongs in this file.
 
 ```bash
 ./scripts/bootstrap/deploy.py gcp-foundation --inputs /path/to/foundation.tfvars.json --dry-run
