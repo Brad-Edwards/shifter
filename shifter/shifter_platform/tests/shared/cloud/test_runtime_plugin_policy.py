@@ -110,6 +110,16 @@ def test_namespace_blocks_all_network_and_worker_has_no_cloud_binding():
     assert all(subject["name"] != "plugin-worker" for binding in bindings for subject in binding["subjects"])
 
 
+def test_plugin_object_quota_has_burst_headroom_without_raising_execution_cap():
+    quota = next(item for item in resources() if item["kind"] == "ResourceQuota")
+    hard = quota["spec"]["hard"]
+    assert hard["count/jobs.batch"] == "512"
+    assert hard["count/secrets"] == "768"
+    assert hard["pods"] == "16"
+    assert hard["requests.cpu"] == "2"
+    assert hard["limits.memory"] == "4Gi"
+
+
 def test_job_admission_constrains_creation_without_blocking_controller_cleanup(policy):
     """Kubernetes controllers must be able to remove deletion finalizers."""
     rules = policy["spec"]["matchConstraints"]["resourceRules"]
