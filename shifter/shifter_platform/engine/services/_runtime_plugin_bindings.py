@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.db import transaction
-from shifter_adapter_sdk.runtime import PluginManifest
+from shifter_adapter_sdk.runtime import PluginManifest, canonical_digest
 
 from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent, RequestAudit, audit_log
 from shared.exceptions import ValidationError
@@ -217,7 +217,9 @@ def retained_runtime_plugin_pin(target: Range) -> RuntimePluginPin | None:
         return None
     try:
         pin = RuntimePluginPin.model_validate(row.pin)
-        if pin.digest != row.pin_digest or pin.installation_id != row.installation_id:
+        # Check the exact retained bytes, not a re-serialized model: adding a
+        # defaulted binding field must not make pre-upgrade pins undeletable.
+        if canonical_digest(row.pin) != row.pin_digest or pin.installation_id != row.installation_id:
             raise ValueError("Stored pin identity mismatch")
         pin.bindings.validate_plan(target.range_config)
         if target.range_backend:
