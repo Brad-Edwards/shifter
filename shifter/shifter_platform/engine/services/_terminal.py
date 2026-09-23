@@ -118,6 +118,17 @@ def _require_declared_participant_channel(instance: dict[str, Any], channel: str
         raise ValueError(f"{channel} access is not a declared participant endpoint for this instance")
 
 
+def _require_rdp_endpoint(instance: dict[str, Any], os_type: str) -> None:
+    """Require a supported desktop OS and any closed participant RDP binding."""
+    # RAES records an OS family rather than a distribution. A Linux guest may
+    # offer a desktop, but only an explicit RDP endpoint may authorize it.
+    if os_type not in ("kali", "ubuntu", "windows", "linux"):
+        raise ValueError(f"RDP not available for {os_type} instances (no GUI)")
+    _require_declared_participant_channel(instance, "rdp")
+    if os_type == "linux" and instance.get("participant_access_channels") is None:
+        raise ValueError("RDP not available for linux instances without a declared participant endpoint")
+
+
 def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None:
     """Return the provisioning request ref owning ``instance_uuid``, or ``None``.
 
@@ -194,14 +205,7 @@ def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
         raise ValueError(f"Instance {instance_uuid} not found in range")
 
     os_type = _first_connection_value(instance.get("os_type"), instance.get("os")).lower()
-    # RAES records an OS family rather than a distribution. A Linux guest may
-    # offer a desktop, but only an explicit RDP endpoint may authorize it.
-    if os_type not in ("kali", "ubuntu", "windows", "linux"):
-        raise ValueError(f"RDP not available for {os_type} instances (no GUI)")
-
-    _require_declared_participant_channel(instance, "rdp")
-    if os_type == "linux" and instance.get("participant_access_channels") is None:
-        raise ValueError("RDP not available for linux instances without a declared participant endpoint")
+    _require_rdp_endpoint(instance, os_type)
 
     host = _resolve_instance_host(instance)
     if not host:
