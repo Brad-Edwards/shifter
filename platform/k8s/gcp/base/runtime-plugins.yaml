@@ -34,10 +34,11 @@ metadata:
 spec:
   hard:
     pods: "16"
-    # One-time headroom for clusters retaining pre-fix terminal Jobs. New
-    # plugin probes are deleted immediately after their result is accepted.
-    count/jobs.batch: "64"
-    count/secrets: "96"
+    # Bound object-count headroom for event launch bursts; pod and resource
+    # ceilings below still cap concurrent plugin execution. Terminal Jobs and
+    # their Secrets are deleted after their results are accepted.
+    count/jobs.batch: "512"
+    count/secrets: "768"
     requests.cpu: "2"
     requests.memory: 1Gi
     limits.cpu: "16"
@@ -54,6 +55,10 @@ rules:
   - apiGroups: [batch]
     resources: [jobs]
     verbs: [create, get, delete]
+  # Completed-job cleanup reads the status subresource before deletion.
+  - apiGroups: [batch]
+    resources: [jobs/status]
+    verbs: [get]
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list]
