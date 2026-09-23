@@ -66,7 +66,16 @@ describe("pack adapter assignments", () => {
     fireEvent.change(screen.getByLabelText("Participant container for server"), { target: { value: "participant-desktop" } });
     fireEvent.change(screen.getByLabelText("Participant username for server"), { target: { value: "student" } });
     fireEvent.change(screen.getByLabelText("Readiness manifest SHA-256 for server"), { target: { value: "a".repeat(64) } });
+    fireEvent.click(screen.getByLabelText("Allow participant public web access (TCP 80/443)"));
     expect(screen.getByRole("button", { name: "Review assignment" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save assignment" }));
+    await waitFor(() => {
+      const body = mockApi.mock.calls.find(([, options]) => options?.method === "POST")?.[1]?.body as
+        | { bindings: { image_profiles: { server: { allow_public_web_egress: boolean } } } }
+        | undefined;
+      expect(body?.bindings.image_profiles.server.allow_public_web_egress).toBe(true);
+    });
   });
 
   it("lets an administrator bind a prepromoted directory image", async () => {
