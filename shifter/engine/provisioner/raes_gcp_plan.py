@@ -147,11 +147,12 @@ def build_raes_range_cell_plan(
 
     access_by_node = _access_by_node(resolved_options.access_bindings)
 
-    # Default-on, keyless model access (ADR-064): attach the range host identity
-    # so guests reach Vertex directly via Workload Identity, unless the ADR-059
-    # broker is the model path (MODEL_BROKER_GUEST_VIP set), where guests stay
-    # identity-less and reach models only through the broker.
-    attach_model_identity = bool(resolved_config.service_account_email) and not resolved_config.model_broker_vip
+    # The deployment may expose a broker endpoint without admitting this range
+    # to use it. Only a range-bound broker capability suppresses the host
+    # identity; broker-free ranges keep their direct keyless Vertex path.
+    attach_model_identity = (
+        bool(resolved_config.service_account_email) and resolved_options.egress_policy.model_broker is None
+    )
     instance_plans: list[InstancePlan] = []
     for network in raes_plan.networks:
         subnet = subnet_by_address[network.address]
