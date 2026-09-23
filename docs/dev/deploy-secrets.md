@@ -185,9 +185,9 @@ The destroy workflow must be dispatched from protected `dev` (or `main`) and
 rejects a tenant branch such as `gcp-dev`. Configure the
 `<environment>-destroy` Environment branch policy and its foundation
 `purpose_contexts.destroy` tuple for the same protected branch; the standard
-non-production choice is `dev`. A tenant-branch policy or WIF tuple leaves the
-destroy job waiting at the Environment gate or rejected by the provider's exact
-attribute condition.
+non-production choice is `dev`. Foundation bootstrap and the `cicd-oidc` root
+reject a destroy tuple on any other ref before writes. A tenant-branch
+Environment policy blocks the destroy job at the Environment gate.
 
 GCP may report Cloud SQL, Memorystore, or GKE deleted before Service Networking
 and load-balancer dependencies observe the release. The destroy workflow retries
