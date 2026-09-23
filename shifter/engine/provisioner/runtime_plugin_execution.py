@@ -146,6 +146,12 @@ def _execute(bundle: GuestPluginPlans, instances: list[dict[str, Any]]) -> None:
                 document_name=execution.document_name,
             )
             if not outcome.success or outcome.exit_code != 0:
+                logger.warning(
+                    "Runtime plugin guest action failed ordinal=%d success=%s exit_code=%s",
+                    ordinal,
+                    outcome.success,
+                    outcome.exit_code,
+                )
                 raise ValueError("Plugin action failed")
             logger.info("Runtime plugin guest action completed ordinal=%d", ordinal)
         finally:
