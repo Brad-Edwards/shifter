@@ -359,6 +359,38 @@ group, EC2 key pairs, and security groups.
 ./scripts/bootstrap/deploy.py terraform --env prod --profile <your-prod-profile>
 ```
 
+#### GCP: running Terraform locally needs an ADC quota project
+
+A GCP root that manages Identity Platform (`google_identity_platform_config`)
+fails under local Application Default Credentials with a 403 whose `reason` is
+`SERVICE_DISABLED`, even when `identitytoolkit.googleapis.com` is enabled:
+
+```
+Error when reading or editing IdentityPlatformConfig "projects/<project>/config":
+googleapi: Error 403: Your application is authenticating by using local
+Application Default Credentials. The identitytoolkit.googleapis.com API
+requires a quota project, which is not set by default.
+```
+
+The message is misleading: the API is enabled, but user ADC carries no billing
+or quota project, and `identitytoolkit` refuses to serve without one. CI does
+not hit this because it authenticates through Workload Identity Federation with
+a service account, which supplies its own quota project.
+
+Set the quota project on ADC **and** tell the provider to use it. Both are
+required: setting the quota project alone does not change provider behavior.
+
+```bash
+gcloud auth application-default set-quota-project <gcp-project>
+
+export USER_PROJECT_OVERRIDE=true
+export GOOGLE_BILLING_PROJECT=<gcp-project>
+terraform plan   # or apply / destroy
+```
+
+This applies to any local `terraform plan`, `apply`, or `destroy` against a GCP
+environment root, including teardown.
+
 ### Runners (provision + auto-register self-hosted runners)
 ```bash
 # AWS (default): runners over SSM, into the account --profile authenticates to.
