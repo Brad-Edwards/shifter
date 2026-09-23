@@ -47,7 +47,7 @@ def test_gcp_smoke_uses_an_ephemeral_job_instead_of_remote_exec() -> None:
     assert "render_smoke_job.py" in text
     assert 'apply -f "${job_file}"' in text
     assert 'logs "job/${job_name}"' in text
-    assert 'delete job "${job_name}" secret "${secret_name}"' in text
+    assert 'delete "job/${job_name}" "secret/${secret_name}"' in text
     assert "kubectl -n shifter-platform exec" not in text
 
 
@@ -78,6 +78,6 @@ def test_gcp_migration_job_bootstraps_smoke_pack_and_image_registry() -> None:
 def test_deploy_workflow_forwards_smoke_secret_to_gcp_dev() -> None:
     text = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     start = text.index("gcp-dev:")
-    block = text[start : start + 3200]
+    block = text[start : text.index("\n  core:", start)]
     assert "SMOKE_TEST_USER_EMAIL" in block
     assert "issues: write" in block

@@ -19,6 +19,7 @@ on:
           - nazgul
           - orthanc
           - sauron
+          - balrog
       gcp_require_active_certificate:
         description: >-
           Fail the GCP deploy if the GKE ManagedCertificate is not Active for the
@@ -27,6 +28,12 @@ on:
           always require an active certificate.
         type: boolean
         default: true
+      gcp_reconcile_foundation_image_network:
+        description: >-
+          Reconcile only the selected tenant's foundation image-build network
+          through a saved, action-allowlisted Terraform plan.
+        type: boolean
+        default: false
       aws_first_deploy:
         description: >-
           Allow the AWS engine deploy to skip the ECS task-family existence
@@ -269,7 +276,7 @@ jobs:
                 RUN_AWS="true"
                 APPLY_AWS="true"
                 ;;
-              gcp-dev|nazgul|orthanc|sauron)
+              gcp-dev|nazgul|orthanc|sauron|balrog)
                 GCP_ENV="$ENVIRONMENT"
                 GCP_GITHUB_ENV="$ENVIRONMENT"
                 GCP_RELEASE_SCAN_GITHUB_ENV="gcp-release-scan-${ENVIRONMENT#gcp-}"
@@ -530,6 +537,7 @@ jobs:
       github_environment: ${{ needs.changes.outputs.gcp_github_environment }}
       release_scan_github_environment: ${{ needs.changes.outputs.gcp_release_scan_github_environment }}
       deploy_changes: ${{ needs.changes.outputs.deploy_gcp == 'true' }}
+      reconcile_foundation_image_network: ${{ github.event_name == 'workflow_dispatch' && inputs.gcp_reconcile_foundation_image_network }}
       # Automatic deploys always require an active certificate; only a manual
       # workflow_dispatch may opt into the first-time-bootstrap bypass.
       require_active_certificate: ${{ github.event_name != 'workflow_dispatch' || inputs.gcp_require_active_certificate }}

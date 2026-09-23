@@ -6,16 +6,25 @@ manifests cannot change the worker identity, environment, mounts, or resources.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from shifter_adapter_sdk.runtime import InspectionInput, InspectionResult, RuntimeInput, RuntimePlan, parse_result
 
+from shared.cloud.exceptions import CloudTaskError
 from shared.cloud.kubernetes import KubernetesTaskProfile, KubernetesTaskRunner, ProvisionerHardeningProfile
 from shared.cloud.kubernetes.naming import build_idempotent_job_name
+
+logger = logging.getLogger(__name__)
 
 PLUGIN_NAMESPACE = "shifter-plugins"
 PLUGIN_CONTAINER = "runtime-plugin"
 PLUGIN_SERVICE_ACCOUNT = "plugin-worker"
+_CLEANUP_FAILURE_REASONS = {
+    "Task cleanup identity mismatch": "identity-mismatch",
+    "Task cleanup requires terminal evidence": "not-terminal",
+    "Task cleanup is unavailable": "provider-unavailable",
+}
 
 
 def plugin_task_profile(*, image_pull_secret: str = "") -> KubernetesTaskProfile:
@@ -77,10 +86,29 @@ def launch_plugin(
 
 
 def observe_plugin(request: RuntimeInput | InspectionInput) -> RuntimePlan | InspectionResult | None:
-    """A malformed or replayed response never becomes an accepted result."""
+    """A malformed or replayed response never becomes an accepted result.
+
+    Cleanup follows result retrieval and parsing, but it is not part of the
+    compatibility verdict. Kubernetes TTL remains the bounded fallback when a
+    terminal Job cannot be deleted immediately.
+    """
     runner = KubernetesTaskRunner(plugin_task_profile())
-    raw = runner.get_task_output(PLUGIN_NAMESPACE, plugin_task_ref(request), plugin_task_identity(request))
-    return None if raw is None else parse_result(raw, request)
+    task_ref = plugin_task_ref(request)
+    identity = plugin_task_identity(request)
+    raw = runner.get_task_output(PLUGIN_NAMESPACE, task_ref, identity)
+    if raw is None:
+        return None
+    result = parse_result(raw, request)
+    try:
+        runner.delete_completed_task(PLUGIN_NAMESPACE, task_ref, identity)
+    except CloudTaskError as exc:
+        # Do not turn an already-consumed, valid plugin response into an
+        # installation/provisioning failure. The Job has a bounded TTL, and the
+        # stable task reference is sufficient for operators to diagnose cleanup
+        # without exposing plugin output or provider diagnostics.
+        reason = _CLEANUP_FAILURE_REASONS.get(str(exc), "unavailable")
+        logger.warning("observe_plugin: terminal cleanup deferred task_ref=%s reason=%s", task_ref, reason)
+    return result
 
 
 def interrupt_plugin(request: RuntimeInput | InspectionInput) -> str:

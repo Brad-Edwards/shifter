@@ -110,6 +110,20 @@ def test_namespace_blocks_all_network_and_worker_has_no_cloud_binding():
     assert all(subject["name"] != "plugin-worker" for binding in bindings for subject in binding["subjects"])
 
 
+def test_job_admission_constrains_creation_without_blocking_controller_cleanup(policy):
+    """Kubernetes controllers must be able to remove deletion finalizers."""
+    rules = policy["spec"]["matchConstraints"]["resourceRules"]
+    job_rule = next(rule for rule in rules if rule["resources"] == ["jobs"])
+    assert job_rule["operations"] == ["CREATE"]
+
+    role = next(
+        item for item in resources() if item["kind"] == "Role" and item["metadata"]["name"] == "plugin-controller"
+    )
+    launcher_job_rule = next(rule for rule in role["rules"] if rule["resources"] == ["jobs"])
+    assert launcher_job_rule["verbs"] == ["create", "get", "delete"]
+    assert not {"update", "patch"}.intersection(launcher_job_rule["verbs"])
+
+
 @pytest.mark.parametrize("runtime", [None, "", "runc", "other"])
 def test_default_or_unapproved_runtime_is_denied(policy, job, runtime):
     pod = job["spec"]["template"]["spec"]

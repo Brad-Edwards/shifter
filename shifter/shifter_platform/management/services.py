@@ -31,10 +31,12 @@ from .models import ActivityLog, UserProfile
 PrincipalConflictError = _principals.PrincipalConflictError
 bind_principal_provider_identity = _principals.bind_principal_provider_identity
 create_service_principal = _principals.create_service_principal
+delete_managed_pool_user = _principals.delete_managed_pool_user
 ensure_human_principal = _principals.ensure_human_principal
 principal_for_user = _principals.principal_for_user
 resolve_principal = _principals.resolve_principal
 resolve_principal_uuid = _principals.resolve_principal_uuid
+resolve_service_credential = _principals.resolve_service_credential
 set_service_contact = _principals.set_service_contact
 
 ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView
@@ -46,9 +48,7 @@ resolve_model_access_users = _model_access_authority.resolve_model_access_users
 resolve_model_preparation_user = _model_access_authority.resolve_model_preparation_user
 set_model_access_group_eligibility = _model_access_authority.set_model_access_group_eligibility
 
-# SonarCloud S1192: extracted duplicated string literals.
 USER_PK_REQUIRED_MSG = "user must have a primary key"
-
 if TYPE_CHECKING:
     from uuid import UUID
 
@@ -61,9 +61,7 @@ logger = logging.getLogger(__name__)
 def log_activity(action: str, user: User | None, **metadata: Any) -> None:
     """Log an activity for audit trail.
 
-    DEPRECATED: Use shared.audit.audit_log() instead.
-    This function is retained for backward compatibility only.
-
+    DEPRECATED: Use shared.audit.audit_log(); retained for compatibility.
     Args:
         action: Action identifier (e.g., "range_launched", "agent_uploaded")
         user: User who performed the action, or None for system actions
@@ -378,10 +376,18 @@ def bind_provider_identity(user: User, issuer: str, subject: str) -> BindOutcome
     """
     _require_bind_inputs(user, issuer, subject)
 
+    from .principals import PrincipalConflictError, bind_principal_provider_identity, principal_for_user
+
     profile = get_user_profile(user)
     try:
         with transaction.atomic():
             locked_profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
+            if locked_profile.is_ctf_account:
+                raise BindingConflictError("Temporary participants cannot bind provider identities")
+            try:
+                bind_principal_provider_identity(principal_for_user(user), issuer, subject)
+            except PrincipalConflictError as exc:
+                raise BindingConflictError("Provider identity unavailable") from exc
             # issuer is non-null (default ""); "" marks an unbound/legacy row.
             stored_issuer = locked_profile.issuer
             stored_subject = locked_profile.cognito_sub or ""

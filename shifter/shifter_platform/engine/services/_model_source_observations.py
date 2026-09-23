@@ -119,16 +119,11 @@ def _combine_observations(
     legacy: dict[str, ModelQuotaObservation],
     moment: datetime,
 ) -> tuple[JsonObject, ...]:
-    """Preserve legacy usage and require observations for every incumbent source pool."""
+    """Preserve legacy usage and apply explicit source caps to every bound pool."""
     observations = []
-    incumbent_pools = (
-        {pool.quota_pool_id for pool in catalog.policy_catalog.quota_pools} if catalog.policy_catalog else set()
-    )
     for pool in catalog.quota_pools:
         sources = caps.get(pool.quota_pool_id)
         if sources:
-            if pool.quota_pool_id in incumbent_pools and pool.quota_pool_id not in legacy:
-                raise ContractError("allocation.invalid_input")
             observations.append(_source_observation(catalog, pool, sources, legacy.get(pool.quota_pool_id), moment))
         elif pool.quota_pool_id in legacy:
             observations.append(

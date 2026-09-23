@@ -129,6 +129,16 @@ the substrate, then deploy. The maintained end-to-end walkthrough is the GCP
 Deployment section of
 `docs/technical/dev/setup.md`.
 
+> **Before starting:** In the target GCP project, enable every Google Cloud API
+> required by the selected Shifter configuration and enable every configured AI
+> model in Vertex AI Model Garden. Model enablement is separate from enabling
+> the Vertex AI API: an authorized project administrator must open each required
+> model, accept any provider or Marketplace terms, and confirm that the model is
+> available in its configured region. Complete both API and model enablement
+> before bootstrap, pack installation, or range qualification; otherwise a
+> deployment can succeed while participant model calls fail with a misleading
+> model-not-found response.
+
 For a fresh project, copy `gcp-foundation.example.tfvars.json` to an
 operator-owned file outside the repository. Supply the project ID and number,
 numeric GitHub repository and owner IDs, bucket names, and exact purpose
@@ -152,6 +162,24 @@ its network/subnet outputs as `GCP_PACKER_NETWORK` / `GCP_PACKER_SUBNETWORK` in
 the build and validate Environments, and set `GCP_PACKER_USE_INTERNAL_IP=true`
 in the build Environment. Existing foundations keep this network disabled by
 default; their state addresses and existing image network remain unchanged.
+
+The image-build network's Terraform resources live in
+`platform/terraform/gcp/modules/image-build-network`, instantiated by the
+foundation root. Six `moved` blocks keep existing networks in the same
+`cicd-oidc` state when upgrading from the former root-level resource addresses.
+For an existing tenant that needs the Linux management SSH port, set the
+tenant Environment variable `GCP_FOUNDATION_INPUTS_JSON` to its reviewed,
+non-secret foundation input JSON, then manually dispatch **Deploy** from that
+tenant branch with its matching `environment` and
+`gcp_reconcile_foundation_image_network=true`. The tenant runner uses the
+existing deploy identity to apply only an action-allowlisted saved plan; all
+other foundation resources must remain no-op. The stage checks the live
+image-build network and firewall before and after, retains the existing
+`cicd-oidc` backend, and is skipped for ordinary deployments. Its plan uses
+`-refresh=false` so the deploy identity does not need read access to the
+foundational Workload Identity pool; the live image-build resources are checked
+separately. Do not use this narrowly gated migration stage for general
+foundation identity changes.
 
 1. Create the GCP project and enable the required APIs.
 2. Apply the foundational OIDC/WIF identity root
@@ -197,7 +225,11 @@ default; their state addresses and existing image network remain unchanged.
 4. Bootstrap the GKE control plane and GCE range plane with one local command.
    On a fresh project, opt into the public base-image import so the exact image
    references are available to the same process before platform preconditions
-   run:
+   run. Before invoking it, replace any stale tenant values in the gitignored
+   `platform/terraform/gcp/environments/<env>/local.auto.tfvars`; in particular,
+   `project_id`, `dynamic_secret_project_id`, and `public_hostname` must describe
+   the selected tenant. Terraform auto-loads that file, and `shifter.yaml` does
+   not override its ingress hostname:
 
    ```bash
    ./scripts/bootstrap/deploy.py gdc-bootstrap \
@@ -206,6 +238,19 @@ default; their state addresses and existing image network remain unchanged.
      --shifter-config /path/to/shifter.yaml \
      --import-public-base-images --yes
    ```
+
+   Supply `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` using the Terraform naming
+   contract, which removes hyphens from the `shifter-<environment>` account-id
+   prefix. Do not preserve the environment's hyphens when guessing the localpart.
+   After the first apply, read the authoritative value from the environment
+   root's `range_host_service_account_email` output and use that exact value in
+   the GitHub Environment and every local retry.
+
+   Leave the current kubeconfig context on this tenant until the command exits.
+   The bootstrap selects the tenant's Connect Gateway context, and its later
+   migration, Helm, and certificate polls use that shared current context. Run
+   concurrent work against another cluster with a separate `KUBECONFIG` rather
+   than changing the bootstrap process's context.
 
    This first discovers and validates the complete public Kali, Ubuntu, and DC
    base set. It imports missing digests through a private per-run bucket in the

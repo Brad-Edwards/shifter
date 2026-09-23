@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import yaml
+from installation.capacity_profiles_gcp import resolve_capacity_profile
 from installation.errors import InstallationConfigError
 from installation.gcp_model_broker import project_model_broker, validate_model_broker_readback
 from installation.loader import load_root_config
@@ -32,6 +33,11 @@ BROKER_RESOURCE_NAMES = frozenset(
     }
 )
 _SHARED_POLICIES = frozenset({"allow-platform-provider-apis-egress", "allow-platform-private-service-egress"})
+_CAPACITY_WORKLOADS = {
+    "portal": ("portal-web", "portal"),
+    "guacd": ("guacd", "guacd"),
+    "guacamoleClient": ("guacamole-client", "guacamole-client"),
+}
 
 
 def _control_access_env(control: dict[str, object]) -> dict[str, str]:
@@ -68,6 +74,52 @@ def _mount_catalog_for_runtime_consumers(documents: list[dict], digest: str) -> 
                     {"name": "model-access-catalog", "mountPath": "/etc/shifter/model-access", "readOnly": True}
                 )
         template.setdefault("metadata", {}).setdefault("annotations", {})["checksum/model-access-catalog"] = digest
+
+
+def apply_capacity_profile(base: str, profile_id: str) -> str:
+    """Project the selected capacity contract into the normal GCP apply.
+
+    Bootstrap renders these values through Helm. The release workflow later
+    applies the Kustomize base, so it must carry the same profile or it would
+    silently restore the base resource limits while retaining the profile
+    labels and autoscalers.
+    """
+    projection = resolve_capacity_profile(profile_id).helm_projection()
+    documents = [document for document in yaml.safe_load_all(base) if document]
+
+    for projection_key, (deployment_name, container_name) in _CAPACITY_WORKLOADS.items():
+        workload = projection[projection_key]
+        matches = [
+            document
+            for document in documents
+            if document.get("kind") == "Deployment" and document.get("metadata", {}).get("name") == deployment_name
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"capacity projection requires exactly one {deployment_name} Deployment")
+        deployment = matches[0]
+        deployment["metadata"].setdefault("annotations", {})["shifter.dev/capacity-profile"] = profile_id
+        deployment["spec"]["replicas"] = workload["replicas"]
+        template = deployment["spec"]["template"]
+        template.setdefault("metadata", {}).setdefault("labels", {})["shifter.dev/capacity-profile"] = profile_id
+        template["spec"]["terminationGracePeriodSeconds"] = workload["terminationGracePeriodSeconds"]
+        containers = [
+            container for container in template["spec"]["containers"] if container.get("name") == container_name
+        ]
+        if len(containers) != 1:
+            raise ValueError(f"capacity projection requires exactly one {container_name} container")
+        containers[0]["resources"] = copy.deepcopy(workload["resources"])
+
+    runtime_matches = [
+        document
+        for document in documents
+        if document.get("kind") == "ConfigMap" and document.get("metadata", {}).get("name") == "platform-runtime"
+    ]
+    if len(runtime_matches) != 1:
+        raise ValueError("capacity projection requires exactly one platform-runtime ConfigMap")
+    runtime_matches[0].setdefault("data", {}).update(
+        {key: str(value) for key, value in projection["runtimeEnv"].items()}
+    )
+    return yaml.safe_dump_all(documents, sort_keys=False)
 
 
 def combine_resources(base: str, broker: str) -> str:
@@ -200,7 +252,9 @@ def main(argv: list[str] | None = None) -> int:
         broker, image=args.platform_image, private_service_cidrs=_gcp_private_service_cidrs(outputs)
     )
     if args.base_manifests:
-        rendered = combine_resources(Path(args.base_manifests).read_text(encoding="utf-8"), rendered)
+        profile_id = str(config.settings.get("shared_service_capacity_profile", "gcp-shared-v1-p10"))
+        base = apply_capacity_profile(Path(args.base_manifests).read_text(encoding="utf-8"), profile_id)
+        rendered = combine_resources(base, rendered)
     Path(args.output).write_text(rendered, encoding="utf-8")
     Path(args.output + ".enabled").write_text("true" if broker["enabled"] else "false", encoding="utf-8")
     return 0
