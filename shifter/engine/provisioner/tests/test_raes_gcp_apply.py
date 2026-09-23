@@ -1078,8 +1078,7 @@ class TestDestroy:
         )
 
         assert any(
-            call.kwargs.get("firewall") == "shifter-r-7-egress-web"
-            for call in clients.firewalls.delete.call_args_list
+            call.kwargs.get("firewall") == "shifter-r-7-egress-web" for call in clients.firewalls.delete.call_args_list
         )
 
     def test_deletes_instances_addresses_firewalls_subnets_network_and_secrets(self):
