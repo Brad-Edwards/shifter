@@ -161,16 +161,19 @@ locals {
   }
 
   # Per-bucket object access. Assets bucket: portal read/write (uploads,
-  # finalize, delete, signed URLs), workers read-only, provisioner read-only
-  # (agent-installer signed URL). Provisioner also owns per-range Terraform /
+  # finalize, delete, signed URLs), workers and CTF scheduler read-only, and
+  # provisioner read-only (agent-installer signed URL). The CTF scheduler loads
+  # installed RAES packs from this bucket when no dedicated package bucket is
+  # configured. Provisioner also owns per-range Terraform /
   # Pulumi state (read/write) and, when configured, the VM-Series bootstrap
   # bucket (read/write).
   workload_bucket_bindings = merge(
     {
-      "portal:assets"      = { workload = "portal", bucket = var.assets_bucket_name, role = "roles/storage.objectAdmin" }
-      "workers:assets"     = { workload = "workers", bucket = var.assets_bucket_name, role = "roles/storage.objectViewer" }
-      "provisioner:assets" = { workload = "provisioner", bucket = var.assets_bucket_name, role = "roles/storage.objectViewer" }
-      "provisioner:state"  = { workload = "provisioner", bucket = var.terraform_state_bucket_name, role = "roles/storage.objectAdmin" }
+      "portal:assets"        = { workload = "portal", bucket = var.assets_bucket_name, role = "roles/storage.objectAdmin" }
+      "workers:assets"       = { workload = "workers", bucket = var.assets_bucket_name, role = "roles/storage.objectViewer" }
+      "ctf-scheduler:assets" = { workload = "ctf-scheduler", bucket = var.assets_bucket_name, role = "roles/storage.objectViewer" }
+      "provisioner:assets"   = { workload = "provisioner", bucket = var.assets_bucket_name, role = "roles/storage.objectViewer" }
+      "provisioner:state"    = { workload = "provisioner", bucket = var.terraform_state_bucket_name, role = "roles/storage.objectAdmin" }
     },
     var.vmseries_bootstrap_bucket_name == "" ? {} : {
       "provisioner:vmseries" = { workload = "provisioner", bucket = var.vmseries_bootstrap_bucket_name, role = "roles/storage.objectAdmin" }

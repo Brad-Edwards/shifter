@@ -181,6 +181,19 @@ render-input set**, not just the destroy identity: `GCP_DESTROY_SERVICE_ACCOUNT`
 when standing up the tenant; an empty `gcp-dev-destroy` Environment fails teardown
 at `Ensure GCP auth is configured` (#2258).
 
+The destroy workflow must be dispatched from protected `dev` (or `main`) and
+rejects a tenant branch such as `gcp-dev`. Configure the
+`<environment>-destroy` Environment branch policy and its foundation
+`purpose_contexts.destroy` tuple for the same protected branch; the standard
+non-production choice is `dev`. Foundation bootstrap and the `cicd-oidc` root
+reject a destroy tuple on any other ref before writes. A tenant-branch
+Environment policy blocks the destroy job at the Environment gate.
+
+GCP may report Cloud SQL, Memorystore, or GKE deleted before Service Networking
+and load-balancer dependencies observe the release. The destroy workflow retries
+the idempotent Terraform destroy with bounded backoff for this convergence; do
+not delete the reported dependency manually or remove it from state.
+
 `SHIFTER_CONFIG_GCP_DEV` is also required by both deploy and destroy. Its GCP
 settings must include `dynamic_secret_project_id`; no separate GitHub variable
 or tfvars override owns that value. The project is a pre-existing,
