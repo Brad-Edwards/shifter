@@ -151,6 +151,18 @@ def test_guest_failure_closes_transport_hides_diagnostics_and_skips_verification
     assert "Runtime plugin guest action completed ordinal=1" not in caplog.text
 
 
+def test_guest_nonzero_exit_logs_only_bounded_result_fields(run, database, guest, caplog):
+    caplog.set_level(logging.INFO)
+    bundle = execution.load_guest_plugin_plans(run)
+    guest.context.executor.run_command.return_value = CommandResult(False, 42, "private-output", "private-error")
+    with pytest.raises(execution.RuntimePluginExecutionError):
+        bundle.execute(None, [{"uuid": "node.web#0"}])
+    assert "Runtime plugin guest action failed ordinal=1 success=False exit_code=42" in caplog.text
+    assert "private-output" not in caplog.text
+    assert "private-error" not in caplog.text
+    guest.context.close.assert_called_once()
+
+
 def test_pending_planning_has_a_deadline_and_never_executes_guests(run, database, guest, monkeypatch):
     for row in database.rows.values():
         row[0] = "pending"
