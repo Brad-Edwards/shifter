@@ -25899,6 +25899,10 @@
             "default": "",
             "maxLength": 100
           },
+          "allow_public_web_egress": {
+            "type": "boolean",
+            "default": false
+          },
           "bootstrap_capability": {
             "type": "string",
             "default": "standard",

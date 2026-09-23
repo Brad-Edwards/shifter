@@ -84,6 +84,7 @@ def test_admin_binds_a_provider_image_without_hosting_access(pack_api):
                         "participant_username": "student",
                         "participant_readiness_contract": "participant-readiness/v1",
                         "participant_readiness_manifest_sha256": "a" * 64,
+                        "allow_public_web_egress": True,
                     }
                 },
             },
@@ -92,6 +93,7 @@ def test_admin_binds_a_provider_image_without_hosting_access(pack_api):
     )
     assert response.status_code == 200
     assert response.json()["bindings"]["image_profiles"]["server"]["provider"] == "gcp"
+    assert response.json()["bindings"]["image_profiles"]["server"]["allow_public_web_egress"] is True
 
 
 def test_admin_binds_a_prepromoted_directory_image(pack_api):

@@ -6498,6 +6498,8 @@ export interface components {
             disk_size_gb?: number | null;
             /** @default  */
             disk_type: string;
+            /** @default false */
+            allow_public_web_egress: boolean;
             /** @default standard */
             bootstrap_capability: string;
             /** @default  */

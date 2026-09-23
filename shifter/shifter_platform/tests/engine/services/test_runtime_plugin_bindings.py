@@ -122,6 +122,7 @@ def test_tenant_admin_image_profile_is_pinned_with_the_adapter_target(pack):
                     "participant_username": "student",
                     "participant_readiness_contract": "participant-readiness/v1",
                     "participant_readiness_manifest_sha256": "a" * 64,
+                    "allow_public_web_egress": True,
                 }
             },
         },
@@ -130,6 +131,7 @@ def test_tenant_admin_image_profile_is_pinned_with_the_adapter_target(pack):
     pin = retained_runtime_plugin_pin(launch(pack))
     assert pin is not None
     assert pin.bindings.image_profile_for("node.web").image_ref.endswith("/machineImages/nested-host-v1")
+    assert pin.bindings.image_profile_for("node.web").allow_public_web_egress is True
 
 
 def test_image_profile_cannot_name_an_undeclared_binding(pack):
