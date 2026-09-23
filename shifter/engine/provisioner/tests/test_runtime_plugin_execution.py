@@ -1,5 +1,6 @@
 """An isolated worker's output grants actions only on original guest bindings."""
 
+import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -97,6 +98,7 @@ def guest(monkeypatch):
 
 
 def test_plans_round_trip_then_execute_configure_and_verify_only_on_original_guest(run, database, guest, caplog):
+    caplog.set_level(logging.INFO)
     bundle = execution.load_guest_plugin_plans(run)
     output = {"uuid": "node.web#0", "private_ip": "10.0.0.7", "credential_ref": "host-only"}
     bundle.execute(None, [output])
@@ -105,6 +107,8 @@ def test_plans_round_trip_then_execute_configure_and_verify_only_on_original_gue
     assert guest.context.executor.run_command.call_count == 2
     assert guest.context.close.call_count == 2
     assert "private-output" not in caplog.text
+    assert "Runtime plugin guest action completed ordinal=2" in caplog.text
+    assert "Runtime plugin guest phase preparing phase=configure" in caplog.text
     assert [plan.phase for plan in bundle.plans] == ["validate", "configure", "verify"]
     assert all(request.targets["server"].private_address == "" for request in bundle.requests)
 
@@ -135,6 +139,7 @@ def test_missing_guest_rejects_the_whole_plan_before_any_action(run, database, g
 
 
 def test_guest_failure_closes_transport_hides_diagnostics_and_skips_verification(run, database, guest, caplog):
+    caplog.set_level(logging.INFO)
     bundle = execution.load_guest_plugin_plans(run)
     guest.context.executor.run_command.side_effect = RuntimeError("private-script-and-key")
     with pytest.raises(execution.RuntimePluginExecutionError) as error:
@@ -142,6 +147,8 @@ def test_guest_failure_closes_transport_hides_diagnostics_and_skips_verification
     assert guest.builder.call_count == 1
     guest.context.close.assert_called_once()
     assert "private-script-and-key" not in str(error.value) + caplog.text
+    assert "Runtime plugin guest action starting ordinal=1" in caplog.text
+    assert "Runtime plugin guest action completed ordinal=1" not in caplog.text
 
 
 def test_pending_planning_has_a_deadline_and_never_executes_guests(run, database, guest, monkeypatch):

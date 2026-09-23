@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, cast
@@ -18,6 +19,8 @@ from provisioner_db import get_db_connection
 from provisioner_db_operation_input import RaesOperationRun
 from raes_plan import RaesPlan
 from runtime_plugin_values import resolve_runtime_values
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimePluginExecutionError(RuntimeError):
@@ -126,7 +129,8 @@ def _execute(bundle: GuestPluginPlans, instances: list[dict[str, Any]]) -> None:
     if len(outputs) != len(instances) or len(bundle.requests) != 3 or len(bundle.plans) != 3:
         raise ValueError("Invalid plugin guest coverage")
     prepared_actions = _prepare_actions(bundle, outputs)
-    for target, action, values_b64 in prepared_actions:
+    for ordinal, (target, action, values_b64) in enumerate(prepared_actions, start=1):
+        logger.info("Runtime plugin guest action starting ordinal=%d", ordinal)
         execution = build_guest_execution_context(
             outputs[f"{target.node_address}#0"],
             os_type=target.os_family,
@@ -143,6 +147,7 @@ def _execute(bundle: GuestPluginPlans, instances: list[dict[str, Any]]) -> None:
             )
             if not outcome.success or outcome.exit_code != 0:
                 raise ValueError("Plugin action failed")
+            logger.info("Runtime plugin guest action completed ordinal=%d", ordinal)
         finally:
             execution.close()
 
@@ -155,6 +160,7 @@ def _prepare_actions(
     # Validate the complete plan set and every target before executing one action.
     prepared_actions = []
     for request, result in zip(bundle.requests, bundle.plans, strict=True):
+        logger.info("Runtime plugin guest phase preparing phase=%s", request.phase)
         result = RuntimePlan.model_validate(result)
         result.authorize(request)
         if result.status != "planned":
@@ -163,6 +169,7 @@ def _prepare_actions(
             if f"{target.node_address}#0" not in outputs:
                 raise ValueError("Plugin guest is unavailable")
         for action in result.actions:
+            logger.info("Runtime plugin guest action resolving ordinal=%d", len(prepared_actions) + 1)
             prepared_actions.append(
                 (request.targets[action.binding], action, resolve_runtime_values(action, request, outputs))
             )
