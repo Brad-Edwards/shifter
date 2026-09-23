@@ -6,6 +6,20 @@ from pathlib import Path
 
 from bootstrap_core import confirm, gcloud_resource_exists, get_repo_root, run_cmd
 
+# gcp-dev-destroy.yml rejects every other dispatch ref before auth; the
+# cicd-oidc purpose_contexts validation enforces the same set.
+DESTROY_PROTECTED_REFS = ("refs/heads/dev", "refs/heads/main")
+
+
+def _require_protected_destroy_refs(purpose_contexts: dict) -> None:
+    for context in purpose_contexts.get("destroy", []):
+        ref = context.get("ref")
+        if ref not in DESTROY_PROTECTED_REFS or not str(context.get("workflow_ref", "")).endswith(f"@{ref}"):
+            raise ValueError(
+                f"Destroy purpose tuple must bind {' or '.join(DESTROY_PROTECTED_REFS)} "
+                f"(gcp-dev-destroy.yml rejects other dispatch refs); got ref={ref!r}"
+            )
+
 
 def bootstrap_gcp_foundation(inputs_path: str, *, dry_run: bool = False) -> None:
     """Apply explicit foundation inputs before runners, image bakes, or platform."""
@@ -27,6 +41,7 @@ def bootstrap_gcp_foundation(inputs_path: str, *, dry_run: bool = False) -> None
     missing = sorted(required - inputs.keys())
     if missing:
         raise ValueError("Missing foundation inputs: " + ", ".join(missing))
+    _require_protected_destroy_refs(inputs["purpose_contexts"])
     project = inputs["project_id"]
     bucket = inputs["terraform_state_bucket_name"]
     region = inputs.get("region", "us-central1")
