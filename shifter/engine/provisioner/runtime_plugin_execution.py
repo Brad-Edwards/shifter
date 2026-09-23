@@ -158,7 +158,7 @@ def _prepare_actions(
 ) -> list[tuple[GuestTarget, GuestAction, str]]:
     """Validate every phase and target before allowing any guest mutation."""
     # Validate the complete plan set and every target before executing one action.
-    prepared_actions = []
+    prepared_actions: list[tuple[GuestTarget, GuestAction, str]] = []
     for request, result in zip(bundle.requests, bundle.plans, strict=True):
         logger.info("Runtime plugin guest phase preparing phase=%s", request.phase)
         result = RuntimePlan.model_validate(result)
