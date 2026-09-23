@@ -32,6 +32,7 @@ def public_web_firewall_name(range_id: int) -> str:
     """Return the stable optional web-lane name for reconstructive cleanup."""
     return _short_resource_name("shifter-r", range_id, "egress-web")
 
+
 # IANA special-use IPv4 space (RFC 6890 and friends) subtracted from the
 # universal range to compute the public-internet complement used as the VPN
 # ingress source list. These are protocol constants by definition; the S1313
