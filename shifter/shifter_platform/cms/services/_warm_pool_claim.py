@@ -102,6 +102,7 @@ class WarmClaimRequest:
     enforced_deadline: datetime | None = None
     model_launch_scope: ModelLaunchScope | None = None
     model_sources: dict | None = None
+    policy_workspace_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -260,6 +261,12 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     """
     from engine.services import enqueue_range_activation
     from shared.warm_pool.metrics import CLAIM_HIT, emit_claim_outcome
+
+    # Existing warm generations are not bound to an event's policy workspace.
+    # An event-policy launch must take the cold reservation path, which pins that
+    # policy under the workspace lock before dispatch.
+    if request.policy_workspace_id is not None:
+        return None
 
     candidates = _resolve_claim_candidates(request, override)
     if not candidates or not _can_claim_base_range(request):

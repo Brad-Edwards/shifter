@@ -55,6 +55,13 @@ def _stub_range_data_for_pool_slot(monkeypatch):
     stub = MagicMock(return_value={"vpn_gateway_pool_slot": _TEST_VPN_GATEWAY_POOL_SLOT})
     monkeypatch.setattr("gcp_range_cells.get_range_data_by_request_id", stub, raising=False)
     monkeypatch.setattr("gcp_range_cell_destroy.get_range_data_by_request_id", stub, raising=False)
+    # Shared NAT holds a database advisory lock; keep these Compute lifecycle
+    # tests at the external DB boundary, not a first-party service mock.
+    monkeypatch.setenv("DB_HOST", "localhost")
+    monkeypatch.setenv("DB_USER", "test")
+    monkeypatch.setenv("DB_NAME", "test")
+    monkeypatch.setenv("DB_PASSWORD", "test-only")
+    monkeypatch.setattr("provisioner_db.psycopg.connect", lambda **_kwargs: MagicMock())
     return stub
 
 
@@ -237,12 +244,42 @@ def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
 
     op_service = MagicMock()
     op_service.wait.return_value = SimpleNamespace(status="DONE")
+    routers = service()
+    router_state = {}
+
+    def router_get(**kwargs):
+        name = kwargs["router"]
+        if name in router_state:
+            return router_state[name]
+        if exists:
+            return {"name": name, "network": "projects/test-project/global/networks/shared-range", "nats": []}
+        raise NotFound()
+
+    def router_insert(**kwargs):
+        body = kwargs["router_resource"]
+        router_state[body["name"]] = body
+        return SimpleNamespace(name="op")
+
+    def router_patch(**kwargs):
+        name = kwargs["router"]
+        router_state[name] = {**router_state[name], **kwargs["router_resource"]}
+        return SimpleNamespace(name="op")
+
+    def router_delete(**kwargs):
+        router_state.pop(kwargs["router"], None)
+        return SimpleNamespace(name="op")
+
+    routers.get.side_effect = router_get
+    routers.list.side_effect = lambda **_kwargs: list(router_state.values())
+    routers.insert.side_effect = router_insert
+    routers.patch.side_effect = router_patch
+    routers.delete.side_effect = router_delete
     return SimpleNamespace(
         networks=service(),
         subnetworks=service(),
         firewalls=service(),
         addresses=service(),
-        routers=service(),
+        routers=routers,
         instances=service(),
         global_operations=op_service,
         region_operations=op_service,
@@ -674,6 +711,30 @@ def test_apply_shared_vpc_skips_network_create(mocker):
 
     clients.networks.insert.assert_not_called()
     clients.subnetworks.insert.assert_called()
+
+
+def test_shared_nat_capacity_refusal_precedes_subnet_creation(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+    clients.routers.list.return_value = [
+        {"name": f"other-{index}", "network": "projects/test-project/global/networks/shared-range", "nats": []}
+        for index in range(5)
+    ]
+    clients.routers.list.side_effect = None
+
+    with pytest.raises(RuntimeError, match="shared-nat-router-capacity-exhausted"):
+        apply_range_cell(
+            "req-123",
+            _variables(),
+            config=_shared_vpc_config(),
+            clients=clients,
+            secret_ops=secret_ops,
+            vertex_ops=vertex_ops,
+            cleanup_range_cell=lambda *_args: None,
+        )
+
+    clients.subnetworks.insert.assert_not_called()
 
 
 def test_destroy_shared_vpc_skips_network_delete(mocker):

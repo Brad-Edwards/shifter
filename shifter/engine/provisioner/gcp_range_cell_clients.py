@@ -31,6 +31,16 @@ class FirewallsCollectionClient(ComputeCollectionClient, Protocol):
         """Converge one existing firewall rule to a new body and return an operation."""
 
 
+class RoutersCollectionClient(ComputeCollectionClient, Protocol):
+    """Router operations including explicit NAT membership reconciliation."""
+
+    def patch(self, **kwargs: object) -> object:
+        """Patch NAT gateway membership after a serialized fresh read."""
+
+    def list(self, **kwargs: object) -> object:
+        """List regional routers to validate quota and conflicting NAT scopes."""
+
+
 class ComputeInstancesClient(ComputeCollectionClient, Protocol):
     """Compute instance operations additionally used by range lifecycle."""
 
@@ -65,7 +75,7 @@ class GCEClients:
     subnetworks: ComputeCollectionClient
     firewalls: FirewallsCollectionClient
     addresses: ComputeCollectionClient
-    routers: ComputeCollectionClient
+    routers: RoutersCollectionClient
     instances: ComputeInstancesClient
     global_operations: OperationWaitClient
     region_operations: OperationWaitClient

@@ -167,7 +167,11 @@ from ._range_queries import (
     list_mission_control_range_history,
     list_ranges,
 )
-from ._range_reassign import range_owner_reassignment_available, reassign_range_owner
+from ._range_reassign import (
+    range_egress_compatible_with_event,
+    range_owner_reassignment_available,
+    reassign_range_owner,
+)
 from ._range_resume import resume_range, resume_range_by_request_id
 from ._range_vpn import (
     CtfOpenVpnProfileConflict,
@@ -355,6 +359,7 @@ __all__ = (
     "project_range_cleanup_outcome",
     "project_scenario_images",
     "project_scenario_model_demands",
+    "range_egress_compatible_with_event",
     "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",

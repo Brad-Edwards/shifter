@@ -830,3 +830,18 @@ class TestRangeOwnedNat:
             egress_policy=GceEgressPolicy(mode="none"),
         )
         assert "router_nat" not in plan
+
+    def test_shared_vpc_uses_regional_explicit_nat_instead_of_range_router(self):
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/ranges"),
+            egress_policy=GceEgressPolicy(mode="status-quo"),
+            allocated_network_cidrs=(("net.a", "10.90.1.0/24"),),
+        )
+
+        assert "router_nat" not in plan
+        assert plan["shared_nat"]["router_name"] == "shifter-ranges-nat-router"
+        assert plan["shared_nat"]["subnetwork_self_links"] == [subnet["self_link"] for subnet in plan["subnets"]]

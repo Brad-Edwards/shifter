@@ -177,6 +177,7 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
                     spare_id=spare.pk,
                 ),
                 content_authorizer=event.created_by,
+                event_policy_workspace_id=event.workspace_id,
             ),
         )
     except Exception:

@@ -18,6 +18,7 @@ from gcp_range_cell_naming import (
     _subnet_tag,
     _subnetwork_self_link,
     range_router_nat_plan,
+    shared_router_nat_plan,
 )
 from gcp_range_cell_scenario import build_instance_plans, realize_range_spec
 from gcp_range_cell_types import (
@@ -331,8 +332,11 @@ def render_range_cell_plan(
     # a `none` (zero-egress) range omits it so its subnets carry no NAT path
     # (PLAT-238, ADR-026-R6), mirroring the RAES plan builder.
     if egress_policy.mode.strip().lower() != "none":
-        plan["router_nat"] = cast(
-            RouterNatPlan,
-            range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans]),
+        nat_key = "router_nat" if manage_network else "shared_nat"
+        nat_plan = (
+            range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
+            if manage_network
+            else shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
         )
+        plan[nat_key] = cast(RouterNatPlan, nat_plan)
     return plan

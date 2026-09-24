@@ -332,6 +332,30 @@ class TestReassignSpareRecovery:
     """``strategy=reassign_spare``: consume an event-scoped pooled spare."""
 
     @pytest.mark.django_db
+    def test_policy_changed_after_spare_provision_refuses_claim_before_old_range_teardown(
+        self, event_with_scenario, rich_participant, organizer_user
+    ):
+        from workspaces.models import Workspace
+
+        participant, old_range = rich_participant
+        spare_user = create_managed_spare_user()
+        spare, spare_range = _make_pooled_spare(event_with_scenario, owner=spare_user)
+        Workspace.objects.filter(pk=event_with_scenario.workspace_id).update(egress_policy="none")
+
+        with pytest.raises(CTFRangeError, match="No compatible spare"):
+            recover_participant_range(
+                participant.pk,
+                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+                operator=organizer_user,
+                spare_range_instance_id=spare_range.pk,
+            )
+
+        old_range.refresh_from_db()
+        spare.refresh_from_db()
+        assert old_range.status == ResourceStatus.READY.value
+        assert spare.consumed_by_id is None
+
+    @pytest.mark.django_db
     def test_reassign_spare_transfers_access_and_blocks_old_range(
         self, event_with_scenario, rich_participant, organizer_user
     ):
@@ -637,6 +661,42 @@ class TestIdempotentRetry:
     the replacement already exists -- proving a second reassignment is not
     attempted and no second audit row is written.
     """
+
+    @pytest.mark.django_db
+    def test_reserved_spare_is_rechecked_after_event_policy_changes(
+        self, monkeypatch, event_with_scenario, rich_participant, second_participant_user, organizer_user
+    ):
+        from workspaces.models import Workspace
+
+        participant, old_range = rich_participant
+        spare, spare_range = _make_pooled_spare(event_with_scenario, owner=second_participant_user)
+
+        def fail_teardown(_request_id):
+            raise CloudTaskError("simulated transient teardown failure")
+
+        monkeypatch.setattr("engine.ecs.start_range_teardown", fail_teardown)
+        with pytest.raises(CTFRangeError):
+            recover_participant_range(
+                participant.pk,
+                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+                operator=organizer_user,
+                spare_range_instance_id=spare_range.pk,
+            )
+
+        Workspace.objects.filter(pk=event_with_scenario.workspace_id).update(egress_policy="none")
+        with pytest.raises(CTFRangeError, match="No compatible spare"):
+            recover_participant_range(
+                participant.pk,
+                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+                operator=organizer_user,
+                spare_range_instance_id=spare_range.pk,
+            )
+
+        old_range.refresh_from_db()
+        spare.refresh_from_db()
+        assert old_range.status == ResourceStatus.READY.value
+        assert spare.consumed_by_id == participant.pk
+        assert RangeInstance.objects.get(pk=spare_range.pk).user_id == second_participant_user.pk
 
     @pytest.mark.django_db
     def test_retry_after_teardown_failure_resumes_without_duplicating(

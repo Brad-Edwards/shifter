@@ -49,6 +49,15 @@ class _NotFound(Exception):
     """Fake Google NotFound exception."""
 
 
+@pytest.fixture(autouse=True)
+def _fake_advisory_lock_database(monkeypatch):
+    monkeypatch.setenv("DB_HOST", "localhost")
+    monkeypatch.setenv("DB_USER", "test")
+    monkeypatch.setenv("DB_NAME", "test")
+    monkeypatch.setenv("DB_PASSWORD", "test-only")
+    monkeypatch.setattr("provisioner_db.psycopg.connect", lambda **_kwargs: MagicMock())
+
+
 def _config(network_mode: str = "vpc-per-range") -> GCERangeCellConfig:
     return GCERangeCellConfig(
         project_id="proj-1",
@@ -113,12 +122,42 @@ def _clients(*, exists: bool = False, instance_insert_error: Exception | None = 
 
     op_service = MagicMock()
     op_service.wait.return_value = SimpleNamespace(status="DONE")
+    routers = service()
+    router_state = {}
+
+    def router_get(**kwargs):
+        name = kwargs["router"]
+        if name in router_state:
+            return router_state[name]
+        if exists:
+            return {"name": name, "network": "projects/proj-1/global/networks/shared", "nats": []}
+        raise _NotFound()
+
+    def router_insert(**kwargs):
+        body = kwargs["router_resource"]
+        router_state[body["name"]] = body
+        return SimpleNamespace(name="op")
+
+    def router_patch(**kwargs):
+        name = kwargs["router"]
+        router_state[name] = {**router_state[name], **kwargs["router_resource"]}
+        return SimpleNamespace(name="op")
+
+    def router_delete(**kwargs):
+        router_state.pop(kwargs["router"], None)
+        return SimpleNamespace(name="op")
+
+    routers.get.side_effect = router_get
+    routers.list.side_effect = lambda **_kwargs: list(router_state.values())
+    routers.insert.side_effect = router_insert
+    routers.patch.side_effect = router_patch
+    routers.delete.side_effect = router_delete
     return SimpleNamespace(
         networks=service(),
         subnetworks=service(),
         firewalls=service(),
         addresses=service(),
-        routers=service(),
+        routers=routers,
         instances=service(instance_insert_error),
         global_operations=op_service,
         region_operations=op_service,
@@ -1113,6 +1152,7 @@ class TestDestroy:
             ),
         )
         assert not clients.networks.delete.called
+        assert clients.routers.delete.called
 
     def test_deletes_every_per_instance_authored_account_secret(self):
         account = RaesPlanAccount(username="alice", target_address="node.web", auth_method="key")

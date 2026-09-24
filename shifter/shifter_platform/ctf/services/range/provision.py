@@ -196,6 +196,7 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
                         event, participant.pk, participant_model_admission_subject(participant)
                     ),
                     content_authorizer=event.created_by,
+                    event_policy_workspace_id=event.workspace_id,
                 ),
             )
         except Exception as e:

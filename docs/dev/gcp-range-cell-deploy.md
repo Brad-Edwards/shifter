@@ -178,6 +178,40 @@ control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder.
   retained as a selectable mode for a future peering/IAP implementation; do not
   use it for live deployments yet.
 
+### Shared-VPC NAT capacity and event egress
+
+Non-zero-egress range subnets are enrolled explicitly in a provisioner-owned
+regional Cloud Router/NAT. The provisioner serializes Router changes and removes
+each subnet from NAT before deleting it. This Router is separate from the
+Terraform-owned migration-bridge NAT; do not configure both to cover the same
+subnet. A `none` range is never enrolled, and a conflicting all-subnet NAT
+causes admission to fail rather than relying on a firewall-only deny.
+An existing range whose already-created subnets are still explicitly listed on
+the Terraform bridge can replay without duplicate NAT enrollment. Before
+destroying such a range, remove those subnet links from the Terraform bridge
+through that environment's deploy workflow; destroy refuses while the bridge
+still owns them. New subnets are never admitted onto the bridge.
+
+Cloud NAT currently allows [50 explicit subnet ranges per gateway and 50
+gateways per Router](https://docs.cloud.google.com/nat/quota); a VPC can have up
+to five Cloud Routers per region. The provisioner uses one regional Router and
+shards explicit subnets across its gateways, so plan against *subnets per
+range*, including recovery spares, not only participant count. Its 2,500
+explicit-subnet theoretical ceiling is not a guaranteed event size: NAT
+[port/IP allocation](https://docs.cloud.google.com/nat/docs/ports-and-addresses),
+subnet/IP space, VMs, addresses, image launch rates, and the event capacity
+assessment can bind first. Review provider quota and NAT utilization before a
+large event; shared NAT is a regional failure domain. A capacity or conflicting
+scope refusal must be corrected at the source/configuration boundary, not by
+adding an all-subnet gateway or a one-off range firewall rule.
+
+For CTF participant and managed-spare launches, the event workspace supplies
+the egress policy while each range remains owned by its participant or spare
+account and bound to that account's authorized workspace. Workspace policy
+changes are audited and affect subsequent range reservations only. Already
+launched ranges retain their pinned mode; a recovery spare whose mode no longer
+matches the event is refused before the old participant range is torn down.
+
 ## Legacy RangeSpec image mapping
 
 The scenario-owned legacy `RangeSpec` adapter resolves current instances to one
