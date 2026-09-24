@@ -107,7 +107,7 @@ def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: Firewal
     _wait_for_operation(plan, clients, operation, "global")
 
 
-def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
+def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
     """Create the range-owned Cloud Router + NAT if the plan carries one (PLAT-238).
 
     Present only for a non-``none`` range; a zero-egress range has no ``router_nat``
@@ -116,10 +116,10 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
     """
     if plan.get("shared_nat") is not None:
         ensure_shared_nat(plan, clients)
-        return
+        return False
     router_nat = plan.get("router_nat")
     if router_nat is None:
-        return
+        return False
     name = router_nat["router_name"]
     existing = _get_or_none(
         clients.routers.get,
@@ -130,13 +130,14 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
     )
     if existing is not None:
         logger.info("GCE range router/NAT exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.routers.insert(
         project=plan["project_id"],
         region=plan["region"],
         router_resource=router_nat_resource(plan),
     )
     _wait_for_operation(plan, clients, operation, "region")
+    return True
 
 
 def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> None:
