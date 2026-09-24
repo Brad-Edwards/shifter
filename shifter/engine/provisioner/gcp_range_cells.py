@@ -6,7 +6,7 @@ import base64
 import logging
 from collections.abc import Callable
 
-from config import GCERangeCellConfig, load_gce_range_cell_config
+from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import (
     GCEGuestSecretOps,
@@ -15,6 +15,7 @@ from gcp_range_cell_credentials import (
     _default_vertex_ops,
 )
 from gcp_range_cell_destroy import destroy_range_cell
+from gcp_range_cell_naming import _label_value
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, range_cell_result, subnet_outputs
 from gcp_range_cell_plan import render_range_cell_plan
@@ -52,18 +53,23 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> None:
+class GCEInstanceBindingError(RuntimeError):
+    """An existing deterministic VM does not belong to this range profile."""
+
+
+def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> bool:
     """Create the range VPC if it is missing."""
     name = plan["network"]["name"]
     existing = _get_or_none(clients.networks.get, clients.google_exceptions, project=plan["project_id"], network=name)
     if existing is not None:
         logger.info("GCE range network exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.networks.insert(project=plan["project_id"], network_resource=network_resource(plan))
     _wait_for_operation(plan, clients, operation, "global")
+    return True
 
 
-def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetPlan) -> None:
+def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetPlan) -> bool:
     """Create a range subnetwork if it is missing."""
     name = subnet["resource_name"]
     existing = _get_or_none(
@@ -75,16 +81,17 @@ def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetP
     )
     if existing is not None:
         logger.info("GCE range subnetwork exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.subnetworks.insert(
         project=plan["project_id"],
         region=plan["region"],
         subnetwork_resource=subnetwork_resource(plan, subnet),
     )
     _wait_for_operation(plan, clients, operation, "region")
+    return True
 
 
-def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> None:
+def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> bool:
     """Create one range firewall rule, or reconcile an existing rule to the plan.
 
     Name existence is not correctness (#1711 / ADR-039-R9): a rule that already
@@ -101,13 +108,14 @@ def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: Firewal
     if existing is None:
         operation = clients.firewalls.insert(project=plan["project_id"], firewall_resource=body)
         _wait_for_operation(plan, clients, operation, "global")
-        return
+        return True
     logger.info("GCE range firewall reconcile name_fp=%s", safe_log_fingerprint(name))
     operation = clients.firewalls.patch(project=plan["project_id"], firewall=name, firewall_resource=body)
     _wait_for_operation(plan, clients, operation, "global")
+    return False
 
 
-def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
+def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
     """Create the range-owned Cloud Router + NAT if the plan carries one (PLAT-238).
 
     Present only for a non-``none`` range; a zero-egress range has no ``router_nat``
@@ -119,7 +127,7 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
         return
     router_nat = plan.get("router_nat")
     if router_nat is None:
-        return
+        return False
     name = router_nat["router_name"]
     existing = _get_or_none(
         clients.routers.get,
@@ -130,16 +138,17 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
     )
     if existing is not None:
         logger.info("GCE range router/NAT exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.routers.insert(
         project=plan["project_id"],
         region=plan["region"],
         router_resource=router_nat_resource(plan),
     )
     _wait_for_operation(plan, clients, operation, "region")
+    return True
 
 
-def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> None:
+def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> bool:
     """Reserve an internal address for one range instance."""
     name = instance["address_name"]
     existing = _get_or_none(
@@ -151,13 +160,14 @@ def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: Instance
     )
     if existing is not None:
         logger.info("GCE range address exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.addresses.insert(
         project=plan["project_id"],
         region=plan["region"],
         address_resource=address_resource(instance),
     )
     _wait_for_operation(plan, clients, operation, "region")
+    return True
 
 
 def _host_public_key_from_instance(existing: object) -> str:
@@ -194,6 +204,20 @@ def _assert_instance_image_binding(existing: object, instance: InstancePlan) -> 
             "Existing GCE range instance has an image-profile binding that differs from the current plan; "
             f"ami_key={expected_key!r}. Recreate the range instead of reusing the drifted instance."
         )
+
+
+def _assert_preconfigured_host_binding(existing: object, plan: RangeCellPlan, instance: InstancePlan) -> None:
+    """Never adopt a deterministic participant host with different ownership or image policy."""
+    if instance["profile"].bootstrap_capability != GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
+        return
+    expected = {
+        "managed-by": plan["labels"]["managed-by"],
+        "range-id": plan["labels"]["range-id"],
+        "image-key": _label_value(instance["image_key"] or "default"),
+        "image-profile": instance["image_profile_fingerprint"],
+    }
+    if any(_existing_label(existing, key) != value for key, value in expected.items()):
+        raise GCEInstanceBindingError("Existing GCE participant host has a conflicting range or image-profile binding")
 
 
 def _ensure_attached_disks_auto_delete(
@@ -242,6 +266,7 @@ def _ensure_instance(
         instance=name,
     )
     if existing is not None:
+        _assert_preconfigured_host_binding(existing, plan, instance)
         _assert_instance_image_binding(existing, instance)
     host_secret_ref, host_management_public_key = secret_ops.ensure_ssh(plan["range_id"], instance["source"])
     access_channels = set(instance["participant_access_channels"])
@@ -262,7 +287,7 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
-        if instance["profile"].source_machine_image:
+        if instance["profile"].bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
             _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return (
             host_secret_ref,

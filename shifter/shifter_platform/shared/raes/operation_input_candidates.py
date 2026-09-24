@@ -71,10 +71,12 @@ def _validate_host_fields(candidate: dict[str, Any], field: str) -> None:
         raise RaesOperationInputError(f"{field} bootstrap_capability is invalid")
     if not all(isinstance(value, str) for value in participant_fields):
         raise RaesOperationInputError(f"{field} participant host fields are invalid")
-    if image_kind == "image" and any(participant_fields):
-        raise RaesOperationInputError(f"{field} participant host fields require a machine-image")
-    if image_kind == "machine-image" and not all(participant_fields):
-        raise RaesOperationInputError(f"{field} machine-image participant host fields are incomplete")
+    if bootstrap == "preconfigured-machine-host" and not all(participant_fields):
+        raise RaesOperationInputError(f"{field} preconfigured host fields are incomplete")
+    if bootstrap != "preconfigured-machine-host" and any(participant_fields):
+        raise RaesOperationInputError(f"{field} participant host fields require a preconfigured host")
+    if image_kind == "machine-image" and bootstrap != "preconfigured-machine-host":
+        raise RaesOperationInputError(f"{field} machine-image requires a preconfigured host")
 
 
 def _validated_candidate(raw: object, field: str) -> dict[str, Any]:

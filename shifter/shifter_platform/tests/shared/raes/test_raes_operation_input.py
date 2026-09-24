@@ -200,6 +200,24 @@ class TestImageLookupKey:
 
 
 class TestRoundTrip:
+    def test_preconfigured_custom_image_candidate_crosses_closed_wire(self):
+        payload = _built()
+        candidate = payload["image_candidates"]["gce:kali"][0]
+        candidate.update(
+            {
+                "image_ref": "projects/example/global/images/nested-host-v1",
+                "image_kind": "image",
+                "bootstrap_capability": "preconfigured-machine-host",
+                "participant_container_name": "participant-desktop",
+                "participant_username": "student",
+                "participant_readiness_contract": "participant-readiness/v1",
+                "participant_readiness_manifest_sha256": "a" * 64,
+            }
+        )
+        projected = parse_raes_operation_input(payload).image_candidates_for("gce", "kali")[0]
+        assert projected["image_kind"] == "image"
+        assert projected["participant_container_name"] == "participant-desktop"
+
     def test_parse_returns_the_built_projection(self):
         parsed = parse_raes_operation_input(_built())
         assert parsed.plan == _plan()
