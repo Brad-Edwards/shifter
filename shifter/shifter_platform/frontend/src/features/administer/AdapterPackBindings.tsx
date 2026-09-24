@@ -76,6 +76,7 @@ const emptyImageProfile = (): AdapterTargetImageProfile => ({
   machine_type: "",
   disk_size_gb: null,
   disk_type: "",
+  allow_public_web_egress: false,
   bootstrap_capability: "standard",
   management_ssh_username: "",
   management_ssh_port: 22,
@@ -89,7 +90,8 @@ const emptyImageProfile = (): AdapterTargetImageProfile => ({
 
 function validImageProfile(profile: AdapterTargetImageProfile): boolean {
   if (!profile.image_ref || profile.management_ssh_port < 1 || profile.management_ssh_port > 65535) return false;
-  if (profile.provider === "aws") return profile.image_kind === "image" && /^ami-(?:[0-9a-f]{8}|[0-9a-f]{17})$/.test(profile.image_ref);
+  if (profile.provider === "aws") return !profile.allow_public_web_egress
+    && profile.image_kind === "image" && /^ami-(?:[0-9a-f]{8}|[0-9a-f]{17})$/.test(profile.image_ref);
   if (profile.image_kind === "image") {
     if (profile.bootstrap_capability === "standard") return !profile.domain_dns_name && !profile.domain_netbios_name;
     return profile.bootstrap_capability === "prepromoted-domain-controller"
@@ -197,7 +199,7 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
           onChange={(event) => update({ provider: event.target.value as "gcp" | "aws", image_kind: "image",
             bootstrap_capability: "standard", participant_container_name: "", participant_username: "",
             participant_readiness_contract: "", participant_readiness_manifest_sha256: "",
-            domain_dns_name: "", domain_netbios_name: "" })}>
+            domain_dns_name: "", domain_netbios_name: "", allow_public_web_egress: false })}>
           <option value="gcp">Google Cloud</option><option value="aws">AWS</option>
         </select>
       </div>
@@ -228,6 +230,11 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
           onChange={(event) => update({ disk_size_gb: event.target.value ? Number(event.target.value) : null })} /></div>
       <ProfileInput id={`plugin-disk-type-${name}`} label={`Disk type for ${name}`} value={value.disk_type}
         onChange={(disk_type) => update({ disk_type })} />
+      {value.provider === "gcp" ? <div className="flex items-center gap-2 sm:col-span-2">
+        <input id={"plugin-public-web-egress-" + name} type="checkbox" checked={value.allow_public_web_egress ?? false}
+          onChange={(event) => update({ allow_public_web_egress: event.target.checked })} />
+        <Label htmlFor={"plugin-public-web-egress-" + name}>Allow participant public web access (TCP 80/443)</Label>
+      </div> : null}
       {value.provider === "gcp" && value.image_kind === "image" ? <div className="space-y-1">
         <Label htmlFor={`plugin-bootstrap-capability-${name}`}>Bootstrap capability for {name}</Label>
         <select id={`plugin-bootstrap-capability-${name}`} value={value.bootstrap_capability}

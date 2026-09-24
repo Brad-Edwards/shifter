@@ -1070,6 +1070,17 @@ class TestServiceFirewallLifecycle:
 
 
 class TestDestroy:
+    def test_reconstructive_destroy_sweeps_optional_public_web_firewall(self):
+        clients = _clients(exists=True)
+        secret_ops, _ = _secret_ops()
+        destroy_raes_range_cell(
+            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops)
+        )
+
+        assert any(
+            call.kwargs.get("firewall") == "shifter-r-7-egress-web" for call in clients.firewalls.delete.call_args_list
+        )
+
     def test_deletes_instances_addresses_firewalls_subnets_network_and_secrets(self):
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()

@@ -14,6 +14,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from shared.runtime_plugin_binding import RuntimeTargetImageProfile
+
 from config import (
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_PARTICIPANT_READINESS_CONTRACT_V1,
@@ -22,8 +24,9 @@ from config import (
 )
 from gcp_range_cell_types import GceEgressPolicy
 from raes_access import RealizedAccessBinding
+from raes_gce_image import resolve_gce_image_from_runtime_profile
 from raes_gcp_firewall import node_tag
-from raes_gcp_plan import RaesGcePlanError, build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanError, RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_identity import RESERVED_MANAGEMENT_LOGIN
 from raes_plan import RaesPlan, RaesPlanAcl, RaesPlanImage, RaesPlanNetwork, RaesPlanNode, RaesPlanServicePort
 
@@ -410,13 +413,28 @@ class TestInstances:
         plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
         assert plan["instances"][0]["attach_service_account"] is True
 
-    def test_broker_active_leaves_guests_identity_less(self):
-        """ADR-059/ADR-064: when the broker is the model path, guests hold no cloud identity."""
+    def test_configured_broker_without_range_admission_keeps_direct_identity(self):
+        """A deployment broker endpoint alone cannot switch a range away from direct Vertex."""
         config = _config(
             service_account_email="sh-range-host@proj-1.iam.gserviceaccount.com",
             model_broker_vip="10.60.0.10",
         )
         plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
+        assert plan["instances"][0]["attach_service_account"] is True
+
+    def test_admitted_broker_leaves_guests_identity_less(self):
+        """ADR-059/ADR-064: only a range-admitted broker path suppresses guest cloud identity."""
+        config = _config(
+            service_account_email="sh-range-host@proj-1.iam.gserviceaccount.com",
+            model_broker_vip="10.60.0.10",
+        )
+        options = RaesGcePlanOptions(
+            config=config,
+            egress_policy=GceEgressPolicy(
+                model_broker={"contract_version": "model-broker-egress/v1", "vip": "10.60.0.10", "port": 443}
+            ),
+        )
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), options)
         assert plan["instances"][0]["attach_service_account"] is False
 
     def test_count_fans_out_to_distinct_instances_and_ips(self):
@@ -547,6 +565,22 @@ class TestFirewalls:
         assert bool(web_rules) is allow_public_web_egress
         if web_rules:
             assert web_rules[0]["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
+
+    def test_admin_bound_runtime_profile_can_enable_scoped_public_web_egress(self):
+        runtime = RuntimeTargetImageProfile(
+            provider="gcp",
+            image_ref="projects/example/global/images/workstation-v1",
+            allow_public_web_egress=True,
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            lambda node: resolve_gce_image_from_runtime_profile(node, runtime),
+            _config(),
+        )
+        web_rule = next(firewall for firewall in plan["firewalls"] if firewall["name"] == "shifter-r-7-egress-web")
+        assert web_rule["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
 
     def test_zero_egress_overrides_a_web_permitting_profile(self):
         """A pinned `none` range opens no public-web egress lane, even if the profile would."""
