@@ -471,6 +471,8 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
     threaded to whichever create path runs. Server-derived callers (e.g. the CTF
     bridge) omit it, so their ranges bind to the launcher's personal workspace.
     """
+    from cms.services._raes_range_dispatch import dispatch_range_launch
+
     return dispatch_range_launch(
         user,
         scenario,
@@ -486,38 +488,4 @@ def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained fo
             content_authorizer=content_authorizer,
             ctf_policy_workspace_id=ctf_policy_workspace_id,
         ),
-    )
-
-
-def dispatch_range_launch(
-    user: User,
-    scenario: str,
-    *,
-    range_source: RangeSource | None,
-    instantiation_purpose: InstantiationPurpose,
-    options: LaunchOptions,
-) -> RangeContext:
-    """Shared RAES launch body, parameterized by minted launch authority.
-
-    Not a product facade. Internal to
-    the CMS create seam -- ``cms.services`` exports the two facades that wrap it,
-    never this function. ``options`` bundles the optional launch-shaping inputs
-    (see :class:`cms.services._range_launch_common.LaunchOptions`).
-    """
-    # RAES participant access is authored in the package and persisted as the
-    # compiled participant-access sidecar. The server-derived CTF cleanup time
-    # bounds the range lease; it does not mint an OpenVPN capability or alter the
-    # RAES plan.
-    return _create_raes_native_range_impl(
-        user,
-        scenario,
-        range_source=range_source,
-        instantiation_purpose=instantiation_purpose,
-        workspace_uuid=options.workspace_uuid,
-        enforced_deadline=options.remote_access_teardown_at,
-        model_admission_subject=options.model_admission_subject,
-        model_launch_scope=options.model_launch_scope,
-        model_sources=options.model_sources,
-        content_authorizer=options.content_authorizer,
-        ctf_policy_workspace_id=options.ctf_policy_workspace_id,
     )

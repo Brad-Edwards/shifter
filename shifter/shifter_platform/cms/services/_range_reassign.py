@@ -56,7 +56,8 @@ def range_egress_compatible_with_event(
     if instance is None or instance.request is None:
         return False
     if event_workspace_id is None:
-        return True  # Personal-scope events have no separate event policy source.
+        # Personal-scope events have no separate event policy source.
+        return True
     reauthorize_ctf_policy_workspace_locked(event_owner, event_workspace_id)
     current_mode = resolve_effective_egress_mode_locked(event_workspace_id)
     pinned_mode = get_pinned_range_egress_mode_by_request(instance.request.request_id)
