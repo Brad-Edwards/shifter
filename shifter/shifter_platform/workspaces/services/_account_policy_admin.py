@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -32,6 +33,9 @@ from ._quota_admin import WorkspaceResourceUsage, _set_quota_policy_unchecked
 
 _DENIED = "Scope unavailable"
 _LIST_BATCH_SIZE = 100
+_MANAGE_ACCOUNTS = "installation.manage_accounts"
+_READ_ACCOUNT = "account.read"
+_MANAGE_MEMBERS = "account.manage_members"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,11 +64,14 @@ class AccountMemberView:
 
 @dataclass(frozen=True, slots=True)
 class AccountMemberPage:
+    """A bounded page of explicit account membership facts."""
+
     count: int
     results: tuple[AccountMemberView, ...]
 
 
 def _active_actor(actor: CredentialContext) -> None:
+    """Require a currently active non-participant principal."""
     try:
         if actor.kind == "temporary":
             raise AccountScopeError(_DENIED)
@@ -103,7 +110,7 @@ def admin_create_account(
     _require_action(
         actor,
         provider,
-        "installation.manage_accounts",
+        _MANAGE_ACCOUNTS,
         TargetRef("installation"),
         ResourceScope("installation"),
     )
@@ -173,7 +180,7 @@ def admin_individual_account(actor: CredentialContext, provider: AuthorizationPr
     _require_action(
         actor,
         provider,
-        "account.read",
+        _READ_ACCOUNT,
         TargetRef("account", account.uuid),
         hierarchy_target_scope("account", account.uuid),
     )
@@ -193,7 +200,7 @@ def admin_add_account_member(
         scope = hierarchy_target_scope("account", account_uuid)
     except AccountScopeError as exc:
         raise AccountScopeError(_DENIED) from exc
-    _require_action(actor, provider, "account.manage_members", TargetRef("account", account_uuid), scope)
+    _require_action(actor, provider, _MANAGE_MEMBERS, TargetRef("account", account_uuid), scope)
     try:
         resolve_principal(principal)
     except Exception as exc:
@@ -220,7 +227,7 @@ def admin_list_account_members(
     ):
         raise AccountScopeError(_DENIED)
     scope = hierarchy_target_scope("account", account_uuid)
-    _require_action(actor, provider, "account.manage_members", TargetRef("account", account_uuid), scope)
+    _require_action(actor, provider, _MANAGE_MEMBERS, TargetRef("account", account_uuid), scope)
     queryset = AccountMembership.objects.filter(account__uuid=account_uuid).order_by("pk")
     count = queryset.count()
     rows = queryset[offset : offset + limit]
@@ -237,7 +244,7 @@ def admin_remove_account_member(
 ) -> None:
     """Remove only the selected account's membership fact with strict evidence."""
     scope = hierarchy_target_scope("account", account_uuid)
-    _require_action(actor, provider, "account.manage_members", TargetRef("account", account_uuid), scope)
+    _require_action(actor, provider, _MANAGE_MEMBERS, TargetRef("account", account_uuid), scope)
     request_audit = audit or RequestAudit()
     with transaction.atomic():
         account = Account.objects.select_for_update().filter(uuid=account_uuid).first()
@@ -340,7 +347,7 @@ def _read_batch(
         requests = tuple(
             AuthorizationRequest(
                 actor.principal,
-                "account.read",
+                _READ_ACCOUNT,
                 TargetRef("account", account.uuid),
                 hierarchy_target_scope("account", account.uuid),
                 actor.ceiling,
@@ -355,15 +362,8 @@ def _read_batch(
         raise AccountScopeError(_DENIED) from exc
 
 
-def admin_list_accounts(
-    actor: CredentialContext,
-    provider: AuthorizationProvider,
-    *,
-    offset: int = 0,
-    limit: int = 50,
-) -> AccountAdminPage:
-    """Filter account authority before counting or slicing a collection."""
-    _active_actor(actor)
+def _valid_account_page(offset: int, limit: int) -> None:
+    """Bound count and page work before reading customer records."""
     if (
         not isinstance(offset, int)
         or isinstance(offset, bool)
@@ -373,44 +373,82 @@ def admin_list_accounts(
         or not 1 <= limit <= 100
     ):
         raise AccountScopeError(_DENIED)
-    global_access = False
-    if actor.ceiling.permits("installation.manage_accounts", TargetRef("installation")):
-        try:
-            request = AuthorizationRequest(
-                actor.principal,
-                "installation.manage_accounts",
-                TargetRef("installation"),
-                ResourceScope("installation"),
-                actor.ceiling,
-            )
-            decision = provider.check(request)
-            if decision.kind == "evaluator_error":
-                raise AccountScopeError(_DENIED)
-            global_access = decision.allowed
-        except Exception as exc:
-            raise AccountScopeError(_DENIED) from exc
-    if not global_access and "account.read" not in actor.ceiling.actions:
-        return AccountAdminPage(0, ())
 
-    count = 0
-    results: list[AccountAdminView] = []
+
+def _installation_list_access(actor: CredentialContext, provider: AuthorizationProvider) -> bool:
+    """Use a global account list only with live installation authority."""
+    if not actor.ceiling.permits(_MANAGE_ACCOUNTS, TargetRef("installation")):
+        return False
+    try:
+        request = AuthorizationRequest(
+            actor.principal,
+            _MANAGE_ACCOUNTS,
+            TargetRef("installation"),
+            ResourceScope("installation"),
+            actor.ceiling,
+        )
+        decision = provider.check(request)
+        if decision.kind == "evaluator_error":
+            raise AccountScopeError(_DENIED)
+        return decision.allowed
+    except Exception as exc:
+        raise AccountScopeError(_DENIED) from exc
+
+
+def _account_batches(exact_uuid: UUID | None) -> Iterator[tuple[Account, ...]]:
+    """Read bounded SQL batches while retaining a stable count cursor."""
     cursor = 0
-    exact_target = actor.ceiling.target if not global_access else None
-    exact_uuid = exact_target.uuid if exact_target is not None else None
-    if exact_target is not None and (exact_target.type != "account" or exact_uuid is None):
-        return AccountAdminPage(0, ())
     while True:
         query = Account.objects.filter(pk__gt=cursor)
         if exact_uuid is not None:
             query = query.filter(uuid=exact_uuid)
         batch = tuple(query.order_by("pk")[:_LIST_BATCH_SIZE])
         if not batch:
-            break
+            return
         cursor = batch[-1].pk
+        yield batch
+
+
+def _page_account_rows(
+    actor: CredentialContext,
+    provider: AuthorizationProvider,
+    *,
+    global_access: bool,
+    exact_uuid: UUID | None,
+    offset: int,
+    limit: int,
+) -> AccountAdminPage:
+    """Count and slice only accounts allowed by the live batch decisions."""
+    count = 0
+    results: list[AccountAdminView] = []
+    for batch in _account_batches(exact_uuid):
         visible = (True,) * len(batch) if global_access else _read_batch(actor, provider, batch)
         for account, allowed in zip(batch, visible, strict=True):
-            if allowed:
-                if offset <= count < offset + limit:
-                    results.append(AccountAdminView(account.uuid, account.name, account.kind))
-                count += 1
+            if not allowed:
+                continue
+            if offset <= count < offset + limit:
+                results.append(AccountAdminView(account.uuid, account.name, account.kind))
+            count += 1
     return AccountAdminPage(count, tuple(results))
+
+
+def admin_list_accounts(
+    actor: CredentialContext,
+    provider: AuthorizationProvider,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+) -> AccountAdminPage:
+    """Filter account authority before counting or slicing a collection."""
+    _active_actor(actor)
+    _valid_account_page(offset, limit)
+    global_access = _installation_list_access(actor, provider)
+    if not global_access and _READ_ACCOUNT not in actor.ceiling.actions:
+        return AccountAdminPage(0, ())
+    exact_target = actor.ceiling.target if not global_access else None
+    if exact_target is not None and (exact_target.type != "account" or exact_target.uuid is None):
+        return AccountAdminPage(0, ())
+    exact_uuid = exact_target.uuid if exact_target is not None else None
+    return _page_account_rows(
+        actor, provider, global_access=global_access, exact_uuid=exact_uuid, offset=offset, limit=limit
+    )

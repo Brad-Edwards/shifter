@@ -14,6 +14,8 @@ from shared.principal_port import resolve_principal
 if TYPE_CHECKING:
     from shared.models import AuditLog
 
+_DENIED = "Audit read denied"
+
 
 class AuditReadDenied(ValueError):
     """The global audit ledger is unavailable to this application principal."""
@@ -27,7 +29,7 @@ def authorized_audit_events(actor: CredentialContext, provider: AuthorizationPro
     """
     try:
         if actor.kind == "temporary":
-            raise AuditReadDenied("Audit read denied")
+            raise AuditReadDenied(_DENIED)
         resolve_principal(actor.principal)
         request = AuthorizationRequest(
             actor.principal,
@@ -37,9 +39,9 @@ def authorized_audit_events(actor: CredentialContext, provider: AuthorizationPro
             actor.ceiling,
         )
         if not provider.check(request).allowed:
-            raise AuditReadDenied("Audit read denied")
+            raise AuditReadDenied(_DENIED)
     except Exception as exc:
-        raise AuditReadDenied("Audit read denied") from exc
+        raise AuditReadDenied(_DENIED) from exc
     from shared.models import AuditLog
 
     return AuditLog.objects.all()

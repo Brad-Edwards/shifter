@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
+from django.db.models import QuerySet
 from drf_spectacular.utils import extend_schema
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.exceptions import NotFound
@@ -27,6 +30,9 @@ from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.audit import request_audit
 from shared.authorization import AuthorizationProviderBindingError, configured_authorization_provider
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
 
 class _PolicyAdminView(APIView):
     """Shared admission and bounded policy errors for the prepared S8 views."""
@@ -37,34 +43,18 @@ class _PolicyAdminView(APIView):
 
     def handle_exception(self, exc: Exception) -> Response:
         if isinstance(exc, PermissionError):
-            return api_error_response(
-                code="administration_denied",
-                message="Administration denied",
-                status_code=403,
-                request=self.request,
-            )
-        if isinstance(exc, AuthorizationProviderBindingError):
-            return api_error_response(
-                code="authorization_unavailable",
-                message="Authorization unavailable",
-                status_code=503,
-                request=self.request,
-            )
-        if isinstance(exc, lifecycle.AccountLifecycleError):
-            return api_error_response(
-                code=exc.code,
-                message=exc.message,
-                status_code=403 if exc.code == "authority_denied" else 409,
-                request=self.request,
-            )
-        if isinstance(exc, password_reset.PasswordResetError):
-            return api_error_response(
-                code=exc.code,
-                message=exc.message,
-                status_code=409 if exc.code == "reset_throttled" else 400,
-                request=self.request,
-            )
-        return super().handle_exception(exc)
+            code, message, status_code = "administration_denied", "Administration denied", 403
+        elif isinstance(exc, AuthorizationProviderBindingError):
+            code, message, status_code = "authorization_unavailable", "Authorization unavailable", 503
+        elif isinstance(exc, lifecycle.AccountLifecycleError):
+            code, message = exc.code, exc.message
+            status_code = 403 if exc.code == "authority_denied" else 409
+        elif isinstance(exc, password_reset.PasswordResetError):
+            code, message = exc.code, exc.message
+            status_code = 409 if exc.code == "reset_throttled" else 400
+        else:
+            return super().handle_exception(exc)
+        return api_error_response(code=code, message=message, status_code=status_code, request=self.request)
 
 
 class PolicyAdminUserListView(_PolicyAdminView, ListAPIView):
@@ -76,7 +66,7 @@ class PolicyAdminUserListView(_PolicyAdminView, ListAPIView):
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet[User]:
         query = AdminUserListQuerySerializer(data=self.request.query_params)
         query.is_valid(raise_exception=True)
         return admin_services.list_policy_admin_users(
@@ -95,14 +85,14 @@ class PolicyAdminUserDetailView(_PolicyAdminView, RetrieveAPIView):
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet[User]:
         return admin_services.list_policy_admin_users(
             authenticated_credential(self.request),
             configured_authorization_provider(),
             include_deleted=True,
         )
 
-    def get_serializer_context(self):
+    def get_serializer_context(self) -> dict[str, Any]:
         return {**super().get_serializer_context(), "policy_actor": authenticated_credential(self.request)}
 
 

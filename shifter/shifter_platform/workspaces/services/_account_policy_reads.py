@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
+
+from django.db.models import Model, QuerySet
 
 from shared.authorization import AuthorizationProvider, AuthorizationRequest, TargetRef
 from shared.credentials import CredentialContext
@@ -15,10 +18,14 @@ from ._account_policy_admin import AccountAdminView, _active_actor, _require_act
 
 _DENIED = "Scope unavailable"
 _BATCH_SIZE = 100
+_READ_ORGANIZATION = "organization.read"
+_READ_WORKSPACE = "workspace.read"
 
 
 @dataclass(frozen=True, slots=True)
 class OrganizationAdminView:
+    """One organization visible to the current principal."""
+
     uuid: UUID
     name: str
     is_default: bool
@@ -26,12 +33,16 @@ class OrganizationAdminView:
 
 @dataclass(frozen=True, slots=True)
 class OrganizationAdminPage:
+    """A count and page computed after policy filtering."""
+
     count: int
     results: tuple[OrganizationAdminView, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceAdminView:
+    """One live workspace visible to the current principal."""
+
     uuid: UUID
     name: str
     is_default: bool
@@ -39,6 +50,8 @@ class WorkspaceAdminView:
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceAdminPage:
+    """A count and page computed after policy filtering."""
+
     count: int
     results: tuple[WorkspaceAdminView, ...]
 
@@ -62,7 +75,7 @@ def admin_get_organization(
     scope = hierarchy_target_scope("organization", organization_uuid)
     if scope.account_uuid != account_uuid:
         raise AccountScopeError(_DENIED)
-    _require_action(actor, provider, "organization.read", TargetRef("organization", organization_uuid), scope)
+    _require_action(actor, provider, _READ_ORGANIZATION, TargetRef("organization", organization_uuid), scope)
     organization = Organization.objects.filter(uuid=organization_uuid).first()
     if organization is None:
         raise AccountScopeError(_DENIED)
@@ -80,7 +93,7 @@ def admin_get_workspace(
     scope = hierarchy_target_scope("workspace", workspace_uuid)
     if scope.account_uuid != account_uuid or scope.organization_uuid != organization_uuid:
         raise AccountScopeError(_DENIED)
-    _require_action(actor, provider, "workspace.read", TargetRef("workspace", workspace_uuid), scope)
+    _require_action(actor, provider, _READ_WORKSPACE, TargetRef("workspace", workspace_uuid), scope)
     workspace = Workspace.objects.filter(uuid=workspace_uuid, archived_at__isnull=True).first()
     if workspace is None:
         raise AccountScopeError(_DENIED)
@@ -88,6 +101,7 @@ def admin_get_workspace(
 
 
 def _valid_page(offset: int, limit: int) -> None:
+    """Reject unbounded or malformed collection windows."""
     if (
         not isinstance(offset, int)
         or isinstance(offset, bool)
@@ -126,6 +140,48 @@ def _allowed_batch(
         raise AccountScopeError(_DENIED) from exc
 
 
+def _collection_ceiling(
+    actor: CredentialContext, action: str, target_type: Literal["organization", "workspace"]
+) -> tuple[bool, UUID | None]:
+    """Identify the exact credential target without widening an invalid proof."""
+    if action not in actor.ceiling.actions:
+        return False, None
+    target = actor.ceiling.target
+    if target is None:
+        return True, None
+    permitted = target.type == target_type and target.uuid is not None
+    return permitted, target.uuid if permitted else None
+
+
+def _visible_page[T: Model](
+    queryset: QuerySet[T],
+    actor: CredentialContext,
+    provider: AuthorizationProvider,
+    action: str,
+    target_type: Literal["organization", "workspace"],
+    uuid_of: Callable[[T], UUID],
+    *,
+    window: tuple[int, int],
+) -> tuple[int, tuple[T, ...]]:
+    """Batch-check every candidate before computing a visible count or page."""
+    offset, limit = window
+    count = cursor = 0
+    results: list[T] = []
+    while True:
+        batch = tuple(queryset.filter(pk__gt=cursor).order_by("pk")[:_BATCH_SIZE])
+        if not batch:
+            break
+        cursor = batch[-1].pk
+        allowed = _allowed_batch(actor, provider, action, target_type, tuple(uuid_of(row) for row in batch))
+        for row, visible in zip(batch, allowed, strict=True):
+            if not visible:
+                continue
+            if offset <= count < offset + limit:
+                results.append(row)
+            count += 1
+    return count, tuple(results)
+
+
 def admin_list_organizations(
     actor: CredentialContext,
     provider: AuthorizationProvider,
@@ -141,30 +197,18 @@ def admin_list_organizations(
     account = Account.objects.filter(uuid=account_uuid).first()
     if account is None or account.kind == Account.Kind.INDIVIDUAL:
         raise AccountScopeError(_DENIED)
-    exact = actor.ceiling.target
-    exact_uuid = exact.uuid if exact is not None else None
-    if "organization.read" not in actor.ceiling.actions or (
-        exact is not None and (exact.type != "organization" or exact_uuid is None)
-    ):
+    permitted, exact_uuid = _collection_ceiling(actor, _READ_ORGANIZATION, "organization")
+    if not permitted:
         return OrganizationAdminPage(0, ())
-
-    count = cursor = 0
-    results: list[OrganizationAdminView] = []
-    while True:
-        query = Organization.objects.filter(account=account, pk__gt=cursor)
-        if exact_uuid is not None:
-            query = query.filter(uuid=exact_uuid)
-        batch = tuple(query.order_by("pk")[:_BATCH_SIZE])
-        if not batch:
-            break
-        cursor = batch[-1].pk
-        allowed = _allowed_batch(actor, provider, "organization.read", "organization", tuple(row.uuid for row in batch))
-        for row, visible in zip(batch, allowed, strict=True):
-            if visible:
-                if offset <= count < offset + limit:
-                    results.append(OrganizationAdminView(row.uuid, row.name, row.is_default))
-                count += 1
-    return OrganizationAdminPage(count, tuple(results))
+    query = Organization.objects.filter(account=account)
+    if exact_uuid is not None:
+        query = query.filter(uuid=exact_uuid)
+    count, rows = _visible_page(
+        query, actor, provider, _READ_ORGANIZATION, "organization", lambda row: row.uuid, window=(offset, limit)
+    )
+    return OrganizationAdminPage(
+        count, tuple(OrganizationAdminView(row.uuid, row.name, row.is_default) for row in rows)
+    )
 
 
 def admin_list_workspaces(
@@ -185,27 +229,13 @@ def admin_list_workspaces(
     organization = Organization.objects.filter(uuid=organization_uuid).first()
     if organization is None:
         raise AccountScopeError(_DENIED)
-    exact = actor.ceiling.target
-    exact_uuid = exact.uuid if exact is not None else None
-    if "workspace.read" not in actor.ceiling.actions or (
-        exact is not None and (exact.type != "workspace" or exact_uuid is None)
-    ):
+    permitted, exact_uuid = _collection_ceiling(actor, _READ_WORKSPACE, "workspace")
+    if not permitted:
         return WorkspaceAdminPage(0, ())
-
-    count = cursor = 0
-    results: list[WorkspaceAdminView] = []
-    while True:
-        query = Workspace.objects.filter(organization=organization, archived_at__isnull=True, pk__gt=cursor)
-        if exact_uuid is not None:
-            query = query.filter(uuid=exact_uuid)
-        batch = tuple(query.order_by("pk")[:_BATCH_SIZE])
-        if not batch:
-            break
-        cursor = batch[-1].pk
-        allowed = _allowed_batch(actor, provider, "workspace.read", "workspace", tuple(row.uuid for row in batch))
-        for row, visible in zip(batch, allowed, strict=True):
-            if visible:
-                if offset <= count < offset + limit:
-                    results.append(WorkspaceAdminView(row.uuid, row.name, row.is_default))
-                count += 1
-    return WorkspaceAdminPage(count, tuple(results))
+    query = Workspace.objects.filter(organization=organization, archived_at__isnull=True)
+    if exact_uuid is not None:
+        query = query.filter(uuid=exact_uuid)
+    count, rows = _visible_page(
+        query, actor, provider, _READ_WORKSPACE, "workspace", lambda row: row.uuid, window=(offset, limit)
+    )
+    return WorkspaceAdminPage(count, tuple(WorkspaceAdminView(row.uuid, row.name, row.is_default) for row in rows))

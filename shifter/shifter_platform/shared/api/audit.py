@@ -11,6 +11,7 @@ from rest_framework import permissions, serializers, viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.request import Request
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken, IsStaffSession
@@ -196,7 +197,7 @@ class PolicyAuditLogViewSet(AuditLogViewSet):
     authentication_classes = [ApiTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticatedSessionOrApiToken]
 
-    def handle_exception(self, exc: Exception):
+    def handle_exception(self, exc: Exception) -> Response:
         """Keep denied-read evidence when the S8 policy view is activated."""
         if isinstance(exc, PermissionDenied):
             try:

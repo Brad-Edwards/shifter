@@ -41,6 +41,7 @@ def _scope_for_lifecycle(workspace_uuid: UUID, *, restore: bool) -> ResourceScop
 
 
 def _audit(actor: CredentialContext, request: RequestAudit | None) -> WorkspaceAuditContext:
+    """Carry canonical principal and request attribution into the locked writer."""
     attribution = request or RequestAudit()
     return WorkspaceAuditContext(
         actor_type="principal",

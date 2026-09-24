@@ -238,14 +238,8 @@ def _apply_lifecycle_action(action: AccountLifecycleAction, locked_user: User, p
         profile.save(update_fields=["suspended_at"])
 
 
-def available_actions(user: User, actor: User | CredentialContext | None) -> list[str]:
-    """Return the server-derived lifecycle actions ``actor`` may take on ``user``.
-
-    Advisory presentation hints for the SPA; every endpoint reauthorizes. Mirrors
-    the transition guards so a hint never advertises an action the service will
-    reject, and includes ``reset_password`` and ``transfer_ownership`` where
-    applicable.
-    """
+def _available_lifecycle_actions(user: User, actor: User | CredentialContext | None) -> list[str]:
+    """Project valid lifecycle transitions without making a policy grant."""
     state = derive_lifecycle_state(user)
     actions: list[str] = []
     if state != AccountLifecycleState.DELETED and not _is_anonymized(user):
@@ -258,13 +252,33 @@ def available_actions(user: User, actor: User | CredentialContext | None) -> lis
             except AccountLifecycleError:
                 continue
             actions.append(action.value)
+    return actions
+
+
+def _can_transfer_ownership(user: User, actor: User | CredentialContext | None) -> bool:
+    """Preserve the legacy superuser-only offboarding hint until S8."""
+    return actor is not None and not isinstance(actor, CredentialContext) and actor.pk != user.pk and actor.is_superuser
+
+
+def available_actions(user: User, actor: User | CredentialContext | None) -> list[str]:
+    """Return advisory lifecycle actions; every command reauthorizes."""
+    actions = _available_lifecycle_actions(user, actor)
     eligible, _reason = password_reset.reset_eligibility(user)
     if eligible:
         actions.append("reset_password")
     # Ownership transfer is a superuser-only offboarding action (#1943 review F5).
-    if actor is not None and not isinstance(actor, CredentialContext) and actor.pk != user.pk and actor.is_superuser:
+    if _can_transfer_ownership(user, actor):
         actions.append("transfer_ownership")
     return actions
+
+
+def _require_transition_policy(actor: User | CredentialContext, provider: AuthorizationProvider | None) -> None:
+    """Keep the S8 principal check separate from lifecycle state changes."""
+    if isinstance(actor, CredentialContext):
+        try:
+            require_principal_administration(actor, provider)
+        except PermissionError as exc:
+            raise AccountLifecycleError("authority_denied", "Lifecycle authority denied") from exc
 
 
 def transition_account(
@@ -290,11 +304,7 @@ def transition_account(
     if user.pk is None:
         raise ValueError(USER_PK_REQUIRED_MSG)
 
-    if isinstance(actor, CredentialContext):
-        try:
-            require_principal_administration(actor, provider)
-        except PermissionError as exc:
-            raise AccountLifecycleError("authority_denied", "Lifecycle authority denied") from exc
+    _require_transition_policy(actor, provider)
 
     _guard_transition(user, action, actor)
 

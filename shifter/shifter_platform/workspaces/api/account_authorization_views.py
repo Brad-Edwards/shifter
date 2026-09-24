@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from django.conf import settings
@@ -13,6 +14,7 @@ from shared.api.principals import authenticated_credential
 from shared.audit import request_audit
 from shared.authorization import (
     AdministrativeRoleChange,
+    AuthorizationProvider,
     AuthorizationProviderBindingError,
     GroupMembershipChange,
     PolicyEffect,
@@ -21,6 +23,8 @@ from shared.authorization import (
     TargetRef,
     configured_authorization_provider,
 )
+from shared.credentials import CredentialContext
+from shared.identity_scope import ResourceScope
 from shared.principal_port import PrincipalResolutionError
 from workspaces import services
 from workspaces.api.authorization_views import AuthorizationAPIError, _AuthorizationAPIView
@@ -47,7 +51,9 @@ def _target_ref(target_type: str, target_uuid: UUID) -> TargetRef:
     raise AuthorizationAPIError("authorization_denied", 403)
 
 
-def _context(request: Request, target_type: str, target_uuid: UUID, account_uuid: UUID | None):
+def _context(
+    request: Request, target_type: str, target_uuid: UUID, account_uuid: UUID | None
+) -> tuple[CredentialContext, ResourceScope, AuthorizationProvider]:
     """Resolve exact SQL ancestry and reject a path naming a different parent."""
     if target_type not in {"account", "organization"}:
         raise AuthorizationAPIError("authorization_denied", 403)
@@ -66,7 +72,15 @@ def _context(request: Request, target_type: str, target_uuid: UUID, account_uuid
     return credential, scope, provider
 
 
-def _native_result(request: Request, target_type: str, target_uuid: UUID, account_uuid: UUID | None, change, key: str):
+def _native_result(
+    request: Request,
+    target_type: str,
+    target_uuid: UUID,
+    account_uuid: UUID | None,
+    change: GroupMembershipChange | RoleAssignmentChange | AdministrativeRoleChange,
+    key: str,
+) -> Response:
+    """Journal one native relationship with the resolved scope and caller."""
     credential, scope, provider = _context(request, target_type, target_uuid, account_uuid)
     mutation = services.NativeRelationshipMutationRequest(
         actor=credential.principal,
@@ -81,7 +95,15 @@ def _native_result(request: Request, target_type: str, target_uuid: UUID, accoun
     return Response(AuthorizationMutationSerializer(result).data, status=202)
 
 
-def _action_result(request: Request, target_type: str, target_uuid: UUID, account_uuid: UUID | None, subject, data):
+def _action_result(
+    request: Request,
+    target_type: str,
+    target_uuid: UUID,
+    account_uuid: UUID | None,
+    subject: RelationshipSubject,
+    data: dict[str, Any],
+) -> Response:
+    """Journal one action assignment under exact account ancestry."""
     credential, scope, provider = _context(request, target_type, target_uuid, account_uuid)
     mutation = services.PolicyMutationRequest(
         actor=credential.principal,

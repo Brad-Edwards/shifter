@@ -141,27 +141,15 @@ class _AccountAPIView(APIView):
 
     def handle_exception(self, exc: Exception) -> Response:
         if isinstance(exc, (services.AccountScopeError, PrincipalResolutionError, ValueError)):
-            return api_error_response(
-                code="account_access_denied",
-                message="Account access denied",
-                status_code=403,
-                request=self.request,
-            )
-        if isinstance(exc, AuthorizationProviderBindingError):
-            return api_error_response(
-                code="authorization_unavailable",
-                message="Authorization unavailable",
-                status_code=503,
-                request=self.request,
-            )
-        if isinstance(exc, (services.WorkspaceQuotaError, services.WorkspaceLifecycleError)):
-            return api_error_response(
-                code=exc.code,
-                message=exc.message,
-                status_code=400 if exc.code.endswith("_invalid") else 403,
-                request=self.request,
-            )
-        return super().handle_exception(exc)
+            code, message, status_code = "account_access_denied", "Account access denied", 403
+        elif isinstance(exc, AuthorizationProviderBindingError):
+            code, message, status_code = "authorization_unavailable", "Authorization unavailable", 503
+        elif isinstance(exc, (services.WorkspaceQuotaError, services.WorkspaceLifecycleError)):
+            code, message = exc.code, exc.message
+            status_code = 400 if exc.code.endswith("_invalid") else 403
+        else:
+            return super().handle_exception(exc)
+        return api_error_response(code=code, message=message, status_code=status_code, request=self.request)
 
 
 class AccountCollectionView(_AccountAPIView):

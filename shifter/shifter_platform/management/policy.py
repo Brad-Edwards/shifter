@@ -7,12 +7,14 @@ from shared.credentials import CredentialContext
 from shared.identity_scope import ResourceScope
 from shared.principal_port import resolve_principal
 
+_DENIED = "Principal administration denied"
+
 
 def require_principal_administration(actor: CredentialContext, provider: AuthorizationProvider | None) -> None:
     """Check the live installation action before any identity read or command."""
     try:
         if actor.kind == "temporary" or provider is None:
-            raise PermissionError("Principal administration denied")
+            raise PermissionError(_DENIED)
         resolve_principal(actor.principal)
         request = AuthorizationRequest(
             actor.principal,
@@ -22,6 +24,6 @@ def require_principal_administration(actor: CredentialContext, provider: Authori
             actor.ceiling,
         )
         if not provider.check(request).allowed:
-            raise PermissionError("Principal administration denied")
+            raise PermissionError(_DENIED)
     except Exception as exc:
-        raise PermissionError("Principal administration denied") from exc
+        raise PermissionError(_DENIED) from exc
