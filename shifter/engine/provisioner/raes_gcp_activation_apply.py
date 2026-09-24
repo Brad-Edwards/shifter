@@ -17,9 +17,9 @@ from raes_gcp_apply import (
     _bootstrap_by_node,
     _preflight_existing_hosts,
     _provision_raes_resources,
-    _realize_directory,
 )
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
+from raes_gcp_verification import _realize_directory
 from raes_guest_plan import assert_management_login_separate
 from raes_operating_system import validate_operating_systems
 from raes_participant_host_keys import observe_participant_host_keys
