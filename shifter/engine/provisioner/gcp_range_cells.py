@@ -118,26 +118,25 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
         ensure_shared_nat(plan, clients)
         return False
     router_nat = plan.get("router_nat")
-    if router_nat is None:
-        return False
-    name = router_nat["router_name"]
-    existing = _get_or_none(
-        clients.routers.get,
-        clients.google_exceptions,
-        project=plan["project_id"],
-        region=plan["region"],
-        router=name,
-    )
-    if existing is not None:
+    if router_nat is not None:
+        name = router_nat["router_name"]
+        existing = _get_or_none(
+            clients.routers.get,
+            clients.google_exceptions,
+            project=plan["project_id"],
+            region=plan["region"],
+            router=name,
+        )
+        if existing is None:
+            operation = clients.routers.insert(
+                project=plan["project_id"],
+                region=plan["region"],
+                router_resource=router_nat_resource(plan),
+            )
+            _wait_for_operation(plan, clients, operation, "region")
+            return True
         logger.info("GCE range router/NAT exists name_fp=%s", safe_log_fingerprint(name))
-        return False
-    operation = clients.routers.insert(
-        project=plan["project_id"],
-        region=plan["region"],
-        router_resource=router_nat_resource(plan),
-    )
-    _wait_for_operation(plan, clients, operation, "region")
-    return True
+    return False
 
 
 def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> None:
