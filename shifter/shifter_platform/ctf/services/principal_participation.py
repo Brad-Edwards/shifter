@@ -7,10 +7,10 @@ from django.utils import timezone
 
 from ctf.enums import EVENT_TERMINAL_STATUSES
 from ctf.models import CTFEvent, CTFParticipant
-from ctf.services.credential_scope import event_credential_scope
 from ctf.services.participant import eligible_participant_q
+from ctf.services.unified_authorization import require_event_action
 from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log, principal_actor_fields
-from shared.authorization import AuthorizationRequest, TargetRef, configured_authorization_provider
+from shared.authorization import TargetRef
 from shared.credentials import CredentialContext
 from shared.identity_scope import PrincipalRef
 from shared.principal_port import resolve_principal
@@ -26,15 +26,7 @@ def admit_service_participant(
     resolve_principal(principal)
     if actor.kind == "temporary" or principal.kind != "service" or not name.strip() or len(name) > 100:
         raise ValueError(_PARTICIPATION_DENIED)
-    request = AuthorizationRequest(
-        actor.principal,
-        "event.manage_participants",
-        TargetRef("event", event_uuid),
-        event_credential_scope(event_uuid),
-        actor.ceiling,
-    )
-    if not configured_authorization_provider().check(request).allowed:
-        raise ValueError(_PARTICIPATION_DENIED)
+    require_event_action(actor, event_uuid, "event.manage_participants")
     with transaction.atomic():
         event = CTFEvent.objects.select_for_update().filter(pk=event_uuid).first()
         if event is None or event.status in EVENT_TERMINAL_STATUSES:
@@ -71,15 +63,7 @@ def participant_for_credential(credential: CredentialContext, event_uuid: UUID) 
         if credential.event_uuid != event_uuid:
             raise ValueError(_PARTICIPATION_DENIED)
     else:
-        request = AuthorizationRequest(
-            credential.principal,
-            "event.participate",
-            TargetRef("event", event_uuid),
-            event_credential_scope(event_uuid),
-            credential.ceiling,
-        )
-        if not configured_authorization_provider().check(request).allowed:
-            raise ValueError(_PARTICIPATION_DENIED)
+        require_event_action(credential, event_uuid, "event.participate")
     now = timezone.now()
     participant = CTFParticipant.objects.filter(
         eligible_participant_q(),

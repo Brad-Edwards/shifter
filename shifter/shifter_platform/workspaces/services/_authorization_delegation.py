@@ -17,6 +17,8 @@ from shared.authorization import (
     action_definition,
     predefined_policy_definition,
     resolve_authorization_descendants,
+    resolve_authorization_event_scope,
+    resolve_authorization_nonworkspace_events,
 )
 from shared.identity_scope import PrincipalRef, ResourceScope
 from shared.principal_port import resolve_principal
@@ -29,7 +31,7 @@ from workspaces.models import (
     Workspace,
 )
 
-from ._account import resolve_resource_scope
+from ._account import hierarchy_target_scope, resolve_resource_scope
 from ._authorization_commands import (
     AuthorizationMutationConflict,
     NativeRelationshipMutationRequest,
@@ -142,6 +144,14 @@ def _authoritative_descendant_targets(target: TargetRef) -> tuple[tuple[TargetRe
         external = resolve_authorization_descendants((workspace.pk,), remaining)
         descendants.extend((item, scope) for item in external)
         remaining -= len(external)
+    if target.type in {"installation", "account", "organization"}:
+        parent_scope = (
+            ResourceScope("installation")
+            if target.type == "installation"
+            else hierarchy_target_scope(target.type, target.uuid)
+        )
+        nonworkspace_events = resolve_authorization_nonworkspace_events(parent_scope, remaining)
+        descendants.extend(nonworkspace_events)
     return tuple(descendants)
 
 
@@ -212,6 +222,10 @@ def _resolve_principal_uuid(principal_uuid: UUID) -> None:
 def _resolve_concrete_target(target: TargetRef, scope: ResourceScope) -> None:
     """Verify leaf ownership in SQL before trusting a provider decision."""
     if target.type not in {"event", "range"}:
+        return
+    if target.type == "event":
+        if resolve_authorization_event_scope(target.uuid) != scope:
+            raise AuthorizationMutationConflict("authorization target is unavailable")
         return
     resolved = resolve_resource_scope(scope)
     if resolved.workspace_id is None or target not in resolve_authorization_descendants(

@@ -348,6 +348,44 @@ def test_released_model_accepts_event_only_range_ancestry_and_denies_conflicting
     assert not provider.batch_check((request,))[0].allowed
 
 
+def test_released_model_allows_human_and_service_admin_on_account_event_and_rejects_extra_parent(provider) -> None:
+    account, event = uuid4(), uuid4()
+    _write_fixture_tuple(provider, ClientTuple("installation:root", "installation", f"account:{account}"))
+    _write_fixture_tuple(provider, ClientTuple(f"account:{account}", "account", f"event:{event}"))
+    requests = []
+    for kind in ("human", "service"):
+        principal = uuid4()
+        provider.write_relationships(
+            AdministrativeRoleChange(
+                RelationshipSubject("principal", principal),
+                "application_administrator",
+                TargetRef("installation"),
+                PolicyEffect.GRANT,
+            )
+        )
+        for action in ("event.manage_staff", "event.transfer_ownership"):
+            request = AuthorizationRequest(
+                PrincipalRef(principal, kind),
+                action,
+                TargetRef("event", event),
+                ResourceScope("account", account),
+                _all_actions(),
+            )
+            assert provider.check(request).allowed
+            requests.append(request)
+        assert provider.check(
+            AuthorizationRequest(
+                PrincipalRef(principal, kind),
+                "account.create_event",
+                TargetRef("account", account),
+                ResourceScope("account", account),
+                _all_actions(),
+            )
+        ).allowed
+    _write_fixture_tuple(provider, ClientTuple(f"workspace:{uuid4()}", "workspace", f"event:{event}"))
+    assert all(not provider.check(request).allowed for request in requests)
+
+
 @dataclass
 class _DelayedLostResponse(_BoundProvider):
     provider: OpenFgaAuthorizationProvider
