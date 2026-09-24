@@ -237,11 +237,11 @@ workers:
     resources:
       requests:
         cpu: 100m
-        memory: 256Mi
+        memory: 512Mi
         ephemeral-storage: 128Mi
       limits:
         cpu: 500m
-        memory: 512Mi
+        memory: 2Gi
         ephemeral-storage: 256Mi
   reconciler:
     replicas: 1

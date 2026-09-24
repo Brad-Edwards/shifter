@@ -243,6 +243,10 @@ require participant web research may set
 range-owned egress rule allowing only TCP 80/443 to public IPv4 through the
 shared VPC's Cloud NAT. The default is `false`; the per-range default-deny rule
 remains in place, and unrelated profiles receive no public egress allowance.
+For an administrator-selected runtime-plugin image, set the same option on the
+GCP target image profile in the pack assignment UI. It is pinned with that
+assignment for new ranges; existing ranges keep their original egress posture.
+AWS target profiles cannot use this GCP option.
 
 The value is a non-secret JSON object, limited to 32,768 bytes and 64 total
 entries. Profile classes and fields are closed. Logical keys must be lowercase
