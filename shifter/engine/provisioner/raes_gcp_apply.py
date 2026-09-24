@@ -391,8 +391,14 @@ def apply_raes_range_cell(
     plan: RangeCellPlan | None = None
     try:
         plan, realized_access = _prepare_raes_apply(
-            request_uuid, range_id, raes_plan, resolve_image, resolved_options, resolved_config,
-            delivery_bindings, access_bindings,
+            request_uuid,
+            range_id,
+            raes_plan,
+            resolve_image,
+            resolved_options,
+            resolved_config,
+            delivery_bindings,
+            access_bindings,
         )
         runtime = _apply_runtime(resolved_options, config=resolved_config)
         _preflight_existing_hosts(plan, runtime.clients)
