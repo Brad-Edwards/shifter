@@ -27,6 +27,7 @@ from __future__ import annotations
 import base64
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
@@ -76,6 +77,17 @@ from raes_substrate_observation import verify_prepared_source
 from utils.crypto import generate_ssh_host_keypair
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _ApplyBindings:
+    delivery: list[dict[str, Any]] | None
+    access: list[dict[str, Any]] | None
+
+
+def _record_created(created: list[tuple[str, str]] | None, kind: str, name: str, was_created: bool) -> None:
+    if was_created and created is not None:
+        created.append((kind, name))
 
 
 def _apply_runtime(
@@ -194,16 +206,16 @@ def _provision_raes_resources(
     authored account credential installed and verified on the guest, so a
     declared endpoint never appears with a credential that was never realized.
     """
-    if plan["manage_network"] and _ensure_network(plan, runtime.clients) and created is not None:
-        created.append(("network", plan["network"]["name"]))
+    if plan["manage_network"]:
+        _record_created(created, "network", plan["network"]["name"], _ensure_network(plan, runtime.clients))
     for subnet in plan["subnets"]:
-        if _ensure_subnetwork(plan, runtime.clients, subnet) and created is not None:
-            created.append(("subnetwork", subnet["resource_name"]))
-    if _ensure_router_nat(plan, runtime.clients) and created is not None:
-        created.append(("router", plan["router_nat"]["router_name"]))
+        _record_created(
+            created, "subnetwork", subnet["resource_name"], _ensure_subnetwork(plan, runtime.clients, subnet)
+        )
+    if router_nat := plan.get("router_nat"):
+        _record_created(created, "router", router_nat["router_name"], _ensure_router_nat(plan, runtime.clients))
     for firewall in plan["firewalls"]:
-        if _ensure_firewall(plan, runtime.clients, firewall) and created is not None:
-            created.append(("firewall", firewall["name"]))
+        _record_created(created, "firewall", firewall["name"], _ensure_firewall(plan, runtime.clients, firewall))
     return [
         _provision_raes_instance_output(
             plan, runtime, instance, bootstrap_by_node, accounts_by_node, access_by_node, created
@@ -222,8 +234,7 @@ def _provision_raes_instance_output(
     created: list[tuple[str, str]] | None,
 ) -> ResourceDict:
     """Provision one RAES host and publish only realized participant access."""
-    if _ensure_address(plan, runtime.clients, instance) and created is not None:
-        created.append(("address", instance["address_name"]))
+    _record_created(created, "address", instance["address_name"], _ensure_address(plan, runtime.clients, instance))
     ssh_secret_ref, ssh_public_key, host_public_key = _ensure_raes_instance(
         plan,
         runtime.clients,
@@ -314,13 +325,12 @@ def _prepare_raes_apply(
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
     options: RaesGceApplyOptions,
     config: GCERangeCellConfig,
-    delivery_bindings: list[dict[str, Any]] | None,
-    access_bindings: list[dict[str, Any]] | None,
+    bindings: _ApplyBindings,
 ) -> tuple[RangeCellPlan, tuple[RealizedAccessBinding, ...]]:
     """Validate and plan the complete range before provider mutation."""
-    realized_access = join_participant_access(access_bindings or (), raes_plan)
+    realized_access = join_participant_access(bindings.access or (), raes_plan)
     _assert_composition_targets_resolve(raes_plan)
-    _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
+    _assert_content_delivery_bindings_complete(raes_plan, bindings.delivery)
     assert_composition_is_verifiable(raes_plan)
     expected_composition = {
         *[item.address for item in raes_plan.content],
@@ -343,6 +353,39 @@ def _prepare_raes_apply(
     for instance in plan["instances"]:
         assert_management_login_separate(raes_plan, _node_address_of(instance), instance["host_ssh_username"])
     return plan, realized_access
+
+
+def _cleanup_conflicting_apply(
+    plan: RangeCellPlan | None,
+    raes_plan: RaesPlan,
+    runtime: RaesGceApplyRuntime | None,
+    created: list[tuple[str, str]],
+    mutation_started: bool,
+    options: RaesGceApplyOptions,
+) -> None:
+    """Keep a conflicting deterministic VM while removing only this attempt's resources."""
+    if mutation_started and runtime is not None and plan is not None:
+        _cleanup_created_resources(plan, raes_plan, runtime, created)
+    if not mutation_started and options.on_pre_mutation_failure is not None:
+        options.on_pre_mutation_failure()
+
+
+def _cleanup_failed_apply_attempt(
+    request_uuid: str,
+    range_id: int,
+    raes_plan: RaesPlan,
+    runtime: RaesGceApplyRuntime | None,
+    mutation_started: bool,
+    options: RaesGceApplyOptions,
+) -> None:
+    """Reconstructively clean up after a provider mutation, or release preflight state."""
+    if mutation_started and runtime is not None:
+        logger.exception("RAES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
+        _cleanup_failed_apply(request_uuid, range_id, raes_plan, runtime)
+    else:
+        logger.exception("RAES GCE range-cell apply failed before provider mutation request_id=%s", request_uuid)
+        if options.on_pre_mutation_failure is not None:
+            options.on_pre_mutation_failure()
 
 
 def apply_raes_range_cell(
@@ -380,8 +423,7 @@ def apply_raes_range_cell(
             resolve_image,
             resolved_options,
             resolved_config,
-            delivery_bindings,
-            access_bindings,
+            _ApplyBindings(delivery_bindings, access_bindings),
         )
         runtime = _apply_runtime(resolved_options, config=resolved_config)
         _preflight_existing_hosts(plan, runtime.clients)
@@ -399,19 +441,10 @@ def apply_raes_range_cell(
         # A conflicting VM is not ours to delete, even if a race placed it
         # after the read-only preflight and some network resources were made.
         logger.exception("RAES GCE range-cell apply found a conflicting deterministic VM request_id=%s", request_uuid)
-        if mutation_started and runtime is not None and plan is not None:
-            _cleanup_created_resources(plan, raes_plan, runtime, created)
-        if not mutation_started and resolved_options.on_pre_mutation_failure is not None:
-            resolved_options.on_pre_mutation_failure()
+        _cleanup_conflicting_apply(plan, raes_plan, runtime, created, mutation_started, resolved_options)
         raise
     except Exception:
-        if mutation_started and runtime is not None:
-            logger.exception("RAES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
-            _cleanup_failed_apply(request_uuid, range_id, raes_plan, runtime)
-        else:
-            logger.exception("RAES GCE range-cell apply failed before provider mutation request_id=%s", request_uuid)
-            if resolved_options.on_pre_mutation_failure is not None:
-                resolved_options.on_pre_mutation_failure()
+        _cleanup_failed_apply_attempt(request_uuid, range_id, raes_plan, runtime, mutation_started, resolved_options)
         raise
     return {
         "subnets": subnet_outputs(plan),
