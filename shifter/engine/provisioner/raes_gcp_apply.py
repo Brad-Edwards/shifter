@@ -81,11 +81,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class _ApplyBindings:
+    """Optional content and participant access projections admitted for one apply."""
+
     delivery: list[dict[str, Any]] | None
     access: list[dict[str, Any]] | None
 
 
 def _record_created(created: list[tuple[str, str]] | None, kind: str, name: str, was_created: bool) -> None:
+    """Track only resources inserted by the current apply attempt."""
+
     if was_created and created is not None:
         created.append((kind, name))
 
