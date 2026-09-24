@@ -1414,7 +1414,7 @@ class TestParticipantAccessRealization:
         def observe(instances):
             observe_participant_host_keys(instances, execution_builder=lambda *_args, **_kwargs: context)
 
-        module = "raes_gcp_activation_apply" if warm else "raes_gcp_apply"
+        module = "raes_gcp_activation_apply" if warm else "raes_gcp_verification"
         monkeypatch.setattr(f"{module}.observe_participant_host_keys", observe, raising=False)
         apply = realize_access_on_existing_cell if warm else apply_raes_range_cell
 
