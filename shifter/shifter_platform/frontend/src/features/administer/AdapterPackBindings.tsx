@@ -100,7 +100,7 @@ function validImageProfile(profile: AdapterTargetImageProfile): boolean {
       && Boolean(profile.domain_dns_name && profile.domain_netbios_name);
   }
   return profile.bootstrap_capability === PRECONFIGURED_HOST_CAPABILITY
-    && (profile.image_kind === "machine-image"
+    && (profile.image_kind === MACHINE_IMAGE_KIND
       ? /^projects\/[a-z0-9][a-z0-9.:-]*\/global\/machineImages\/[a-z][-a-z0-9]*$/.test(profile.image_ref)
       : /^projects\/[a-z0-9][a-z0-9.:-]*\/global\/images\/[a-z][-a-z0-9]*$/.test(profile.image_ref))
     && Boolean(profile.management_ssh_username && profile.participant_container_name && profile.participant_username)
