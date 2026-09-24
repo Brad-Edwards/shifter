@@ -92,12 +92,15 @@ function validImageProfile(profile: AdapterTargetImageProfile): boolean {
   if (!profile.image_ref || profile.management_ssh_port < 1 || profile.management_ssh_port > 65535) return false;
   if (profile.provider === "aws") return !profile.allow_public_web_egress
     && profile.image_kind === "image" && /^ami-(?:[0-9a-f]{8}|[0-9a-f]{17})$/.test(profile.image_ref);
-  if (profile.image_kind === "image") {
+  if (profile.image_kind === "image" && profile.bootstrap_capability !== "preconfigured-machine-host") {
     if (profile.bootstrap_capability === "standard") return !profile.domain_dns_name && !profile.domain_netbios_name;
     return profile.bootstrap_capability === "prepromoted-domain-controller"
       && Boolean(profile.domain_dns_name && profile.domain_netbios_name);
   }
   return profile.bootstrap_capability === "preconfigured-machine-host"
+    && (profile.image_kind === "machine-image"
+      ? /^projects\/[a-z0-9][a-z0-9.:-]*\/global\/machineImages\/[a-z][-a-z0-9]*$/.test(profile.image_ref)
+      : /^projects\/[a-z0-9][a-z0-9.:-]*\/global\/images\/[a-z][-a-z0-9]*$/.test(profile.image_ref))
     && Boolean(profile.management_ssh_username && profile.participant_container_name && profile.participant_username)
     && profile.participant_readiness_contract === "participant-readiness/v1"
     && /^[0-9a-f]{64}$/.test(profile.participant_readiness_manifest_sha256);
@@ -213,7 +216,7 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
             participant_container_name: "", participant_username: "", participant_readiness_manifest_sha256: "",
             domain_dns_name: "", domain_netbios_name: "",
           }); }}>
-          <option value="image">Boot image</option><option value={MACHINE_IMAGE_KIND}>Preconfigured machine host</option>
+          <option value="image">Boot image</option><option value={MACHINE_IMAGE_KIND}>Machine image</option>
         </select>
       </div> : null}
       <ProfileInput id={`plugin-image-ref-${name}`} label={`Image reference for ${name}`} value={value.image_ref}
@@ -240,11 +243,16 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
         <select id={`plugin-bootstrap-capability-${name}`} value={value.bootstrap_capability}
           className="block w-full rounded border bg-background p-2" onChange={(event) => update({
             bootstrap_capability: event.target.value,
+            participant_readiness_contract: event.target.value === "preconfigured-machine-host" ? "participant-readiness/v1" : "",
+            participant_container_name: "",
+            participant_username: "",
+            participant_readiness_manifest_sha256: "",
             domain_dns_name: "",
             domain_netbios_name: "",
           })}>
           <option value="standard">Standard image</option>
           <option value="prepromoted-domain-controller">Prepromoted directory image</option>
+          <option value="preconfigured-machine-host">Preconfigured participant host</option>
         </select>
       </div> : null}
       {value.provider === "gcp" && value.image_kind === "image"
@@ -254,7 +262,7 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
         <ProfileInput id={`plugin-domain-netbios-${name}`} label={`Domain NetBIOS name for ${name}`}
           value={value.domain_netbios_name} onChange={(domain_netbios_name) => update({ domain_netbios_name })} />
       </> : null}
-      {value.provider === "gcp" && value.image_kind === MACHINE_IMAGE_KIND ? <>
+      {value.provider === "gcp" && value.bootstrap_capability === "preconfigured-machine-host" ? <>
         <ProfileInput id={`plugin-participant-container-${name}`} label={`Participant container for ${name}`}
           value={value.participant_container_name} onChange={(participant_container_name) => update({ participant_container_name })} />
         <ProfileInput id={`plugin-participant-user-${name}`} label={`Participant username for ${name}`}

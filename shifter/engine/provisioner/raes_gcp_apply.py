@@ -31,11 +31,13 @@ from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_ops import _get_or_none
+from gcp_range_cell_ops import _delete_resource, _get_or_none
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cells import (
+    GCEInstanceBindingError,
+    _assert_preconfigured_host_binding,
     _ensure_address,
     _ensure_attached_disks_auto_delete,
     _ensure_firewall,
@@ -48,6 +50,7 @@ from gcp_range_cells import (
 from raes_access import RealizedAccessBinding, join_participant_access
 from raes_account_credentials import (
     default_account_credential_ops,
+    delete_instance_account_credentials,
 )
 from raes_active_directory import (
     default_directory_secret_ops,
@@ -58,7 +61,7 @@ from raes_composition_verification import (
 from raes_content_delivery import assert_content_delivery_bindings_complete
 from raes_gcp_apply_types import RaesGceApplyOptions, RaesGceApplyRuntime
 from raes_gcp_composition import node_bootstrap_script
-from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
+from raes_gcp_destroy import RaesGceDestroyOptions, _instance_accounts, destroy_raes_range_cell
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_guest_plan import (
@@ -96,6 +99,7 @@ def _apply_runtime(
         composition_verifier=options.composition_verifier,
         operating_system_observer=options.operating_system_observer,
         substrate_observer=options.substrate_observer,
+        host_readiness_verifier=options.host_readiness_verifier,
         allocated_network_cidrs=options.allocated_network_cidrs,
         runtime_plugin=options.runtime_plugin,
         model_enrollment=options.model_enrollment,
@@ -128,6 +132,7 @@ def _ensure_raes_instance(
     instance: InstancePlan,
     secret_ops: RaesGceSecretOps,
     bootstrap_by_node: dict[str, str],
+    created: list[tuple[str, str]] | None = None,
 ) -> tuple[str, str, str]:
     """Create one RAES range instance with a provisioner-managed SSH + host key.
 
@@ -149,9 +154,11 @@ def _ensure_raes_instance(
     )
     if existing is None:
         verify_prepared_source(plan, instance, clients)
+    else:
+        _assert_preconfigured_host_binding(existing, plan, instance)
     secret_ref, public_key = secret_ops.ensure_ssh(plan["range_id"], instance["uuid"])
     if existing is not None:
-        if instance["profile"].source_machine_image:
+        if instance["profile"].bootstrap_capability == "preconfigured-machine-host":
             _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return secret_ref, public_key, _host_public_key_from_instance(existing)
 
@@ -171,6 +178,8 @@ def _ensure_raes_instance(
             composition_script=bootstrap_by_node.get(_node_address_of(instance), ""),
         ),
     )
+    if created is not None:
+        created.append(("instance", name))
     return secret_ref, public_key, host_public_key
 
 
@@ -180,6 +189,7 @@ def _provision_raes_resources(
     bootstrap_by_node: dict[str, str],
     accounts_by_node: dict[str, tuple[RaesPlanAccount, ...]],
     access_by_node: dict[str, tuple[RealizedAccessBinding, ...]],
+    created: list[tuple[str, str]] | None = None,
 ) -> list[ResourceDict]:
     """Create the network, subnets, firewalls, and instances for an RAES range.
 
@@ -187,16 +197,20 @@ def _provision_raes_resources(
     authored account credential installed and verified on the guest, so a
     declared endpoint never appears with a credential that was never realized.
     """
-    if plan["manage_network"]:
-        _ensure_network(plan, runtime.clients)
+    if plan["manage_network"] and _ensure_network(plan, runtime.clients) and created is not None:
+        created.append(("network", plan["network"]["name"]))
     for subnet in plan["subnets"]:
-        _ensure_subnetwork(plan, runtime.clients, subnet)
-    _ensure_router_nat(plan, runtime.clients)
+        if _ensure_subnetwork(plan, runtime.clients, subnet) and created is not None:
+            created.append(("subnetwork", subnet["resource_name"]))
+    if _ensure_router_nat(plan, runtime.clients) and created is not None:
+        created.append(("router", plan["router_nat"]["router_name"]))
     for firewall in plan["firewalls"]:
-        _ensure_firewall(plan, runtime.clients, firewall)
+        if _ensure_firewall(plan, runtime.clients, firewall) and created is not None:
+            created.append(("firewall", firewall["name"]))
     instance_outputs: list[ResourceDict] = []
     for instance in plan["instances"]:
-        _ensure_address(plan, runtime.clients, instance)
+        if _ensure_address(plan, runtime.clients, instance) and created is not None:
+            created.append(("address", instance["address_name"]))
         ssh_secret_ref, ssh_public_key, host_public_key = _ensure_raes_instance(
             plan,
             runtime.clients,
@@ -204,6 +218,7 @@ def _provision_raes_resources(
             instance,
             runtime.secret_ops,
             bootstrap_by_node,
+            created,
         )
         output = instance_output(
             plan,
@@ -235,6 +250,75 @@ def _provision_raes_resources(
         _publish_participant_access(output, access_by_node.get(node_address, ()), account_secret_refs)
         instance_outputs.append(output)
     return instance_outputs
+
+
+def _cleanup_created_resources(
+    plan: RangeCellPlan,
+    raes_plan: RaesPlan,
+    runtime: RaesGceApplyRuntime,
+    created: list[tuple[str, str]],
+) -> None:
+    """Release only this attempt's resources after a late foreign-VM conflict."""
+    clients = runtime.clients
+    services = {
+        "instance": (clients.instances, "zone", "instance", {"zone": plan["zone"]}),
+        "address": (clients.addresses, "region", "address", {"region": plan["region"]}),
+        "firewall": (clients.firewalls, "global", "firewall", {}),
+        "router": (clients.routers, "region", "router", {"region": plan["region"]}),
+        "subnetwork": (clients.subnetworks, "region", "subnetwork", {"region": plan["region"]}),
+        "network": (clients.networks, "global", "network", {}),
+    }
+    instances = {instance["resource_name"]: instance for instance in plan["instances"]}
+    for kind, name in reversed(created):
+        service, scope, field, extra = services[kind]
+        try:
+            if kind == "instance":
+                existing = _get_or_none(
+                    clients.instances.get,
+                    clients.google_exceptions,
+                    project=plan["project_id"],
+                    zone=plan["zone"],
+                    instance=name,
+                )
+                if existing is not None:
+                    _ensure_attached_disks_auto_delete(plan, clients, name, existing)
+            _delete_resource(
+                plan,
+                clients,
+                service.get,
+                service.delete,
+                scope,
+                project=plan["project_id"],
+                **extra,
+                **{field: name},
+            )
+            if kind == "instance":
+                instance = instances[name]
+                runtime.secret_ops.delete_ssh(plan["range_id"], instance["uuid"])
+                delete_instance_account_credentials(
+                    plan["range_id"],
+                    instance["uuid"],
+                    _instance_accounts(raes_plan, instance),
+                    runtime.account_secret_ops,
+                )
+        except Exception as exc:
+            logger.error("Failed to clean attempt-created GCE resource kind=%s error_type=%s", kind, type(exc).__name__)
+
+
+def _preflight_existing_hosts(plan: RangeCellPlan, clients: GCEClients) -> None:
+    """Reject conflicting deterministic hosts before any network or secret mutation."""
+    for instance in plan["instances"]:
+        if instance["profile"].bootstrap_capability != "preconfigured-machine-host":
+            continue
+        existing = _get_or_none(
+            clients.instances.get,
+            clients.google_exceptions,
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=instance["resource_name"],
+        )
+        if existing is not None:
+            _assert_preconfigured_host_binding(existing, plan, instance)
 
 
 def _bootstrap_by_node(raes_plan: RaesPlan) -> dict[str, str]:
@@ -331,6 +415,8 @@ def apply_raes_range_cell(
     resolved_config = resolved_options.config or load_gce_range_cell_config()
     runtime: RaesGceApplyRuntime | None = None
     mutation_started = False
+    created: list[tuple[str, str]] = []
+    plan: RangeCellPlan | None = None
     try:
         realized_access = join_participant_access(access_bindings or (), raes_plan)
         _assert_composition_targets_resolve(raes_plan)
@@ -360,6 +446,7 @@ def apply_raes_range_cell(
         for instance in plan["instances"]:
             assert_management_login_separate(raes_plan, _node_address_of(instance), instance["host_ssh_username"])
         runtime = _apply_runtime(resolved_options, config=resolved_config)
+        _preflight_existing_hosts(plan, runtime.clients)
         mutation_started = True
         instance_outputs = _provision_raes_resources(
             plan,
@@ -367,6 +454,7 @@ def apply_raes_range_cell(
             _bootstrap_by_node(raes_plan),
             _accounts_by_node(raes_plan),
             _access_by_node(realized_access),
+            created,
         )
         verified = set(_realize_directory(plan, raes_plan, instance_outputs, runtime))
         verified.update(_realize_content_delivery(raes_plan, instance_outputs, delivery_bindings, runtime))
@@ -374,12 +462,22 @@ def apply_raes_range_cell(
             runtime.model_enrollment(raes_plan, instance_outputs)
         if runtime.runtime_plugin is not None:
             runtime.runtime_plugin(raes_plan, instance_outputs)
+        runtime.host_readiness_verifier(instance_outputs)
         observe_participant_host_keys(instance_outputs)
         verified.update(runtime.composition_verifier(raes_plan, instance_outputs))
         operating_systems = runtime.operating_system_observer(raes_plan, instance_outputs)
         validate_operating_systems(raes_plan, operating_systems)
         compute_substrates = runtime.substrate_observer(plan, runtime.clients)
         snapshot_resources(raes_plan, verified)
+    except GCEInstanceBindingError:
+        # A conflicting VM is not ours to delete, even if a race placed it
+        # after the read-only preflight and some network resources were made.
+        logger.exception("RAES GCE range-cell apply found a conflicting deterministic VM request_id=%s", request_uuid)
+        if mutation_started and runtime is not None and plan is not None:
+            _cleanup_created_resources(plan, raes_plan, runtime, created)
+        if not mutation_started and resolved_options.on_pre_mutation_failure is not None:
+            resolved_options.on_pre_mutation_failure()
+        raise
     except Exception:
         if mutation_started and runtime is not None:
             logger.exception("RAES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)

@@ -193,6 +193,30 @@ describe("RaesImageRegistryPage", () => {
     ));
   });
 
+  it("registers a preconfigured host from a custom image", async () => {
+    mockApi.mockImplementation((_path: string, options?: { method?: string }) =>
+      Promise.resolve(options?.method === "POST" ? mapping({ image_kind: "image" }) : []));
+    renderRoute(<RaesImageRegistryPage />);
+    fireEvent.change(await screen.findByLabelText("Source name"), { target: { value: "nested-host" } });
+    fireEvent.click(screen.getByLabelText("Preconfigured participant host"));
+    fireEvent.change(screen.getByLabelText("Image ref"), {
+      target: { value: "projects/example/global/images/nested-host-v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Management SSH username"), { target: { value: "host-admin" } });
+    fireEvent.change(screen.getByLabelText("Participant container"), { target: { value: "participant-desktop" } });
+    fireEvent.change(screen.getByLabelText("Participant username"), { target: { value: "student" } });
+    fireEvent.change(screen.getByLabelText("Readiness manifest SHA-256"), { target: { value: "a".repeat(64) } });
+    fireEvent.click(screen.getByRole("button", { name: "Register mapping" }));
+    await waitFor(() => expect(mockApi).toHaveBeenCalledWith(
+      "/cms/raes-image-mappings/",
+      expect.objectContaining({ body: expect.objectContaining({
+        image_kind: "image",
+        bootstrap_capability: "preconfigured-machine-host",
+        participant_container_name: "participant-desktop",
+      }) }),
+    ));
+  });
+
   it("disables a mapping through the API", async () => {
     let rows = [mapping()];
     mockApi.mockImplementation(
