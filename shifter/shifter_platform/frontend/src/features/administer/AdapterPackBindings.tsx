@@ -23,6 +23,7 @@ import { PackUploadForm } from "./PackUploadForm";
 const MACHINE_IMAGE_KIND = "machine-image";
 const BOOT_IMAGE_KIND = "image";
 const PRECONFIGURED_HOST_CAPABILITY = "preconfigured-machine-host";
+const PARTICIPANT_READINESS_CONTRACT = "participant-readiness/v1";
 
 function bindingStatus(pack: AdapterPack): string {
   if (!pack.binding) return "No adapter assigned";
@@ -104,7 +105,7 @@ function validImageProfile(profile: AdapterTargetImageProfile): boolean {
       ? /^projects\/[a-z0-9][a-z0-9.:-]*\/global\/machineImages\/[a-z][-a-z0-9]*$/.test(profile.image_ref)
       : /^projects\/[a-z0-9][a-z0-9.:-]*\/global\/images\/[a-z][-a-z0-9]*$/.test(profile.image_ref))
     && Boolean(profile.management_ssh_username && profile.participant_container_name && profile.participant_username)
-    && profile.participant_readiness_contract === "participant-readiness/v1"
+    && profile.participant_readiness_contract === PARTICIPANT_READINESS_CONTRACT
     && /^[0-9a-f]{64}$/.test(profile.participant_readiness_manifest_sha256);
 }
 
@@ -214,7 +215,7 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
           onChange={(event) => { const machine = event.target.value === MACHINE_IMAGE_KIND; update({
             image_kind: machine ? MACHINE_IMAGE_KIND : BOOT_IMAGE_KIND,
             bootstrap_capability: machine ? PRECONFIGURED_HOST_CAPABILITY : "standard",
-            participant_readiness_contract: machine ? "participant-readiness/v1" : "",
+            participant_readiness_contract: machine ? PARTICIPANT_READINESS_CONTRACT : "",
             participant_container_name: "", participant_username: "", participant_readiness_manifest_sha256: "",
             domain_dns_name: "", domain_netbios_name: "",
           }); }}>
@@ -245,7 +246,7 @@ function TargetImageProfile({ name, value, onChange }: Readonly<{
         <select id={`plugin-bootstrap-capability-${name}`} value={value.bootstrap_capability}
           className="block w-full rounded border bg-background p-2" onChange={(event) => update({
             bootstrap_capability: event.target.value,
-            participant_readiness_contract: event.target.value === PRECONFIGURED_HOST_CAPABILITY ? "participant-readiness/v1" : "",
+            participant_readiness_contract: event.target.value === PRECONFIGURED_HOST_CAPABILITY ? PARTICIPANT_READINESS_CONTRACT : "",
             participant_container_name: "",
             participant_username: "",
             participant_readiness_manifest_sha256: "",
