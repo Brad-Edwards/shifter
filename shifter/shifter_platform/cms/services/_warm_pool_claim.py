@@ -265,11 +265,11 @@ def attempt_warm_claim(request: WarmClaimRequest, override: WarmPoolOverride | N
     # Existing warm generations are not bound to an event's policy workspace.
     # An event-policy launch must take the cold reservation path, which pins that
     # policy under the workspace lock before dispatch.
-    if request.policy_workspace_id is not None:
-        return None
-
-    candidates = _resolve_claim_candidates(request, override)
-    if not candidates or not _can_claim_base_range(request):
+    if (
+        request.policy_workspace_id is not None
+        or not (candidates := _resolve_claim_candidates(request, override))
+        or not _can_claim_base_range(request)
+    ):
         return None
     outcome = _run_atomic_claim(request, candidates)
     if outcome is None:
