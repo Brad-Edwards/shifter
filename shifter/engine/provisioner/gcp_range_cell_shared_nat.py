@@ -208,14 +208,16 @@ def _assert_gateway_scope(
         raise RuntimeError("shared-nat-zero-egress-conflict")
 
 
-def _assert_shared_capacity_locked(plan: RangeCellPlan, clients: GCEClients) -> None:
-    """Check regional quota and all existing NAT scopes under the mutation lock."""
+def _assert_existing_nat_scopes(
+    plan: RangeCellPlan,
+    same_network: Sequence[object],
+    *,
+    legacy_name: str,
+    bridge_replay: bool,
+) -> None:
+    """Reject broad or foreign NAT coverage before allocating another range."""
     desired = {str(subnet["self_link"]) for subnet in plan["subnets"]}
     own = plan.get("shared_nat")
-    legacy_name = str(range_router_nat_plan(plan["range_id"], [])["router_name"])
-    same_network = _same_network_routers(plan, clients)
-    bridge_replay = _bridge_replay(plan, clients, same_network)
-    names = {str(_field(router, "name") or "") for router in same_network}
     allowed_names = {legacy_name} | ({own["router_name"]} if own is not None else set())
     bridge_names = _bridge_router_names(plan)
     for router in same_network:
@@ -229,6 +231,16 @@ def _assert_shared_capacity_locked(plan: RangeCellPlan, clients: GCEClients) -> 
                 bridge_owner=bridge_replay and name in bridge_names,
                 zero_egress=own is None,
             )
+
+
+def _assert_shared_capacity_locked(plan: RangeCellPlan, clients: GCEClients) -> None:
+    """Check regional quota and all existing NAT scopes under the mutation lock."""
+    own = plan.get("shared_nat")
+    legacy_name = str(range_router_nat_plan(plan["range_id"], [])["router_name"])
+    same_network = _same_network_routers(plan, clients)
+    bridge_replay = _bridge_replay(plan, clients, same_network)
+    _assert_existing_nat_scopes(plan, same_network, legacy_name=legacy_name, bridge_replay=bridge_replay)
+    names = {str(_field(router, "name") or "") for router in same_network}
     if own is None or legacy_name in names or bridge_replay:
         return
     if own["router_name"] not in names and len(same_network) >= 5:
