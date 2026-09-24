@@ -24,6 +24,8 @@ def event_credential_scope(event_uuid: UUID) -> ResourceScope:
         elif scope.organization_uuid is not None:
             parent_type, parent_uuid = "organization", scope.organization_uuid
         else:
+            if scope.account_uuid is None:
+                raise ValueError("Credential scope unavailable")
             parent_type, parent_uuid = "account", scope.account_uuid
         if event_placement_scope(parent_type, parent_uuid) != scope:
             raise ValueError("Credential scope unavailable")

@@ -158,6 +158,7 @@ API_OPERATION_POLICY: dict[str, OperationPolicy] = {
 # The named browser routes render an SPA shell; protected data and effects live
 # behind the API map above. The three non-shell handlers keep their own origin,
 # password-change and event-publication checks.
+_TEMPORARY_LOGIN_ROUTE_CATEGORY = "temporary_login"
 NON_API_ROUTE_POLICY: dict[str, str] = {
     **dict.fromkeys(
         (
@@ -207,7 +208,7 @@ NON_API_ROUTE_POLICY: dict[str, str] = {
     ),
     "public_event_registration": "public_registration",
     "ctf_login": "login",
-    "ctf_change_password": "temporary_login",
+    "ctf_change_password": _TEMPORARY_LOGIN_ROUTE_CATEGORY,
 }
 
 

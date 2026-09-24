@@ -42,7 +42,11 @@ def require_event_action(credential: CredentialContext, event_uuid: UUID, action
 
 def require_event_creation(credential: CredentialContext, parent: TargetRef) -> ResourceScope:
     """Authorize creation at an existing customer parent, then return its SQL scope."""
-    if credential.kind == "temporary" or parent.type not in {"account", "organization", "workspace"}:
+    if (
+        credential.kind == "temporary"
+        or parent.type not in {"account", "organization", "workspace"}
+        or parent.uuid is None
+    ):
         raise CTFPermissionError(_DENIED)
     try:
         principal = resolve_principal(credential.principal)
