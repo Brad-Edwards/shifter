@@ -124,7 +124,7 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
     """
     if plan.get("shared_nat") is not None:
         ensure_shared_nat(plan, clients)
-        return
+        return False
     router_nat = plan.get("router_nat")
     if router_nat is None:
         return False
