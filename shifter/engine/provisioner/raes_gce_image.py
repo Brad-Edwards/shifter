@@ -106,7 +106,7 @@ def resolve_gce_image_from_runtime_profile(
     """Realize the tenant-admin image selected with an adapter target binding."""
     if profile.provider != "gcp":
         raise RaesGceImageError("adapter image profile provider does not match GCE realization")
-    return _profile(
+    resolved = _profile(
         node,
         ResolvedImage(
             image_ref=profile.image_ref,
@@ -125,6 +125,7 @@ def resolve_gce_image_from_runtime_profile(
         domain_dns_name=profile.domain_dns_name,
         domain_netbios_name=profile.domain_netbios_name,
     )
+    return replace(resolved, allow_public_web_egress=profile.allow_public_web_egress)
 
 
 def _resolve_base_os(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) -> GCERangeImageProfile:

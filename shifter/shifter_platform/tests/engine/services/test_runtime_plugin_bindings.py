@@ -9,10 +9,16 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth.models import User
 from django.utils import timezone
-from shifter_adapter_sdk.runtime import RuntimePlan
+from shifter_adapter_sdk.runtime import RuntimePlan, canonical_digest
 
 from engine.launch_intents import enqueue_provisioner_launch
-from engine.models import OperationInput, Range, RuntimePluginInstallation, RuntimePluginInvocation
+from engine.models import (
+    OperationInput,
+    Range,
+    RuntimePluginInstallation,
+    RuntimePluginInvocation,
+    RuntimePluginRangeBinding,
+)
 from engine.services import (
     RangeBindings,
     bind_runtime_plugin,
@@ -122,6 +128,7 @@ def test_tenant_admin_image_profile_is_pinned_with_the_adapter_target(pack):
                     "participant_username": "student",
                     "participant_readiness_contract": "participant-readiness/v1",
                     "participant_readiness_manifest_sha256": "a" * 64,
+                    "allow_public_web_egress": True,
                 }
             },
         },
@@ -130,6 +137,50 @@ def test_tenant_admin_image_profile_is_pinned_with_the_adapter_target(pack):
     pin = retained_runtime_plugin_pin(launch(pack))
     assert pin is not None
     assert pin.bindings.image_profile_for("node.web").image_ref.endswith("/machineImages/nested-host-v1")
+    assert pin.bindings.image_profile_for("node.web").allow_public_web_egress is True
+
+
+def test_pre_upgrade_pin_without_defaulted_profile_field_remains_usable_for_cleanup(pack):
+    bind_runtime_plugin(
+        pack.actor,
+        pack.scope,
+        pack.installed.id,
+        {
+            "targets": {"server": "node.web"},
+            "image_profiles": {
+                "server": {
+                    "provider": "gcp",
+                    "image_ref": "projects/example/global/images/training-v1",
+                }
+            },
+        },
+    )
+    target = launch(pack)
+    row = RuntimePluginRangeBinding.objects.get(range=target)
+    legacy_pin = row.pin.copy()
+    legacy_pin["bindings"] = row.pin["bindings"].copy()
+    legacy_pin["bindings"]["image_profiles"] = row.pin["bindings"]["image_profiles"].copy()
+    legacy_pin["bindings"]["image_profiles"]["server"] = row.pin["bindings"]["image_profiles"]["server"].copy()
+    legacy_pin["bindings"]["image_profiles"]["server"].pop("allow_public_web_egress")
+    row.pin = legacy_pin
+    row.pin_digest = canonical_digest(legacy_pin)
+    row.save(update_fields=["pin", "pin_digest"])
+
+    pin = retained_runtime_plugin_pin(target)
+    assert pin is not None
+    assert pin.bindings.image_profile_for("node.web").allow_public_web_egress is False
+    from engine.operation_inputs import operation_input_payload
+
+    cleanup = parse_raes_operation_input(
+        operation_input_payload(target, "raes-range", target.request, operation="destroy")
+    )
+    assert cleanup.runtime_plugin == pin
+
+    legacy_pin["bindings"]["image_profiles"]["server"]["image_ref"] = "projects/example/global/images/other-v1"
+    row.pin = legacy_pin
+    row.save(update_fields=["pin"])
+    with pytest.raises(ValidationError, match="binding is invalid"):
+        retained_runtime_plugin_pin(target)
 
 
 def test_image_profile_cannot_name_an_undeclared_binding(pack):

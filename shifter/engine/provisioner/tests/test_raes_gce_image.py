@@ -54,10 +54,36 @@ class TestRegistryResolution:
             participant_username="student",
             participant_readiness_contract="participant-readiness/v1",
             participant_readiness_manifest_sha256="a" * 64,
+            allow_public_web_egress=True,
         )
         profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
         assert profile.source_machine_image == runtime.image_ref
         assert profile.machine_type == "e2-standard-8"
+        assert profile.allow_public_web_egress is True
+
+    def test_adapter_target_profile_defaults_to_no_public_web_egress(self):
+        runtime = RuntimeTargetImageProfile(
+            provider="gcp",
+            image_ref="projects/example/global/images/desktop-v1",
+        )
+        profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
+        assert profile.allow_public_web_egress is False
+
+    def test_aws_adapter_profile_cannot_enable_gcp_public_web_egress(self):
+        with pytest.raises(ValueError, match="AWS image profiles do not support public web egress"):
+            RuntimeTargetImageProfile(
+                provider="aws",
+                image_ref="ami-0123456789abcdef0",
+                allow_public_web_egress=True,
+            )
+
+    def test_adapter_profile_requires_a_boolean_public_web_choice(self):
+        with pytest.raises(ValueError):
+            RuntimeTargetImageProfile(
+                provider="gcp",
+                image_ref="projects/example/global/images/desktop-v1",
+                allow_public_web_egress="true",
+            )
 
     def test_adapter_target_profile_preserves_prepromoted_directory_contract(self):
         runtime = RuntimeTargetImageProfile(

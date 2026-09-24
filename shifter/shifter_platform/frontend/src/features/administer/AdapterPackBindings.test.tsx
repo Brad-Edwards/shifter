@@ -66,7 +66,35 @@ describe("pack adapter assignments", () => {
     fireEvent.change(screen.getByLabelText("Participant container for server"), { target: { value: "participant-desktop" } });
     fireEvent.change(screen.getByLabelText("Participant username for server"), { target: { value: "student" } });
     fireEvent.change(screen.getByLabelText("Readiness manifest SHA-256 for server"), { target: { value: "a".repeat(64) } });
+    fireEvent.click(screen.getByLabelText("Allow participant public web access (TCP 80/443)"));
     expect(screen.getByRole("button", { name: "Review assignment" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save assignment" }));
+    await waitFor(() => {
+      const body = mockApi.mock.calls.find(([, options]) => options?.method === "POST")?.[1]?.body as
+        | { bindings: { image_profiles: { server: { allow_public_web_egress: boolean } } } }
+        | undefined;
+      expect(body?.bindings.image_profiles.server.allow_public_web_egress).toBe(true);
+    });
+  });
+
+  it("clears the GCP web option when switching an assignment to AWS", async () => {
+    renderRoute(<AdapterPackBindings organization="org-1" adapters={[adapter]} />);
+    await fillAssignment();
+    fireEvent.click(screen.getByLabelText("Use an administrator-selected provider image for server"));
+    fireEvent.click(screen.getByLabelText("Allow participant public web access (TCP 80/443)"));
+    fireEvent.change(screen.getByLabelText("Provider for server"), { target: { value: "aws" } });
+    expect(screen.queryByLabelText("Allow participant public web access (TCP 80/443)")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Image reference for server"), { target: { value: "ami-12345678" } });
+    expect(screen.getByRole("button", { name: "Review assignment" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save assignment" }));
+    await waitFor(() => {
+      const body = mockApi.mock.calls.find(([, options]) => options?.method === "POST")?.[1]?.body as
+        | { bindings: { image_profiles: { server: { provider: string; allow_public_web_egress: boolean } } } }
+        | undefined;
+      expect(body?.bindings.image_profiles.server).toMatchObject({ provider: "aws", allow_public_web_egress: false });
+    });
   });
 
   it("lets an administrator bind a prepromoted directory image", async () => {
