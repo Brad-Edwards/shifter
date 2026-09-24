@@ -6,13 +6,24 @@ import tempfile
 
 import pytest
 
-from bootstrap_core import set_assume_yes
-from gcp_foundation import bootstrap_gcp_foundation
+from bootstrap_core import get_repo_root, set_assume_yes
+from gcp_foundation import DESTROY_PROTECTED_REFS, bootstrap_gcp_foundation
 
 
-@pytest.fixture
-def inputs(tmp_path):
-    path = tmp_path / "foundation.json"
+def _destroy(ref, workflow_ref=None):
+    return {
+        "destroy": [
+            {
+                "environment": "example-destroy",
+                "ref": ref,
+                "workflow_ref": workflow_ref or f"example/shifter/.github/workflows/gcp-dev-destroy.yml@{ref}",
+                "reusable_workflow_ref": "",
+            }
+        ]
+    }
+
+
+def _write_inputs(path, purpose_contexts):
     path.write_text(
         json.dumps(
             {
@@ -24,13 +35,18 @@ def inputs(tmp_path):
                 "github_repo": "shifter",
                 "github_repository_id": "456",
                 "github_owner_id": "789",
-                "purpose_contexts": {},
+                "purpose_contexts": purpose_contexts,
                 "terraform_state_bucket_name": "example-project-state",
                 "release_evidence_bucket_name": "example-project-evidence",
             }
         )
     )
     return path
+
+
+@pytest.fixture
+def inputs(tmp_path):
+    return _write_inputs(tmp_path / "foundation.json", _destroy("refs/heads/dev"))
 
 
 def test_new_foundation_creates_backend_before_saved_plan_apply(inputs, monkeypatch):
@@ -84,8 +100,38 @@ def test_incomplete_inputs_fail_before_commands(tmp_path, monkeypatch):
     assert calls == []
 
 
-def test_dry_run_executes_no_commands(inputs, monkeypatch):
+@pytest.mark.parametrize("ref", DESTROY_PROTECTED_REFS)
+def test_dry_run_executes_no_commands(ref, tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: calls.append(args))
-    bootstrap_gcp_foundation(str(inputs), dry_run=True)
+    bootstrap_gcp_foundation(str(_write_inputs(tmp_path / "foundation.json", _destroy(ref))), dry_run=True)
     assert calls == []
+
+
+@pytest.mark.parametrize(
+    "purpose_contexts",
+    [
+        _destroy("refs/heads/balrog"),
+        _destroy("refs/heads/dev", "example/shifter/.github/workflows/gcp-dev-destroy.yml@refs/heads/balrog"),
+    ],
+)
+def test_unprotected_destroy_tuple_fails_before_commands(purpose_contexts, tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(ValueError, match="Destroy purpose tuple"):
+        bootstrap_gcp_foundation(str(_write_inputs(tmp_path / "foundation.json", purpose_contexts)))
+    assert calls == []
+
+
+def test_destroy_refs_match_workflow_guard_and_terraform_contract():
+    root = get_repo_root()
+    workflow = (root / ".github/workflows/gcp-dev-destroy.yml").read_text()
+    assert f"{'|'.join(DESTROY_PROTECTED_REFS)}) ;;" in workflow
+    allowed = "contains([" + ", ".join(f'"{ref}"' for ref in DESTROY_PROTECTED_REFS) + "], context.ref)"
+    for inventory in (
+        "platform/terraform/gcp/global/cicd-oidc/inventory.tf",
+        "platform/terraform/gcp/modules/cicd-oidc-identity/inventory.tf",
+    ):
+        assert allowed in (root / inventory).read_text()
+    example = json.loads((root / "scripts/bootstrap/gcp-foundation.example.tfvars.json").read_text())
+    assert all(context["ref"] in DESTROY_PROTECTED_REFS for context in example["purpose_contexts"]["destroy"])
