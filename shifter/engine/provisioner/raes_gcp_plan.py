@@ -195,13 +195,14 @@ def build_raes_range_cell_plan(
     # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
     # a `none` (zero-egress) range omits it so its subnets carry no NAT path.
     if (resolved_options.egress_policy.mode or "status-quo").strip().lower() != "none":
-        nat_key = "router_nat" if manage_network else "shared_nat"
-        nat_plan = (
-            range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
-            if manage_network
-            else shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
-        )
-        plan[nat_key] = cast(RouterNatPlan, nat_plan)
+        if manage_network:
+            plan["router_nat"] = cast(
+                RouterNatPlan, range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
+            )
+        else:
+            plan["shared_nat"] = cast(
+                RouterNatPlan, shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
+            )
     return plan
 
 

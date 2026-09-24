@@ -42,7 +42,9 @@ def range_owner_reassignment_available(range_instance_pk: int) -> bool:
     return _cs.engine_range_owner_reassignment_available(instance.request.request_id)
 
 
-def range_egress_compatible_with_event(range_instance_pk: int, event_owner: User, event_workspace_id: int) -> bool:
+def range_egress_compatible_with_event(
+    range_instance_pk: int, event_owner: User, event_workspace_id: int | None
+) -> bool:
     """Compare a spare's pinned posture with the current authorized event policy."""
     from cms.services._range_workspace import (
         reauthorize_ctf_policy_workspace_locked,
@@ -53,6 +55,8 @@ def range_egress_compatible_with_event(range_instance_pk: int, event_owner: User
     instance = RangeInstance.objects.select_related("request").filter(pk=range_instance_pk).first()
     if instance is None or instance.request is None:
         return False
+    if event_workspace_id is None:
+        return True  # Personal-scope events have no separate event policy source.
     reauthorize_ctf_policy_workspace_locked(event_owner, event_workspace_id)
     current_mode = resolve_effective_egress_mode_locked(event_workspace_id)
     pinned_mode = get_pinned_range_egress_mode_by_request(instance.request.request_id)
