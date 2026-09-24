@@ -142,6 +142,37 @@ slices that own those integrations. This ADR does not authorize a custom
 authentication protocol, policy engine, token format, secret broker, JIT/Vault
 dependency, or organizational approval workflow.
 
+### Administration at cutover
+
+At S8, every application administration operation, including its direct service
+call, uses the registered action, resolved target/scope, live principal, and
+credential ceiling through the shared authorization contract. Human and service
+application administrators can perform the same valid application operations
+when their credentials permit them. Django staff/superuser flags, model
+permissions, customer membership, and browser capabilities remain distinct
+facts; none substitutes for an application policy decision. A browser-only
+credential ceremony still requires its own session and CSRF admission.
+
+This supersedes ADR-045-R3's staff-session-only audit-read gate at S8: the
+deployment-global ledger is read through `installation.read_audit`, with the
+same policy check for its list and detail views and an authorized credential.
+The current ledger has no trustworthy customer scope per row, so a customer
+role cannot filter or read it by inferred entity, actor, selected workspace,
+or request parameter. Tenant-visible audit would require explicit scope at
+emission, integrity-protected persistence, and a separately registered scoped
+read action. Historical rows without such evidence remain installation-only.
+
+The same S8 policy boundary supersedes the Django-superuser-only application
+override in ADR-046-R13, quota authoring in ADR-046-R10, and organization
+overrides in ADR-048-R2/R3 for operations delivered by the new administration
+surface. Source and destination scopes must each be resolved and authorized for a transfer;
+existing owner, membership, lifecycle, cloud, and consistency constraints still
+apply. Retained Django-admin or legacy browser writes enter the same authorized
+service command or are disabled once a supported canonical UI/API path exists.
+These changes do not grant a service principal a Django admin session, make
+cloud IAM an application grant, or alter historical audit evidence. Before S8,
+the established gates remain the sole production authority.
+
 The OpenFGA application-policy boundary, supported SDK operations, durable
 write semantics, deployment contract, and cutover constraints are clarified by
 `docs/architecture/openfga-authorization-preflight-2315.md`. That clarification
@@ -185,6 +216,8 @@ changes preserve the coordinated S8 activation boundary.
 
 This decision supersedes:
 
+- ADR-045-R3's staff-session-only audit read when the S8 policy cutover occurs.
+  Shared audit ownership, append-only integrity, and denied-read evidence remain.
 - ADR-046's per-user personal organization/workspace compatibility default and
   the parts of its membership contract that use a Django user as the durable
   member identity. Its workspaces-domain ownership, scalar cross-layer

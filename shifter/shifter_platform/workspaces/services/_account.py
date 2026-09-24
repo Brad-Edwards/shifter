@@ -7,7 +7,7 @@ from uuid import UUID
 
 from django.db import transaction
 
-from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log
+from shared.audit import AuditAction, AuditEntityType, AuditEvent, RequestAudit, audit_log
 from shared.identity_scope import PrincipalRef, ResourceScope
 from workspaces.models import Account, AccountMembership, Organization, Workspace
 
@@ -83,7 +83,13 @@ def hierarchy_target_scope(target_type: str, target_uuid: UUID) -> ResourceScope
     raise AccountScopeError(_DENIED)
 
 
-def _audit_create(entity_type: str, entity_id: int, state: dict[str, object]) -> None:
+def _audit_create(
+    entity_type: str,
+    entity_id: int,
+    state: dict[str, object],
+    actor: PrincipalRef | None = None,
+    request: RequestAudit | None = None,
+) -> None:
     """Keep structural mutation evidence bounded and in the caller transaction."""
     audit_log(
         AuditEvent(
@@ -92,6 +98,11 @@ def _audit_create(entity_type: str, entity_id: int, state: dict[str, object]) ->
             action=AuditAction.CREATE,
             new_state=state,
             context="account_hierarchy",
+            actor_type="principal" if actor is not None else "system",
+            actor_principal_uuid=actor.uuid if actor is not None else None,
+            source_ip=request.source_ip if request is not None else None,
+            user_agent=request.user_agent[:500] if request is not None else "",
+            request_id=request.request_id[:64] if request is not None else "",
         ),
         strict=True,
     )
@@ -173,24 +184,36 @@ def _ensure_individual_defaults_locked(account: Account) -> None:
         raise AccountScopeError(_DENIED)
 
 
-def _ensure_shared_defaults_locked(account: Account) -> None:
+def _ensure_shared_defaults_locked(
+    account: Account, actor: PrincipalRef | None = None, request: RequestAudit | None = None
+) -> None:
     """Create the required default organization and workspace when absent."""
     organization = Organization.objects.filter(account=account, is_default=True).first()
     if organization is None:
         organization = Organization.objects.create(account=account, name=_DEFAULT_NAME, is_default=True)
-        _audit_create(AuditEntityType.ORGANIZATION, organization.pk, {"account_id": account.pk, "default": True})
+        _audit_create(
+            AuditEntityType.ORGANIZATION, organization.pk, {"account_id": account.pk, "default": True}, actor, request
+        )
     if not Workspace.objects.filter(organization=organization, is_default=True).exists():
         workspace = Workspace.objects.create(organization=organization, name=_DEFAULT_NAME, is_default=True)
-        _audit_create(AuditEntityType.WORKSPACE, workspace.pk, {"organization_id": organization.pk, "default": True})
+        _audit_create(
+            AuditEntityType.WORKSPACE,
+            workspace.pk,
+            {"organization_id": organization.pk, "default": True},
+            actor,
+            request,
+        )
 
 
-def _ensure_defaults_locked(account: Account) -> None:
+def _ensure_defaults_locked(
+    account: Account, actor: PrincipalRef | None = None, request: RequestAudit | None = None
+) -> None:
     """Enforce the account-kind-specific default hierarchy under its lock."""
     if account.kind == Account.Kind.INDIVIDUAL:
         _ensure_individual_defaults_locked(account)
         return
     if account.kind in (Account.Kind.TEAM, Account.Kind.ENTERPRISE):
-        _ensure_shared_defaults_locked(account)
+        _ensure_shared_defaults_locked(account, actor, request)
         return
     raise AccountScopeError(_DENIED)
 
@@ -204,7 +227,14 @@ def _valid_account_declaration(kind: object, name: object, owner: PrincipalRef |
     return owner is None
 
 
-def create_account(*, kind: str, name: str, owner: PrincipalRef | None = None) -> AccountView:
+def create_account(
+    *,
+    kind: str,
+    name: str,
+    owner: PrincipalRef | None = None,
+    audit_actor: PrincipalRef | None = None,
+    request_audit: RequestAudit | None = None,
+) -> AccountView:
     """Create a typed account and its structural defaults without any grant."""
     if not _valid_account_declaration(kind, name, owner):
         raise AccountScopeError(_DENIED)
@@ -214,8 +244,14 @@ def create_account(*, kind: str, name: str, owner: PrincipalRef | None = None) -
             name=name.strip(),
             individual_principal_uuid=owner.uuid if owner is not None else None,
         )
-        _audit_create(AuditEntityType.ACCOUNT, account.pk, {"account_id": account.pk, "kind": account.kind})
-        _ensure_defaults_locked(account)
+        _audit_create(
+            AuditEntityType.ACCOUNT,
+            account.pk,
+            {"account_id": account.pk, "kind": account.kind},
+            audit_actor,
+            request_audit,
+        )
+        _ensure_defaults_locked(account, audit_actor, request_audit)
     return _account_view(account)
 
 
@@ -227,7 +263,13 @@ def ensure_default_hierarchy(account_uuid: UUID) -> AccountView:
         return _account_view(account)
 
 
-def create_account_organization(account_uuid: UUID, name: str) -> OrganizationView:
+def create_account_organization(
+    account_uuid: UUID,
+    name: str,
+    *,
+    audit_actor: PrincipalRef | None = None,
+    request_audit: RequestAudit | None = None,
+) -> OrganizationView:
     """Create one additional organization and its default workspace, no grant."""
     if not isinstance(name, str) or not name.strip() or len(name) > 200:
         raise AccountScopeError(_DENIED)
@@ -236,13 +278,32 @@ def create_account_organization(account_uuid: UUID, name: str) -> OrganizationVi
         if account.kind == Account.Kind.INDIVIDUAL:
             raise AccountScopeError(_DENIED)
         organization = Organization.objects.create(account=account, name=name.strip())
-        _audit_create(AuditEntityType.ORGANIZATION, organization.pk, {"account_id": account.pk, "default": False})
+        _audit_create(
+            AuditEntityType.ORGANIZATION,
+            organization.pk,
+            {"account_id": account.pk, "default": False},
+            audit_actor,
+            request_audit,
+        )
         workspace = Workspace.objects.create(organization=organization, name=_DEFAULT_NAME, is_default=True)
-        _audit_create(AuditEntityType.WORKSPACE, workspace.pk, {"organization_id": organization.pk, "default": True})
+        _audit_create(
+            AuditEntityType.WORKSPACE,
+            workspace.pk,
+            {"organization_id": organization.pk, "default": True},
+            audit_actor,
+            request_audit,
+        )
         return _organization_view(organization)
 
 
-def create_account_workspace(account_uuid: UUID, organization_uuid: UUID, name: str) -> WorkspaceView:
+def create_account_workspace(
+    account_uuid: UUID,
+    organization_uuid: UUID,
+    name: str,
+    *,
+    audit_actor: PrincipalRef | None = None,
+    request_audit: RequestAudit | None = None,
+) -> WorkspaceView:
     """Create an additional workspace after proving its account ancestry."""
     if not isinstance(name, str) or not name.strip() or len(name) > 200:
         raise AccountScopeError(_DENIED)
@@ -252,11 +313,23 @@ def create_account_workspace(account_uuid: UUID, organization_uuid: UUID, name: 
         if organization is None or account.kind == Account.Kind.INDIVIDUAL:
             raise AccountScopeError(_DENIED)
         workspace = Workspace.objects.create(organization=organization, name=name.strip())
-        _audit_create(AuditEntityType.WORKSPACE, workspace.pk, {"organization_id": organization.pk, "default": False})
+        _audit_create(
+            AuditEntityType.WORKSPACE,
+            workspace.pk,
+            {"organization_id": organization.pk, "default": False},
+            audit_actor,
+            request_audit,
+        )
         return _workspace_view(workspace)
 
 
-def add_account_member(account_uuid: UUID, principal: PrincipalRef) -> None:
+def add_account_member(
+    account_uuid: UUID,
+    principal: PrincipalRef,
+    *,
+    audit_actor: PrincipalRef | None = None,
+    request_audit: RequestAudit | None = None,
+) -> None:
     """Record explicit membership without assigning a role or policy."""
     if not isinstance(principal, PrincipalRef):
         raise AccountScopeError(_DENIED)
@@ -264,7 +337,13 @@ def add_account_member(account_uuid: UUID, principal: PrincipalRef) -> None:
         account = _locked_account(account_uuid)
         membership, created = AccountMembership.objects.get_or_create(account=account, principal_uuid=principal.uuid)
         if created:
-            _audit_create(AuditEntityType.ACCOUNT_MEMBERSHIP, membership.pk, {"account_id": account.pk})
+            _audit_create(
+                AuditEntityType.ACCOUNT_MEMBERSHIP,
+                membership.pk,
+                {"account_id": account.pk},
+                audit_actor,
+                request_audit,
+            )
 
 
 def _scope_account(scope: ResourceScope) -> Account:
