@@ -96,6 +96,7 @@ def _post_pinned(url: str, body: bytes, headers: dict[str, str]) -> int:
         raise _ssrf._BlockedDestinationError("Invalid webhook destination")
     pinned_ips = _ssrf._resolve_and_validate(hostname, port)
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     for pinned_ip in pinned_ips:
         connection = _ssrf._build_https_connection(
             hostname=hostname,
@@ -107,7 +108,7 @@ def _post_pinned(url: str, body: bytes, headers: dict[str, str]) -> int:
         try:
             connection.request("POST", _request_target(parsed), body=body, headers=headers)
             return int(connection.getresponse().status)
-        except (OSError, http.client.HTTPException, ssl.SSLError, TimeoutError):
+        except (OSError, http.client.HTTPException):
             continue
         finally:
             with suppress(Exception):
@@ -193,7 +194,7 @@ def _deliver_with_retries(webhook_pk: UUID, url: str, secret: str, body: bytes, 
         except DatabaseError:
             status = "failed:unavailable"
             break
-        except (OSError, http.client.HTTPException, ssl.SSLError, TimeoutError):
+        except (OSError, http.client.HTTPException):
             status = "failed:transport"
         if attempt < _MAX_ATTEMPTS:
             time.sleep(_BACKOFF_BASE_SECONDS**attempt)

@@ -40,6 +40,7 @@ from ._authorization_commands import (
 
 _MAX_DELEGATION_DESCENDANTS = 1_000
 _SUBJECT_UNAVAILABLE = "authorization subject is unavailable"
+_TARGET_UNAVAILABLE = "authorization target is unavailable"
 
 
 def _management_action(target_type: str) -> str:
@@ -91,11 +92,10 @@ def _bounded_rows[T: Model](query: QuerySet[T], remaining: int) -> tuple[T, ...]
     return rows
 
 
-def _authoritative_descendant_targets(target: TargetRef) -> tuple[tuple[TargetRef, ResourceScope], ...]:
-    """Resolve a bounded complete descendant set from SQL-owning domains."""
-    if target.type in {"event", "range"}:
-        return ()
-
+def _descendant_queries(
+    target: TargetRef,
+) -> tuple[QuerySet[Account], QuerySet[Organization], QuerySet[Workspace]]:
+    """Select only descendants of the concrete target."""
     account_query = Account.objects.none()
     organization_query = Organization.objects.none()
     workspace_query = Workspace.objects.none()
@@ -104,7 +104,7 @@ def _authoritative_descendant_targets(target: TargetRef) -> tuple[tuple[TargetRe
         organization_query = Organization.objects.filter(account__isnull=False)
         workspace_query = Workspace.objects.filter(organization__account__isnull=False)
     elif target.uuid is None:
-        raise AuthorizationMutationConflict("authorization target is unavailable")
+        raise AuthorizationMutationConflict(_TARGET_UNAVAILABLE)
     elif target.type == "account":
         organization_query = Organization.objects.filter(account__uuid=target.uuid)
         workspace_query = Workspace.objects.filter(organization__account__uuid=target.uuid)
@@ -112,6 +112,50 @@ def _authoritative_descendant_targets(target: TargetRef) -> tuple[tuple[TargetRe
         workspace_query = Workspace.objects.filter(organization__uuid=target.uuid)
     elif target.type == "workspace":
         workspace_query = Workspace.objects.filter(uuid=target.uuid)
+    return account_query, organization_query, workspace_query
+
+
+def _workspace_descendants(
+    target_type: str, workspaces: tuple[Workspace, ...], remaining: int
+) -> tuple[tuple[TargetRef, ResourceScope], ...]:
+    """Include workspace targets before their bounded event/range leaves."""
+    descendants: list[tuple[TargetRef, ResourceScope]] = []
+    for workspace in workspaces:
+        scope = ResourceScope(
+            "account", _organization_account_uuid(workspace.organization), workspace.organization.uuid, workspace.uuid
+        )
+        if target_type != "workspace":
+            descendants.append((TargetRef("workspace", workspace.uuid), scope))
+    remaining -= len(descendants)
+    for workspace in workspaces:
+        scope = ResourceScope(
+            "account", _organization_account_uuid(workspace.organization), workspace.organization.uuid, workspace.uuid
+        )
+        external = resolve_authorization_descendants((workspace.pk,), remaining)
+        descendants.extend((item, scope) for item in external)
+        remaining -= len(external)
+    return tuple(descendants)
+
+
+def _nonworkspace_event_descendants(target: TargetRef, remaining: int) -> tuple[tuple[TargetRef, ResourceScope], ...]:
+    """Include account and organization events outside workspaces."""
+    if target.type not in {"installation", "account", "organization"}:
+        return ()
+    if target.type == "installation":
+        parent_scope = ResourceScope("installation")
+    else:
+        if target.uuid is None:
+            raise AuthorizationMutationConflict(_TARGET_UNAVAILABLE)
+        parent_scope = hierarchy_target_scope(target.type, target.uuid)
+    return resolve_authorization_nonworkspace_events(parent_scope, remaining)
+
+
+def _authoritative_descendant_targets(target: TargetRef) -> tuple[tuple[TargetRef, ResourceScope], ...]:
+    """Resolve a bounded complete descendant set from SQL-owning domains."""
+    if target.type in {"event", "range"}:
+        return ()
+
+    account_query, organization_query, workspace_query = _descendant_queries(target)
 
     remaining = _MAX_DELEGATION_DESCENDANTS
     descendants: list[tuple[TargetRef, ResourceScope]] = []
@@ -130,29 +174,9 @@ def _authoritative_descendant_targets(target: TargetRef) -> tuple[tuple[TargetRe
         )
         remaining -= len(organizations)
     workspaces = _bounded_rows(workspace_query.select_related("organization__account"), remaining)
-    for workspace in workspaces:
-        scope = ResourceScope(
-            "account", _organization_account_uuid(workspace.organization), workspace.organization.uuid, workspace.uuid
-        )
-        if target.type != "workspace":
-            descendants.append((TargetRef("workspace", workspace.uuid), scope))
+    descendants.extend(_workspace_descendants(target.type, workspaces, remaining))
     remaining = _MAX_DELEGATION_DESCENDANTS - len(descendants)
-    for workspace in workspaces:
-        scope = ResourceScope(
-            "account", _organization_account_uuid(workspace.organization), workspace.organization.uuid, workspace.uuid
-        )
-        external = resolve_authorization_descendants((workspace.pk,), remaining)
-        descendants.extend((item, scope) for item in external)
-        remaining -= len(external)
-    if target.type in {"installation", "account", "organization"}:
-        if target.type == "installation":
-            parent_scope = ResourceScope("installation")
-        else:
-            if target.uuid is None:
-                raise AuthorizationMutationConflict("authorization target is unavailable")
-            parent_scope = hierarchy_target_scope(target.type, target.uuid)
-        nonworkspace_events = resolve_authorization_nonworkspace_events(parent_scope, remaining)
-        descendants.extend(nonworkspace_events)
+    descendants.extend(_nonworkspace_event_descendants(target, remaining))
     return tuple(descendants)
 
 
@@ -225,16 +249,16 @@ def _resolve_concrete_target(target: TargetRef, scope: ResourceScope) -> None:
     if target.type not in {"event", "range"}:
         return
     if target.uuid is None:
-        raise AuthorizationMutationConflict("authorization target is unavailable")
+        raise AuthorizationMutationConflict(_TARGET_UNAVAILABLE)
     if target.type == "event":
         if resolve_authorization_event_scope(target.uuid) != scope:
-            raise AuthorizationMutationConflict("authorization target is unavailable")
+            raise AuthorizationMutationConflict(_TARGET_UNAVAILABLE)
         return
     resolved = resolve_resource_scope(scope)
     if resolved.workspace_id is None or target not in resolve_authorization_descendants(
         (resolved.workspace_id,), _MAX_DELEGATION_DESCENDANTS
     ):
-        raise AuthorizationMutationConflict("authorization target is unavailable")
+        raise AuthorizationMutationConflict(_TARGET_UNAVAILABLE)
 
 
 def _resolve_native_change(request: NativeRelationshipMutationRequest) -> None:

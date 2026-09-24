@@ -21,6 +21,7 @@ AuthorizationEventScopeResolver = Callable[[UUID], ResourceScope]
 AuthorizationNonworkspaceEventResolver = Callable[[ResourceScope, int], tuple[tuple[TargetRef, ResourceScope], ...]]
 _event_scope_resolver: AuthorizationEventScopeResolver | None = None
 _nonworkspace_event_resolver: AuthorizationNonworkspaceEventResolver | None = None
+_EVENT_INVENTORY_UNAVAILABLE = "Authorization event inventory is unavailable"
 
 
 def bind_authorization_event_inventory(
@@ -42,7 +43,7 @@ def bind_authorization_event_inventory(
 def resolve_authorization_event_scope(event_uuid: UUID) -> ResourceScope:
     """Resolve an event's exact SQL ancestry, failing closed on missing data."""
     if _event_scope_resolver is None:
-        raise AuthorizationDescendantResolutionError("Authorization event inventory is unavailable")
+        raise AuthorizationDescendantResolutionError(_EVENT_INVENTORY_UNAVAILABLE)
     try:
         scope = _event_scope_resolver(event_uuid)
     except Exception as exc:
@@ -52,32 +53,41 @@ def resolve_authorization_event_scope(event_uuid: UUID) -> ResourceScope:
     return scope
 
 
+def _valid_nonworkspace_inventory_request(parent: ResourceScope, limit: int) -> bool:
+    """Accept only bounded account or installation ancestry requests."""
+    return (
+        isinstance(parent, ResourceScope)
+        and parent.workspace_uuid is None
+        and isinstance(limit, int)
+        and not isinstance(limit, bool)
+        and limit >= 0
+    )
+
+
+def _valid_nonworkspace_event(parent: ResourceScope, target: TargetRef, scope: ResourceScope) -> bool:
+    """Require each returned event to remain at the requested SQL ancestry."""
+    return (
+        target.type == "event"
+        and scope.kind == "account"
+        and scope.workspace_uuid is None
+        and (parent.kind != "account" or scope.account_uuid == parent.account_uuid)
+        and (parent.organization_uuid is None or scope.organization_uuid == parent.organization_uuid)
+    )
+
+
 def resolve_authorization_nonworkspace_events(
     parent: ResourceScope, limit: int
 ) -> tuple[tuple[TargetRef, ResourceScope], ...]:
     """Return bounded events placed directly in an account or organization."""
     if _nonworkspace_event_resolver is None:
-        raise AuthorizationDescendantResolutionError("Authorization event inventory is unavailable")
-    if (
-        not isinstance(parent, ResourceScope)
-        or parent.workspace_uuid is not None
-        or not isinstance(limit, int)
-        or isinstance(limit, bool)
-        or limit < 0
-    ):
+        raise AuthorizationDescendantResolutionError(_EVENT_INVENTORY_UNAVAILABLE)
+    if not _valid_nonworkspace_inventory_request(parent, limit):
         raise AuthorizationDescendantResolutionError("Authorization event inventory request is invalid")
     try:
         rows = _nonworkspace_event_resolver(parent, limit + 1)
     except Exception as exc:
-        raise AuthorizationDescendantResolutionError("Authorization event inventory is unavailable") from exc
-    if len(rows) > limit or any(
-        target.type != "event"
-        or scope.kind != "account"
-        or scope.workspace_uuid is not None
-        or (parent.kind == "account" and scope.account_uuid != parent.account_uuid)
-        or (parent.organization_uuid is not None and scope.organization_uuid != parent.organization_uuid)
-        for target, scope in rows
-    ):
+        raise AuthorizationDescendantResolutionError(_EVENT_INVENTORY_UNAVAILABLE) from exc
+    if len(rows) > limit or not all(_valid_nonworkspace_event(parent, target, scope) for target, scope in rows):
         raise AuthorizationDescendantResolutionError("Authorization event inventory is invalid")
     return rows
 
