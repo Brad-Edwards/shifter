@@ -332,6 +332,15 @@ class TestReassignSpareRecovery:
     """``strategy=reassign_spare``: consume an event-scoped pooled spare."""
 
     @pytest.mark.django_db
+    def test_personal_scope_event_has_no_separate_egress_policy(self, event_with_scenario, organizer_user):
+        from ctf.bridges import cms_range_egress_compatible_with_event
+
+        spare_user = create_managed_spare_user()
+        _spare, spare_range = _make_pooled_spare(event_with_scenario, owner=spare_user)
+
+        assert cms_range_egress_compatible_with_event(spare_range.pk, organizer_user, None)
+
+    @pytest.mark.django_db
     def test_policy_changed_after_spare_provision_refuses_claim_before_old_range_teardown(
         self, event_with_scenario, rich_participant, organizer_user
     ):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -37,7 +38,7 @@ class RoutersCollectionClient(ComputeCollectionClient, Protocol):
     def patch(self, **kwargs: object) -> object:
         """Patch NAT gateway membership after a serialized fresh read."""
 
-    def list(self, **kwargs: object) -> object:
+    def list(self, **kwargs: object) -> Iterable[object]:
         """List regional routers to validate quota and conflicting NAT scopes."""
 
 

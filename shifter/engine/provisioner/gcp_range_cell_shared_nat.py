@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 
 from gcp_range_cell_clients import GCEClients
@@ -74,6 +74,12 @@ def _field(value: object, name: str) -> object:
     return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
 
 
+def _items(value: object) -> Iterable[object]:
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes, Mapping)):
+        return value
+    return ()
+
+
 def _router(plan: RangeCellPlan, clients: GCEClients, name: str) -> object | None:
     return _get_or_none(
         clients.routers.get,
@@ -90,14 +96,14 @@ def _gateway_subnets(plan: RangeCellPlan, router: object) -> dict[str, list[str]
         raise RuntimeError("shared-nat-network-mismatch")
     expected_prefix = f"{plan['shared_nat']['nat_name']}-"
     result: dict[str, list[str]] = {}
-    for gateway in _field(router, "nats") or []:
+    for gateway in _items(_field(router, "nats")):
         name = str(_field(gateway, "name") or "")
         mode = _field(gateway, "source_subnetwork_ip_ranges_to_nat")
         mode_name = getattr(mode, "name", str(mode))
         if not name.startswith(expected_prefix) or mode_name != "LIST_OF_SUBNETWORKS":
             raise RuntimeError("shared-nat-ownership-mismatch")
         result[name] = [
-            _canonical_subnet_link(str(_field(item, "name") or "")) for item in (_field(gateway, "subnetworks") or [])
+            _canonical_subnet_link(str(_field(item, "name") or "")) for item in _items(_field(gateway, "subnetworks"))
         ]
     return result
 
@@ -108,7 +114,7 @@ def _bridge_router_names(plan: RangeCellPlan) -> set[str]:
     return {f"{network_name}-nat", f"{network_name}-nat-{plan['region']}"}
 
 
-def _bridge_replay(plan: RangeCellPlan, clients: GCEClients, routers: Sequence[object]) -> bool:
+def _bridge_replay(plan: RangeCellPlan, clients: GCEClients, routers: Iterable[object]) -> bool:
     """Keep an existing range on Terraform's bridge; never enroll a new subnet there."""
     nat = plan.get("shared_nat")
     if nat is None:
@@ -118,7 +124,7 @@ def _bridge_replay(plan: RangeCellPlan, clients: GCEClients, routers: Sequence[o
     for router in routers:
         if str(_field(router, "name") or "") not in _bridge_router_names(plan):
             continue
-        for gateway in _field(router, "nats") or []:
+        for gateway in _items(_field(router, "nats")):
             allocation = _field(gateway, "nat_ip_allocate_option")
             if getattr(allocation, "name", str(allocation)) != "MANUAL_ONLY":
                 continue
@@ -127,7 +133,7 @@ def _bridge_replay(plan: RangeCellPlan, clients: GCEClients, routers: Sequence[o
                 continue
             covered.update(
                 _canonical_subnet_link(str(_field(subnet, "name") or ""))
-                for subnet in (_field(gateway, "subnetworks") or [])
+                for subnet in _items(_field(gateway, "subnetworks"))
             )
     if not desired or not desired.issubset(covered):
         return False
@@ -174,12 +180,12 @@ def assert_shared_nat_capacity(plan: RangeCellPlan, clients: GCEClients) -> None
             name = str(_field(router, "name") or "")
             shared_exists |= own is not None and name == own["router_name"]
             legacy_exists |= name == legacy_name
-            for gateway in _field(router, "nats") or []:
+            for gateway in _items(_field(router, "nats")):
                 scope = _field(gateway, "source_subnetwork_ip_ranges_to_nat")
                 mode = getattr(scope, "name", str(scope))
                 if mode != "LIST_OF_SUBNETWORKS":
                     raise RuntimeError("shared-nat-unbounded-or-unknown-scope")
-                listed = {str(_field(subnet, "name") or "") for subnet in (_field(gateway, "subnetworks") or [])}
+                listed = {str(_field(subnet, "name") or "") for subnet in _items(_field(gateway, "subnetworks"))}
                 overlap = any(any(link.endswith(want) for link in listed) for want in desired)
                 bridge_owner = bridge_replay and name in _bridge_router_names(plan)
                 if overlap and (own is None or name not in {own["router_name"], legacy_name}) and not bridge_owner:

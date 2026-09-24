@@ -332,11 +332,12 @@ def render_range_cell_plan(
     # a `none` (zero-egress) range omits it so its subnets carry no NAT path
     # (PLAT-238, ADR-026-R6), mirroring the RAES plan builder.
     if egress_policy.mode.strip().lower() != "none":
-        nat_key = "router_nat" if manage_network else "shared_nat"
-        nat_plan = (
-            range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
-            if manage_network
-            else shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
-        )
-        plan[nat_key] = cast(RouterNatPlan, nat_plan)
+        if manage_network:
+            plan["router_nat"] = cast(
+                RouterNatPlan, range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
+            )
+        else:
+            plan["shared_nat"] = cast(
+                RouterNatPlan, shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
+            )
     return plan

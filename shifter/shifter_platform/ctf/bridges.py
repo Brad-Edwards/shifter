@@ -412,7 +412,9 @@ def cms_range_owner_reassignment_available(range_instance_id: int) -> bool:
     return cms_services.range_owner_reassignment_available(range_instance_id)
 
 
-def cms_range_egress_compatible_with_event(range_instance_id: int, event_owner: User, event_workspace_id: int) -> bool:
+def cms_range_egress_compatible_with_event(
+    range_instance_id: int, event_owner: User, event_workspace_id: int | None
+) -> bool:
     """Check a spare's pinned posture against its event policy before reservation."""
     import cms.services as cms_services
 
