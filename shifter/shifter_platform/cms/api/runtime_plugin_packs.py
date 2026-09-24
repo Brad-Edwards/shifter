@@ -34,6 +34,7 @@ class RuntimeTargetImageProfileSerializer(serializers.Serializer):
     machine_type = serializers.CharField(max_length=100, allow_blank=True, default="")
     disk_size_gb = serializers.IntegerField(min_value=1, max_value=16_384, allow_null=True, default=None)
     disk_type = serializers.CharField(max_length=100, allow_blank=True, default="")
+    allow_public_web_egress = serializers.BooleanField(default=False)
     bootstrap_capability = serializers.CharField(max_length=64, default="standard")
     management_ssh_username = serializers.CharField(max_length=32, allow_blank=True, default="")
     management_ssh_port = serializers.IntegerField(min_value=1, max_value=65_535, default=22)
