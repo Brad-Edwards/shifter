@@ -54,6 +54,8 @@ def _audit(actor: CredentialContext, request: RequestAudit | None) -> WorkspaceA
 
 def _locked_workspace(workspace_uuid: UUID, scope: ResourceScope) -> Workspace:
     """Recheck the resolved target's persisted ancestry while holding its row lock."""
+    if scope.organization_uuid is None:
+        raise AccountScopeError(_DENIED)
     workspace = (
         Workspace.objects.select_related("organization")
         .select_for_update()

@@ -396,12 +396,13 @@ def admin_list_accounts(
     results: list[AccountAdminView] = []
     cursor = 0
     exact_target = actor.ceiling.target if not global_access else None
-    if exact_target is not None and exact_target.type != "account":
+    exact_uuid = exact_target.uuid if exact_target is not None else None
+    if exact_target is not None and (exact_target.type != "account" or exact_uuid is None):
         return AccountAdminPage(0, ())
     while True:
         query = Account.objects.filter(pk__gt=cursor)
-        if exact_target is not None:
-            query = query.filter(uuid=exact_target.uuid)
+        if exact_uuid is not None:
+            query = query.filter(uuid=exact_uuid)
         batch = tuple(query.order_by("pk")[:_LIST_BATCH_SIZE])
         if not batch:
             break

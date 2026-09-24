@@ -28,7 +28,7 @@ from shared.audit import request_audit
 from shared.authorization import AuthorizationProviderBindingError, configured_authorization_provider
 
 
-class _PolicyAdminView:
+class _PolicyAdminView(APIView):
     """Shared admission and bounded policy errors for the prepared S8 views."""
 
     authentication_classes = [ApiTokenAuthentication, SessionAuthentication]

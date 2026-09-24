@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID
 
 from shared.authorization import AuthorizationProvider, AuthorizationRequest, TargetRef
@@ -102,7 +103,7 @@ def _allowed_batch(
     actor: CredentialContext,
     provider: AuthorizationProvider,
     action: str,
-    target_type: str,
+    target_type: Literal["organization", "workspace"],
     uuids: tuple[UUID, ...],
 ) -> tuple[bool, ...]:
     """Require complete policy results for SQL-owned targets before exposing them."""
@@ -141,15 +142,18 @@ def admin_list_organizations(
     if account is None or account.kind == Account.Kind.INDIVIDUAL:
         raise AccountScopeError(_DENIED)
     exact = actor.ceiling.target
-    if "organization.read" not in actor.ceiling.actions or (exact is not None and exact.type != "organization"):
+    exact_uuid = exact.uuid if exact is not None else None
+    if "organization.read" not in actor.ceiling.actions or (
+        exact is not None and (exact.type != "organization" or exact_uuid is None)
+    ):
         return OrganizationAdminPage(0, ())
 
     count = cursor = 0
     results: list[OrganizationAdminView] = []
     while True:
         query = Organization.objects.filter(account=account, pk__gt=cursor)
-        if exact is not None:
-            query = query.filter(uuid=exact.uuid)
+        if exact_uuid is not None:
+            query = query.filter(uuid=exact_uuid)
         batch = tuple(query.order_by("pk")[:_BATCH_SIZE])
         if not batch:
             break
@@ -182,15 +186,18 @@ def admin_list_workspaces(
     if organization is None:
         raise AccountScopeError(_DENIED)
     exact = actor.ceiling.target
-    if "workspace.read" not in actor.ceiling.actions or (exact is not None and exact.type != "workspace"):
+    exact_uuid = exact.uuid if exact is not None else None
+    if "workspace.read" not in actor.ceiling.actions or (
+        exact is not None and (exact.type != "workspace" or exact_uuid is None)
+    ):
         return WorkspaceAdminPage(0, ())
 
     count = cursor = 0
     results: list[WorkspaceAdminView] = []
     while True:
         query = Workspace.objects.filter(organization=organization, archived_at__isnull=True, pk__gt=cursor)
-        if exact is not None:
-            query = query.filter(uuid=exact.uuid)
+        if exact_uuid is not None:
+            query = query.filter(uuid=exact_uuid)
         batch = tuple(query.order_by("pk")[:_BATCH_SIZE])
         if not batch:
             break

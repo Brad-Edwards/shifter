@@ -38,6 +38,15 @@ from workspaces.api.serializers import (
 )
 
 
+def _target_ref(target_type: str, target_uuid: UUID) -> TargetRef:
+    """Accept only the two prepared customer authorization scopes."""
+    if target_type == "account":
+        return TargetRef("account", target_uuid)
+    if target_type == "organization":
+        return TargetRef("organization", target_uuid)
+    raise AuthorizationAPIError("authorization_denied", 403)
+
+
 def _context(request: Request, target_type: str, target_uuid: UUID, account_uuid: UUID | None):
     """Resolve exact SQL ancestry and reject a path naming a different parent."""
     if target_type not in {"account", "organization"}:
@@ -79,7 +88,7 @@ def _action_result(request: Request, target_type: str, target_uuid: UUID, accoun
         credential=credential.ceiling,
         subject=subject,
         action=data["action"],
-        target=TargetRef(target_type, target_uuid),
+        target=_target_ref(target_type, target_uuid),
         scope=scope,
         effect=PolicyEffect(data["effect"]),
         idempotency_key=data["idempotency_key"],
@@ -183,7 +192,7 @@ class ScopedAuthorizationPredefinedAssignmentView(_AuthorizationAPIView):
         change = AdministrativeRoleChange(
             RelationshipSubject(data["subject_kind"], data["subject_uuid"]),
             data["policy_code"],
-            TargetRef(target_type, target_uuid),
+            _target_ref(target_type, target_uuid),
             PolicyEffect(data["effect"]),
         )
         return _native_result(request, target_type, target_uuid, account_uuid, change, data["idempotency_key"])
