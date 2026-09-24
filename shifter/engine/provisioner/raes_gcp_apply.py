@@ -216,6 +216,8 @@ def _provision_raes_resources(
         _record_created(
             created, "subnetwork", subnet["resource_name"], _ensure_subnetwork(plan, runtime.clients, subnet)
         )
+    if plan.get("shared_nat") is not None:
+        _ensure_router_nat(plan, runtime.clients)
     if router_nat := plan.get("router_nat"):
         _record_created(created, "router", router_nat["router_name"], _ensure_router_nat(plan, runtime.clients))
     for firewall in plan["firewalls"]:

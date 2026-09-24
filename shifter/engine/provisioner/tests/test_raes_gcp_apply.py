@@ -17,6 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import raes_gcp_apply as apply_module
 from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
@@ -335,6 +336,22 @@ class TestApply:
         )
         # A none range carries no NAT path at all: no range-owned router is created.
         assert not clients.routers.insert.called
+
+    def test_shared_vpc_reconciles_nat_during_apply(self, monkeypatch):
+        ensure_nat = MagicMock()
+        monkeypatch.setattr(apply_module, "_ensure_router_nat", ensure_nat)
+        monkeypatch.setattr(apply_module, "assert_shared_nat_capacity", MagicMock(), raising=False)
+        plan = {
+            "manage_network": False,
+            "subnets": [],
+            "shared_nat": {"router_name": "shared-nat-router"},
+            "firewalls": [],
+            "instances": [],
+        }
+        runtime = SimpleNamespace(clients=object())
+
+        assert apply_module._provision_raes_resources(plan, runtime, {}, {}, {}) == []
+        ensure_nat.assert_called_once_with(plan, runtime.clients)
 
     def test_ssh_secret_keyed_on_raes_instance_not_scenario(self):
         clients = _clients()
