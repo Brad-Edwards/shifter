@@ -6,7 +6,7 @@ import base64
 import logging
 from collections.abc import Callable
 
-from config import GCERangeCellConfig, load_gce_range_cell_config
+from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import (
     GCEGuestSecretOps,
@@ -15,11 +15,15 @@ from gcp_range_cell_credentials import (
     _default_vertex_ops,
 )
 from gcp_range_cell_destroy import destroy_range_cell
+from gcp_range_cell_host_binding import (
+    _assert_instance_image_binding,
+    _assert_preconfigured_host_binding,
+    _host_public_key_from_instance,
+)
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, range_cell_result, subnet_outputs
 from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_resources import (
-    HOST_PUBLIC_KEY_METADATA_KEY,
     address_resource,
     firewall_resource,
     instance_resource,
@@ -51,18 +55,19 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> None:
+def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> bool:
     """Create the range VPC if it is missing."""
     name = plan["network"]["name"]
     existing = _get_or_none(clients.networks.get, clients.google_exceptions, project=plan["project_id"], network=name)
     if existing is not None:
         logger.info("GCE range network exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.networks.insert(project=plan["project_id"], network_resource=network_resource(plan))
     _wait_for_operation(plan, clients, operation, "global")
+    return True
 
 
-def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetPlan) -> None:
+def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetPlan) -> bool:
     """Create a range subnetwork if it is missing."""
     name = subnet["resource_name"]
     existing = _get_or_none(
@@ -74,16 +79,17 @@ def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetP
     )
     if existing is not None:
         logger.info("GCE range subnetwork exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.subnetworks.insert(
         project=plan["project_id"],
         region=plan["region"],
         subnetwork_resource=subnetwork_resource(plan, subnet),
     )
     _wait_for_operation(plan, clients, operation, "region")
+    return True
 
 
-def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> None:
+def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> bool:
     """Create one range firewall rule, or reconcile an existing rule to the plan.
 
     Name existence is not correctness (#1711 / ADR-039-R9): a rule that already
@@ -100,13 +106,14 @@ def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: Firewal
     if existing is None:
         operation = clients.firewalls.insert(project=plan["project_id"], firewall_resource=body)
         _wait_for_operation(plan, clients, operation, "global")
-        return
+        return True
     logger.info("GCE range firewall reconcile name_fp=%s", safe_log_fingerprint(name))
     operation = clients.firewalls.patch(project=plan["project_id"], firewall=name, firewall_resource=body)
     _wait_for_operation(plan, clients, operation, "global")
+    return False
 
 
-def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
+def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
     """Create the range-owned Cloud Router + NAT if the plan carries one (PLAT-238).
 
     Present only for a non-``none`` range; a zero-egress range has no ``router_nat``
@@ -115,7 +122,7 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
     """
     router_nat = plan.get("router_nat")
     if router_nat is None:
-        return
+        return False
     name = router_nat["router_name"]
     existing = _get_or_none(
         clients.routers.get,
@@ -126,16 +133,17 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
     )
     if existing is not None:
         logger.info("GCE range router/NAT exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.routers.insert(
         project=plan["project_id"],
         region=plan["region"],
         router_resource=router_nat_resource(plan),
     )
     _wait_for_operation(plan, clients, operation, "region")
+    return True
 
 
-def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> None:
+def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> bool:
     """Reserve an internal address for one range instance."""
     name = instance["address_name"]
     existing = _get_or_none(
@@ -147,49 +155,14 @@ def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: Instance
     )
     if existing is not None:
         logger.info("GCE range address exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.addresses.insert(
         project=plan["project_id"],
         region=plan["region"],
         address_resource=address_resource(instance),
     )
     _wait_for_operation(plan, clients, operation, "region")
-
-
-def _host_public_key_from_instance(existing: object) -> str:
-    """Read the provisioner-issued SSH host public key from an existing instance.
-
-    On a reconcile the guest already serves the host key injected at create time,
-    so recover it from instance metadata rather than minting a mismatched one.
-    """
-    metadata = getattr(existing, "metadata", None)
-    for item in getattr(metadata, "items", None) or []:
-        if getattr(item, "key", None) == HOST_PUBLIC_KEY_METADATA_KEY:
-            return str(getattr(item, "value", "") or "")
-    return ""
-
-
-def _existing_label(existing: object, key: str) -> str:
-    """Read one label from a dict-like Compute instance response."""
-    labels = getattr(existing, "labels", None)
-    getter = getattr(labels, "get", None)
-    if callable(getter):
-        return str(getter(key, "") or "")
-    return ""
-
-
-def _assert_instance_image_binding(existing: object, instance: InstancePlan) -> None:
-    """Reject a keyed deterministic VM whose recorded profile differs from the plan."""
-    expected_key = instance["image_key"]
-    if not expected_key:
-        return
-    actual_key = _existing_label(existing, "image-key")
-    actual_profile = _existing_label(existing, "image-profile")
-    if actual_key != expected_key or actual_profile != instance["image_profile_fingerprint"]:
-        raise RuntimeError(
-            "Existing GCE range instance has an image-profile binding that differs from the current plan; "
-            f"ami_key={expected_key!r}. Recreate the range instead of reusing the drifted instance."
-        )
+    return True
 
 
 def _ensure_attached_disks_auto_delete(
@@ -271,6 +244,7 @@ def _ensure_instance(
         instance=name,
     )
     if existing is not None:
+        _assert_preconfigured_host_binding(existing, plan, instance)
         _assert_instance_image_binding(existing, instance)
     host_secret_ref, host_management_public_key = secret_ops.ensure_ssh(plan["range_id"], instance["source"])
     access_channels = set(instance["participant_access_channels"])
@@ -291,7 +265,7 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
-        if instance["profile"].source_machine_image:
+        if instance["profile"].bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
             _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return (
             host_secret_ref,

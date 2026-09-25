@@ -13,6 +13,7 @@ from raes_composition_verification import verify_bootstrap_composition
 from raes_content_delivery import realize_raes_content_delivery
 from raes_gcp_secret_ops import RaesGceSecretOps
 from raes_operating_system import observe_operating_systems
+from raes_preconfigured_host_readiness import verify_preconfigured_hosts
 from raes_substrate_observation import observe_gce_substrates
 
 
@@ -34,6 +35,7 @@ class RaesGceApplyOptions:
     composition_verifier: Callable[..., frozenset[str]] = verify_bootstrap_composition
     operating_system_observer: Callable[..., list[dict[str, str]]] = observe_operating_systems
     substrate_observer: Callable[..., list[dict[str, str]]] = observe_gce_substrates
+    host_readiness_verifier: Callable[[list[dict[str, object]]], None] = verify_preconfigured_hosts
 
     runtime_plugin: Callable[..., None] | None = None
     model_enrollment: Callable[..., None] | None = None
@@ -55,6 +57,7 @@ class RaesGceApplyRuntime:
     composition_verifier: Callable[..., frozenset[str]]
     operating_system_observer: Callable[..., list[dict[str, str]]]
     substrate_observer: Callable[..., list[dict[str, str]]]
+    host_readiness_verifier: Callable[[list[dict[str, object]]], None]
     allocated_network_cidrs: Sequence[tuple[str, str]] | None
     runtime_plugin: Callable[..., None] | None
     model_enrollment: Callable[..., None] | None

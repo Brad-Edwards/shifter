@@ -125,6 +125,7 @@ _GCE_IMAGE_REFERENCE_RE = re.compile(
 _GCE_MACHINE_IMAGE_REFERENCE_RE = re.compile(
     rf"^(?:(?:https://[^/]+/compute/(?:v1|beta)/)?)projects/{_GCE_PROJECT}/global/machineImages/{_GCE_NAME}$"
 )
+_GCE_EXACT_IMAGE_REFERENCE_RE = re.compile(rf"^projects/{_GCE_PROJECT}/global/images/{_GCE_NAME}$")
 _GCE_LINUX_USERNAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 _GCE_CONTAINER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 
@@ -192,8 +193,10 @@ def _validate_preconfigured_machine_profile(prefix: str, profile: GCERangeImageP
             prefix, profile, (profile.participant_container_name, profile.participant_username, *readiness_fields)
         )
         return
-    if not profile.source_machine_image:
-        raise RuntimeError(f"{prefix} preconfigured-machine-host requires source_machine_image")
+    if not _profile_has_source(profile):
+        raise RuntimeError(f"{prefix} preconfigured-machine-host requires a source image")
+    if profile.source_image and not _GCE_EXACT_IMAGE_REFERENCE_RE.fullmatch(profile.source_image):
+        raise RuntimeError(f"{prefix} preconfigured-machine-host requires an exact custom-image reference")
     if not all(identity_fields):
         raise RuntimeError(
             f"{prefix} preconfigured-machine-host requires participant_container_name, "
