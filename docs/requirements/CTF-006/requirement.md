@@ -24,8 +24,10 @@ Participant management is the gatekeeping layer for CTF events. Isolated-account
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/api/principal_participants.py` (Explicit event-scoped admission and participant-safe read through neutral credentials)
 
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/principal_participation.py` (Explicit service participation and live event/credential predicates)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/unified_authorization.py` (Live exact event action and credential-ceiling check for service participation)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/config/credential_scope.py` (Temporary credential context restricted to one event)
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_service_participation.py`
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_unified_authorization.py` (Service and temporary event-authority boundaries)
 
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums_registration.py` (ParticipantStatus enum - registered/active/completed/disqualified/banned lifecycle states)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/admin_people.py` (Organizer participant CRUD and role-based access control)

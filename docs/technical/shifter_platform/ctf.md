@@ -5,6 +5,43 @@ owns event/challenge/scoring data and orchestrates a dedicated range per partici
 by calling the existing CMS range services; it does not introduce a second
 provisioning path.
 
+## ADR-066 authorization staging
+
+The S5 source contract for CTF authorization lives in
+`ctf.api.operation_policy`: it names the registered action and SQL-owned scope
+locator for all 118 current `/api/v1/ctf/` operations, and classifies the
+named browser routes, Django admin models and inlines, CTF management
+commands, scheduled task types, and external service effects. The issue's
+baseline was 114
+operations; the current published API contains four additional operations.
+The browser routes serve an SPA shell; privileged data and effects belong to
+the API and service boundaries. Public registration and scoreboard projection
+retain their explicit publication checks. Scenario discovery retains the CMS
+model-access boundary.
+
+`ctf.services.unified_authorization` composes an active human or service
+principal, the credential's exact action ceiling, CTF-owned event scope, and
+the shared OpenFGA provider. Event creation checks the selected existing
+account, organization, or workspace parent. Individual accounts have no
+invented organization or workspace; team and enterprise accounts use an
+organization or workspace parent. OpenFGA must show exactly one matching
+event parent. The same exact-parent rule covers event-derived ranges. The
+SQL authorization inventory includes account- and organization-placed events
+in scoped delegation proofs and checks exact event ancestry on direct policy
+mutations. Service participant admission and current-event reads already use the shared check;
+the participant row and lifecycle predicates remain separate requirements.
+Provider failures deny with a bounded unavailable response.
+
+The older owner, staff, Django superuser, and token-scope checks remain the
+live administration boundary until the coordinated S8 cutover in ADR-066.
+The Django admin map names its separate maintenance effects; S8 must route
+each writable form through the CTF service decision or close that write path.
+The operation map is a coverage contract for that cutover, not a second policy
+evaluator or a current service-admin grant on legacy CTF routes. S8 must wire
+each locator through the CTF service layer and retire the old authority checks
+atomically. The CTF technical and organizer guides describe current live
+behavior until that cutover.
+
 ## Responsibility
 
 - Model CTF events, challenges, flags, teams, brackets, submissions, hints, and

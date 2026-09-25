@@ -44,6 +44,7 @@ from shared.authorization import (
     VersionedRelationshipChange,
 )
 from shared.authorization.model import decision_relation_for_action
+from shared.identity_scope import ResourceScope
 
 _CONSISTENCY_OPTIONS = {"consistency": "HIGHER_CONSISTENCY"}
 _MAX_SECRET_BYTES = 16_384
@@ -186,6 +187,15 @@ def _batch_decisions(results: object, count: int) -> tuple[AuthorizationDecision
     return tuple(_decision(getattr(by_correlation[str(index)], "allowed", False) is True) for index in range(count))
 
 
+def _event_customer_parent(scope: ResourceScope) -> tuple[str, str]:
+    """Select the deepest SQL-validated customer parent for an event."""
+    if scope.workspace_uuid is not None:
+        return "workspace", f"workspace:{scope.workspace_uuid}"
+    if scope.organization_uuid is not None:
+        return "organization", f"organization:{scope.organization_uuid}"
+    return "account", f"account:{scope.account_uuid}"
+
+
 def _scope_parents(request: AuthorizationRequest) -> tuple[tuple[str, str, str], ...]:
     """Expected provider edges derived only from the trusted SQL scope."""
     scope = request.scope
@@ -196,11 +206,6 @@ def _scope_parents(request: AuthorizationRequest) -> tuple[tuple[str, str, str],
         edges.append((f"organization:{scope.organization_uuid}", "account", f"account:{scope.account_uuid}"))
     if scope.workspace_uuid is not None:
         edges.append((f"workspace:{scope.workspace_uuid}", "organization", f"organization:{scope.organization_uuid}"))
-    if request.target.type in {"event", "range"}:
-        if scope.workspace_uuid is None:
-            raise AuthorizationProviderError("Resource ancestry is unavailable")
-        if request.target.type == "event":
-            edges.append((_provider_object(request), "workspace", f"workspace:{scope.workspace_uuid}"))
     return tuple(edges)
 
 
@@ -236,18 +241,28 @@ class OpenFgaAuthorizationProvider:
         for object_id, relation, parent in _scope_parents(request):
             if self._parents(object_id, relation) != (parent,):
                 return False
+        if request.target.type == "event":
+            return self._event_parent_matches(_provider_object(request), request.scope)
         return request.target.type != "range" or self._range_ancestry_matches(request)
 
+    def _event_parent_matches(self, event_object: str, scope: ResourceScope) -> bool:
+        """Require one exact event parent and no conflicting inherited authority."""
+        selected, expected = _event_customer_parent(scope)
+        return all(
+            self._parents(event_object, relation) == ((expected,) if relation == selected else ())
+            for relation in ("account", "organization", "workspace")
+        )
+
     def _range_ancestry_matches(self, request: AuthorizationRequest) -> bool:
-        """Require every direct or event-derived range parent to match the SQL workspace."""
-        workspace = f"workspace:{request.scope.workspace_uuid}"
+        """Require direct or event-derived range parents to match SQL ancestry."""
+        workspace = f"workspace:{request.scope.workspace_uuid}" if request.scope.workspace_uuid else None
         workspaces = self._parents(_provider_object(request), "workspace")
-        if workspaces not in {(), (workspace,)}:
+        if (workspace is None and workspaces) or (workspace is not None and workspaces not in {(), (workspace,)}):
             return False
         events = self._parents(_provider_object(request), "event")
         if len(events) > 1 or not (workspaces or events):
             return False
-        return not events or self._parents(events[0], "workspace") == (workspace,)
+        return not events or self._event_parent_matches(events[0], request.scope)
 
     def check(self, request: AuthorizationRequest) -> AuthorizationDecision:
         try:
