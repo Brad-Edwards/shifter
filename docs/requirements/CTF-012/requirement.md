@@ -37,3 +37,5 @@ An API enables custom scoreboards, automated challenge deployment, integration w
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_cutover.py`
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_admission_postgres.py`
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2100`
+- DOCUMENTS → CODE_FILE `shifter/shifter_platform/ctf/api/operation_policy.py` (ADR-066 S5 action and scope locator contract for published CTF operations; S8 activates administration authority)
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_authorization_operation_map.py` (Published OpenAPI operation and browser route coverage)
