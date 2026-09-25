@@ -428,6 +428,88 @@ def test_predefined_administrator_denies_when_a_concrete_descendant_permission_i
     assert result.state == AuthorizationOperation.State.DENIED
     assert inventory_calls == [((workspace.pk,), 1000)]
     assert any(item.action == "event.manage" and item.target == event for item in provider.check_requests)
+
+
+@pytest.mark.django_db
+def test_account_placed_event_is_included_in_account_delegation_proof() -> None:
+    from ctf.models import CTFEvent
+
+    account = Account.objects.create(
+        kind=Account.Kind.INDIVIDUAL, name="Personal account", individual_principal_uuid=ACTOR_ID
+    )
+    now = timezone.now()
+    event = CTFEvent.objects.create(
+        name="Account event",
+        created_by=get_user_model().objects.get(username="actor"),
+        scope_kind="account",
+        account_id=account.pk,
+        scenario_id="synthetic",
+        event_start=now,
+        event_end=now + timedelta(days=1),
+    )
+    provider = FakeProvider(denied_actions=frozenset({"event.manage_config"}))
+    request = NativeRelationshipMutationRequest(
+        actor=PrincipalRef(ACTOR_ID, "human"),
+        credential=CredentialCeiling(frozenset(item.code for item in ACTION_CATALOG)),
+        change=AdministrativeRoleChange(
+            RelationshipSubject("principal", SUBJECT_ID),
+            "account_administrator",
+            TargetRef("account", account.uuid),
+            PolicyEffect.GRANT,
+        ),
+        scope=ResourceScope("account", account.uuid),
+        idempotency_key="account-event-descendant-denied",
+        model_id=MODEL_ID,
+    )
+
+    result = apply_native_relationship_mutation(request, provider)
+
+    assert result.state == AuthorizationOperation.State.DENIED
+    assert any(
+        item.action == "event.manage_config" and item.target == TargetRef("event", event.id)
+        for item in provider.check_requests
+    )
+
+
+@pytest.mark.django_db
+def test_event_policy_mutation_requires_exact_account_event_scope() -> None:
+    from ctf.models import CTFEvent
+
+    first = Account.objects.create(
+        kind=Account.Kind.INDIVIDUAL, name="First account", individual_principal_uuid=ACTOR_ID
+    )
+    sibling = Account.objects.create(
+        kind=Account.Kind.INDIVIDUAL, name="Sibling account", individual_principal_uuid=SUBJECT_ID
+    )
+    now = timezone.now()
+    event = CTFEvent.objects.create(
+        name="Account event",
+        created_by=get_user_model().objects.get(username="actor"),
+        scope_kind="account",
+        account_id=first.pk,
+        scenario_id="synthetic",
+        event_start=now,
+        event_end=now + timedelta(days=1),
+    )
+    action = "event.manage_config"
+    request = PolicyMutationRequest(
+        actor=PrincipalRef(ACTOR_ID, "human"),
+        credential=CredentialCeiling(frozenset({action, "event.manage"})),
+        subject=RelationshipSubject("principal", SUBJECT_ID),
+        action=action,
+        target=TargetRef("event", event.id),
+        scope=ResourceScope("account", sibling.uuid),
+        effect=PolicyEffect.GRANT,
+        idempotency_key="sibling-event-policy-denied",
+        model_id=MODEL_ID,
+    )
+
+    provider = FakeProvider()
+    result = apply_policy_mutation(request, provider)
+
+    assert result.state == AuthorizationOperation.State.DENIED
+    assert provider.check_requests == []
+    assert provider.changes == []
     assert provider.changes == []
 
 

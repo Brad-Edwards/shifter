@@ -76,6 +76,25 @@ def _scoped_type(name: str, parent: str) -> list[str]:
     ]
 
 
+def _event_type() -> list[str]:
+    """Let an event inherit from its one validated customer placement."""
+    parents = ("account", "organization", "workspace")
+    return [
+        "type event",
+        _RELATIONS_HEADER,
+        *(f"    define {parent}: [{parent}]" for parent in parents),
+        "    define operator: " + " or ".join(f"operator from {parent}" for parent in parents),
+        f"    define direct_administrator: [{_RELATIONSHIP_SUBJECTS}]",
+        f"    define deny_administrator: [{_RELATIONSHIP_SUBJECTS}]",
+        "    define administrator: (direct_administrator but not deny_administrator) or "
+        + " or ".join(f"administrator from {parent}" for parent in parents),
+        "    define excluded: [principal, group#member, role#assignee] or "
+        + " or ".join(f"excluded from {parent}" for parent in parents),
+        *_action_relations("event"),
+        "",
+    ]
+
+
 def _build_model() -> str:
     """Assemble the pinned model from the closed application action catalog."""
     lines = [
@@ -116,7 +135,7 @@ def _build_model() -> str:
         *_scoped_type("account", "installation"),
         *_scoped_type("organization", "account"),
         *_scoped_type("workspace", "organization"),
-        *_scoped_type("event", "workspace"),
+        *_event_type(),
         "type range",
         _RELATIONS_HEADER,
         "    define workspace: [workspace]",

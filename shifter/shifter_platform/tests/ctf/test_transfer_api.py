@@ -188,6 +188,21 @@ class TestWebhooks:
         )
         assert resp.status_code == 400
 
+    @pytest.mark.parametrize("url", ["http://hooks.example.test/x", "https://127.0.0.1/x"])
+    def test_register_rejects_unsafe_destination_with_client_error(
+        self, ctf_event, authenticated_organizer_client, url
+    ):
+        response = call_json(
+            authenticated_organizer_client,
+            "post",
+            "api_event_webhooks",
+            kwargs={"event_id": ctf_event.id},
+            body={"url": url, "subscribed_events": ["flag_solve"]},
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid"
+        assert not CTFWebhook.objects.filter(event=ctf_event).exists()
+
     def test_emit_filters_subscriptions_and_signs(self, ctf_event, monkeypatch):
         from ctf.services import webhook as webhook_service
 
@@ -206,23 +221,33 @@ class TestWebhooks:
         import hashlib
         import hmac as hmac_lib
 
-        _pk, _url, secret, body = deliveries[0]
+        _pk, _url, secret, body, event_type = deliveries[0]
+        assert event_type == "flag_solve"
         expected = hmac_lib.new(secret.encode(), body, hashlib.sha256).hexdigest()
         assert expected  # signature derivable from the queued body
         assert b'"event_type": "flag_solve"' in body
 
     def test_delivery_retries_then_records_failure(self, ctf_event, monkeypatch):
         from ctf.services import webhook as webhook_service
+        from ctf.validators import _ssrf
 
         hook = CTFWebhook.objects.create(event=ctf_event, url="https://down.test/hook")
         attempts = []
 
-        class FakeResponse:
-            ok = False
-            status_code = 503
+        class FakeConnection:
+            def request(self, method, path, *, body, headers):
+                assert method == "POST"
+                attempts.append(path)
+
+            def getresponse(self):
+                return type("Response", (), {"status": 503})()
+
+            def close(self):
+                pass
 
         monkeypatch.setattr(webhook_service.time, "sleep", lambda _s: None)
-        monkeypatch.setattr("requests.post", lambda url, **kwargs: attempts.append(url) or FakeResponse())
+        monkeypatch.setattr(_ssrf, "_resolve_and_validate", lambda hostname, port: ["8.8.8.8"])
+        monkeypatch.setattr(_ssrf, "_build_https_connection", lambda **kwargs: FakeConnection())
         webhook_service._deliver_with_retries(hook.pk, hook.url, "", b"{}")
 
         assert len(attempts) == 3

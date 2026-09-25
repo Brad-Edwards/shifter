@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from ctf import services
 from ctf.api import projections
 from ctf.api.serializers import ParticipantCurrentEventSerializer
+from ctf.exceptions import CTFError, CTFPermissionError
 from shared.api.closed_serializer import ClosedSerializer
 from shared.api.errors import api_error_response
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
@@ -43,7 +44,13 @@ class PrincipalParticipantView(APIView):
     parser_classes = [ClosedJSONParser]
 
     def handle_exception(self, exc: Exception) -> Response:
-        if isinstance(exc, (ValueError, PrincipalResolutionError, AuthorizationProviderBindingError)):
+        if isinstance(exc, CTFError) and not isinstance(exc, CTFPermissionError):
+            return api_error_response(
+                code="dependency_unavailable", message="Service unavailable", status_code=503, request=self.request
+            )
+        if isinstance(
+            exc, (ValueError, PrincipalResolutionError, AuthorizationProviderBindingError, CTFPermissionError)
+        ):
             return api_error_response(
                 code="participation_denied", message="Participation denied", status_code=403, request=self.request
             )

@@ -198,7 +198,8 @@ def test_range_accepts_event_ancestry_but_rejects_conflicting_or_missing_parents
         def read(self, body, options):
             return SimpleNamespace(
                 tuples=[
-                    SimpleNamespace(key=SimpleNamespace(user=parent)) for parent in parents[body.object, body.relation]
+                    SimpleNamespace(key=SimpleNamespace(user=parent))
+                    for parent in parents.get((body.object, body.relation), ())
                 ],
                 continuation_token="",
             )
@@ -212,6 +213,79 @@ def test_range_accepts_event_ancestry_but_rejects_conflicting_or_missing_parents
         CredentialCeiling(frozenset({"range.read"})),
     )
     assert provider.check(request).allowed is allowed
+
+
+@pytest.mark.parametrize("parent_type", ["account", "organization", "workspace"])
+def test_event_check_accepts_exact_customer_parent(parent_type: str) -> None:
+    organization, workspace, event = (uuid4() for _ in range(3))
+    scope = {
+        "account": ResourceScope("account", ACCOUNT_ID),
+        "organization": ResourceScope("account", ACCOUNT_ID, organization),
+        "workspace": ResourceScope("account", ACCOUNT_ID, organization, workspace),
+    }[parent_type]
+    parent_uuid = {"account": ACCOUNT_ID, "organization": organization, "workspace": workspace}[parent_type]
+    parents = {
+        (f"account:{ACCOUNT_ID}", "installation"): ("installation:root",),
+        (f"organization:{organization}", "account"): (f"account:{ACCOUNT_ID}",),
+        (f"workspace:{workspace}", "organization"): (f"organization:{organization}",),
+        (f"event:{event}", parent_type): (f"{parent_type}:{parent_uuid}",),
+    }
+
+    class AncestryClient(FakeClient):
+        def read(self, body, options):
+            return SimpleNamespace(
+                tuples=[
+                    SimpleNamespace(key=SimpleNamespace(user=parent))
+                    for parent in parents.get((body.object, body.relation), ())
+                ],
+                continuation_token="",
+            )
+
+    provider = OpenFgaAuthorizationProvider(_settings(), client=AncestryClient())
+    request = AuthorizationRequest(
+        PrincipalRef(PRINCIPAL_ID, "service"),
+        "event.manage",
+        TargetRef("event", event),
+        scope,
+        CredentialCeiling(frozenset({"event.manage"})),
+    )
+
+    assert provider.check(request).allowed
+
+    conflicting_parent = "workspace" if parent_type != "workspace" else "account"
+    conflicting_uuid = workspace if conflicting_parent == "workspace" else ACCOUNT_ID
+    parents[f"event:{event}", conflicting_parent] = (f"{conflicting_parent}:{conflicting_uuid}",)
+    assert not provider.check(request).allowed
+
+
+def test_account_event_range_inherits_only_its_exact_event_parent() -> None:
+    event, range_uuid = uuid4(), uuid4()
+    parents = {
+        (f"account:{ACCOUNT_ID}", "installation"): ("installation:root",),
+        (f"range:{range_uuid}", "event"): (f"event:{event}",),
+        (f"event:{event}", "account"): (f"account:{ACCOUNT_ID}",),
+    }
+
+    class AncestryClient(FakeClient):
+        def read(self, body, options):
+            return SimpleNamespace(
+                tuples=[
+                    SimpleNamespace(key=SimpleNamespace(user=parent))
+                    for parent in parents.get((body.object, body.relation), ())
+                ],
+                continuation_token="",
+            )
+
+    provider = OpenFgaAuthorizationProvider(_settings(), client=AncestryClient())
+    request = AuthorizationRequest(
+        PrincipalRef(PRINCIPAL_ID, "service"),
+        "range.read",
+        TargetRef("range", range_uuid),
+        ResourceScope("account", ACCOUNT_ID),
+        CredentialCeiling(frozenset({"range.read"})),
+    )
+
+    assert provider.check(request).allowed
 
 
 def test_false_and_provider_errors_fail_closed_without_provider_text() -> None:
