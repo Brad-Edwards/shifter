@@ -29,3 +29,21 @@ The S8 route swap must be atomic with #2321's mapping and authority cutover.
 Before activation, compare this inventory with the full v1 URL set and
 `ACTION_CATALOG`, run PostgreSQL and released OpenFGA behavior suites, regenerate
 OpenAPI and frontend types, and test browser navigation and account selection.
+
+## Issue #2317 acceptance status
+
+This S4 preparation does not complete any of the issue's five acceptance
+criteria. The new API adapters are unmounted and the incumbent browser and
+service paths retain their legacy gates. A passing test of a prepared adapter
+does not prove behavior of a production route.
+
+| Acceptance criterion | Prepared evidence | Work required before closure |
+| --- | --- | --- |
+| Customer and sibling-scope isolation across direct, detail, list, create, update, and export | Account, organization, and workspace service/API tests exercise exact ancestry, policy-filtered pages, and creation. | Route the canonical API/browser operations at S8 and verify every retained update, search, aggregation, export, and download against the same scope rules. |
+| Human and service administrator parity across platform, identity, policy, and credentials | Prepared identity, audit, quota, egress, and scoped authorization adapters exercise selected human and service paths. #2316 owns credential administration. | Verify all retained operations, including credential ceremonies and non-API paths, through mounted routes with both principal kinds. |
+| Delegated ceiling and sibling/higher-scope denial | Prepared commands check credential ceilings, exact targets, and delegation before journal writes. | Run the full role catalog and released-provider cross-scope suite against the live API, browser, and service boundaries. |
+| Source/destination ownership authority and consistent affected scope | A prepared single-workspace transfer reuses the locked writer. | Replace the legacy transfer routes and cover cross-domain offboarding, source and destination policy, membership and owner invariants, and affected-scope updates. |
+| Action/scope/enforcement mapping and behavior test for every baseline operation and non-API path | The table above maps the prepared administration families and identifies the S8 gaps. | Complete the baseline v1 and retained non-API inventory with behavior tests for each route, Django-admin write, service, callback, and export path. |
+
+Keep #2317 open when this preparation merges. The coordinated S8 delivery in
+#2321 must verify the remaining criteria before #2317 can be closed.
