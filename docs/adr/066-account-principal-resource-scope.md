@@ -98,6 +98,17 @@ an individual account. Owning domains persist the validated scalar scope facts
 they require. They do not add a cross-layer foreign key, JSON scope bag, copied
 hierarchy, or local scope validator.
 
+CTF event creation authorizes against one existing account, organization, or
+workspace parent before the event exists. Personal events use their individual
+account directly. Business events use validated organization or workspace
+ancestry. The OpenFGA event object has exactly one parent relation matching the
+SQL-owned scope; extra or stale parent edges deny, including for event-derived
+ranges. The shared action catalog registers parent-scoped creation and the
+separate CTF management distinctions. Creator attribution, principal ownership,
+event administration, and competition participation remain separate facts.
+S5 prepares and tests these contracts; S8 activates them together with the rest
+of the application authority cutover.
+
 ### Mapping and cutover
 
 Current users map to human principals by durable user ID. Existing provider

@@ -20,7 +20,10 @@ from .contracts import (
 from .inventory import (
     AuthorizationDescendantResolutionError,
     bind_authorization_descendant_resolver,
+    bind_authorization_event_inventory,
     resolve_authorization_descendants,
+    resolve_authorization_event_scope,
+    resolve_authorization_nonworkspace_events,
 )
 from .port import (
     AuthorizationProvider,
@@ -74,8 +77,11 @@ __all__ = [
     "VersionedRelationshipChange",
     "action_definition",
     "bind_authorization_descendant_resolver",
+    "bind_authorization_event_inventory",
     "bind_authorization_provider_factory",
     "configured_authorization_provider",
     "predefined_policy_definition",
     "resolve_authorization_descendants",
+    "resolve_authorization_event_scope",
+    "resolve_authorization_nonworkspace_events",
 ]
