@@ -92,6 +92,7 @@ function RegisterForm() {
   const [sourceVersion, setSourceVersion] = useState("");
   const [imageRef, setImageRef] = useState("");
   const [imageKind, setImageKind] = useState<"image" | "machine-image">("image");
+  const [preconfiguredHost, setPreconfiguredHost] = useState(false);
   const [machineType, setMachineType] = useState("");
   const [diskSizeGb, setDiskSizeGb] = useState("");
   const [diskType, setDiskType] = useState("");
@@ -123,11 +124,11 @@ function RegisterForm() {
         management_ssh_port: Number(managementPort),
         management_ssh_username: managementUser,
         image_kind: imageKind,
-        bootstrap_capability: imageKind === MACHINE_IMAGE_KIND ? "preconfigured-machine-host" : "standard",
-        participant_container_name: imageKind === MACHINE_IMAGE_KIND ? participantContainer : "",
-        participant_username: imageKind === MACHINE_IMAGE_KIND ? participantUser : "",
-        participant_readiness_contract: imageKind === MACHINE_IMAGE_KIND ? readinessContract : "",
-        participant_readiness_manifest_sha256: imageKind === MACHINE_IMAGE_KIND ? readinessDigest : "",
+        bootstrap_capability: preconfiguredHost || imageKind === MACHINE_IMAGE_KIND ? "preconfigured-machine-host" : "standard",
+        participant_container_name: preconfiguredHost || imageKind === MACHINE_IMAGE_KIND ? participantContainer : "",
+        participant_username: preconfiguredHost || imageKind === MACHINE_IMAGE_KIND ? participantUser : "",
+        participant_readiness_contract: preconfiguredHost || imageKind === MACHINE_IMAGE_KIND ? readinessContract : "",
+        participant_readiness_manifest_sha256: preconfiguredHost || imageKind === MACHINE_IMAGE_KIND ? readinessDigest : "",
         enabled: true,
         notes,
         // This form registers a legacy alias-only mapping; portable RAES artifact
@@ -146,6 +147,7 @@ function RegisterForm() {
           setSourceVersion("");
           setImageRef("");
           setImageKind("image");
+          setPreconfiguredHost(false);
           setMachineType("");
           setDiskSizeGb("");
           setDiskType("");
@@ -219,6 +221,11 @@ function RegisterForm() {
               </SelectContent>
             </Select>
           </div>
+          {imageKind === "image" ? <div className="flex items-center gap-2">
+            <input id="preconfigured-host" type="checkbox" checked={preconfiguredHost}
+              onChange={(event) => setPreconfiguredHost(event.target.checked)} />
+            <Label htmlFor="preconfigured-host">Preconfigured participant host</Label>
+          </div> : null}
           <div className="space-y-1.5">
             <Label htmlFor={ids.imageRef}>Image ref</Label>
             <Input
@@ -240,7 +247,7 @@ function RegisterForm() {
               placeholder="Optional (backend default when blank)"
             />
           </div>
-          {imageKind === MACHINE_IMAGE_KIND ? <>
+          {preconfiguredHost || imageKind === MACHINE_IMAGE_KIND ? <>
             <div className="space-y-1.5">
               <Label htmlFor={ids.participantContainer}>Participant container</Label>
               <Input id={ids.participantContainer} value={participantContainer} maxLength={128} required

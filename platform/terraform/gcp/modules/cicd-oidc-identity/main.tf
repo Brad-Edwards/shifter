@@ -356,7 +356,7 @@ resource "google_storage_bucket" "release_evidence" {
   }
 
   retention_policy {
-    retention_period = 7776000
+    retention_period = "7776000"
     is_locked        = true
   }
 

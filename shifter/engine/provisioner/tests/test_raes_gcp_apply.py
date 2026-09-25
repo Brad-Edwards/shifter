@@ -17,6 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import raes_gcp_apply as apply_module
 from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
@@ -156,6 +157,7 @@ def _apply_options(
             {"instance_key": instance["uuid"], "value": "virtual-machine"} for instance in plan["instances"]
         ],
     )
+    overrides.setdefault("host_readiness_verifier", MagicMock())
     overrides.setdefault(
         "operating_system_observer",
         lambda _plan, outputs: [
@@ -182,9 +184,9 @@ def test_missing_guest_os_evidence_fails_apply_and_cleans_up():
     options = _apply_options(_config(), clients, secrets, operating_system_observer=lambda _plan, _outputs: [])
     with pytest.raises(ValueError, match="operating-system"):
         apply_raes_range_cell("req-1", 7, _plan(), _resolver, options)
-    # This fake reports every resource absent on readback. Cleanup must still
-    # revisit both guests; absent resources need no delete call.
-    assert clients.instances.get.call_count == 4
+    # This fake reports every resource absent on readback. Cleanup revisits
+    # both guests for disk convergence and deletion; absent resources need no delete call.
+    assert clients.instances.get.call_count == 6
 
 
 def test_enrolled_guest_gets_exact_broker_firewall_before_enrollment():
@@ -335,6 +337,22 @@ class TestApply:
         # A none range carries no NAT path at all: no range-owned router is created.
         assert not clients.routers.insert.called
 
+    def test_shared_vpc_reconciles_nat_during_apply(self, monkeypatch):
+        ensure_nat = MagicMock()
+        monkeypatch.setattr(apply_module, "_ensure_router_nat", ensure_nat)
+        monkeypatch.setattr(apply_module, "assert_shared_nat_capacity", MagicMock(), raising=False)
+        plan = {
+            "manage_network": False,
+            "subnets": [],
+            "shared_nat": {"router_name": "shared-nat-router"},
+            "firewalls": [],
+            "instances": [],
+        }
+        runtime = SimpleNamespace(clients=object())
+
+        assert apply_module._provision_raes_resources(plan, runtime, {}, {}, {}) == []
+        ensure_nat.assert_called_once_with(plan, runtime.clients)
+
     def test_ssh_secret_keyed_on_raes_instance_not_scenario(self):
         clients = _clients()
         secret_ops, secret_mocks = _secret_ops()
@@ -408,7 +426,7 @@ class TestApply:
                 SimpleNamespace(device_name="nested-data", auto_delete=False),
             ]
         )
-        clients.instances.get.side_effect = [_NotFound(), created]
+        clients.instances.get.side_effect = [_NotFound(), _NotFound(), created]
         clients.instances.set_disk_auto_delete.return_value = SimpleNamespace(name="op")
         secret_ops, _ = _secret_ops()
         plan = _plan()
@@ -432,6 +450,207 @@ class TestApply:
             device_name="nested-data",
             auto_delete=True,
         )
+
+    def test_preconfigured_custom_image_uses_owned_boot_disk(self):
+        profile = GCERangeImageProfile(
+            source_image="projects/proj-1/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        plan = replace(_plan(), nodes=(replace(_plan().nodes[0], count=1),))
+        readiness = MagicMock()
+
+        output = apply_raes_range_cell(
+            "req-1",
+            7,
+            plan,
+            lambda _node: profile,
+            _apply_options(_config(), clients, secret_ops, host_readiness_verifier=readiness),
+        )
+
+        body = clients.instances.insert.call_args.kwargs["instance_resource"]
+        assert body["disks"][0]["auto_delete"] is True
+        assert body["disks"][0]["initialize_params"]["source_image"] == profile.source_image
+        assert body["advanced_machine_features"] == {"enable_nested_virtualization": True}
+        assert output["instances"][0]["gcp_participant_container_name"] == "participant-desktop"
+        assert output["instances"][0]["participant_sftp_enabled"] is False
+        readiness.assert_called_once()
+        assert readiness.call_args.args[0][0]["gcp_bootstrap_capability"] == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
+
+    def test_conflicting_preconfigured_host_is_rejected_before_mutation(self):
+        profile = GCERangeImageProfile(
+            source_image="projects/proj-1/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        clients = _clients(exists=True)
+        clients.instances.get.side_effect = None
+        clients.instances.get.return_value = SimpleNamespace(
+            labels={"managed-by": "unrelated", "range-id": "other", "image-profile": "wrong"}
+        )
+        secret_ops, secret_calls = _secret_ops()
+        with pytest.raises(RuntimeError, match="conflicting range or image-profile"):
+            apply_raes_range_cell(
+                "req-1",
+                7,
+                _plan(),
+                lambda _node: profile,
+                _apply_options(_config(), clients, secret_ops),
+            )
+        clients.instances.insert.assert_not_called()
+        clients.instances.delete.assert_not_called()
+        secret_calls.ensure_ssh.assert_not_called()
+
+    def test_late_conflicting_host_is_never_deleted(self):
+        profile = GCERangeImageProfile(
+            source_image="projects/proj-1/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        clients = _clients()
+        clients.instances.get.side_effect = [_NotFound(), SimpleNamespace(labels={"managed-by": "unrelated"})]
+        secret_ops, secret_calls = _secret_ops()
+        plan = replace(_plan(), nodes=(replace(_plan().nodes[0], count=1),))
+        with pytest.raises(RuntimeError, match="conflicting range or image-profile"):
+            apply_raes_range_cell(
+                "req-1",
+                7,
+                plan,
+                lambda _node: profile,
+                _apply_options(_config(), clients, secret_ops),
+            )
+        clients.instances.delete.assert_not_called()
+        secret_calls.ensure_ssh.assert_not_called()
+
+    def test_late_conflict_cleans_prior_created_instance_only(self):
+        profile = GCERangeImageProfile(
+            source_image="projects/proj-1/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        raes_plan = _plan()
+        rendered = build_raes_range_cell_plan("req-1", 7, raes_plan, lambda _node: profile, _config())
+        names = [instance["resource_name"] for instance in rendered["instances"]]
+        seen: dict[str, int] = {}
+
+        def get_instance(*, instance, **_kwargs):
+            count = seen.get(instance, 0)
+            seen[instance] = count + 1
+            if count == 0 or (instance == names[0] and count == 1):
+                raise _NotFound()
+            if instance == names[1]:
+                return SimpleNamespace(labels={"managed-by": "unrelated"})
+            return SimpleNamespace(labels={}, disks=[], metadata=SimpleNamespace(items=[]))
+
+        clients = _clients()
+        clients.instances.get.side_effect = get_instance
+        clients.networks.get.side_effect = [_NotFound(), SimpleNamespace()]
+        secret_ops, secret_calls = _secret_ops()
+        with pytest.raises(RuntimeError, match="conflicting range or image-profile"):
+            apply_raes_range_cell(
+                "req-1",
+                7,
+                raes_plan,
+                lambda _node: profile,
+                _apply_options(_config(), clients, secret_ops),
+            )
+        deleted = [call.kwargs["instance"] for call in clients.instances.delete.call_args_list]
+        assert deleted == [names[0]]
+        clients.networks.delete.assert_called_once()
+        secret_calls.delete_ssh.assert_called_once_with(7, rendered["instances"][0]["uuid"])
+
+    def test_custom_image_host_reconcile_restores_boot_disk_auto_delete(self):
+        profile = GCERangeImageProfile(
+            source_image="projects/proj-1/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        raes_plan = replace(_plan(), nodes=(replace(_plan().nodes[0], count=1),))
+        rendered = build_raes_range_cell_plan("req-1", 7, raes_plan, lambda _node: profile, _config())
+        instance = rendered["instances"][0]
+        existing = SimpleNamespace(
+            labels={
+                **rendered["labels"],
+                "image-key": "default",
+                "image-profile": instance["image_profile_fingerprint"],
+            },
+            disks=[SimpleNamespace(device_name="boot", auto_delete=False)],
+            metadata=SimpleNamespace(items=[]),
+        )
+        clients = _clients()
+        clients.instances.get.side_effect = None
+        clients.instances.get.return_value = existing
+        clients.instances.set_disk_auto_delete.return_value = SimpleNamespace(name="op")
+        secret_ops, _ = _secret_ops()
+
+        apply_raes_range_cell(
+            "req-1",
+            7,
+            raes_plan,
+            lambda _node: profile,
+            _apply_options(_config(), clients, secret_ops),
+        )
+
+        clients.instances.insert.assert_not_called()
+        clients.instances.set_disk_auto_delete.assert_called_once_with(
+            project="proj-1",
+            zone="us-east1-b",
+            instance=instance["resource_name"],
+            device_name="boot",
+            auto_delete=True,
+        )
+
+    def test_destroy_converges_retained_custom_host_boot_disk(self):
+        clients = _clients(exists=True)
+        clients.instances.get.side_effect = None
+        clients.instances.get.return_value = SimpleNamespace(
+            disks=[SimpleNamespace(device_name="boot", auto_delete=False)]
+        )
+        clients.instances.set_disk_auto_delete.return_value = SimpleNamespace(name="op")
+        secret_ops, _ = _secret_ops()
+        raes_plan = replace(_plan(), nodes=(replace(_plan().nodes[0], count=1),))
+
+        destroy_raes_range_cell(
+            "req-1",
+            7,
+            raes_plan,
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+        )
+
+        clients.instances.set_disk_auto_delete.assert_called_once()
+        assert clients.instances.set_disk_auto_delete.call_args.kwargs["auto_delete"] is True
 
     def test_apply_failure_triggers_cleanup_and_reraises(self):
         clients = _clients(instance_insert_error=RuntimeError("boom"))
@@ -1212,7 +1431,7 @@ class TestParticipantAccessRealization:
         def observe(instances):
             observe_participant_host_keys(instances, execution_builder=lambda *_args, **_kwargs: context)
 
-        module = "raes_gcp_activation_apply" if warm else "raes_gcp_apply"
+        module = "raes_gcp_activation_apply" if warm else "raes_gcp_verification"
         monkeypatch.setattr(f"{module}.observe_participant_host_keys", observe, raising=False)
         apply = realize_access_on_existing_cell if warm else apply_raes_range_cell
 

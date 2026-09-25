@@ -21,8 +21,8 @@ class InstanceCredentials:
     host_public_key: str = ""
 
 
-def _machine_image_output(instance: InstancePlan) -> ResourceDict:
-    """Render the machine-image-only fields of a preconfigured range host."""
+def _preconfigured_host_output(instance: InstancePlan) -> ResourceDict:
+    """Render participant-host fields independently of the GCE source kind."""
     return {
         "gcp_source_machine_image": instance["profile"].source_machine_image,
         "gcp_participant_container_name": instance["profile"].participant_container_name,
@@ -103,8 +103,8 @@ def instance_output(
         "gcp_bootstrap_capability": instance["profile"].bootstrap_capability,
         "gcp_service_account_email": _service_account_output(instance, config),
     }
-    if instance["profile"].source_machine_image:
-        output.update(_machine_image_output(instance))
+    if instance["profile"].bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
+        output.update(_preconfigured_host_output(instance))
     # The image's declared Guacamole SFTP root travels as realized per-instance
     # metadata (#375) so Mission Control consumes it instead of an OS map. Emitted
     # only when the profile declares one; a blank profile emits no key so the

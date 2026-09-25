@@ -78,6 +78,23 @@ describe("pack adapter assignments", () => {
     });
   });
 
+  it("lets an administrator bind a preconfigured host from an exact custom image", async () => {
+    renderRoute(<AdapterPackBindings organization="org-1" adapters={[adapter]} />);
+    await fillAssignment();
+    fireEvent.click(screen.getByLabelText("Use an administrator-selected provider image for server"));
+    fireEvent.change(screen.getByLabelText("Image reference for server"), {
+      target: { value: "projects/example/global/images/nested-host-v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Bootstrap capability for server"), {
+      target: { value: "preconfigured-machine-host" },
+    });
+    fireEvent.change(screen.getByLabelText("Management SSH username for server"), { target: { value: "host-admin" } });
+    fireEvent.change(screen.getByLabelText("Participant container for server"), { target: { value: "participant-desktop" } });
+    fireEvent.change(screen.getByLabelText("Participant username for server"), { target: { value: "student" } });
+    fireEvent.change(screen.getByLabelText("Readiness manifest SHA-256 for server"), { target: { value: "a".repeat(64) } });
+    expect(screen.getByRole("button", { name: "Review assignment" })).toBeEnabled();
+  });
+
   it("clears the GCP web option when switching an assignment to AWS", async () => {
     renderRoute(<AdapterPackBindings organization="org-1" adapters={[adapter]} />);
     await fillAssignment();
