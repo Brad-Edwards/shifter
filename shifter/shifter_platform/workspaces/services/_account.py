@@ -83,6 +83,20 @@ def hierarchy_target_scope(target_type: str, target_uuid: UUID) -> ResourceScope
     raise AccountScopeError(_DENIED)
 
 
+def event_placement_scope(target_type: str, target_uuid: UUID) -> ResourceScope:
+    """Resolve the permitted direct parent of a new CTF event.
+
+    Individual accounts own events directly; team and enterprise accounts
+    place them at an organization or workspace. The account domain validates
+    this distinction so CTF never infers it from missing subdivision IDs.
+    """
+    scope = hierarchy_target_scope(target_type, target_uuid)
+    account = _scope_account(scope)
+    if (account.kind == Account.Kind.INDIVIDUAL) != (target_type == "account"):
+        raise AccountScopeError(_DENIED)
+    return scope
+
+
 def _audit_create(entity_type: str, entity_id: int, state: dict[str, object]) -> None:
     """Keep structural mutation evidence bounded and in the caller transaction."""
     audit_log(
