@@ -325,6 +325,25 @@ class TestInstanceResource:
         assert body["service_accounts"][0]["email"] == "sh-range-host-4@test-project.iam.gserviceaccount.com"
         assert _metadata_map(body)["ssh-keys"] == "hostadmin:ssh-ed25519 AAAAkey"
 
+    def test_custom_image_preconfigured_host_has_nested_virt_and_owned_boot_disk(self):
+        instance = _instance(attach_service_account=False)
+        instance["profile"] = GCERangeImageProfile(
+            source_image="projects/test/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability="preconfigured-machine-host",
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+        )
+        instance["host_ssh_username"] = "hostadmin"
+        body = instance_resource(_plan(), instance, _config(), ssh_public_key="ssh-ed25519 AAAAkey")
+        assert body["advanced_machine_features"] == {"enable_nested_virtualization": True}
+        assert body["disks"][0]["auto_delete"] is True
+        assert body["disks"][0]["initialize_params"]["source_image"] == instance["profile"].source_image
+        assert body["service_accounts"] == []
+        assert body["shielded_instance_config"]["enable_secure_boot"] is True
+
     def test_machine_image_instance_clears_inherited_identity_when_none_is_authorized(self):
         instance = _instance(attach_service_account=False)
         instance["profile"] = GCERangeImageProfile(

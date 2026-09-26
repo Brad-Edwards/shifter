@@ -797,6 +797,43 @@ class TestRangeNetworkEnv:
         assert profile.participant_readiness_manifest_sha256 == "a" * 64
         assert config.range_host_identity_pool_size == 200
 
+    def test_load_gce_range_cell_config_parses_exact_custom_image_host(self, mocker):
+        mapping = {
+            "kali": {
+                "nested-host": {
+                    "source_image": "projects/test/global/images/nested-host-v1",
+                    "machine_type": "n2-standard-8",
+                    "disk_size_gb": 220,
+                    "disk_type": "pd-balanced",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "participant-desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                }
+            }
+        }
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/test/global/images/shifter-kali",
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(mapping),
+            },
+            clear=True,
+        )
+
+        profile = load_gce_range_cell_config().get_profile(role="attacker", os_type="kali", ami_key="nested-host")
+        assert profile.source_image == "projects/test/global/images/nested-host-v1"
+        assert profile.source_machine_image == ""
+
     @pytest.mark.parametrize(
         ("raw", "message"),
         [
@@ -999,6 +1036,21 @@ class TestRangeNetworkEnv:
     @pytest.mark.parametrize(
         ("entry", "message"),
         [
+            (
+                {
+                    "source_image": "projects/test/global/images/family/nested-host",
+                    "machine_type": "n2-standard-8",
+                    "disk_size_gb": 220,
+                    "disk_type": "pd-balanced",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "exact custom-image reference",
+            ),
             (
                 {
                     "source_image": "projects/test/global/images/host",

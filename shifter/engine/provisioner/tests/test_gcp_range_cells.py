@@ -1108,6 +1108,48 @@ def test_machine_image_instance_clone_converges_all_attached_disks_to_auto_delet
     )
 
 
+def test_custom_image_host_reconcile_restores_boot_disk_auto_delete(mocker):
+    base = _sample_config()
+    profile = GCERangeImageProfile(
+        source_image="projects/test-project/global/images/nested-host-v1",
+        machine_type="n2-standard-8",
+        disk_size_gb=220,
+        bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+        participant_container_name="participant-desktop",
+        participant_username="operator",
+        host_ssh_username="hostadmin",
+        participant_readiness_contract=GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+        participant_readiness_manifest_sha256="a" * 64,
+    )
+    profiles = {profile_class: dict(entries) for profile_class, entries in base.image_key_profiles.items()}
+    profiles["kali"]["nested-host"] = profile
+    config = dataclasses.replace(base, image_key_profiles=profiles, range_host_identity_pool_size=10)
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "nested-host"
+    plan = render_range_cell_plan("req-123", _variables(payload=payload), config, range_host_pool_slot=4)
+    instance = plan["instances"][0]
+    clients = _mock_clients(exists=False)
+    clients.instances.get.side_effect = None
+    clients.instances.get.return_value = SimpleNamespace(
+        labels={**plan["labels"], "image-key": "nested-host", "image-profile": instance["image_profile_fingerprint"]},
+        disks=[SimpleNamespace(device_name="boot", auto_delete=False)],
+        metadata=SimpleNamespace(items=[]),
+    )
+    clients.instances.set_disk_auto_delete.return_value = SimpleNamespace(name="op")
+    secret_ops, _ = _mock_secret_ops(mocker)
+
+    _ensure_instance(plan, clients, config, instance, secret_ops)
+
+    clients.instances.insert.assert_not_called()
+    clients.instances.set_disk_auto_delete.assert_called_once_with(
+        project="test-project",
+        zone="us-central1-b",
+        instance=instance["resource_name"],
+        device_name="boot",
+        auto_delete=True,
+    )
+
+
 def test_render_plan_resolves_distinct_images_for_same_role_by_ami_key():
     payload = _scenario_payload()
     example = payload["subnets"][0]["instances"][0]

@@ -294,6 +294,7 @@ _SHA256_DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 _MACHINE_IMAGE_REF = re.compile(
     r"^projects/[a-z0-9][-a-z0-9.:]*/global/machineImages/[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$"
 )
+_EXACT_GCE_IMAGE_REF = re.compile(r"^projects/[a-z0-9][-a-z0-9.:]*/global/images/[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 _CONTAINER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _READINESS_CONTRACT = "participant-readiness/v1"
 _PRECONFIGURED_MACHINE_HOST = "preconfigured-machine-host"
@@ -306,21 +307,18 @@ def _validate_runtime_profile(
     management_user: str,
 ) -> dict[str, str]:
     """Validate the optional provider realization profile stored with a mapping."""
-    image_kind = (opts.image_kind or "image").strip()
-    bootstrap = (opts.bootstrap_capability or "standard").strip()
+    image_kind, bootstrap = _validated_profile_discriminator(opts)
     container = (opts.participant_container_name or "").strip()
     participant_user = (opts.participant_username or "").strip()
     readiness_contract = (opts.participant_readiness_contract or "").strip()
     readiness_sha = (opts.participant_readiness_manifest_sha256 or "").strip()
-    if image_kind not in {"image", "machine-image"}:
-        raise RaesImageMappingError("image_kind must be 'image' or 'machine-image'")
-    if not re.fullmatch(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?", bootstrap):
-        raise RaesImageMappingError("bootstrap_capability must be a lowercase logical capability")
     participant_fields = (container, participant_user, readiness_contract, readiness_sha)
-    if image_kind == "image":
+    if image_kind == "image" and bootstrap != _PRECONFIGURED_MACHINE_HOST:
         _validate_boot_image_fields(participant_fields)
     else:
-        _validate_machine_image_fields(provider, image_ref, bootstrap, management_user, participant_fields)
+        _validate_preconfigured_host_fields(
+            provider, image_ref, image_kind, bootstrap, management_user, participant_fields
+        )
     return {
         "image_kind": image_kind,
         "bootstrap_capability": bootstrap,
@@ -331,15 +329,27 @@ def _validate_runtime_profile(
     }
 
 
+def _validated_profile_discriminator(opts: RaesImageMappingOptions) -> tuple[str, str]:
+    """Validate the image kind and bootstrap capability before profile details."""
+    image_kind = (opts.image_kind or "image").strip()
+    bootstrap = (opts.bootstrap_capability or "standard").strip()
+    if image_kind not in {"image", "machine-image"}:
+        raise RaesImageMappingError("image_kind must be 'image' or 'machine-image'")
+    if not re.fullmatch(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?", bootstrap):
+        raise RaesImageMappingError("bootstrap_capability must be a lowercase logical capability")
+    return image_kind, bootstrap
+
+
 def _validate_boot_image_fields(participant_fields: tuple[str, str, str, str]) -> None:
     """Reject participant-host metadata on a normal boot image."""
     if any(participant_fields):
-        raise RaesImageMappingError("participant host fields require image_kind 'machine-image'")
+        raise RaesImageMappingError("participant host fields require bootstrap_capability 'preconfigured-machine-host'")
 
 
-def _validate_machine_image_fields(
+def _validate_preconfigured_host_fields(
     provider: str,
     image_ref: str,
+    image_kind: str,
     bootstrap: str,
     management_user: str,
     participant_fields: tuple[str, str, str, str],
@@ -347,18 +357,15 @@ def _validate_machine_image_fields(
     """Require the provider and complete participant-host readiness contract."""
     container, participant_user, readiness_contract, readiness_sha = participant_fields
     if provider != "gce":
-        raise RaesImageMappingError("machine-image mappings currently require provider 'gce'")
-    if not _MACHINE_IMAGE_REF.fullmatch(image_ref):
-        raise RaesImageMappingError(
-            "machine-image image_ref must be an exact 'projects/<project>/global/machineImages/<name>' resource"
-        )
+        raise RaesImageMappingError("preconfigured host mappings currently require provider 'gce'")
+    _validate_preconfigured_image_ref(image_ref, image_kind)
     if bootstrap != _PRECONFIGURED_MACHINE_HOST:
         raise RaesImageMappingError("machine-image mappings require bootstrap_capability 'preconfigured-machine-host'")
     if not management_user:
-        raise RaesImageMappingError("machine-image mappings require management_ssh_username")
+        raise RaesImageMappingError("preconfigured host mappings require management_ssh_username")
     if not all(participant_fields):
         raise RaesImageMappingError(
-            "machine-image mappings require participant container, username, readiness contract, and manifest digest"
+            "preconfigured hosts require participant container, username, readiness contract, and manifest digest"
         )
     if not _CONTAINER_NAME.fullmatch(container):
         raise RaesImageMappingError("participant_container_name is invalid")
@@ -370,6 +377,18 @@ def _validate_machine_image_fields(
         raise RaesImageMappingError(f"participant_readiness_contract must be '{_READINESS_CONTRACT}'")
     if not re.fullmatch(r"[0-9a-f]{64}", readiness_sha):
         raise RaesImageMappingError("participant_readiness_manifest_sha256 must be a lowercase SHA-256 digest")
+
+
+def _validate_preconfigured_image_ref(image_ref: str, image_kind: str) -> None:
+    """Require an exact source for either supported preconfigured host image kind."""
+    if image_kind == "machine-image" and not _MACHINE_IMAGE_REF.fullmatch(image_ref):
+        raise RaesImageMappingError(
+            "machine-image image_ref must be an exact 'projects/<project>/global/machineImages/<name>' resource"
+        )
+    if image_kind == "image" and not _EXACT_GCE_IMAGE_REF.fullmatch(image_ref):
+        raise RaesImageMappingError(
+            "preconfigured host image_ref must be an exact 'projects/<project>/global/images/<name>' resource"
+        )
 
 
 def _stripped(value: str | None) -> str:

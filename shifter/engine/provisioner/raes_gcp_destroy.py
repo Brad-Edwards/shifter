@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_destroy import _mark_disks_auto_delete
 from gcp_range_cell_firewall import public_web_firewall_name
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _delete_resource
@@ -115,6 +116,7 @@ def _destroy_instances(
 ) -> None:
     """Delete instances, addresses, and their deterministic guest secrets."""
     for instance in reversed(plan["instances"]):
+        _mark_disks_auto_delete(plan, runtime.clients, instance["resource_name"])
         _delete_resource(
             plan,
             runtime.clients,

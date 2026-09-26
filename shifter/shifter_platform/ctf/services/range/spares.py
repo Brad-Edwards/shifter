@@ -334,7 +334,7 @@ def cleanup_event_spares(event_id: UUID) -> dict[str, Any]:
     Raises:
         CTFNotFoundError: If the event does not exist.
     """
-    from ctf.bridges import cms_destroy_range
+    from ctf.bridges import cms_destroy_range, cms_find_range_instance_id
 
     event = _get_event(event_id)
     unconsumed = CTFSpareRange.objects.filter(event=event, consumed_by__isnull=True).exclude(
@@ -348,8 +348,18 @@ def cleanup_event_spares(event_id: UUID) -> dict[str, Any]:
     for spare in unconsumed:
         owner = spare.owner_user
         try:
-            if spare.range_instance_id is not None and owner is not None:
-                cms_destroy_range(owner, spare.range_instance_id)
+            if spare.range_instance_id is None and spare.request_id is not None:
+                spare.range_instance_id = cms_find_range_instance_id(spare.request_id)
+                if spare.range_instance_id is not None:
+                    spare.save(update_fields=["range_instance_id", "updated_at"])
+            if spare.range_instance_id is None or owner is None:
+                failed += 1
+                logger.warning(
+                    "cleanup_event_spares: cannot destroy spare with missing range or owner (event=%s)",
+                    safe_log_value(event_id),
+                )
+                continue
+            cms_destroy_range(owner, spare.range_instance_id)
             destroyed += 1
         except Exception:
             failed += 1
@@ -358,6 +368,9 @@ def cleanup_event_spares(event_id: UUID) -> dict[str, Any]:
                 spare.range_instance_id,
                 safe_log_value(event_id),
             )
+            # Preserve the owner and nonterminal status so a later cleanup
+            # attempt can retry. A failed dispatch is not a destroyed range.
+            continue
         if delete_managed_spare_user(owner):
             users_deleted += 1
         spare.status = SpareRangeStatus.FAILED.value
