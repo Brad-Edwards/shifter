@@ -92,16 +92,36 @@ _GCE_RANGE_ENV_KEYS = (
     "GCP_RANGE_EGRESS_ALLOW_CIDRS",
     "GCP_RANGE_PRIVATE_GOOGLE_ACCESS",
     "GCP_RANGE_HOST_MGMT_SSH_PORT",
-    "GCP_RANGE_VERTEX_PROJECT_ID",
-    "GCP_RANGE_VERTEX_REGION",
-    "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
-    "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
     "GCP_RANGE_PREPROVISIONED_FIREWALLS",
-    "GCP_RANGE_KALI_ANTHROPIC_MODEL",
-    "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
-    "POLARIS_TESTS_BUCKET",
-    "POLARIS_TESTS_KEY",
 )
+
+_PROVISIONER_STATIC_SECRET_KEYS = frozenset(
+    {
+        "GDC_ACCESS_SECRET_ID",
+        "GDC_VM_IMAGE_GCS_SECRET_ID",
+        "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+        "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+    }
+)
+_FULL_SECRET_REF_RE = re.compile(r"^projects/[^/]+/secrets/[^/]+$")
+
+
+def _provisioner_static_secret_values(outputs: dict[str, object]) -> dict[str, str]:
+    """Validate and return the exact static references published by Terraform."""
+    raw = _value(outputs, "provisioner_static_secret_refs")
+    if not isinstance(raw, dict):
+        raise ValueError("provisioner_static_secret_refs Terraform output must be a map")
+    unexpected = set(raw) - _PROVISIONER_STATIC_SECRET_KEYS
+    if unexpected:
+        raise ValueError(f"provisioner_static_secret_refs contains unsupported keys: {', '.join(sorted(unexpected))}")
+    values = {str(key): str(value).strip() for key, value in raw.items()}
+    invalid = sorted(key for key, value in values.items() if not _FULL_SECRET_REF_RE.fullmatch(value))
+    if invalid:
+        raise ValueError(
+            "provisioner_static_secret_refs values must be full projects/<project>/secrets/<id> references: "
+            + ", ".join(invalid)
+        )
+    return values
 
 
 def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
@@ -224,6 +244,55 @@ def _project_from_self_link(self_link: object) -> str:
 
 
 _ENGINE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_MODEL_ACCESS_CATALOG_PATH = "/etc/shifter/model-access/catalog.json"
+
+
+def _model_access_runtime_values() -> dict[str, str]:
+    """Render only activation and the mounted catalog identity, never its body."""
+    enabled = os.environ.get("MODEL_ACCESS_ENABLED", "false").strip().lower()
+    path = os.environ.get("MODEL_ACCESS_CATALOG_PATH", "").strip()
+    digest = os.environ.get("MODEL_ACCESS_CATALOG_DIGEST", "").strip()
+    if enabled not in {"true", "false"}:
+        raise ValueError("MODEL_ACCESS_ENABLED must be true or false")
+    if bool(path) != bool(digest) or (enabled == "true" and not path):
+        raise ValueError("model access requires catalog path and digest together")
+    if path and path != _MODEL_ACCESS_CATALOG_PATH:
+        raise ValueError("model access catalog path must be the fixed mounted artifact path")
+    if digest and not _ENGINE_DIGEST_RE.fullmatch(digest):
+        raise ValueError("model access catalog digest must be sha256:<64 lowercase hex>")
+    return {
+        "MODEL_ACCESS_ENABLED": enabled,
+        "MODEL_ACCESS_CATALOG_PATH": path,
+        "MODEL_ACCESS_CATALOG_DIGEST": digest,
+    }
+
+
+def _mission_control_lease_runtime_values() -> dict[str, str]:
+    """Pass through the validated Mission Control lease policy JSON (issue #27).
+
+    The policy is validated and rendered from ``shifter.yaml`` by
+    ``installation.render.render_mission_control_lease_env`` and exported into this
+    render process's environment by the deploy pipeline (mirroring how the model-access
+    and warm-pool env lines are injected). This producer re-serializes it to canonical
+    compact JSON without rebuilding the policy parser (the shared validator already ran).
+    An absent value is omitted so the Django runtime applies the canonical 30/30/365
+    defaults; a malformed value fails closed rather than shipping an unvalidated policy.
+    """
+    raw = os.environ.get("MISSION_CONTROL_LEASE_POLICY_JSON")
+    if raw is None:
+        # Truly unset -> omit so the Django runtime applies the canonical defaults.
+        return {}
+    stripped = raw.strip()
+    if not stripped:
+        # Present but blank is a broken deployment substitution, not an omission.
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON is present but blank")
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON must be a JSON object")
+    return {"MISSION_CONTROL_LEASE_POLICY_JSON": json.dumps(parsed, separators=(",", ":"), sort_keys=True)}
 
 
 def _validated_engine_digest(engine_image_digest: str) -> str:
@@ -281,6 +350,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     image_roots = _value(outputs, "artifact_registry_image_roots")
     identity_platform_api_key = _value(outputs, "identity_platform_api_key")
     identity_platform_project_id = _value(outputs, "identity_platform_project_id")
+    dynamic_secret_project_id = str(_value(outputs, "dynamic_secret_project_id")).strip()
     identity_allowed_email_domain = str(_value(outputs, "identity_allowed_email_domain")).strip()
     identity_allowed_emails = _string_list(_value(outputs, "identity_allowed_emails"))
     public_hostname = _value(outputs, "public_hostname").strip()
@@ -289,6 +359,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     range_network_cidr = _value(outputs, "range_network_cidr")
     range_network_region = _value(outputs, "range_network_region")
     portal_network_cidrs = _value(outputs, "portal_network_cidrs")
+    access_network_cidrs = _value(outputs, "access_network_cidrs")
     # The real deploy GCP project. Google client libraries use GCP_PROJECT_ID /
     # GOOGLE_CLOUD_PROJECT as the default quota/consumer project, so a placeholder
     # here makes every API call bill an invalid project (CONSUMER_INVALID). Derive
@@ -304,6 +375,8 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         )
     if not identity_allowed_email_domain:
         raise ValueError("GCP portal runtime requires identity_allowed_email_domain to be set")
+    if not dynamic_secret_project_id:
+        raise ValueError("GCP portal runtime requires dynamic_secret_project_id to be set")
 
     site_url = f"https://{public_hostname}"
     # The public hostname is the only externally addressable host. Health-check
@@ -337,9 +410,10 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "QUEUE_MC_CONSUMER_ID": subscriptions["mc"],
         "QUEUE_MC_PUBLISHER_ID": topic_id,
         "DB_SECRET_ID": secret_ids["db"],
+        "PROVISIONER_DB_SECRET_ID": secret_ids["db-provisioner"],
+        "DB_MIGRATION_SECRET_ID": secret_ids["db-migration"],
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
-        "GDC_ACCESS_SECRET_ID": _derive_sibling_secret_id(secret_ids["app"], "app", "gdc-access"),
         # Prebaked Windows DC domain Administrator password (GCE + GDC range
         # backends). The entrypoint resolves DC_DOMAIN_PASSWORD from this
         # reference and ecs.py passes it into the provisioner Job; without it the
@@ -361,6 +435,9 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         # DB_PASSWORD is Secret-backed; name/user are plain connection metadata.
         "DB_NAME": database["database_name"],
         "DB_USER": database["user_name"],
+        "PROVISIONER_DB_USER": database["provisioner_user_name"],
+        "AUDIT_DEPLOYMENT_SCOPE": f"gcp:{real_project}",
+        "SKIP_MIGRATIONS": "1",
         # Redis host/port are non-secret and ride in the runtime ConfigMap.
         # REDIS_TLS / REDIS_SECRET_ID (added below) flag the secure posture
         # and point the entrypoint at the Secret Manager bundle that carries
@@ -383,6 +460,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         # libraries bill the correct quota/consumer project.
         "GCP_PROJECT_ID": real_project,
         "GOOGLE_CLOUD_PROJECT": real_project,
+        "GCP_DYNAMIC_SECRET_PROJECT_ID": dynamic_secret_project_id,
         # CLOUD_PROJECT_ID is emitted by the provisioner-launcher (its
         # _get_gcp_provisioner_env_overrides fallback is settings.GCP_PROJECT_ID),
         # so it must be present in this ConfigMap or the restrict-provisioner-jobs
@@ -390,6 +468,12 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "CLOUD_PROJECT_ID": real_project,
         "IDENTITY_PLATFORM_API_KEY": identity_platform_api_key,
         "IDENTITY_PLATFORM_PROJECT_ID": identity_platform_project_id,
+        # Native service ID tokens are admitted only for this exact portal.
+        "GCP_SERVICE_TOKEN_AUDIENCE": site_url,
+        "IDENTITY_PLATFORM_TENANT_ID": os.environ.get("IDENTITY_PLATFORM_TENANT_ID", "").strip(),
+        "IDENTITY_SESSION_ABSOLUTE_SECONDS": os.environ.get("IDENTITY_SESSION_ABSOLUTE_SECONDS", "28800"),
+        "IDENTITY_SESSION_IDLE_SECONDS": os.environ.get("IDENTITY_SESSION_IDLE_SECONDS", "1800"),
+        "IDENTITY_SESSION_RECHECK_SECONDS": os.environ.get("IDENTITY_SESSION_RECHECK_SECONDS", "300"),
         "IDENTITY_PLATFORM_AUTH_DOMAIN": f"{identity_platform_project_id}.firebaseapp.com",
         # Allow-list rendered from the same Terraform outputs the provider-side
         # blocking function uses, so both enforce one policy.
@@ -400,6 +484,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "RANGE_NETWORK_CIDR": range_network_cidr,
         "RANGE_NETWORK_REGION": range_network_region,
         "PORTAL_NETWORK_CIDRS": ",".join(_unique(portal_network_cidrs)),
+        "ACCESS_NETWORK_CIDRS": ",".join(_unique(access_network_cidrs)),
         "GCP_RANGE_BACKEND": os.environ.get("GCP_RANGE_BACKEND", "gce").strip() or "gce",
         # Real range project (from the range VPC self-link), so the GCE
         # range-cell backend targets it directly even when the control-plane
@@ -454,6 +539,18 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values.update(_email_runtime_values(outputs))
     values.update(_optional_gce_range_values())
     values.update(_ctf_content_runtime_values(outputs))
+    # Populated from validated broker projection after this common renderer;
+    # empty values revoke stale coordinates when the broker is disabled.
+    values["MODEL_BROKER_GUEST_URL"] = ""
+    values["MODEL_BROKER_GUEST_VIP"] = ""
+    values["MODEL_ENROLLMENT_CONTROL_URL"] = ""
+    values["MODEL_ENROLLMENT_CA_PEM_B64"] = ""
+    values.update(_model_access_runtime_values())
+    values.update(_mission_control_lease_runtime_values())
+    # These references originate in the same validated shifter.yaml map that
+    # drives per-secret Terraform IAM. Apply them last so a process-local env
+    # override cannot decouple runtime lookup from its exact IAM grant.
+    values.update(_provisioner_static_secret_values(outputs))
 
     return "".join(f"{key}={value}\n" for key, value in values.items())
 

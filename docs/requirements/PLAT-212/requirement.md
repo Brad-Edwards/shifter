@@ -17,15 +17,15 @@ The platform shall support a declarative experiment protocol that records the sc
 
 ## Rationale
 
-PLAT-205 covers experiment orchestration at a product-capability level. APTL adds the missing research-grade contract: runs must be specified and archived in a way that supports repeatability, audit, and comparison.
+PLAT-205 covers experiment orchestration at a product-capability level. LilRAE (formerly APTL) adds the missing research-grade contract: runs must be specified and archived in a way that supports repeatability, audit, and comparison.
 
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#399` (Experiment management / orchestration tracking)
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#466` (Experiment run orchestration tracking)
-- DOCUMENTS → SPEC `aptl:SCN-008` (APTL SCN-008: Append-Only Event Timeline)
-- DOCUMENTS → SPEC `aptl:EXP-002` (APTL EXP-002: Experiment Protocol Specification)
-- DOCUMENTS → SPEC `aptl:EXP-009` (APTL EXP-009: Structured Experiment Result Summary Export)
-- DOCUMENTS → SPEC `aptl:REP-001` (APTL REP-001: Experiment Manifest for Reproducibility)
-- DOCUMENTS → SPEC `aptl:SCN-006` (APTL SCN-006: Run Archive Packaging and S3 Export)
+- DOCUMENTS → SPEC `aptl:SCN-008` (LilRAE specification, former APTL identifier SCN-008: Append-Only Event Timeline)
+- DOCUMENTS → SPEC `aptl:EXP-002` (LilRAE specification, former APTL identifier EXP-002: Experiment Protocol Specification)
+- DOCUMENTS → SPEC `aptl:EXP-009` (LilRAE specification, former APTL identifier EXP-009: Structured Experiment Result Summary Export)
+- DOCUMENTS → SPEC `aptl:REP-001` (LilRAE specification, former APTL identifier REP-001: Experiment Manifest for Reproducibility)
+- DOCUMENTS → SPEC `aptl:SCN-006` (LilRAE specification, former APTL identifier SCN-006: Run Archive Packaging and S3 Export)
 - DOCUMENTS → PULL_REQUEST `780` (Experiment orchestration implementation PR)

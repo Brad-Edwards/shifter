@@ -5,17 +5,19 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
-from django.db import models, transaction
+from django.db import models
 
 from shared.schemas.persistence import unwrap_persisted_spec
 
+from ._range_allocation import RangeAllocationMixin
+from ._range_egress import RANGE_EGRESS_DEFAULT, RANGE_EGRESS_MODE_CHOICES
 from ._request import Request
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 
-class Range(models.Model):
+class Range(RangeAllocationMixin, models.Model):
     """User's cyber range instance with lifecycle management."""
 
     class Status(models.TextChoices):
@@ -53,9 +55,22 @@ class Range(models.Model):
         help_text="User ID from CMS (may differ from Django user.id)",
     )
     # Soft reference to workspaces.Workspace (ADR-046-R3, #1325): a scalar, not a
-    # cross-layer FK (ADR-001-R2), supplied by the trusted CMS launch path. Non-null
-    # with no default -- unlike the backend binding below, NULL is not a sentinel.
-    workspace_id = models.IntegerField(db_index=True, help_text="Workspace scope (soft reference; ADR-046).")
+    # cross-layer FK (ADR-001-R2) from the trusted CMS launch path; non-null, no default.
+    workspace_id = models.IntegerField(
+        null=True, blank=True, db_index=True, help_text="Workspace scope (soft reference; ADR-046/ADR-066)."
+    )
+    scope_kind = models.CharField(
+        max_length=16, blank=True, default="", choices=(("installation", "Installation"), ("account", "Account"))
+    )
+    account_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    organization_id = models.PositiveBigIntegerField(null=True, blank=True)
+    # Effective egress posture pinned at create under the workspace mutex, replay-verified (PLAT-238).
+    egress_mode = models.CharField(
+        max_length=16,
+        choices=RANGE_EGRESS_MODE_CHOICES,
+        default=RANGE_EGRESS_DEFAULT,
+        help_text="Effective range egress posture pinned at create (PLAT-238; ADR-017-R5/ADR-026).",
+    )
     ngfw_instance = models.ForeignKey(
         "Instance",
         on_delete=models.SET_NULL,
@@ -78,21 +93,16 @@ class Range(models.Model):
     )
     provisioner_operation = models.CharField(max_length=32, blank=True, default="")
     provisioner_operation_id = models.UUIDField(null=True, blank=True, editable=False)
-    # Range-backend ownership binding (#1666). Immutable, write-once platform
-    # admission/ownership metadata set at create time from the CMS
-    # BackendAdmission (shared.range_instantiation_policy). It is NOT scenario
-    # intent and is NEVER re-derived from the deploy-wide GCP_RANGE_BACKEND
-    # selector: destroy, compensation, retries, and reconciliation route from
-    # these persisted facts so a `gdc -> gce` selector flip cannot strand
-    # existing GDC ranges (ADR-030 / ADR-039). NULL is the sentinel for legacy
-    # pre-#1666 rows and non-GCP ranges; the Engine create seam is the sole
-    # writer and validates values via shared.range_instantiation_policy
-    # (normalize_gcp_range_backend / InstantiationPurpose) before persisting.
-    # The null=True on these two fields is intentional (DJ001 / Sonar S6552
-    # suppressed): NULL is the load-bearing sentinel for "no persisted binding"
-    # (legacy pre-#1666 / non-GCP), distinct from any real backend value. The
-    # usual "" default would conflate unbound with a value and break the
-    # destroy-time legacy-resolution path (#1666 preflight).
+    model_source_policy_revision = models.PositiveIntegerField(default=0)
+    # Stable cloud ownership epoch; destroy has a different operation fence.
+    resource_generation = models.UUIDField(null=True, blank=True, editable=False)
+    # Range-backend ownership binding (#1666): write-once (backend, purpose) set at
+    # create from the CMS BackendAdmission and validated via
+    # shared.range_instantiation_policy; never re-derived from the GCP_RANGE_BACKEND
+    # selector, so destroy/reconcile route from these facts and a gdc->gce flip
+    # cannot strand ranges (ADR-030 / ADR-039). NULL (null=True intentional; DJ001 /
+    # Sonar S6552 suppressed) is the load-bearing "no persisted binding" sentinel
+    # for legacy pre-#1666 / non-GCP rows, distinct from any real backend value.
     range_backend = models.CharField(  # noqa: DJ001
         max_length=8,
         null=True,  # NOSONAR
@@ -217,6 +227,26 @@ class Range(models.Model):
         ordering = ["-created_at"]
         # Keep using original table name from mission_control
         db_table = "mission_control_range"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        scope_kind="", account_id__isnull=True, organization_id__isnull=True, workspace_id__isnull=False
+                    )
+                    | models.Q(
+                        scope_kind="installation",
+                        account_id__isnull=True,
+                        organization_id__isnull=True,
+                        workspace_id__isnull=True,
+                    )
+                    | (
+                        models.Q(scope_kind="account", account_id__isnull=False)
+                        & (models.Q(workspace_id__isnull=True) | models.Q(organization_id__isnull=False))
+                    )
+                ),
+                name="engine_range_resource_scope_shape",
+            ),
+        ]
 
     def __str__(self) -> str:
         """Return a human-readable label with id, scenario, and status."""
@@ -329,98 +359,6 @@ class Range(models.Model):
             if range_obj.get_instance_by_uuid(instance_uuid) is not None:
                 return range_obj
         return None
-
-    # Subnet index allocation constants
-    # Range VPC uses 10.1.0.0/16 with /28 subnets (16 IPs each)
-    # Capacity: 253 third octets (2-254) x 16 /28 blocks = 4048 subnets
-    SUBNET_INDEX_MIN = 1
-    SUBNET_INDEX_MAX = 4048
-
-    @classmethod
-    def allocate_subnet_index(cls) -> int:
-        """
-        Allocate the next available subnet index for a new range.
-
-        Uses a table-level EXCLUSIVE lock to serialize all concurrent
-        allocations. This prevents race conditions even when no rows
-        exist in the table (unlike SELECT FOR UPDATE which only locks
-        matching rows).
-
-        Returns:
-            int: The allocated subnet index (1-4048)
-
-        Raises:
-            ValueError: If no subnet indices are available (4048 active ranges)
-        """
-        from django.db import connection
-
-        with transaction.atomic():
-            # Table-level lock serializes ALL concurrent allocations.
-            # EXCLUSIVE mode blocks other EXCLUSIVE locks and all writes,
-            # but allows concurrent reads (SELECT without FOR UPDATE).
-            # Skip for SQLite (used in tests) — SQLite serializes at the file level.
-            if connection.vendor != "sqlite":
-                with connection.cursor() as cursor:
-                    cursor.execute("LOCK TABLE mission_control_range IN EXCLUSIVE MODE")
-
-            # Get all subnet_index values currently in use by active ranges
-            # Exclude terminal states (DESTROYED, FAILED) - those ranges don't have
-            # AWS resources or their resources are being cleaned up
-            used_indices = set(
-                cls.objects.exclude(status__in=[cls.Status.DESTROYED, cls.Status.FAILED])
-                .exclude(subnet_index__isnull=True)
-                .values_list("subnet_index", flat=True)
-            )
-
-            # Find the first available index
-            for index in range(cls.SUBNET_INDEX_MIN, cls.SUBNET_INDEX_MAX + 1):
-                if index not in used_indices:
-                    return index
-
-            raise ValueError(
-                f"No subnet indices available. Maximum {cls.SUBNET_INDEX_MAX} "
-                "concurrent ranges supported. Destroy some ranges first."
-            )
-
-    @classmethod
-    def allocate_vpn_gateway_slot(cls) -> int:
-        """Reserve the next free GCP OpenVPN gateway SA pool slot (ADR-008-R7).
-
-        Uses the same table-level EXCLUSIVE lock as ``allocate_subnet_index`` to
-        serialize concurrent allocations. The pool is bounded by
-        ``settings.VPN_GATEWAY_POOL_SIZE`` and must match the number of
-        ``sh-vpn-pool-<slot>`` service accounts Terraform pre-creates. A slot is
-        freed implicitly when its range reaches a terminal (DESTROYED/FAILED)
-        status, so no explicit release path is needed. Returns the 0-based slot;
-        raises ValueError if the pool is unset or exhausted.
-        """
-        from django.conf import settings
-        from django.db import connection
-
-        pool_size = int(getattr(settings, "VPN_GATEWAY_POOL_SIZE", 0))
-        if pool_size <= 0:
-            raise ValueError("VPN_GATEWAY_POOL_SIZE must be a positive integer to provision OpenVPN ranges")
-
-        with transaction.atomic():
-            if connection.vendor != "sqlite":
-                with connection.cursor() as cursor:
-                    cursor.execute("LOCK TABLE mission_control_range IN EXCLUSIVE MODE")
-
-            used_slots = set(
-                cls.objects.exclude(status__in=[cls.Status.DESTROYED, cls.Status.FAILED])
-                .exclude(vpn_gateway_pool_slot__isnull=True)
-                .values_list("vpn_gateway_pool_slot", flat=True)
-            )
-
-            for slot in range(pool_size):
-                if slot not in used_slots:
-                    return slot
-
-            raise ValueError(
-                f"OpenVPN gateway pool exhausted. Maximum {pool_size} concurrent OpenVPN "
-                "ranges supported; increase VPN_GATEWAY_POOL_SIZE (and the Terraform pool) "
-                "or destroy some ranges first."
-            )
 
     # The ``provisioned_instances`` traversal below delegates to the pure,
     # dependency-neutral projection helpers in ``engine._range_state`` (#685).

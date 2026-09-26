@@ -88,6 +88,8 @@ def dispatch_provisioner_command(command: list[str], *, task_identity: str | Non
     from engine.launch_intents import validate_provisioner_command
 
     validate_provisioner_command(command)
+    if _is_local_provisioner_enabled():
+        return _run_local_provisioner(command)
     task_config = _get_engine_task_config()
     if task_config is None:
         return None
@@ -219,11 +221,10 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
     Args:
         request_id: UUID of the Request to operate on
         command: Command to run ("provision" or "destroy")
-        resource: Provisioner subcommand/resource group. Defaults to ``"range"``
-            (the cyberscript path, unchanged). The RAES-native path passes
-            ``"raes-range"`` so the provisioner realizes a persisted serialized
-            RAES plan instead of a wrapped RangeSpec (ADR-031/ADR-032); the
-            local/ECS dispatch mechanics are identical.
+        resource: Provisioner subcommand/resource group. RAES lifecycle calls
+            pass ``"raes-range"`` so the provisioner realizes a persisted
+            serialized RAES plan (ADR-031/ADR-032); the local/ECS dispatch
+            mechanics are otherwise identical.
 
     Returns:
         Reserved launch-intent task ref, or None if the engine task runner is not configured
@@ -251,7 +252,10 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
             request_id,
             command,
         )
-        return _run_local_provisioner(command_list)
+        from engine.launch_intents import enqueue_provisioner_launch, task_ref_for_intent
+
+        intent_id = enqueue_provisioner_launch(command_list)
+        return task_ref_for_intent(intent_id) or f"local-pending:{intent_id}"
     return _dispatch_remote_provisioner_task(command_list, request_id, resource)
 
 

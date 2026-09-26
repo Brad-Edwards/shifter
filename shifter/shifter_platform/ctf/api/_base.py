@@ -86,14 +86,26 @@ class HasActiveCTFActor(permissions.BasePermission):
         return ctf_actor_user(request) is not None
 
 
-class HasCTFOrganizer(permissions.BasePermission):
-    """Require the resolved actor to be a CTF organizer."""
+class HasCTFEventAdminAccess(permissions.BasePermission):
+    """Admit the CTF event-administration surface for an organizer or platform admin.
+
+    Advisory top-level admission only (ADR-052): it does not redefine
+    ``is_ctf_organizer`` or grant any per-object authority. Every endpoint still
+    resolves owner / delegated-staff / platform-admin authority per operation via
+    the service resolver, so widening this gate cannot let a platform
+    administrator act where the per-object policy would refuse (e.g. staff
+    management stays owner-only).
+    """
 
     message = "Forbidden"
 
     def has_permission(self, request: Request, view: APIView) -> bool:
+        from ctf.services.authorization import is_ctf_platform_admin
+
         user = ctf_actor_user(request)
-        return bool(user and get_user_role(user).is_ctf_organizer)
+        if user is None:
+            return False
+        return get_user_role(user).is_ctf_organizer or is_ctf_platform_admin(user)
 
 
 class HasCTFParticipant(permissions.BasePermission):
@@ -143,7 +155,7 @@ CTF_AUTH_PERMISSIONS: list[PermissionClass] = [
     HasCTFEndpointScope,
 ]
 
-CTF_ORGANIZER_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFOrganizer]
+CTF_ORGANIZER_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFEventAdminAccess]
 CTF_PARTICIPANT_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFParticipant]
 CTF_ROLE_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFRole]
 
@@ -284,3 +296,71 @@ def _error_code_for_status(status_code: int) -> str:
         404: "not_found",
         429: "throttled",
     }.get(status_code, "ctf_error")
+
+
+def ctf_error_response(request: Request, exc: Exception) -> Response:
+    """One authored, body-free CTF-to-platform error mapping."""
+    from ctf.exceptions import (
+        CTFCommunicationError,
+        CTFNotFoundError,
+        CTFPermissionError,
+        CTFStateError,
+        CTFValidationError,
+    )
+
+    code, message, status_code = "dependency_unavailable", "Service unavailable", 503
+    if isinstance(exc, CTFCommunicationError):
+        domain_code = exc.code
+        if domain_code in {
+            "CTF_COMMUNICATION_ACTOR_DENIED",
+            "CTF_COMMUNICATION_ACTOR_REQUIRED",
+            "CTF_COMMUNICATION_TOKEN_DENIED",
+            "CTF_COMMUNICATION_WORKSPACE_DENIED",
+            "CTF_COMMUNICATION_EVENT_DENIED",
+            "CTF_COMMUNICATION_TARGET_DENIED",
+            "CTF_COMMUNICATION_NOT_FOUND",
+            "CTF_COMMUNICATION_REVISION_MISMATCH",
+            "CTF_COMMUNICATION_AUDIENCE_OUT_OF_SCOPE",
+            "CTF_COMMUNICATION_EARLY_RELEASE_DENIED",
+            "CTF_COMMUNICATION_PARTICIPANT_DENIED",
+        }:
+            code, message, status_code = "not_found", "Resource not found", 404
+        elif domain_code in {"CTF_COMMUNICATION_RATE_LIMITED", "CTF_COMMUNICATION_BACKLOG_FULL"}:
+            code, message, status_code = "throttled", "Request was throttled", 429
+        elif domain_code in {
+            "CTF_COMMUNICATION_CONTENT_INVALID",
+            "CTF_COMMUNICATION_TRIGGER_INVALID",
+            "CTF_COMMUNICATION_NO_TARGETS",
+            "CTF_COMMUNICATION_SOURCE_UNKNOWN",
+            "CTF_COMMUNICATION_AUDIENCE_TOO_LARGE",
+        }:
+            code, message, status_code = "invalid", "Invalid request", 400
+        elif domain_code in {
+            "CTF_COMMUNICATION_NOT_DRAFT",
+            "CTF_COMMUNICATION_NOT_DUE",
+            "CTF_COMMUNICATION_DUE_MISMATCH",
+            "CTF_COMMUNICATION_LIFECYCLE_NOT_SCHEDULABLE",
+            "CTF_COMMUNICATION_MILESTONE_NOT_REACHED",
+            "CTF_COMMUNICATION_IDEMPOTENCY_MISMATCH",
+            "CTF_COMMUNICATION_REPLAY_CONFLICT",
+            "CTF_COMMUNICATION_DECLARATION_CONFLICT",
+            "CTF_COMMUNICATION_EVENT_CANCELLED",
+            "CTF_COMMUNICATION_NO_CONTENT",
+            "CTF_COMMUNICATION_CANCELLED",
+            "CTF_COMMUNICATION_ACK_POLICY",
+        }:
+            code, message, status_code = "conflict", "Request conflicts with current state", 409
+    else:
+        for error_type, mapped in (
+            (CTFNotFoundError, ("not_found", "Resource not found", 404)),
+            (CTFPermissionError, ("forbidden", "Permission denied", 403)),
+            (CTFValidationError, ("invalid", "Invalid request", 400)),
+            (CTFStateError, ("conflict", "Request conflicts with current state", 409)),
+        ):
+            if isinstance(exc, error_type):
+                code, message, status_code = mapped
+                break
+    response = api_error_response(code=code, message=message, status_code=status_code, request=request)
+    if status_code == 429:
+        response["Retry-After"] = "60"
+    return response

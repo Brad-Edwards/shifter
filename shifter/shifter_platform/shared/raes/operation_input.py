@@ -33,13 +33,30 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
+from shared.model_access.guest_binding import ModelGuestBinding
 from shared.raes.artifact_binding import MAX_ARTIFACT_BINDINGS, ArtifactBinding, ArtifactBindingError
 from shared.raes.content_delivery import ContentDeliveryError, DeliveryBinding
 from shared.raes.participant_access import (
     MAX_ACCESS_BINDINGS,
     ParticipantAccessBinding,
     ParticipantAccessError,
+)
+from shared.runtime_plugin_binding import RuntimePluginPin
+
+from .operation_input_candidates import MAX_IMAGE_CANDIDATES, MAX_IMAGE_KEYS, _validated_candidates
+from .operation_input_enrollment import _model_enrollments
+from .operation_input_identity import (
+    RaesOperationInputError,
+    RaesRangeIdentity,
+    _optional_str,
+    _require,
+    _require_exact_keys,
+    _require_mapping,
+    candidate_key,
+    image_lookup_key,
+    plan_image_lookup_keys,
 )
 
 __all__ = [
@@ -51,16 +68,13 @@ __all__ = [
     "RaesInputBindings",
     "RaesOperationInput",
     "RaesOperationInputError",
+    "RaesRangeIdentity",
     "build_raes_operation_input",
     "candidate_key",
     "image_lookup_key",
     "parse_raes_operation_input",
     "plan_image_lookup_keys",
 ]
-
-
-class RaesOperationInputError(Exception):
-    """The RAES operation input is not a valid, bounded projection."""
 
 
 @dataclass(frozen=True)
@@ -76,13 +90,13 @@ class RaesInputBindings:
     delivery: Sequence[DeliveryBinding]
     access: Sequence[ParticipantAccessBinding] = ()
     artifact: Sequence[ArtifactBinding] = ()
+    runtime_plugin: RuntimePluginPin | None = None
+    model_enrollments: tuple[ModelGuestBinding, ...] = ()
 
 
 # Bounded per ADR-043-R2/R7: the input is a reference-only projection, never a
 # registry dump or a full topology snapshot.
 MAX_DELIVERY_BINDINGS = 512
-MAX_IMAGE_CANDIDATES = 64
-MAX_IMAGE_KEYS = 256
 
 _INPUT_KEYS = frozenset(
     {
@@ -94,6 +108,10 @@ _INPUT_KEYS = frozenset(
         "range_backend",
         "instantiation_purpose",
         "legacy_range_id",
+        "egress_mode",
+        "runtime_plugin",
+        "model_enrollments",
+        "resource_generation",
     }
 )
 
@@ -101,110 +119,27 @@ _INPUT_KEYS = frozenset(
 # emits ``artifact_bindings`` only when a plan actually carries an artifact
 # requirement, and a newer consumer tolerates its absence in an older queued input.
 # The field is never required, so no OperationInput/envelope version bump is needed.
-_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings"})
+# Optional for rolling-deploy compatibility (PLAT-238, ADR-043 window): a newer
+# producer always emits ``egress_mode``, but an older queued input minted before
+# this deploy carries none. Absence resolves to ``status-quo`` (inherit the
+# deployment baseline) -- the exact pre-feature behavior, never a silent
+# *weakening*: a ``none`` zero-egress or an active egress posture is always carried
+# explicitly, so a missing field can never be read as "allow egress".
+_OPTIONAL_INPUT_KEYS = frozenset(
+    {"artifact_bindings", "egress_mode", "runtime_plugin", "model_enrollments", "resource_generation"}
+)
 
-# Exactly the registry columns the resolver consumes. Anything else -- row id,
-# enabled flag, notes, timestamps -- is management metadata and stays server-side.
-_CANDIDATE_KEYS = frozenset({"source_version", "image_ref", "machine_type", "disk_size_gb", "disk_type"})
+# Mirrors ``installation.range_egress.RangeEgressMode`` without importing it (the
+# provisioner image does not load the installation/pydantic machinery, exactly as
+# ``_VALID_RANGE_BACKENDS`` mirrors the backend vocabulary). Closed here so an
+# unknown egress mode fails at the wire.
+_VALID_EGRESS_MODES = frozenset({"status-quo", "deny-all", "allowlist", "none"})
+_DEFAULT_EGRESS_MODE = "status-quo"
 
 # Mirrors ``shared.range_instantiation_policy`` without importing it: that module
 # pulls settings/policy machinery the provisioner image does not load. The
 # vocabulary is closed here so an unknown backend fails at the wire.
-_VALID_RANGE_BACKENDS = frozenset({"gce", "gdc"})
-
-_KEY_SEPARATOR = ":"
-_NODE_RESOURCE_TYPE = "node"
-
-
-def image_lookup_key(*, source_name: str | None, os_family: str | None) -> str:
-    """Return the registry lookup key for one plan node.
-
-    The authored RAES ``source`` keys the lookup; a source-less node falls back
-    to its ``os_family`` so the backend can supply a base OS image (ADR-032
-    base-OS policy).
-
-    This is the *single* rule. The Engine uses it to scope which registry rows
-    it projects; the provisioner uses it to resolve each node against that
-    projection. If the two derivations ever diverge, the Engine omits a key the
-    provisioner later asks for and the image silently goes missing at
-    realization -- so both sides call this, and neither re-derives it.
-    """
-    return (source_name or None) or (os_family or None) or ""
-
-
-def candidate_key(provider: str, source_name: str) -> str:
-    """Return the transport key for one ``(provider, source_name)`` candidate set."""
-    return f"{provider}{_KEY_SEPARATOR}{source_name}"
-
-
-def _require(condition: bool, message: str) -> None:
-    """Raise ``RaesOperationInputError(message)`` unless ``condition`` is true."""
-    if not condition:
-        raise RaesOperationInputError(message)
-
-
-def _require_mapping(value: object, field: str) -> dict[str, Any]:
-    """Return ``value`` as a mapping, else fail closed."""
-    if not isinstance(value, Mapping):
-        raise RaesOperationInputError(f"{field} must be an object")
-    return dict(value)
-
-
-def _require_exact_keys(
-    value: Mapping[str, Any], allowed: frozenset[str], field: str, *, optional: frozenset[str] = frozenset()
-) -> None:
-    """Fail closed unless ``value`` carries exactly ``allowed`` (minus any ``optional``).
-
-    ``optional`` keys may be present or absent; every other allowed key is required.
-    This is the rolling-deploy compatibility seam: an ``optional`` key a newer
-    producer emits is accepted, and its absence in an older queued input is also
-    accepted, so producer and consumer can deploy independently.
-    """
-    actual = frozenset(value)
-    unexpected = sorted(actual - allowed)
-    _require(not unexpected, f"{field} has unexpected field(s): {', '.join(unexpected)}")
-    missing = sorted((allowed - optional) - actual)
-    _require(not missing, f"{field} is missing field(s): {', '.join(missing)}")
-
-
-def plan_image_lookup_keys(plan: object) -> tuple[str, ...]:
-    """Return the distinct registry lookup keys a serialized plan references.
-
-    Walks the serialized ``ProvisioningPlan`` resources, keeping node payloads
-    only, and returns each node's :func:`image_lookup_key` in first-seen order
-    with duplicates collapsed. Empty keys (a node with neither an authored
-    source nor an ``os_family``) are dropped: they cannot select a registry row.
-    """
-    resources = _require_mapping(plan, "raes plan").get("resources")
-    if resources is None:
-        # A plan with no resources block yields no image lookups. Validating the
-        # plan itself is the provisioner's fail-closed ``raes_plan.parse_plan``;
-        # scoping the registry projection must not become a second plan parser.
-        return ()
-    if not isinstance(resources, Mapping):
-        raise RaesOperationInputError("raes plan resources must be an object")
-
-    keys: list[str] = []
-    for address, resource in resources.items():
-        entry = _require_mapping(resource, f"raes plan resource '{address}'")
-        if entry.get("resource_type") != _NODE_RESOURCE_TYPE:
-            continue
-        payload = _require_mapping(entry.get("payload"), f"raes plan resource '{address}' payload")
-        node_spec = _require_mapping(payload.get("spec"), f"raes plan resource '{address}' spec").get("node") or {}
-        node = _require_mapping(node_spec, f"raes plan resource '{address}' node spec")
-        key = image_lookup_key(
-            source_name=_optional_str(node.get("source")), os_family=_optional_str(payload.get("os_family"))
-        )
-        if key and key not in keys:
-            keys.append(key)
-    return tuple(keys)
-
-
-def _optional_str(value: object) -> str | None:
-    """Return a non-empty string, or None for absent/blank/non-string values."""
-    if isinstance(value, str) and value.strip():
-        return value
-    return None
+_VALID_RANGE_BACKENDS = frozenset({"gce", "gdc", "ec2"})
 
 
 @dataclass(frozen=True)
@@ -218,7 +153,11 @@ class RaesOperationInput:
     range_backend: str | None
     instantiation_purpose: str | None
     legacy_range_id: int
+    egress_mode: str
     _image_candidates: dict[str, tuple[dict[str, Any], ...]]
+    runtime_plugin: RuntimePluginPin | None = None
+    model_enrollments: tuple[ModelGuestBinding, ...] = ()
+    resource_generation: str | None = None
 
     def artifact_binding_for(self, target: str) -> ArtifactBinding | None:
         """Return the fenced artifact binding for a node address, or None.
@@ -249,6 +188,22 @@ class RaesOperationInput:
     def access_binding_transport(self) -> list[dict[str, Any]]:
         """Return the non-secret participant-access rows for the realization path."""
         return [binding.to_transport() for binding in self.access_bindings]
+
+
+def _validated_egress_mode(value: object) -> str:
+    """Return the pinned effective egress mode, defaulting an absent field to status-quo.
+
+    A ``None`` (absent key) is an older queued input from before this deploy; it
+    resolves to ``status-quo`` -- inherit the deployment baseline -- which is the
+    exact pre-feature behavior and never a silent weakening (a ``none`` or active
+    posture is always carried explicitly). A *present but unrecognized* value fails
+    closed at the wire rather than being coerced, so a tampered input cannot smuggle
+    an unknown posture past the boundary.
+    """
+    if value is None:
+        return _DEFAULT_EGRESS_MODE
+    _require(isinstance(value, str) and value in _VALID_EGRESS_MODES, "raes operation input egress_mode is invalid")
+    return str(value)
 
 
 def _validated_backend(value: object) -> str | None:
@@ -367,41 +322,6 @@ def _validated_artifact_bindings(value: object) -> tuple[ArtifactBinding, ...]:
     return tuple(bindings)
 
 
-def _validated_candidate(raw: object, field: str) -> dict[str, Any]:
-    """Return one registry candidate row closed on exactly the resolver's columns."""
-    candidate = _require_mapping(raw, field)
-    _require_exact_keys(candidate, _CANDIDATE_KEYS, field)
-    image_ref = candidate["image_ref"]
-    if not isinstance(image_ref, str) or not image_ref.strip():
-        raise RaesOperationInputError(f"{field} image_ref is invalid")
-    return candidate
-
-
-def _validated_candidates(value: object) -> dict[str, tuple[dict[str, Any], ...]]:
-    """Validate the ``(provider, source_name)``-keyed candidate projection."""
-    raw = _require_mapping(value, "raes operation input image_candidates")
-    _require(len(raw) <= MAX_IMAGE_KEYS, f"raes operation input carries more than {MAX_IMAGE_KEYS} image keys")
-
-    projected: dict[str, tuple[dict[str, Any], ...]] = {}
-    for key, rows in raw.items():
-        _require(
-            isinstance(key, str) and key.count(_KEY_SEPARATOR) == 1 and all(key.split(_KEY_SEPARATOR)),
-            f"raes operation input image_candidates key '{key}' must be '<provider>:<source_name>'",
-        )
-        if not isinstance(rows, Sequence) or isinstance(rows, str | bytes):
-            raise RaesOperationInputError(f"raes operation input image_candidates['{key}'] must be a list")
-        entries = list(rows)
-        _require(
-            len(entries) <= MAX_IMAGE_CANDIDATES,
-            f"raes operation input image_candidates['{key}'] carries more than {MAX_IMAGE_CANDIDATES} candidates",
-        )
-        projected[key] = tuple(
-            _validated_candidate(entry, f"raes operation input image_candidates['{key}'][{index}]")
-            for index, entry in enumerate(entries)
-        )
-    return projected
-
-
 def parse_raes_operation_input(payload: object) -> RaesOperationInput:
     """Validate an RAES operation-input payload and return the parsed projection.
 
@@ -412,6 +332,20 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
     """
     obj = _require_mapping(payload, "raes operation input")
     _require_exact_keys(obj, _INPUT_KEYS, "raes operation input", optional=_OPTIONAL_INPUT_KEYS)
+    plugin = None
+    if "runtime_plugin" in obj:
+        try:
+            plugin = RuntimePluginPin.model_validate(obj["runtime_plugin"])
+            plugin.bindings.validate_plan(obj["plan"])
+        except ValueError:
+            raise RaesOperationInputError("raes operation input runtime plugin binding is invalid") from None
+    resource_generation = obj.get("resource_generation")
+    if resource_generation is not None or obj["range_backend"] == "ec2":
+        try:
+            valid_epoch = isinstance(resource_generation, str) and str(UUID(resource_generation)) == resource_generation
+        except ValueError:
+            valid_epoch = False
+        _require(valid_epoch, "raes operation input resource generation is missing or invalid")
     return RaesOperationInput(
         plan=_require_mapping(obj["plan"], "raes operation input plan"),
         delivery_bindings=_validated_bindings(obj["delivery_bindings"]),
@@ -420,7 +354,11 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
         range_backend=_validated_backend(obj["range_backend"]),
         instantiation_purpose=_optional_str(obj["instantiation_purpose"]),
         legacy_range_id=_validated_legacy_range_id(obj["legacy_range_id"]),
+        egress_mode=_validated_egress_mode(obj.get("egress_mode")),
         _image_candidates=_validated_candidates(obj["image_candidates"]),
+        runtime_plugin=plugin,
+        model_enrollments=_model_enrollments(obj, plugin),
+        resource_generation=resource_generation,
     )
 
 
@@ -431,13 +369,16 @@ def build_raes_operation_input(
     image_candidates: Mapping[str, Sequence[Mapping[str, Any]]],
     range_backend: str | None,
     instantiation_purpose: str | None,
-    legacy_range_id: int,
+    identity: RaesRangeIdentity,
+    egress_mode: str = _DEFAULT_EGRESS_MODE,
 ) -> dict[str, Any]:
     """Compose and validate the RAES operation-input payload in one step.
 
     Returns the JSON-serialisable payload for ``build_operation_envelope``.
     Candidate sets are emitted in sorted key order so the same generation
-    materializes byte-identical input on a retry.
+    materializes byte-identical input on a retry. ``egress_mode`` is the effective
+    range egress posture pinned at create (PLAT-238); a newer producer always emits
+    it so the provisioner realizes it from the input rather than the deployment env.
     """
     payload = {
         "plan": dict(plan),
@@ -446,12 +387,19 @@ def build_raes_operation_input(
         "image_candidates": {key: [dict(row) for row in image_candidates[key]] for key in sorted(image_candidates)},
         "range_backend": range_backend,
         "instantiation_purpose": instantiation_purpose,
-        "legacy_range_id": legacy_range_id,
+        "legacy_range_id": identity.legacy_range_id,
+        "egress_mode": egress_mode,
     }
     # Emit artifact_bindings only when a plan actually carries an artifact
     # requirement, so the common no-requirement input is byte-identical to the
     # pre-#1580 shape and an older consumer never sees an unexpected key.
     if bindings.artifact:
         payload["artifact_bindings"] = [binding.to_transport() for binding in bindings.artifact]
+    if bindings.runtime_plugin is not None:
+        payload["runtime_plugin"] = bindings.runtime_plugin.model_dump(mode="json")
+    if bindings.model_enrollments:
+        payload["model_enrollments"] = [row.model_dump(mode="json") for row in bindings.model_enrollments]
+    if identity.resource_generation is not None:
+        payload["resource_generation"] = identity.resource_generation
     parse_raes_operation_input(payload)
     return payload

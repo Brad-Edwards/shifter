@@ -587,10 +587,6 @@ module "ssm" {
   terminal_max_sessions          = var.terminal_max_sessions
   terminal_max_sessions_per_user = var.terminal_max_sessions_per_user
 
-  # RAES default cutover (#1310, ADR-031-R6): capability gate + source-route selector.
-  shifter_raes_native_provisioning = var.shifter_raes_native_provisioning
-  shifter_raes_catalog_cutovers    = var.shifter_raes_catalog_cutovers
-
   terminal_idle_timeout_seconds = var.terminal_idle_timeout_seconds
   terminal_max_session_seconds  = var.terminal_max_session_seconds
   terminal_read_poll_seconds    = var.terminal_read_poll_seconds
@@ -912,20 +908,6 @@ module "engine_provisioner" {
   range_instance_profile_arn  = data.terraform_remote_state.range.outputs.range_instance_profile_arn
   range_instance_profile_name = data.terraform_remote_state.range.outputs.range_instance_profile_name
   range_instance_role_arn     = data.terraform_remote_state.range.outputs.range_instance_role_arn
-
-  # AWS Polaris Bedrock agent credential profile (#1377); off unless populated
-  # via the deploy-secrets tfvars for an environment that runs AWS Polaris. The
-  # engine-provisioner module turns these into the AWS_POLARIS_AGENT_* task env
-  # vars that config.load_aws_polaris_agent_config() consumes.
-  aws_polaris_agent_region                       = var.aws_polaris_agent_region
-  aws_polaris_agent_main_model_id                = var.aws_polaris_agent_main_model_id
-  aws_polaris_agent_small_model_id               = var.aws_polaris_agent_small_model_id
-  aws_polaris_agent_main_inference_profile_arn   = var.aws_polaris_agent_main_inference_profile_arn
-  aws_polaris_agent_small_inference_profile_arn  = var.aws_polaris_agent_small_inference_profile_arn
-  aws_polaris_agent_main_backing_model_arns      = var.aws_polaris_agent_main_backing_model_arns
-  aws_polaris_agent_small_backing_model_arns     = var.aws_polaris_agent_small_backing_model_arns
-  aws_polaris_agent_sts_session_duration_seconds = var.aws_polaris_agent_sts_session_duration_seconds
-  aws_polaris_agent_refresh_window_seconds       = var.aws_polaris_agent_refresh_window_seconds
 
   # AMIs (from SSM Parameter Store)
   kali_ami_id    = data.aws_ssm_parameter.kali_ami.value

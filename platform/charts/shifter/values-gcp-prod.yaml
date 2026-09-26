@@ -9,6 +9,7 @@ capabilities:
   gcpBackendConfig: true
   gcpManagedTls: true
   kubernetesJobLauncher: true
+  gcpAccessNodePool: true
 
 images:
   platform: us-docker.pkg.dev/placeholder-project/shifter/platform@sha256:1111111111111111111111111111111111111111111111111111111111111111

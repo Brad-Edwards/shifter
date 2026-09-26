@@ -17,15 +17,15 @@ The platform shall support benchmark-oriented experiment analysis across scenari
 
 ## Rationale
 
-Shifter experiments should not stop at orchestration. APTL requirements identify benchmark suites, attack-side metrics, stealth scoring, and cross-run comparison as separate capabilities needed to turn runs into evaluable results.
+Shifter experiments should not stop at orchestration. LilRAE (formerly APTL) requirements identify benchmark suites, attack-side metrics, stealth scoring, and cross-run comparison as separate capabilities needed to turn runs into evaluable results.
 
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#399` (Experiment management / orchestration tracking)
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#466` (Experiment run orchestration tracking)
-- DOCUMENTS → SPEC `aptl:BEN-001` (APTL BEN-001: Benchmark Suite)
-- DOCUMENTS → SPEC `aptl:BEN-002` (APTL BEN-002: Attack-Side Performance Metrics)
-- DOCUMENTS → SPEC `aptl:BEN-003` (APTL BEN-003: Cross-Run Comparison Engine)
-- DOCUMENTS → SPEC `aptl:BEN-006` (APTL BEN-006: Stealth Scoring (Dual-Axis Offense + Detection Metrics))
-- DOCUMENTS → SPEC `aptl:EXP-007` (APTL EXP-007: Statistical Analysis Pipeline for Experiment Results)
+- DOCUMENTS → SPEC `aptl:BEN-001` (LilRAE specification, former APTL identifier BEN-001: Benchmark Suite)
+- DOCUMENTS → SPEC `aptl:BEN-002` (LilRAE specification, former APTL identifier BEN-002: Attack-Side Performance Metrics)
+- DOCUMENTS → SPEC `aptl:BEN-003` (LilRAE specification, former APTL identifier BEN-003: Cross-Run Comparison Engine)
+- DOCUMENTS → SPEC `aptl:BEN-006` (LilRAE specification, former APTL identifier BEN-006: Stealth Scoring (Dual-Axis Offense + Detection Metrics))
+- DOCUMENTS → SPEC `aptl:EXP-007` (LilRAE specification, former APTL identifier EXP-007: Statistical Analysis Pipeline for Experiment Results)
 - DOCUMENTS → PULL_REQUEST `780` (Experiment orchestration implementation PR)

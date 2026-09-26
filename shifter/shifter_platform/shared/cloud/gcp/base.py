@@ -3,11 +3,28 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any
+from types import ModuleType
+from typing import Protocol
 
 from django.conf import settings
 
 _PROJECTS_PREFIX = "projects/"
+
+
+class _TopicPathClient(Protocol):
+    """Minimal Pub/Sub publisher surface used to resolve topic paths."""
+
+    def topic_path(self, project: str, topic: str) -> str:
+        """Return the fully-qualified path for ``topic`` in ``project``."""
+        ...
+
+
+class _SubscriptionPathClient(Protocol):
+    """Minimal Pub/Sub subscriber surface used to resolve subscription paths."""
+
+    def subscription_path(self, project: str, subscription: str) -> str:
+        """Return the fully-qualified path for ``subscription`` in ``project``."""
+        ...
 
 
 def get_project_id() -> str:
@@ -27,7 +44,7 @@ def get_region() -> str:
     return str(region)
 
 
-def import_google_module(module_name: str) -> Any:
+def import_google_module(module_name: str) -> ModuleType:
     """Import a Google Cloud module lazily.
 
     The repo does not require Google libraries in AWS-only flows, so GCP adapters
@@ -36,7 +53,8 @@ def import_google_module(module_name: str) -> Any:
     return importlib.import_module(module_name)
 
 
-def build_topic_path(topic_id: str, publisher_client: Any) -> str:
+def build_topic_path(topic_id: str, publisher_client: _TopicPathClient) -> str:
+    """Resolve a fully-qualified Pub/Sub topic path for ``topic_id``."""
     if topic_id.startswith(_PROJECTS_PREFIX):
         return topic_id
     project_id = get_project_id()
@@ -45,7 +63,8 @@ def build_topic_path(topic_id: str, publisher_client: Any) -> str:
     return publisher_client.topic_path(project_id, topic_id)
 
 
-def build_subscription_path(subscription_id: str, subscriber_client: Any) -> str:
+def build_subscription_path(subscription_id: str, subscriber_client: _SubscriptionPathClient) -> str:
+    """Resolve a fully-qualified Pub/Sub subscription path for ``subscription_id``."""
     if subscription_id.startswith(_PROJECTS_PREFIX):
         return subscription_id
     project_id = get_project_id()
@@ -55,6 +74,7 @@ def build_subscription_path(subscription_id: str, subscriber_client: Any) -> str
 
 
 def build_secret_version_name(secret_id: str) -> str:
+    """Resolve a fully-qualified Secret Manager secret version name for ``secret_id``."""
     if "/versions/" in secret_id:
         return secret_id
     if secret_id.startswith(_PROJECTS_PREFIX):

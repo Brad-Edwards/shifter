@@ -54,6 +54,11 @@ _OWNING_MODULES: tuple[ModuleType, ...] = (
 _SYNC_MODULES: tuple[ModuleType, ...] = (_bootstrap_core, *_OWNING_MODULES)
 _ORIGINAL_EXPORTS: dict[str, tuple[ModuleType, object]] = {}
 _THIS_MODULE = sys.modules[__name__]
+# Module CLI entrypoints (``if __name__ == "__main__"`` targets) are per-module, not shared
+# helpers: cli.main and preflight.main are distinct functions. They must not be recorded as
+# facade exports, because _sync_modules would then propagate one across every module that has a
+# ``main`` and clobber another module's entrypoint (#1828). deploy.main is built explicitly.
+_ENTRYPOINT_NAMES: frozenset[str] = frozenset({"main"})
 _COMPAT_EXPORTS: dict[str, object] = {
     "Any": TypingAny,
     "Path": Path,
@@ -95,6 +100,8 @@ def _copy_core_exports() -> None:
 def _should_export_from_owner(name: str, value: object, module: ModuleType) -> bool:
     """Return True for definitions owned by the delegated module."""
     if name.startswith("__"):
+        return False
+    if name in _ENTRYPOINT_NAMES:
         return False
     owner = getattr(value, "__module__", None)
     return owner == module.__name__
@@ -142,7 +149,12 @@ def _unwrapped_export(current: object, original: object) -> object:
 
 
 def _sync_modules() -> None:
-    """Propagate deploy-module monkeypatches into the delegated modules."""
+    """Propagate deploy-module monkeypatches into the delegated modules.
+
+    Entrypoint names in ``_ENTRYPOINT_NAMES`` are excluded (see ``_copy_owner_exports``): a
+    per-module ``main`` is a distinct CLI entrypoint, not a shared helper, so it is never
+    recorded as an export and never propagated across modules.
+    """
     for name, (_owner, original) in _ORIGINAL_EXPORTS.items():
         value = _unwrapped_export(globals().get(name, original), original)
         for module in _SYNC_MODULES:
@@ -153,7 +165,11 @@ def _sync_modules() -> None:
 _copy_core_exports()
 _copy_owner_exports()
 _copy_compat_exports()
-main: Callable[..., object] = cast(Callable[..., object], globals()["main"])
+# deploy.main is the top-level CLI entrypoint and delegates to cli.main. It is built here
+# explicitly rather than through _copy_owner_exports (which excludes _ENTRYPOINT_NAMES), so a
+# per-module ``main`` is never a synced export and can never clobber another module's distinct
+# entrypoint such as preflight.main (#1828). The facade still syncs shared helpers before it runs.
+main: Callable[..., object] = cast(Callable[..., object], _make_facade("main", _cli, _cli.main))
 
 
 if __name__ == "__main__":

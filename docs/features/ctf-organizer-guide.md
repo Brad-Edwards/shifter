@@ -31,6 +31,30 @@ From **CTF Admin → Events → Create**, set the core parameters:
 | Submission cooldown / attempt limit | Anti-brute-force throttles |
 | Scoreboard visibility / freeze | Whether and when standings are shown |
 | Auto cleanup / cleanup delay | Whether ranges are torn down after the event |
+| Publish public registration page | Opt-in public event details and request form; off by default |
+
+The event's workspace supplies the egress policy for new participant and
+recovery-spare ranges. Each range still belongs to its participant or managed
+spare account; selecting a shared event workspace does not give other workspace
+members access to those ranges. Set the workspace policy before provisioning:
+changes are audited and apply to later launches, not ranges already running.
+If the policy changes after a spare is prepared, an incompatible spare cannot
+replace a participant range. For large GCP events, include both participants
+and spares in the [shared-VPC NAT capacity check](../dev/gcp-range-cell-deploy.md#shared-vpc-nat-capacity-and-event-egress).
+
+### Optional public registration
+
+Enable **Publish public registration page** only when you want an unauthenticated
+signup surface for this event. The form previews the disclosure: event name,
+description, start/end times, effective registration deadline, and timezone. It does
+not publish the scenario, workspace, capacity, participant roster, rules, challenges,
+briefing, custom pages, or logo. The privacy notice linked from the page is
+operator-supplied; review it for your deployment before sharing the URL.
+
+The share link appears on the event overview after publication is enabled. The page
+is reachable only while the event is in **Registration** and the event remains
+explicitly published. Turning the switch off, starting, or cancelling the event
+closes the public route without changing the stored switch.
 
 ## 2. Add Challenges
 
@@ -93,6 +117,15 @@ import a roster. Each participant is tracked through registration, range assignm
 and scoring. Use **Brackets** to group participants into ranked cohorts, and (in team
 mode) manage team membership.
 
+Requests from the optional public page appear separately at the top of this screen.
+**Reject** closes a request without side effects. **Approve** sends the request
+through the same participant-admission path as a manual add: current capacity and
+duplicate-email policy are rechecked, then the isolated account, participant seat,
+and normal provisioning wake-up are created. A public submission itself never sends
+mail, creates credentials, reserves capacity, or provisions a range. Requests can be
+reviewed only once and their PII is removed by the scheduler after the event-relative
+participant-account retention window.
+
 Participants use isolated temporary accounts on the dedicated CTF login page.
 Generate accounts before an event and hand out each generated username and initial
 password manually, or attach an optional delivery email for non-secret login
@@ -147,6 +180,17 @@ counted as participants) and shows the current target, available, provisioning,
 and failed counts. The pool only grows on request; it does not shrink automatically.
 Unconsumed spares are torn down along with the rest of the event's ranges during
 event cleanup.
+
+### Recovery spares vs. the initial-launch warm pool
+
+The event **recovery-spare** pool described here is distinct from the
+deployment-level **warm pool** for faster *initial* launches (see
+[Ranges](ranges.md)). Recovery spares replace a participant range that **fails
+mid-event** via **Reassign spare**; the warm pool speeds up the *first* launch by
+handing out a pre-provisioned range. They are configured separately (recovery
+spares per event here; the warm pool in `shifter.yaml`), accounted separately
+against capacity, and never share generations; a recovery spare is never claimed
+as an initial-launch warm range, and vice versa.
 
 ## 6. Notifications
 

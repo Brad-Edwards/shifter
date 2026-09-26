@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.db import transaction
+from installation.range_egress import RangeEgressMode
 
 from engine.services import RangeBindings, create_raes_range
 from shared.raes.dispatch_port import ShifterDispatchResult
@@ -30,10 +32,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from shared.raes.artifact_binding import ArtifactBinding
-    from shared.raes.artifact_inventory import BackendArtifact
+    from shared.raes.artifact_inventory import ArtifactRequirements, ArtifactSupply, BackendArtifact
     from shared.raes.content_delivery import DeliveryBinding
     from shared.raes.participant_access import ParticipantAccessBinding
     from shared.range_instantiation_policy import BackendAdmission
+    from shared.runtime_plugin_binding import RuntimePluginScope
 
 __all__ = ["CmsRaesDispatchPort"]
 
@@ -77,6 +80,12 @@ class CmsRaesDispatchPort:
     workspace_id: int
     backend_admission: BackendAdmission | None = None
     pack_root: Path | None = None
+    # Effective range egress posture resolved under the workspace mutex by the CMS
+    # launch-admission seam (PLAT-238, ADR-017-R5). Rides beside the plan like
+    # ``workspace_id``; the Engine pins it on the range at create. Defaults to the
+    # compatibility ``status-quo`` for constructors that predate the field.
+    egress_mode: str = RangeEgressMode.STATUS_QUO.value
+    runtime_plugin_scope: RuntimePluginScope | None = None
 
     def realize(
         self,
@@ -85,18 +94,31 @@ class CmsRaesDispatchPort:
     ) -> ShifterDispatchResult:
         delivery_bindings = self._prepare_delivery(compiled_plan)
         artifact_bindings = self._resolve_artifact_bindings(compiled_plan)
-        ref = create_raes_range(
-            request_id=self.request_id,
-            user_id=self.user_id,
-            compiled_plan=compiled_plan,
-            backend_admission=self.backend_admission,
-            bindings=RangeBindings(
-                delivery=delivery_bindings,
-                participant_access=tuple(participant_access),
-                artifact=artifact_bindings,
-            ),
-            workspace_id=self.workspace_id,
-        )
+        from uuid import UUID
+
+        from cms.services._model_allocation import needs_model_preparation, prepare_model_access_for_dispatch
+        from engine.services import dispatch_created_raes_range
+
+        prepare_models = needs_model_preparation(self.request_id)
+        with transaction.atomic():
+            ref = create_raes_range(
+                request_id=self.request_id,
+                user_id=self.user_id,
+                compiled_plan=compiled_plan,
+                backend_admission=self.backend_admission,
+                bindings=RangeBindings(
+                    delivery=delivery_bindings,
+                    participant_access=tuple(participant_access),
+                    artifact=artifact_bindings,
+                    runtime_plugin_scope=self.runtime_plugin_scope,
+                    defer_dispatch=prepare_models,
+                ),
+                workspace_id=self.workspace_id,
+                egress_mode=self.egress_mode,
+            )
+            if prepare_models:
+                prepare_model_access_for_dispatch(UUID(self.request_id), range_id=UUID(ref.range_id))
+                ref = dispatch_created_raes_range(UUID(self.request_id))
         return ShifterDispatchResult(
             request_id=ref.request_id, accepted=ref.accepted, status=ref.status, range_id=ref.range_id
         )
@@ -123,6 +145,12 @@ class CmsRaesDispatchPort:
             capabilities=shifter_artifact_mechanism_capabilities(),
             backend=shifter_backend_apparatus(),
         )
+
+    def artifact_supply(self, requirements: ArtifactRequirements) -> ArtifactSupply:
+        """Give planning the same admitted backend inventory used to fence dispatch."""
+        from shared.raes.artifact_inventory import build_artifact_supply
+
+        return build_artifact_supply(requirements, self._backend_inventory())
 
     def _backend_inventory(self) -> tuple[BackendArtifact, ...]:
         """Return the selected backend's owned artifact inventory, or empty when it has none.

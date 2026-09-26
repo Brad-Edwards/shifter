@@ -4,6 +4,11 @@ Workspaces group people around a shared tenancy scope while each range keeps its
 individual owner. Membership does not let one member open, change, or destroy
 another member's range.
 
+The account hierarchy introduced in ADR-066 will let individual accounts own
+resources directly and let team and enterprise accounts own organizations and
+workspaces. This page describes the current workspace membership flow, which
+continues until the S8 cutover.
+
 ## Roles
 
 Each workspace membership has one of three roles:
@@ -48,6 +53,21 @@ This applies to subsequent platform requests, downloads, and new sessions. It
 does not terminate an already established terminal or Guacamole session or
 invalidate a VPN profile that was already downloaded; range expiry and
 system-owned cleanup continue even after membership removal.
+
+## Invite a new member
+
+The staff administration console provides invitation management at
+`/administer/organization/workspaces/{workspace_uuid}/invitations`. A workspace
+owner or admin can issue, list, resend, and revoke invitations when their current
+role permits the matching operation. Owner invitations remain owner-only.
+
+Invitation endpoints live under
+`/api/v1/workspaces/{workspace_uuid}/invitations/` and accept browser sessions
+only; platform API tokens cannot administer them. The issued credential is sent
+by email and is never returned by the API. Acceptance requires a fresh,
+provider-verified login using the invited email. Resending rotates the signed
+credential, revocation invalidates it, and acceptance creates exactly one
+membership without silently changing an existing role.
 
 ## Launch a range in a workspace
 

@@ -8,6 +8,7 @@ Covers:
 from __future__ import annotations
 
 import io
+import logging
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlparse
@@ -17,7 +18,7 @@ import pytest
 from django.utils import timezone
 
 from ctf.enums import ChallengeCategory, ChallengeDifficulty, EventStatus
-from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
+from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError, CTFValidationError
 from ctf.models import (
     CTFChallenge,
     CTFChallengeFile,
@@ -224,16 +225,40 @@ class TestAddChallengeFile:
         with pytest.raises(CTFNotFoundError):
             add_challenge_file(challenge_id, upload, "file.txt", actor_id=1)
 
-    def test_magic_byte_mismatch_rejected_before_upload(self, challenge, mock_s3):
-        """A .png filename with a PDF magic-byte header is rejected and S3 is not called."""
-        bogus_png = io.BytesIO(b"%PDF-1.7\n" + b"\x00" * 32)
-        with pytest.raises(CTFValidationError, match="inspection"):
+    def test_non_owner_cannot_upload(self, challenge, second_organizer_user, mock_s3):
+        """An organizer cannot add files to another organizer's event."""
+        upload = _make_file()
+        with pytest.raises(CTFPermissionError):
             add_challenge_file(
                 challenge.id,
-                bogus_png,
-                "fake.png",
-                actor_id=challenge.event.created_by_id,
+                upload,
+                "foreign.txt",
+                actor_id=second_organizer_user.id,
             )
+        mock_s3.upload_fileobj.assert_not_called()
+
+    def test_magic_byte_mismatch_rejected_before_upload(self, challenge, mock_s3, caplog):
+        """A .png filename with a PDF magic-byte header is rejected and S3 is not called."""
+        secret = "attacker-content-not-for-logs"
+        bogus_png = io.BytesIO(b"%PDF-1.7\n" + secret.encode() + b"\x00" * 32)
+        service_logger = logging.getLogger("ctf.services.attachment")
+        service_logger.addHandler(caplog.handler)
+        try:
+            with (
+                caplog.at_level(logging.WARNING, logger=service_logger.name),
+                pytest.raises(CTFValidationError, match="inspection") as caught,
+            ):
+                add_challenge_file(
+                    challenge.id,
+                    bogus_png,
+                    "fake.png",
+                    actor_id=challenge.event.created_by_id,
+                )
+        finally:
+            service_logger.removeHandler(caplog.handler)
+
+        assert secret not in str(caught.value)
+        assert secret not in caplog.text
         mock_s3.upload_fileobj.assert_not_called()
 
     def test_text_extension_with_binary_header_rejected(self, challenge, mock_s3):
@@ -322,6 +347,22 @@ class TestRemoveChallengeFile:
         file_id = uuid4()
         with pytest.raises(CTFNotFoundError):
             remove_challenge_file(file_id, actor_id=1)
+
+    def test_non_owner_cannot_remove(self, challenge, second_organizer_user, mock_s3):
+        """An organizer cannot remove files from another organizer's event."""
+        cf = add_challenge_file(
+            challenge.id,
+            _make_file(),
+            "owner-only.txt",
+            actor_id=challenge.event.created_by_id,
+        )
+        mock_s3.reset_mock()
+
+        with pytest.raises(CTFPermissionError):
+            remove_challenge_file(cf.id, actor_id=second_organizer_user.id)
+
+        assert CTFChallengeFile.objects.filter(pk=cf.id).exists()
+        mock_s3.delete_object.assert_not_called()
 
     def test_remove_marks_managed_content_drifted(self, challenge, mock_s3):
         cf = add_challenge_file(

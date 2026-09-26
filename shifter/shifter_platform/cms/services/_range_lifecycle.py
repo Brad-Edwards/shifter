@@ -49,7 +49,17 @@ def _engine_pause_range_call(request_id: Any) -> Any:  # NOSONAR
 def _engine_resume_range_call(request_id: Any) -> Any:  # NOSONAR
     """Late-bound call so test patches of cms.services.engine_resume_range apply."""
     from cms import services as _cs
+    from shared.model_access import ContractError
 
+    from ._model_allocation import needs_model_preparation, resume_model_range
+
+    try:
+        if needs_model_preparation(request_id):
+            return resume_model_range(request_id)
+    except ContractError:
+        # The preparation/Engine transaction has rolled back. Preserve CMS's
+        # existing false/revert protocol for a bounded admission denial.
+        return False
     return _cs.engine_resume_range(request_id)
 
 
@@ -58,6 +68,26 @@ def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR
     from cms import services as _cs
 
     _cs.audit_log(_cs.AuditEvent(**kwargs))
+
+
+def _assert_lifecycle_supported(instance: RangeInstance, op: _LifecycleOp) -> None:
+    """Refuse pause/resume before any mutation when the range mix is unsupported.
+
+    Primary honesty gate (ADR-039, issue #614): a range whose realized asset mix
+    cannot be losslessly paused/resumed is refused here, so the range stays in its
+    current state instead of dispatching a doomed operation. The provisioner
+    re-checks as defense in depth. Skipped when the range has no engine range id
+    yet (nothing provisioned to classify); the engine/provisioner then guard.
+    """
+    range_id = instance.range_id
+    if range_id is None:
+        return
+    from cms import services as _cs
+
+    capability = _cs.engine_get_range_pause_resume_capability(range_id)
+    if not capability.supported:
+        logger.warning("%s: refused unsupported range mix range_id=%s", op.name, range_id)
+        raise CMSError(capability.reason)
 
 
 @dataclass(frozen=True)
@@ -109,6 +139,9 @@ def _attempt_transition(
     engine_false_detail: str,
 ) -> None:
     """Set CMS status, dispatch to the engine, revert on rejection, then audit."""
+    # Fail closed before any status change/dispatch when the mix is unsupported.
+    _assert_lifecycle_supported(instance, op)
+
     instance.status = op.target_status
     instance.save(update_fields=["status"])
 

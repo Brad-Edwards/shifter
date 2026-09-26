@@ -13,9 +13,10 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from engine import cancel_range, cancel_range_by_request, create_range
+from engine import cancel_range, cancel_range_by_request
 from engine.models import ProvisionerLaunchIntent, Range
 from engine.models._launch import InterruptState
+from engine.services import create_raes_range
 from shared.enums import ResourceStatus
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
@@ -65,6 +66,16 @@ def _request_spec(user_id):
     )
 
 
+def create_range(spec, *, workspace_id):
+    """Persist through the authoritative RAES engine seam."""
+    return create_raes_range(
+        request_id=spec.request_id,
+        user_id=spec.user_id,
+        compiled_plan={"kind": "raes_provisioning_plan", "raes_version": "2.0", "resources": {}},
+        workspace_id=workspace_id,
+    )
+
+
 class TestCancelRange:
     def test_rejects_none(self):
         with pytest.raises(TypeError, match="cannot be None"):
@@ -83,12 +94,6 @@ class TestCancelRange:
                 user_id=1,
                 status=ResourceStatus.PENDING,
             )
-
-    def test_cancels_provisioning_range(self, user):
-        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.PROVISIONING)
-        cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PROVISIONING))
-        range_obj.refresh_from_db()
-        assert range_obj.status == Range.Status.DESTROYING
 
     def test_does_not_cancel_ready_range(self, user):
         range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)

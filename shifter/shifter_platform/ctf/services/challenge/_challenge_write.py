@@ -17,9 +17,10 @@ from uuid import UUID
 from django.db import transaction
 from django.utils import timezone
 
+from ctf.enums import EventCapability
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFChallengePrerequisite, CTFEvent
-from ctf.services.authorization import assert_actor_owns_event as _assert_actor_owns_event
+from ctf.services.authorization import assert_event_capability as _assert_event_capability
 from shared.log_sanitize import safe_log_value
 
 from ._challenge_release import _sync_release_task
@@ -161,7 +162,7 @@ def create_challenge(
             details={"event_id": str(event_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, event)
+    _assert_event_capability(actor_id, event, EventCapability.CHALLENGES)
 
     if not event.is_content_modifiable:
         raise CTFStateError(
@@ -287,7 +288,7 @@ def update_challenge(challenge_id: UUID, challenge_data: dict[str, Any], *, acto
             details={"challenge_id": str(challenge_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     _reject_non_flag_live_edits(challenge, challenge_data)
 
@@ -357,7 +358,7 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
             details={"challenge_id": str(challenge_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not challenge.event.is_content_modifiable:
         raise CTFStateError(

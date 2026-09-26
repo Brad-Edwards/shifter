@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
-    AWSPolarisAgentConfig,
+    GCE_PARTICIPANT_READINESS_CONTRACT_V1,
     GCERangeCellConfig,
     GCERangeImageProfile,
     GDCNetworkAccessConfig,
@@ -33,7 +33,6 @@ from config import (
     get_range_availability_zone,
     get_range_from_db,
     is_gce_range_cell_backend,
-    load_aws_polaris_agent_config,
     load_gce_range_cell_config,
     load_gdc_network_access_config,
     load_gdc_palo_alto_vmseries_config,
@@ -74,109 +73,90 @@ class TestGeneratePresignedUrl:
 class TestGetRangeFromDb:
     """Tests for database range loading."""
 
-    def test_loads_range_with_subnets(self, mock_boto3_clients, mock_env_vars_minimal, sample_db_range_row):
+    def test_loads_range_with_subnets(
+        self, mock_boto3_clients, mock_env_vars_minimal, sample_db_range_row, mock_psycopg_connect
+    ):
         """Range data should be loaded with subnets structure."""
-        with patch("psycopg.connect") as mock_connect:
-            mock_cursor = MagicMock()
-            mock_cursor.fetchone.return_value = sample_db_range_row
-            mock_conn = MagicMock()
-            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-            mock_conn.__exit__ = MagicMock(return_value=False)
-            mock_connect.return_value = mock_conn
+        _mock_connect, _mock_conn, mock_cursor = mock_psycopg_connect
+        mock_cursor.fetchone.return_value = sample_db_range_row
 
-            result = get_range_from_db(42)
+        result = get_range_from_db(42)
 
-            assert result["id"] == 42
-            assert result["user_id"] == 1
-            assert result["request_uuid"] == "request-uuid-12345"
-            assert "subnets" in result["range_config"]
+        assert result["id"] == 42
+        assert result["user_id"] == 1
+        assert result["request_uuid"] == "request-uuid-12345"
+        assert "subnets" in result["range_config"]
 
-    def test_raises_value_error_when_not_found(self, mock_boto3_clients, mock_env_vars_minimal):
+    def test_raises_value_error_when_not_found(self, mock_boto3_clients, mock_env_vars_minimal, mock_psycopg_connect):
         """ValueError should be raised for missing range."""
-        with patch("psycopg.connect") as mock_connect:
-            mock_cursor = MagicMock()
-            mock_cursor.fetchone.return_value = None
-            mock_conn = MagicMock()
-            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-            mock_conn.__exit__ = MagicMock(return_value=False)
-            mock_connect.return_value = mock_conn
+        _mock_connect, _mock_conn, mock_cursor = mock_psycopg_connect
+        mock_cursor.fetchone.return_value = None
 
-            with pytest.raises(ValueError, match="Range 999 not found"):
-                get_range_from_db(999)
+        with pytest.raises(ValueError, match="Range 999 not found"):
+            get_range_from_db(999)
 
     def test_ngfw_flag_from_range_config(
-        self, mock_boto3_clients, mock_env_vars_minimal, sample_db_range_row_with_ngfw
+        self,
+        mock_boto3_clients,
+        mock_env_vars_minimal,
+        sample_db_range_row_with_ngfw,
+        mock_psycopg_connect,
     ):
         """Range with ngfw: true in range_config should have ngfw_enabled=True."""
-        with patch("psycopg.connect") as mock_connect:
-            mock_cursor = MagicMock()
-            # First call returns range row, second call returns NGFW data ENI ID
-            mock_cursor.fetchone.side_effect = [
-                sample_db_range_row_with_ngfw,
-                (
-                    {
-                        "management_ip": "10.1.5.10",
-                        "ssh_key_secret_arn": "arn:aws:secretsmanager:us-east-2:123:secret:key",
-                        "data_eni_id": "eni-test123",
-                    },
-                    123,
-                ),
-            ]
-            mock_conn = MagicMock()
-            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-            mock_conn.__exit__ = MagicMock(return_value=False)
-            mock_connect.return_value = mock_conn
+        _mock_connect, _mock_conn, mock_cursor = mock_psycopg_connect
+        mock_cursor.fetchone.side_effect = [
+            sample_db_range_row_with_ngfw,
+            (
+                {
+                    "management_ip": "10.1.5.10",
+                    "ssh_key_secret_arn": "arn:aws:secretsmanager:us-east-2:123:secret:key",
+                    "data_eni_id": "eni-test123",
+                },
+                123,
+            ),
+        ]
 
-            result = get_range_from_db(42)
+        result = get_range_from_db(42)
 
-            assert result["ngfw_enabled"] is True
-            assert result["ngfw_data_eni_id"] == "eni-test123"
-            assert result["ngfw_attachment"]["attachment_mode"] == "aws-route-table-eni"
-            assert result["ngfw_attachment"]["ssh_key_secret_ref"].endswith(":secret:key")
+        assert result["ngfw_enabled"] is True
+        assert result["ngfw_data_eni_id"] == "eni-test123"
+        assert result["ngfw_attachment"]["attachment_mode"] == "aws-route-table-eni"
+        assert result["ngfw_attachment"]["ssh_key_secret_ref"].endswith(":secret:key")
 
     def test_gcp_ngfw_attachment_uses_route_next_hop_state(
-        self, mock_boto3_clients, mock_env_vars_minimal, sample_db_range_row_with_ngfw
+        self,
+        mock_boto3_clients,
+        mock_env_vars_minimal,
+        sample_db_range_row_with_ngfw,
+        mock_psycopg_connect,
     ):
         """GCP/GDC NGFWs should resolve attachable state without AWS ENI fields."""
-        with patch("psycopg.connect") as mock_connect:
-            mock_cursor = MagicMock()
-            mock_cursor.fetchone.side_effect = [
-                sample_db_range_row_with_ngfw,
-                (
-                    {
-                        "cloud_provider": "gcp",
-                        "management_ip": "10.200.0.10",
-                        "ssh_key_secret_id": "projects/test/secrets/ngfw-admin",
-                        "route_next_hop_ip": "10.200.0.2",
-                        "provider_metadata": {
-                            "gcp": {
-                                "attachment_mode": "gdc-static-route",
-                            }
-                        },
+        _mock_connect, _mock_conn, mock_cursor = mock_psycopg_connect
+        mock_cursor.fetchone.side_effect = [
+            sample_db_range_row_with_ngfw,
+            (
+                {
+                    "cloud_provider": "gcp",
+                    "management_ip": "10.200.0.10",
+                    "ssh_key_secret_id": "projects/test/secrets/ngfw-admin",
+                    "route_next_hop_ip": "10.200.0.2",
+                    "provider_metadata": {
+                        "gcp": {
+                            "attachment_mode": "gdc-static-route",
+                        }
                     },
-                    123,
-                ),
-            ]
-            mock_conn = MagicMock()
-            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-            mock_conn.__exit__ = MagicMock(return_value=False)
-            mock_connect.return_value = mock_conn
+                },
+                123,
+            ),
+        ]
 
-            result = get_range_from_db(42)
+        result = get_range_from_db(42)
 
-            assert result["ngfw_enabled"] is True
-            assert result["ngfw_data_eni_id"] == ""
-            assert result["ngfw_instance_id"] == 123
-            assert result["ngfw_attachment"]["cloud_provider"] == "gcp"
-            assert result["ngfw_attachment"]["route_next_hop_ip"] == "10.200.0.2"
+        assert result["ngfw_enabled"] is True
+        assert result["ngfw_data_eni_id"] == ""
+        assert result["ngfw_instance_id"] == 123
+        assert result["ngfw_attachment"]["cloud_provider"] == "gcp"
+        assert result["ngfw_attachment"]["route_next_hop_ip"] == "10.200.0.2"
 
 
 class TestDataclassDefaults:
@@ -526,7 +506,7 @@ class TestRangeNetworkEnv:
                 "GCP_REGION": "us-central1",
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
-                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/example-vm",
             },
             clear=True,
         )
@@ -544,7 +524,7 @@ class TestRangeNetworkEnv:
                 "GCP_REGION": "us-central1",
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
-                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/example-vm",
                 "GCP_RANGE_CELL_NETWORK_MODE": "vpc-per-range",
             },
             clear=True,
@@ -565,7 +545,7 @@ class TestRangeNetworkEnv:
                 "GCP_REGION": "us-central1",
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
-                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/example-vm",
                 "GCP_RANGE_CELL_NETWORK_MODE": "bogus",
             },
             clear=True,
@@ -601,8 +581,8 @@ class TestRangeNetworkEnv:
                 "GCP_REGION": "us-central1",
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
-                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
-                "GCP_RANGE_DC_IMAGE": "projects/shifter/global/images/polaris-dc",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/example-vm",
+                "GCP_RANGE_DC_IMAGE": "projects/shifter/global/images/example-dc",
                 "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
                 "GCP_RANGE_HOST_MGMT_SSH_PORT": "2229",
             },
@@ -624,7 +604,7 @@ class TestRangeNetworkEnv:
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
                 "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
-                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/example-vm",
             },
             clear=True,
         )
@@ -641,7 +621,7 @@ class TestRangeNetworkEnv:
                 "GCP_REGION": "us-central1",
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
-                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/example-vm",
                 "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
                 "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
             },
@@ -703,8 +683,8 @@ class TestRangeNetworkEnv:
             machine_type="e2-standard-4",
             disk_size_gb=80,
         )
-        polaris = GCERangeImageProfile(
-            source_image="projects/test/global/images/family/shifter-polaris-vm",
+        example = GCERangeImageProfile(
+            source_image="projects/test/global/images/family/shifter-example-vm",
             machine_type="e2-standard-8",
             disk_size_gb=210,
         )
@@ -714,38 +694,38 @@ class TestRangeNetworkEnv:
             zone="us-central1-b",
             network_mode="vpc-per-range",
             kali=default_kali,
-            image_key_profiles={"kali": {"polaris-vm": polaris}},
+            image_key_profiles={"kali": {"example-vm": example}},
         )
 
         assert config.get_profile(role="attacker", os_type="kali") == default_kali
-        assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm") == polaris
+        assert config.get_profile(role="attacker", os_type="kali", ami_key="example-vm") == example
         with pytest.raises(RuntimeError, match="lowercase logical key"):
-            config.get_profile(role="attacker", os_type="kali", ami_key="Polaris-VM")
+            config.get_profile(role="attacker", os_type="kali", ami_key="Example-VM")
         with pytest.raises(RuntimeError, match="no configured GCE image profile"):
             config.get_profile(role="attacker", os_type="kali", ami_key="unknown-stack")
         with pytest.raises(RuntimeError, match="no configured GCE image profile"):
-            config.get_profile(role="dc", os_type="windows", ami_key="polaris-vm")
+            config.get_profile(role="dc", os_type="windows", ami_key="example-vm")
 
     def test_load_gce_range_cell_config_parses_complete_image_key_profiles(self, mocker):
         mapping = {
             "kali": {
-                "polaris-vm": {
-                    "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                "example-vm": {
+                    "source_image": "projects/test/global/images/family/shifter-example-vm",
                     "machine_type": "e2-standard-8",
                     "disk_size_gb": 210,
                     "disk_type": "pd-balanced",
-                    "bootstrap_capability": "polaris-docker-host",
+                    "bootstrap_capability": "standard",
                 }
             },
             "dc": {
-                "polaris-dc": {
-                    "source_image": "projects/test/global/images/family/shifter-polaris-dc",
+                "example-dc": {
+                    "source_image": "projects/test/global/images/family/shifter-example-dc",
                     "machine_type": "e2-standard-4",
                     "disk_size_gb": 100,
                     "disk_type": "pd-ssd",
                     "bootstrap_capability": "prepromoted-domain-controller",
-                    "domain_dns_name": "boreas.local",
-                    "domain_netbios_name": "BOREAS",
+                    "domain_dns_name": "example.test",
+                    "domain_netbios_name": "EXAMPLE",
                 }
             },
         }
@@ -768,8 +748,8 @@ class TestRangeNetworkEnv:
 
         config = load_gce_range_cell_config()
 
-        assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm").disk_size_gb == 210
-        assert config.get_profile(role="dc", os_type="windows", ami_key="polaris-dc").disk_type == "pd-ssd"
+        assert config.get_profile(role="attacker", os_type="kali", ami_key="example-vm").disk_size_gb == 210
+        assert config.get_profile(role="dc", os_type="windows", ami_key="example-dc").disk_type == "pd-ssd"
 
     def test_load_gce_range_cell_config_parses_exact_machine_image_profile(self, mocker):
         mapping = {
@@ -783,6 +763,8 @@ class TestRangeNetworkEnv:
                     "host_ssh_username": "hostadmin",
                     "host_ssh_port": 2222,
                     "allow_public_web_egress": True,
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
                 }
             }
         }
@@ -811,7 +793,46 @@ class TestRangeNetworkEnv:
         assert profile.participant_container_name == "participant-desktop"
         assert profile.host_ssh_port == 2222
         assert profile.allow_public_web_egress is True
+        assert profile.participant_readiness_contract == GCE_PARTICIPANT_READINESS_CONTRACT_V1
+        assert profile.participant_readiness_manifest_sha256 == "a" * 64
         assert config.range_host_identity_pool_size == 200
+
+    def test_load_gce_range_cell_config_parses_exact_custom_image_host(self, mocker):
+        mapping = {
+            "kali": {
+                "nested-host": {
+                    "source_image": "projects/test/global/images/nested-host-v1",
+                    "machine_type": "n2-standard-8",
+                    "disk_size_gb": 220,
+                    "disk_type": "pd-balanced",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "participant-desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                }
+            }
+        }
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/test/global/images/shifter-kali",
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(mapping),
+            },
+            clear=True,
+        )
+
+        profile = load_gce_range_cell_config().get_profile(role="attacker", os_type="kali", ami_key="nested-host")
+        assert profile.source_image == "projects/test/global/images/nested-host-v1"
+        assert profile.source_machine_image == ""
 
     @pytest.mark.parametrize(
         ("raw", "message"),
@@ -820,40 +841,93 @@ class TestRangeNetworkEnv:
             ("[]", "valid JSON object"),
             ('{"kali":{"same":{},"same":{}}}', "duplicate JSON key"),
             ('{"attacker":{}}', "unknown profile class"),
-            ('{"kali":{"Polaris":{}}}', "logical keys must be lowercase"),
+            ('{"kali":{"Example":{}}}', "logical keys must be lowercase"),
+            ('{"kali":{"nested-host":[]}}', "must be an object"),
             (
-                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                json.dumps({"kali": {"nested-host": {"source_image": "family/host"}}}),
+                "missing required fields: bootstrap_capability, machine_type",
+            ),
+            (
+                json.dumps(
+                    {
+                        "kali": {
+                            "profile": {
+                                "source_image": "family/host",
+                                "machine_type": "e2-standard-8",
+                                "disk_size_gb": 30,
+                                "disk_type": "pd-balanced",
+                                "bootstrap_capability": "standard",
+                                "domain_dns_name": 123,
+                            }
+                        }
+                    }
+                ),
+                "domain_dns_name must be a string",
+            ),
+            (
+                json.dumps(
+                    {
+                        "kali": {
+                            "profile": {
+                                "source_image": "family/host",
+                                "machine_type": "e2-standard-8",
+                                "bootstrap_capability": "standard",
+                            }
+                        }
+                    }
+                ),
+                "missing required fields: disk_size_gb, disk_type",
+            ),
+            (
+                json.dumps(
+                    {
+                        "kali": {
+                            "profile": {
+                                "source_image": "family/host",
+                                "machine_type": "e2-standard-8",
+                                "disk_size_gb": 30,
+                                "disk_type": "pd-balanced",
+                                "bootstrap_capability": "standard",
+                                "host_ssh_port": "22",
+                            }
+                        }
+                    }
+                ),
+                "host_ssh_port must be an integer",
+            ),
+            (
+                '{"kali":{"example-vm":{"source_image":"family/example","machine_type":"e2-standard-8",'
                 '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"standard","extra":true}}}',
                 "unknown fields",
             ),
             (
-                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '{"kali":{"example-vm":{"source_image":"family/example","machine_type":"e2-standard-8",'
                 '"disk_size_gb":20,"disk_type":"pd-balanced","bootstrap_capability":"standard"}}}',
                 "smaller than",
             ),
             (
-                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"n2 standard",'
+                '{"kali":{"example-vm":{"source_image":"family/example","machine_type":"n2 standard",'
                 '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"standard"}}}',
                 "machine type",
             ),
             (
-                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '{"kali":{"example-vm":{"source_image":"family/example","machine_type":"e2-standard-8",'
                 '"disk_size_gb":true,"disk_type":"pd-balanced","bootstrap_capability":"standard"}}}',
                 "positive integer",
             ),
             (
-                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '{"kali":{"example-vm":{"source_image":"family/example","machine_type":"e2-standard-8",'
                 '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"standard",'
                 '"allow_public_web_egress":"yes"}}}',
                 "allow_public_web_egress must be a boolean",
             ),
             (
-                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '{"kali":{"example-vm":{"source_image":"family/example","machine_type":"e2-standard-8",'
                 '"disk_size_gb":210,"disk_type":"pd-bogus","bootstrap_capability":"standard"}}}',
                 "supported Compute Engine disk type",
             ),
             (
-                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '{"kali":{"example-vm":{"source_image":"family/example","machine_type":"e2-standard-8",'
                 '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"Bad Value"}}}',
                 "lowercase logical capability",
             ),
@@ -862,6 +936,42 @@ class TestRangeNetworkEnv:
                 '"disk_size_gb":100,"disk_type":"pd-balanced","bootstrap_capability":'
                 '"prepromoted-domain-controller","domain_dns_name":"example.test"}}}',
                 "must set domain_dns_name and domain_netbios_name together",
+            ),
+            (
+                json.dumps(
+                    {
+                        "dc": {
+                            "domain-image": {
+                                "source_image": "family/domain",
+                                "machine_type": "e2-standard-4",
+                                "disk_size_gb": 100,
+                                "disk_type": "pd-balanced",
+                                "bootstrap_capability": "prepromoted-domain-controller",
+                                "domain_dns_name": "a" * 254,
+                                "domain_netbios_name": "DOMAIN",
+                            }
+                        }
+                    }
+                ),
+                "253-character DNS-name limit",
+            ),
+            (
+                json.dumps(
+                    {
+                        "dc": {
+                            "domain-image": {
+                                "source_image": "family/domain",
+                                "machine_type": "e2-standard-4",
+                                "disk_size_gb": 100,
+                                "disk_type": "pd-balanced",
+                                "bootstrap_capability": "prepromoted-domain-controller",
+                                "domain_dns_name": "example.test",
+                                "domain_netbios_name": "N" * 16,
+                            }
+                        }
+                    }
+                ),
+                "15-character NetBIOS-name limit",
             ),
         ],
     )
@@ -928,6 +1038,21 @@ class TestRangeNetworkEnv:
         [
             (
                 {
+                    "source_image": "projects/test/global/images/family/nested-host",
+                    "machine_type": "n2-standard-8",
+                    "disk_size_gb": 220,
+                    "disk_type": "pd-balanced",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "exact custom-image reference",
+            ),
+            (
+                {
                     "source_image": "projects/test/global/images/host",
                     "source_machine_image": "projects/test/global/machineImages/host",
                     "machine_type": "n2-standard-8",
@@ -954,6 +1079,96 @@ class TestRangeNetworkEnv:
                 },
                 "machine-image reference",
             ),
+            (
+                {
+                    "source_machine_image": "projects/test/global/machineImages/host",
+                    "machine_type": "n2-standard-8",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                },
+                "requires participant_readiness_contract",
+            ),
+            (
+                {
+                    "source_machine_image": "projects/test/global/machineImages/host",
+                    "machine_type": "n2-standard-8",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": "participant-readiness/v2",
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "participant_readiness_contract is unsupported",
+            ),
+            (
+                {
+                    "source_machine_image": "projects/test/global/machineImages/host",
+                    "machine_type": "n2-standard-8",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "A" * 64,
+                },
+                "participant_readiness_manifest_sha256",
+            ),
+            (
+                {
+                    "source_machine_image": "projects/test/global/machineImages/host",
+                    "machine_type": "n2-standard-8",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "host_ssh_port": 0,
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "host_ssh_port must be between 1 and 65535",
+            ),
+            (
+                {
+                    "source_machine_image": "projects/test/global/machineImages/host",
+                    "machine_type": "n2-standard-8",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "-desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "participant_container_name is not a valid container name",
+            ),
+            (
+                {
+                    "source_machine_image": "projects/test/global/machineImages/host",
+                    "machine_type": "n2-standard-8",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "Bad.User",
+                    "host_ssh_username": "hostadmin",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "participant_username is not a valid Linux username",
+            ),
+            (
+                {
+                    "source_machine_image": "projects/test/global/machineImages/host",
+                    "machine_type": "n2-standard-8",
+                    "bootstrap_capability": GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+                    "participant_container_name": "desktop",
+                    "participant_username": "operator",
+                    "host_ssh_username": "Bad.User",
+                    "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+                    "participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "host_ssh_username is not a valid Linux username",
+            ),
         ],
     )
     def test_load_gce_range_cell_config_rejects_invalid_machine_image_profiles(
@@ -979,6 +1194,35 @@ class TestRangeNetworkEnv:
         )
 
         with pytest.raises(RuntimeError, match=message):
+            load_gce_range_cell_config()
+
+    def test_non_machine_host_rejects_participant_readiness_fields(self, mocker):
+        entry = {
+            "source_image": "projects/test/global/images/host",
+            "machine_type": "n2-standard-8",
+            "disk_size_gb": 30,
+            "disk_type": "pd-balanced",
+            "bootstrap_capability": "standard",
+            "participant_readiness_contract": GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+            "participant_readiness_manifest_sha256": "a" * 64,
+        }
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_LINUX_IMAGE": "projects/test/global/images/linux",
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps({"kali": {"host": entry}}),
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="require bootstrap_capability"):
             load_gce_range_cell_config()
 
     def test_gce_range_cell_config_get_profile_falls_back_for_kali_without_image(self):
@@ -1084,8 +1328,8 @@ class TestRangeNetworkEnv:
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
                 "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
                 "GCP_RANGE_LINUX_IMAGE": "debian-12",
-                "GCP_RANGE_KALI_IMAGE": "family/shifter-polaris-vm",
-                "GCP_RANGE_DC_IMAGE": "projects/shifter/global/images/shifter-polaris-dc",
+                "GCP_RANGE_KALI_IMAGE": "family/shifter-example-vm",
+                "GCP_RANGE_DC_IMAGE": "projects/shifter/global/images/shifter-example-dc",
             },
             clear=True,
         )
@@ -1093,8 +1337,8 @@ class TestRangeNetworkEnv:
         config = load_gce_range_cell_config()
 
         assert config.linux.source_image == "debian-12"
-        assert config.kali.source_image == "family/shifter-polaris-vm"
-        assert config.dc.source_image == "projects/shifter/global/images/shifter-polaris-dc"
+        assert config.kali.source_image == "family/shifter-example-vm"
+        assert config.dc.source_image == "projects/shifter/global/images/shifter-example-dc"
 
     def test_load_gdc_vmruntime_config_reads_image_contract(self, mocker):
         mocker.patch.dict(
@@ -1148,6 +1392,47 @@ class TestRangeNetworkEnv:
                 disk_size_gib=64,
                 sftp_root_directory="/C:/Users/Administrator/Downloads",
             ),
+        )
+
+    @pytest.mark.parametrize(
+        "image_url",
+        [
+            "oci://ghcr.io/brad-edwards/shifter-vm-ubuntu:latest",
+            "docker://ghcr.io/brad-edwards/shifter-vm-ubuntu:latest",
+            "oci://ghcr.io/brad-edwards/shifter-vm-kali@sha256:" + "a" * 64,
+            "oci://registry.example.com/shifter-vm-ubuntu@sha256:" + "a" * 64,
+            "oci://ghcr.io/brad-edwards/shifter-vm-ubuntu@sha256:" + "A" * 64,
+        ],
+    )
+    def test_load_gdc_vmruntime_config_rejects_invalid_ghcr_vm_disk_reference(self, mocker, image_url):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
+                "GDC_UBUNTU_IMAGE_URL": image_url,
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="digest-pinned GHCR VM disk"):
+            load_gdc_vmruntime_config()
+
+    @pytest.mark.parametrize("scheme", ("oci://", "docker://", "registry://"))
+    def test_load_gdc_vmruntime_config_normalizes_role_matched_ghcr_vm_disk_digest(self, mocker, scheme):
+        digest = "a" * 64
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
+                "GDC_UBUNTU_IMAGE_URL": f"{scheme}ghcr.io/brad-edwards/shifter-vm-ubuntu@sha256:{digest}",
+            },
+            clear=True,
+        )
+
+        assert load_gdc_vmruntime_config().ubuntu.source_url == (
+            f"oci://ghcr.io/brad-edwards/shifter-vm-ubuntu@sha256:{digest}"
         )
 
     def test_load_gdc_vmruntime_config_reads_sftp_root_env_override(self, mocker):
@@ -1256,255 +1541,6 @@ class TestRangeNetworkEnv:
 
         with pytest.raises(RuntimeError, match="GDC_VMSERIES_BOOTSTRAP_BUCKET"):
             load_gdc_palo_alto_vmseries_config()
-
-
-def _full_aws_polaris_agent_env() -> dict[str, str]:
-    """Return a complete, valid AWS Polaris agent config env (#1377)."""
-    return {
-        "AWS_POLARIS_AGENT_REGION": "us-east-2",
-        "AWS_POLARIS_AGENT_MAIN_MODEL_ID": "us.anthropic.claude-sonnet-4-6",
-        "AWS_POLARIS_AGENT_SMALL_MODEL_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN": (
-            "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6-v1:0"
-        ),
-        "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN": (
-            "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-haiku-4-5-v1:0"
-        ),
-        "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS": (
-            "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0,"
-            "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0"
-        ),
-        "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS": (
-            "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-v1:0"
-        ),
-        "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS": "900",
-        "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS": "300",
-        "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN": "arn:aws:iam::123456789012:policy/ShifterPermissionsBoundary",
-    }
-
-
-class TestLoadAwsPolarisAgentConfig:
-    """Tests for the AWS Polaris per-range Bedrock agent config seam (#1377).
-
-    One validated seam for AWS region, approved main/small Bedrock model
-    ids, their inference-profile/backing-model ARNs, and STS session
-    lifecycle -- consumed by both Terraform agent-role rendering and
-    PolarisRangeBootstrapPlan so model/ARN defaults live in exactly one
-    place.
-    """
-
-    def test_returns_none_when_not_configured(self, mocker):
-        """No AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN -> feature not enabled here."""
-        mocker.patch.dict(os.environ, {}, clear=True)
-
-        assert load_aws_polaris_agent_config() is None
-
-    def test_reads_full_contract_from_env(self, mocker):
-        mocker.patch.dict(os.environ, _full_aws_polaris_agent_env(), clear=True)
-
-        config = load_aws_polaris_agent_config()
-
-        assert config == AWSPolarisAgentConfig(
-            region="us-east-2",
-            main_model_id="us.anthropic.claude-sonnet-4-6",
-            small_model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
-            main_inference_profile_arn=(
-                "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6-v1:0"
-            ),
-            small_inference_profile_arn=(
-                "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-haiku-4-5-v1:0"
-            ),
-            main_backing_model_arns=(
-                "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0",
-                "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0",
-            ),
-            small_backing_model_arns=("arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-v1:0",),
-            sts_session_duration_seconds=900,
-            refresh_window_seconds=300,
-            permissions_boundary_arn="arn:aws:iam::123456789012:policy/ShifterPermissionsBoundary",
-        )
-
-    def test_defaults_model_ids_and_sts_timing_when_unset(self, mocker):
-        """Absent optional env -> reuse the existing hardcoded defaults, not new ones.
-
-        Same Bedrock model ids PolarisRangeBootstrapPlan previously carried as
-        its own independent module constants (_AWS_DEFAULT_MODEL /
-        _AWS_DEFAULT_SMALL_FAST_MODEL) -- now the one config seam owns them.
-        """
-        env = _full_aws_polaris_agent_env()
-        del env["AWS_POLARIS_AGENT_MAIN_MODEL_ID"]
-        del env["AWS_POLARIS_AGENT_SMALL_MODEL_ID"]
-        del env["AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"]
-        del env["AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS"]
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        config = load_aws_polaris_agent_config()
-
-        assert config.main_model_id == "us.anthropic.claude-sonnet-4-6"
-        assert config.small_model_id == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-        assert config.sts_session_duration_seconds == 900
-        assert config.refresh_window_seconds == 300
-
-    @pytest.mark.parametrize(
-        "missing_key",
-        [
-            "AWS_POLARIS_AGENT_REGION",
-            "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
-            "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
-            "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
-            "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
-        ],
-    )
-    def test_rejects_missing_required_field(self, mocker, missing_key):
-        """The permissions boundary is part of the enabled-role contract (ADR-004-R21):
-        an enabled agent role (main_inference_profile_arn set) with no boundary
-        configured must fail closed here, not silently apply with
-        permissions_boundary = null downstream (#1377 codex pre-push finding)."""
-        env = _full_aws_polaris_agent_env()
-        del env[missing_key]
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match=missing_key):
-            load_aws_polaris_agent_config()
-
-    @pytest.mark.parametrize(
-        "model_key",
-        ["AWS_POLARIS_AGENT_MAIN_MODEL_ID", "AWS_POLARIS_AGENT_SMALL_MODEL_ID"],
-    )
-    def test_rejects_blank_model_id(self, mocker, model_key):
-        env = _full_aws_polaris_agent_env()
-        env[model_key] = ""
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match=f"{model_key} must not be blank"):
-            load_aws_polaris_agent_config()
-
-    @pytest.mark.parametrize(
-        "arn_key",
-        [
-            "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN",
-            "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
-            "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
-            "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
-            "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
-        ],
-    )
-    def test_rejects_malformed_arn(self, mocker, arn_key):
-        env = _full_aws_polaris_agent_env()
-        env[arn_key] = "not-an-arn"
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match=arn_key):
-            load_aws_polaris_agent_config()
-
-    def test_rejects_permissions_boundary_arn_that_is_not_a_policy_arn(self, mocker):
-        """Boundary must be an IAM *policy* ARN specifically (arn:...:policy/...),
-        not merely any IAM ARN -- a role/user/group ARN is not a valid permissions
-        boundary target and the old generic IAM ARN pattern let it through."""
-        env = _full_aws_polaris_agent_env()
-        env["AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN"] = "arn:aws:iam::123456789012:role/SomeRole"
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN"):
-            load_aws_polaris_agent_config()
-
-    @pytest.mark.parametrize(
-        "bad_region",
-        [
-            'us-east-2"; rm -rf /',
-            "us-east-2$(whoami)",
-            "us-east-2`whoami`",
-            "US-EAST-2",
-            "not-a-region",
-            "us east 2",
-            "us-east-2;whoami",
-        ],
-    )
-    def test_rejects_shell_unsafe_or_malformed_region(self, mocker, bad_region):
-        """region is substituted verbatim into a double-quoted shell variable
-        assignment in the root-executed SSM range bootstrap scripts. A value
-        carrying a quote, command substitution, backtick, or shell metacharacter
-        must be rejected outright rather than merely checked for presence
-        (#1377 codex pre-push finding: command injection into root-executed shell)."""
-        env = _full_aws_polaris_agent_env()
-        env["AWS_POLARIS_AGENT_REGION"] = bad_region
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_REGION"):
-            load_aws_polaris_agent_config()
-
-    def test_accepts_valid_region_shape(self, mocker):
-        env = _full_aws_polaris_agent_env()
-        env["AWS_POLARIS_AGENT_REGION"] = "us-west-2"
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        config = load_aws_polaris_agent_config()
-
-        assert config.region == "us-west-2"
-
-    @pytest.mark.parametrize(
-        "model_key",
-        ["AWS_POLARIS_AGENT_MAIN_MODEL_ID", "AWS_POLARIS_AGENT_SMALL_MODEL_ID"],
-    )
-    @pytest.mark.parametrize(
-        "bad_model_id",
-        [
-            'us.anthropic.claude-sonnet-4-6"; rm -rf /',
-            "us.anthropic.claude-sonnet-4-6$(whoami)",
-            "us.anthropic.claude-sonnet-4-6`whoami`",
-            "us.anthropic claude-sonnet-4-6",
-            "us.anthropic.claude-sonnet-4-6;whoami",
-            "us.anthropic.claude-sonnet-4-6|whoami",
-            "us.anthropic.claude-sonnet-4-6&whoami",
-            "us.anthropic.claude-sonnet-4-6\nwhoami",
-        ],
-    )
-    def test_rejects_shell_unsafe_model_id(self, mocker, model_key, bad_model_id):
-        """main_model_id/small_model_id are substituted verbatim into
-        double-quoted shell assignments in the root-executed SSM bootstrap
-        scripts; only blankness was previously checked. A value carrying a
-        quote, command substitution, backtick, or shell metacharacter must be
-        rejected (#1377 codex pre-push finding: command injection)."""
-        env = _full_aws_polaris_agent_env()
-        env[model_key] = bad_model_id
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match=model_key):
-            load_aws_polaris_agent_config()
-
-    @pytest.mark.parametrize(
-        "good_model_id",
-        [
-            "us.anthropic.claude-sonnet-4-6",
-            "anthropic.claude-haiku-4-5-20251001-v1:0",
-            "us.anthropic.claude-haiku-4-5-v1:0",
-        ],
-    )
-    def test_accepts_valid_model_id_shapes(self, mocker, good_model_id):
-        env = _full_aws_polaris_agent_env()
-        env["AWS_POLARIS_AGENT_MAIN_MODEL_ID"] = good_model_id
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        config = load_aws_polaris_agent_config()
-
-        assert config.main_model_id == good_model_id
-
-    def test_rejects_sts_session_duration_below_aws_minimum(self, mocker):
-        env = _full_aws_polaris_agent_env()
-        env["AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"] = "300"
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"):
-            load_aws_polaris_agent_config()
-
-    def test_rejects_refresh_window_not_less_than_session_duration(self, mocker):
-        env = _full_aws_polaris_agent_env()
-        env["AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"] = "900"
-        env["AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS"] = "900"
-        mocker.patch.dict(os.environ, env, clear=True)
-
-        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS"):
-            load_aws_polaris_agent_config()
 
 
 class TestLoadRaesContentDeliveryConfig:
@@ -1797,13 +1833,13 @@ class TestGceSftpRootDirectory:
     def test_image_key_profile_parses_sftp_root(self, mocker):
         mapping = {
             "kali": {
-                "polaris-vm": {
-                    "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                "example-vm": {
+                    "source_image": "projects/test/global/images/family/shifter-example-vm",
                     "machine_type": "e2-standard-8",
                     "disk_size_gb": 210,
                     "disk_type": "pd-balanced",
-                    "bootstrap_capability": "polaris-docker-host",
-                    "sftp_root_directory": "/home/polaris",
+                    "bootstrap_capability": "standard",
+                    "sftp_root_directory": "/home/example",
                 }
             }
         }
@@ -1816,8 +1852,8 @@ class TestGceSftpRootDirectory:
         )
         config = load_gce_range_cell_config()
 
-        assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm").sftp_root_directory == (
-            "/home/polaris"
+        assert config.get_profile(role="attacker", os_type="kali", ami_key="example-vm").sftp_root_directory == (
+            "/home/example"
         )
 
     def test_fingerprint_changes_with_sftp_root(self):
@@ -1826,3 +1862,31 @@ class TestGceSftpRootDirectory:
         base = GCERangeImageProfile(source_image="projects/x/global/images/kali")
         rooted = GCERangeImageProfile(source_image="projects/x/global/images/kali", sftp_root_directory="/home/kali")
         assert gce_image_profile_fingerprint(base) != gce_image_profile_fingerprint(rooted)
+
+    def test_fingerprint_changes_with_participant_readiness_manifest(self):
+        from config import gce_image_profile_fingerprint
+
+        first = GCERangeImageProfile(
+            source_machine_image="projects/x/global/machineImages/nested-host",
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="desktop",
+            participant_username="operator",
+            participant_readiness_contract=GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+            participant_readiness_manifest_sha256="a" * 64,
+            host_ssh_username="hostadmin",
+        )
+        second = GCERangeImageProfile(
+            **{
+                **first.__dict__,
+                "participant_readiness_manifest_sha256": "b" * 64,
+            }
+        )
+
+        assert gce_image_profile_fingerprint(first) != gce_image_profile_fingerprint(second)
+
+    def test_readiness_defaults_preserve_existing_profile_fingerprint(self):
+        from config import gce_image_profile_fingerprint
+
+        profile = GCERangeImageProfile(source_image="projects/x/global/images/kali")
+
+        assert gce_image_profile_fingerprint(profile) == "a0b06b4d228ee7776cd13b4b"

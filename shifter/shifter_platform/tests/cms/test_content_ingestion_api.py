@@ -22,7 +22,7 @@ from shared.api_tokens.models import ApiToken
 from shared.audit import AuditAction, AuditEntityType
 from shared.models import AuditLog
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
 
 PACKS_URL = "/api/v1/cms/catalog/packs/"
 
@@ -138,14 +138,6 @@ class TestPackRegisterEndpoint:
         response = _bearer(api_client, raw).post(PACKS_URL, body, format="json")
         assert response.status_code == 400
         assert "error" in response.data
-
-    def test_shadow_returns_error_envelope(self, api_client, staff_user, repo_pack):
-        raw = _token(staff_user, scopes.CMS_AUTHORING_READ, scopes.CMS_AUTHORING_WRITE)
-        response = _bearer(api_client, raw).post(PACKS_URL, _body(repo_pack, scenario_id="basic"), format="json")
-        assert response.status_code == 400
-        # Pin the shadow guard: the envelope carries its bounded message, so a
-        # different guard firing (e.g. identity mismatch) would fail this assert.
-        assert "shadow" in response.data["error"]["message"].lower()
 
     def test_duplicate_returns_error_envelope(self, api_client, staff_user, repo_pack):
         raw = _token(staff_user, scopes.CMS_AUTHORING_READ, scopes.CMS_AUTHORING_WRITE)

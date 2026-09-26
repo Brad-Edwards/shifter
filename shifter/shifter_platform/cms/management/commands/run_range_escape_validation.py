@@ -20,7 +20,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from cms.range_escape.adapters import NativeVmProbeLauncher, PolarisContainerProbeLauncher
+from cms.range_escape.adapters import ContainerProbeLauncher, NativeVmProbeLauncher
 from cms.range_escape.resolve import (
     RangeResolutionError,
     egress_policy_from_config,
@@ -29,16 +29,17 @@ from cms.range_escape.resolve import (
 )
 from cms.range_escape.runner import ProbeLauncher, RunOptions, run_escape_validation
 from shared.range_escape import Verdict
+from shared.range_escape_monitoring import emit_containment_signal
 
 
 def build_launcher(adapter: str) -> ProbeLauncher:
     """Return the probe-launch adapter for ``adapter`` (default native VM SSH).
 
-    The participant container name for the Polaris adapter travels on each
+    The participant container name for the container adapter travels on each
     ParticipantContext, so it is not a build-time argument here.
     """
-    if adapter == "polaris":
-        return PolarisContainerProbeLauncher()
+    if adapter == "container":
+        return ContainerProbeLauncher()
     return NativeVmProbeLauncher()
 
 
@@ -55,8 +56,8 @@ class Command(BaseCommand):
             default=[],
             help="Request id of a peer range used as a negative target (repeatable; enables the multi-range gate)",
         )
-        parser.add_argument("--adapter", default="native", choices=["native", "polaris"], help="Probe-launch adapter")
-        parser.add_argument("--container", default="", help="Participant container name (polaris adapter)")
+        parser.add_argument("--adapter", default="native", choices=["native", "container"], help="Probe-launch adapter")
+        parser.add_argument("--container", default="", help="Participant container name (container adapter)")
         parser.add_argument("--config", required=True, help="Path to the deployment config JSON (platform + egress)")
         parser.add_argument("--output", default="", help="Path to write the JSON report (default: stdout)")
         parser.add_argument(
@@ -101,6 +102,12 @@ class Command(BaseCommand):
             launcher=build_launcher(adapter),
             options=run_options,
         )
+
+        # Emit the report as a runtime containment signal for #2087's continuous
+        # monitoring/containment-response seam, in addition to the pre-event gate
+        # below. The default sink is the structured-logging baseline; the emit is
+        # fail-safe so a monitoring failure never breaks validation (#1295).
+        emit_containment_signal(report)
 
         payload = report.to_json()
         output = str(options["output"])

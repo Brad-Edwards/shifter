@@ -213,18 +213,6 @@ validate_ctf_content_location() {
   fi
 }
 
-# validate_slug_pairs accepts empty (the preserved-legacy posture) or a
-# comma-separated list of public=source slug pairs, matching the Django settings
-# parser and user_data.sh. Rejects anything that could inject into docker argv.
-validate_slug_pairs() {
-  local name="$1"
-  local value="$2"
-  if [[ -n "$value" && ! "$value" =~ ^[A-Za-z0-9_-]+=[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+=[A-Za-z0-9_-]+)*$ ]]; then
-    echo "Invalid ${name}: expected comma-separated public=source slug pairs" >&2
-    exit 1
-  fi
-}
-
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -314,14 +302,14 @@ run_containers() {
   # (issue #931). DOCKER_STOP_TIMEOUT must stay below the ASG termination drain.
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
-  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
+  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
   # Force-remove so a redeploy is idempotent. `docker stop` above does the
   # graceful drain (#931); a plain `docker rm` then fails for any container
   # still running (e.g. one the stop did not fully stop / a restart-policy
   # race), the failure is swallowed by `|| true`, and the subsequent
   # `docker run --name <x>` aborts with "name already in use". `-f` removes
   # regardless of state so the new containers always get their names.
-  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
+  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -347,6 +335,9 @@ run_containers() {
   docker run -d --name ctf-scheduler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_ctf_scheduler
+  docker run -d --name ctf-communication-worker --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/ctf-communication-worker-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py drain_ctf_communication_deliveries --loop --interval 10
   docker run -d --name guacamole-bootstrap-prune --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_guacamole_bootstrap_prune
@@ -402,6 +393,7 @@ main() {
   local range_events_topic_id
   local environment
   local cloud_provider
+  local audit_deployment_scope
 
   environment=$(get_param "$PS_PREFIX/environment")
   # Backend identity for config._cloud.resolve_cloud_provider (PLAT-2005). The
@@ -409,6 +401,7 @@ main() {
   # boot path sets (portal/ec2 user_data.sh); required, so a missing parameter
   # fails closed rather than silently defaulting to the wrong cloud.
   cloud_provider=$(get_param "$PS_PREFIX/cloud-provider")
+  audit_deployment_scope=$(get_param "$PS_PREFIX/audit-deployment-scope")
   image_digest=$(get_optional_param "$PS_PREFIX/image-digest")
   image_tag=$(get_param "$PS_PREFIX/image-tag")
   ecr_registry=$(get_param "$PS_PREFIX/ecr-registry")
@@ -481,16 +474,6 @@ main() {
   # as a non-secret env var (topic ARN, not a credential).
   range_events_topic_id=$(get_optional_param "$PS_PREFIX/range-events-topic-id")
 
-  # RAES default cutover (#1310, ADR-031-R6): capability gate + source-route
-  # selector. Same parameter names user_data.sh reads, so the redeploy path
-  # delivers them fleet-uniform too; validated (boolean + slug-pair grammar)
-  # before docker argv. The route param is absent in the preserved-legacy
-  # posture and simply not emitted.
-  shifter_raes_native_provisioning=$(get_optional_param "$PS_PREFIX/shifter-raes-native-provisioning")
-  shifter_raes_catalog_cutovers=$(get_optional_param "$PS_PREFIX/shifter-raes-catalog-cutovers")
-  validate_bool "SHIFTER_RAES_NATIVE_PROVISIONING" "$shifter_raes_native_provisioning"
-  validate_slug_pairs "SHIFTER_RAES_CATALOG_CUTOVERS" "$shifter_raes_catalog_cutovers"
-
   local image
   image=$(image_ref "$ecr_registry" "$ecr_repository" "$image_digest" "$image_tag")
   echo "Deploying image: $image"
@@ -498,6 +481,7 @@ main() {
   DOCKER_ENV=()
   append_env ENVIRONMENT "$environment"
   append_env CLOUD_PROVIDER "$cloud_provider"
+  append_env AUDIT_DEPLOYMENT_SCOPE "$audit_deployment_scope"
   append_env AWS_REGION "$AWS_REGION"
   append_env AWS_S3_BUCKET_NAME "$s3_bucket"
   if [[ -n "$ctf_content_bucket" ]]; then
@@ -550,8 +534,6 @@ main() {
   append_env_if_set PORTAL_CAPACITY_METRICS_ENABLED "$portal_capacity_metrics_enabled"
   append_env_if_set PORTAL_WORKER_SOFT_CONCURRENCY "$portal_worker_soft_concurrency"
   append_env_if_set RANGE_EVENTS_TOPIC_ID "$range_events_topic_id"
-  append_env_if_set SHIFTER_RAES_NATIVE_PROVISIONING "$shifter_raes_native_provisioning"
-  append_env_if_set SHIFTER_RAES_CATALOG_CUTOVERS "$shifter_raes_catalog_cutovers"
 
   run_migrations "$image" "${DOCKER_ENV[@]}"
   if [[ "$MIGRATE_ONLY" == "true" ]]; then

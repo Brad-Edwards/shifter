@@ -53,17 +53,11 @@ public_key="{{ public_key }}"
 
 echo "Configuring SSH access for $ssh_user user..."
 
-# Skip cleanly if the requested ssh user does not exist on this host.
-# Kali AMIs that ship with a real kali user resolve fine; the polaris VM
-# is an Ubuntu host running Kali under docker, has no host-level kali
-# user, and lands its real authorized_keys inside the container via a
-# separate post-boot plan. Without this guard the script would fall
-# over on `eval echo ~$ssh_user` returning the literal "~kali" string
-# and downstream `chown -R kali:kali` failing under set -e.
+# A native guest must provide the declared login account. Container endpoints
+# use their explicit access contract and never silently skip native setup.
 if ! id "$ssh_user" >/dev/null 2>&1; then
-    echo "ssh_user '$ssh_user' not present on this host; skipping host-level SSH key write"
-    echo "SSH configuration complete (skipped)"
-    exit 0
+    echo "ssh_user '$ssh_user' not present on this host" >&2
+    exit 1
 fi
 
 # Get home directory for user
@@ -157,7 +151,8 @@ class LinuxBootstrapPlan:
         is_verification=True,
     )
 
-    def get_context(self, instance: Any) -> dict[str, Any]:
+    @staticmethod
+    def get_context(instance: object) -> dict[str, Any]:
         """Get template variables for Linux bootstrap scripts.
 
         Args:
@@ -174,7 +169,8 @@ class LinuxBootstrapPlan:
             raise ValueError("Instance missing required 'hostname' attribute for Linux bootstrap")
 
         public_key = getattr(instance, "public_key", "")
-        ssh_user = getattr(instance, "ssh_user", "ubuntu")  # Default to ubuntu
+        # Default to ubuntu
+        ssh_user = getattr(instance, "ssh_user", "ubuntu")
 
         return {
             "hostname": hostname,

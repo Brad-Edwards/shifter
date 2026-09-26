@@ -12,7 +12,7 @@ from shared.sftp_root import default_sftp_root_directory
 from cloud import get_secrets_store
 from cloud.exceptions import CloudProviderNotImplementedError
 from config import resolve_cloud_provider
-from executors.base import Executor
+from executors.base import CommandExecutor
 from executors.ssm_executor import SSMExecutor
 
 _LINUX_DOCUMENT = "AWS-RunShellScript"
@@ -27,6 +27,7 @@ _SSH_USER_BY_OS = {
 
 
 def _get_provider() -> str:
+    """Return the active cloud provider identifier (e.g. ``aws`` or ``gcp``)."""
     return resolve_cloud_provider()
 
 
@@ -60,7 +61,7 @@ def get_sftp_root_directory(os_type: str, role: str) -> str:
 class GuestExecutionContext:
     """Resolved remote execution context for guest setup."""
 
-    executor: Executor
+    executor: CommandExecutor
     target: str
     document_name: str
     transport_name: str
@@ -120,18 +121,33 @@ def build_guest_execution_context(
         )
 
     if provider == "aws":
-        target = instance_data.get("instance_id", "")
-        if not target:
-            raise ValueError("AWS guest execution requires instance_id in instance output")
-
-        return GuestExecutionContext(
-            executor=SSMExecutor(),
-            target=target,
-            document_name=document_name,
-            transport_name="ssm",
-        )
+        return _build_aws_execution_context(instance_data, document_name, secret_reader)
 
     raise CloudProviderNotImplementedError(provider)
+
+
+def _build_aws_execution_context(
+    instance_data: dict[str, Any],
+    document_name: str,
+    secret_reader: Callable[[str], str] | None,
+) -> GuestExecutionContext:
+    """Use pinned SSH for native guests and SSM only for the legacy AWS projection."""
+    if instance_data.get("asset_type") == "ec2_vm":
+        from executors.ec2_guest_transport import native_ec2_executor
+
+        executor, target = native_ec2_executor(instance_data, secret_reader or get_secrets_store().get_secret)
+        return GuestExecutionContext(
+            executor=executor, target=target, document_name=document_name, transport_name="ssh"
+        )
+    target = instance_data.get("instance_id", "")
+    if not target:
+        raise ValueError("AWS guest execution requires instance_id in instance output")
+    return GuestExecutionContext(
+        executor=SSMExecutor(),
+        target=target,
+        document_name=document_name,
+        transport_name="ssm",
+    )
 
 
 def _is_gce_instance_output(instance_data: dict[str, Any]) -> bool:
@@ -162,7 +178,7 @@ def _build_gce_execution_context(
         raise ValueError("GCE guest execution requires a host-management SSH secret reference")
     private_key = (secret_reader or get_secrets_store().get_secret)(secret_id)
     # Provisioner guest setup drives the host sshd, which for Docker-host guests
-    # (e.g. the Polaris range host) is a different user + port than the
+    # (a container host) is a different user + port than the
     # participant-facing service on :22. Prefer the host access fields, falling
     # back to the participant username for native single-service guests.
     username = (

@@ -75,7 +75,7 @@ def _node(
     name: str,
     *,
     os_family: str = "linux",
-    node_type: str = "vm",
+    node_type: str = "compute",
     count: int = 1,
     links: tuple[str, ...] = (),
     acls: list | None = None,
@@ -195,8 +195,8 @@ def test_raes_plan_contract_rejects_mixed_runtime_domains() -> None:
 
 def test_interpret_consumes_real_compiled_plan() -> None:
     scenario = parse_sdl(
-        'name: rt-battery-probe\nversion: "1.0.0"\nnodes:\n  web1:\n    type: vm\n    os: linux\n'
-        "  dc1:\n    type: vm\n    os: windows\n"
+        'name: rt-battery-probe\nversion: "1.0.0"\nnodes:\n  web1:\n    type: compute\n    os: linux\n'
+        "  dc1:\n    type: compute\n    os: windows\n"
     )
     target = create_shifter_backend_target(port=FakeDispatchPort())
     execution_plan = RuntimeManager(target).plan(scenario)
@@ -214,7 +214,7 @@ def test_imageless_scenario_realizes_without_image_diagnostics() -> None:
     # errors and emits no image/source diagnostic -- image count is not a
     # realizability proxy.
     scenario = parse_sdl(
-        'name: imageless-realizability\nversion: "1.0.0"\nnodes:\n  host:\n    type: vm\n    os: linux\n'
+        'name: imageless-realizability\nversion: "1.0.0"\nnodes:\n  host:\n    type: compute\n    os: linux\n'
     )
     target = create_shifter_backend_target(port=FakeDispatchPort())
     execution_plan = RuntimeManager(target).plan(scenario)
@@ -367,7 +367,7 @@ def test_composition_placements_accepted_and_serialized() -> None:
 
 def test_accounts_unsupported_fails_closed() -> None:
     caps = ProvisionerCapabilities(
-        name="noacct", supported_node_types=frozenset({"vm"}), supported_os_families=frozenset({"linux"})
+        name="noacct", supported_node_types=frozenset({"compute"}), supported_os_families=frozenset({"linux"})
     )
     plan = _plan(_node("provision.node.a", "a"), _account_placement("provision.account.a", target="provision.node.a"))
     serialized, diagnostics = _interpret(plan, capabilities=caps)
@@ -378,7 +378,7 @@ def test_accounts_unsupported_fails_closed() -> None:
 def test_account_feature_outside_envelope_fails_closed() -> None:
     caps = ProvisionerCapabilities(
         name="restricted",
-        supported_node_types=frozenset({"vm"}),
+        supported_node_types=frozenset({"compute"}),
         supported_os_families=frozenset({"linux"}),
         supported_account_features=frozenset({"groups"}),
         supports_accounts=True,
@@ -526,7 +526,7 @@ def test_disabled_account_allows_explicit_no_password_semantics() -> None:
         {"shell": "/bin/bash"},
         {"home": "/home/alice"},
         {"disabled": True},
-        {"auth_method": "publickey"},
+        {"auth_method": "key"},
     ],
 )
 def test_retained_account_features_pass_declaration_and_evidence(spec: dict) -> None:
@@ -574,7 +574,7 @@ def _mail_overclaimed_capabilities() -> ProvisionerCapabilities:
     # Manifest over-claim: mail re-declared without genuine realization evidence.
     return ProvisionerCapabilities(
         name="overclaimed",
-        supported_node_types=frozenset({"vm", "switch"}),
+        supported_node_types=frozenset({"compute", "switch"}),
         supported_os_families=frozenset({"linux", "windows"}),
         supported_account_features=frozenset({"groups", "mail"}),
         supports_accounts=True,
@@ -658,7 +658,8 @@ def test_delete_account_operation_is_exempt() -> None:
         [_account_op("provision.account.gone", action=ChangeAction.DELETE, spn="host/dc1.example.com")],
     )
     serialized, diagnostics = _interpret(plan)
-    assert serialized is not None
+    assert serialized is None  # Cleanup has its own entry; fresh dispatch rejects DELETE.
+    assert any(d.code == "shifter-provisioner.incremental-unsupported" for d in diagnostics)
     assert not any(
         d.code
         in {"shifter-provisioner.account-feature-not-realized", "shifter-provisioner.unsupported-account-feature"}
@@ -686,13 +687,26 @@ def test_account_resource_and_create_operation_do_not_double_report(monkeypatch:
 def test_node_budget_enforced() -> None:
     capped = ProvisionerCapabilities(
         name="capped",
-        supported_node_types=frozenset({"vm"}),
+        supported_node_types=frozenset({"compute"}),
         supported_os_families=frozenset({"linux", "windows"}),
         max_total_nodes=1,
     )
     serialized, diagnostics = _interpret(_plan(_node("provision.node.a", "a", count=5)), capabilities=capped)
     assert serialized is None
     assert any(d.code == "shifter-provisioner.node-budget-exceeded" for d in diagnostics)
+
+
+def test_published_node_budget_fits_completion_transport() -> None:
+    serialized, diagnostics = _interpret(_plan(_node("provision.node.a", "a", count=65)))
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.node-budget-exceeded" for d in diagnostics)
+
+
+def test_resource_budget_is_enforced_before_dispatch() -> None:
+    resources = tuple(_network(f"provision.network.n{index}", f"n{index}", cidr="10.0.0.0/24") for index in range(129))
+    serialized, diagnostics = _interpret(_plan(*resources))
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.resource-budget-exceeded" for d in diagnostics)
 
 
 def test_non_mapping_payload_rejected() -> None:
@@ -722,15 +736,12 @@ def test_all_diagnostics_are_bounded_and_sanitized() -> None:
 # --- apply / dispatch ----------------------------------------------------------
 
 
-def test_apply_dispatches_serialized_plan_and_reports_snapshot() -> None:
+def test_enqueue_dispatches_serialized_plan_and_reports_a_receipt() -> None:
     port = FakeDispatchPort()
     plan = _plan(_node("provision.node.web", "web", links=("lan",)), _network("provision.network.lan", "lan"))
-    result = ShifterProvisioner(port).apply(plan, RuntimeSnapshot())
-    assert result.success is True
-    assert set(result.changed_addresses) == {"provision.node.web", "provision.network.lan"}
-    provisioning_entries = [e for e in result.snapshot.entries.values() if e.domain == RuntimeDomain.PROVISIONING]
-    assert len(provisioning_entries) == 2
-    assert all(entry.payload["request_id"] == REQUEST_ID for entry in provisioning_entries)
+    result = ShifterProvisioner(port).enqueue(plan)
+    assert result.accepted is True
+    assert set(result.addresses) == {"provision.node.web", "provision.network.lan"}
     assert len(port.plans) == 1
     assert port.plans[0]["kind"] == RAES_PROVISIONING_PLAN_KIND
 

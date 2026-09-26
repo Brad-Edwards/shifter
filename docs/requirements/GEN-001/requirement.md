@@ -20,6 +20,8 @@ As the platform grows, undocumented features become a liability for onboarding, 
 
 ## Traceability
 
+- IMPLEMENTS → DOCUMENTATION `docs/ops/artifact-preparation.md` (Operator guide for private packs, adapters, preparation and lifecycle)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/raes-in-tenant-artifact-preparation-design-1583.md` (Preparation architecture, contracts, authority and verification)
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/index.md` (Top-level in-app documentation index)
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/features/index.md` (Feature documentation index)
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/index.md` (Technical documentation index)

@@ -20,6 +20,7 @@ from .checks.deploy_workflow import (
     check_deploy_verification_fail_loud,
     check_deploy_workflow_plan_scope,
     check_github_oidc_no_admin_access,
+    check_global_iam_drift_check,
     check_platform_renders_deploy_tfvars,
     check_portal_deploy_mode_source_of_truth,
     check_workflow_action_sha_pinning,
@@ -27,6 +28,7 @@ from .checks.deploy_workflow import (
 from .checks.documentation import (
     check_documentation_coverage,
     check_guardrail_docs,
+    check_lilrae_identity_boundary,
     check_no_agent_attribution,
 )
 from .checks.eks_cross_stack_sourcing import (
@@ -46,6 +48,7 @@ from .checks.mcp_policy import (
     check_mcp_no_shell_exec,
     check_mcp_ops_tls_strict,
 )
+from .checks.accessibility_baseline import check_accessibility_baseline
 from .checks.published_contract import (
     check_published_contract_snapshots_immutable,
 )
@@ -85,8 +88,11 @@ CHECKS = {
     "no-mission-control-flag-literals": check_mission_control_no_flag_literals,
     "no-terraform-operational-placeholders": check_no_terraform_operational_placeholders,
     "github-oidc-no-admin-access": check_github_oidc_no_admin_access,
+    "global-iam-drift-check": check_global_iam_drift_check,
     "documentation-coverage": check_documentation_coverage,
+    "lilrae-identity-boundary": check_lilrae_identity_boundary,
     "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
+    "accessibility-baseline": check_accessibility_baseline,
     "no-agent-attribution": check_no_agent_attribution,
     "quality-path-ownership": check_quality_path_ownership,
     "eks-cross-stack-sourcing": check_eks_cross_stack_sourcing,
@@ -116,8 +122,11 @@ CHECK_LEVELS = {
         "no-mission-control-flag-literals",
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
+        "global-iam-drift-check",
         "documentation-coverage",
+        "lilrae-identity-boundary",
         "published-contract-snapshots-immutable",
+        "accessibility-baseline",
         "no-agent-attribution",
         "quality-path-ownership",
         "eks-cross-stack-sourcing",
@@ -147,8 +156,11 @@ CHECK_LEVELS = {
         "no-mission-control-flag-literals",
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
+        "global-iam-drift-check",
         "documentation-coverage",
+        "lilrae-identity-boundary",
         "published-contract-snapshots-immutable",
+        "accessibility-baseline",
         "no-agent-attribution",
         "quality-path-ownership",
         "eks-cross-stack-sourcing",

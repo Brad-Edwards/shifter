@@ -49,7 +49,7 @@ push and pull_request run validation only (#730).
 - Push to `dev` / `main` → Quality only; no deploy
 - Manual dispatch `environment=aws-dev` → AWS dev deploy
 - Manual dispatch `environment=aws-proof` → AWS proof deploy
-- Manual dispatch `environment=gcp-dev` → GCP dev deploy
+- Manual dispatch `environment=<gcp-dev|nazgul|orthanc|sauron|balrog>` → selected GCP deploy
 
 Run a deploy with `gh workflow run deploy.yml --ref <branch> -f environment=<env>`.
 
@@ -61,16 +61,26 @@ OIDC federation per cloud. No long-lived credentials.
 |--------|---------|
 | `AWS_ROLE_ARN` | AWS prod IAM role |
 | `AWS_ROLE_ARN_DEV` | AWS dev IAM role |
-| `GCP_SERVICE_ACCOUNT` | GCP service account email |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | Purpose-scoped GCP deploy service account email |
+| `GCP_DESTROY_SERVICE_ACCOUNT` | Purpose-scoped GCP destroy service account email |
+| `GCP_PACKER_BUILD_SERVICE_ACCOUNT` | Purpose-scoped GCE image build service account email |
+| `GCP_PACKER_VALIDATE_SERVICE_ACCOUNT` | Purpose-scoped GCE image validation service account email |
+| `GCP_PACKER_PROMOTE_SERVICE_ACCOUNT` | Purpose-scoped GCE image promotion service account email |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | GCP Workload Identity Federation provider |
 
 AWS roles defined in `platform/terraform/global/iam/github-oidc.tf`. GCP WIF configured in the GCP project.
 
 ## GCP Current State
 
-GCP deploys through CI/CD via a manual `workflow_dispatch` with `environment=gcp-dev`
-(`gh workflow run deploy.yml --ref <branch> -f environment=gcp-dev`). Branch names
+GCP deploys through CI/CD via a manual `workflow_dispatch` with an allowlisted
+GCP environment (`gh workflow run deploy.yml --ref <branch> -f environment=<gcp-dev|nazgul|orthanc|sauron|balrog>`). Branch names
 no longer trigger deploys; `dev`/`main` are Quality-only integration branches (#730).
+The selected deployment Environment and the purpose-scoped
+`gcp-release-scan-<deployment suffix>` Environment provide their own exact WIF
+identity variables; the reusable workflow does not reuse the deploy identity for
+release scanning. Its prepare preflight is scoped to deploy credentials, while
+the isolated scanner performs its own fail-closed identity check inside the
+release-scan Environment.
 
 The GCP CI path:
 

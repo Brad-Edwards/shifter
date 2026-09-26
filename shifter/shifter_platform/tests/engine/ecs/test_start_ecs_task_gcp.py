@@ -22,12 +22,18 @@ GCP_ENV = {
     "CLOUD_REGION": "us-central1",
     "GCP_REGION": "us-central1",
     "GCP_PROJECT_ID": "shifter-gcp-dev",
+    "GCP_DYNAMIC_SECRET_PROJECT_ID": "shifter-gcp-dev-range-secrets",
     "GOOGLE_CLOUD_PROJECT": "shifter-gcp-dev",
     "DB_HOST": "10.0.0.10",
     "DB_PORT": "5432",
     "DB_NAME": "shifter",
     "DB_USER": "shifter",
     "DB_PASSWORD": "secret",
+    "PROVISIONER_DB_HOST": "10.0.0.10",
+    "PROVISIONER_DB_PORT": "5432",
+    "PROVISIONER_DB_NAME": "shifter",
+    "PROVISIONER_DB_USER": "provisioner_runtime",
+    "PROVISIONER_DB_PASSWORD": "provisioner-secret",
     "RANGE_NETWORK_ID": "projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range",
     "RANGE_NETWORK_CIDR": "10.50.0.0/16",
     "PORTAL_NETWORK_CIDRS": "10.40.0.0/20,10.44.0.0/16",
@@ -54,6 +60,7 @@ def _configure_gcp_task_settings(settings):
     settings.ENGINE_TASK_DEFINITION = GCP_ENV["ENGINE_TASK_IMAGE"]
     settings.ENGINE_ECS_CLUSTER_ARN = ""
     settings.ENGINE_TASK_DEFINITION_ARN = ""
+    settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
 
 
 class _KubeModel(SimpleNamespace):
@@ -90,6 +97,7 @@ def _install_fake_kubernetes(monkeypatch):
         V1SecretKeySelector=_KubeModel,
         V1SeccompProfile=_KubeModel,
         V1SecurityContext=_KubeModel,
+        V1Toleration=_KubeModel,
         V1Volume=_KubeModel,
         V1VolumeMount=_KubeModel,
     )
@@ -118,6 +126,7 @@ class TestGcpTaskConfig:
         from engine.ecs import _get_engine_task_config
 
         settings.CLOUD_PROVIDER = "gcp"
+        settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         settings.ENGINE_TASK_CLUSTER = "shifter-jobs"
         settings.ENGINE_TASK_DEFINITION = (
             "us-central1-docker.pkg.dev/shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner:latest"
@@ -155,6 +164,7 @@ class TestGcpProvisionerEnvOverrides:
         from engine.ecs import _get_gcp_provisioner_env_overrides
 
         settings.CLOUD_PROVIDER = "gcp"
+        settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         with patch.dict(os.environ, GCP_ENV, clear=False):
             overrides = _get_gcp_provisioner_env_overrides()
 
@@ -162,6 +172,7 @@ class TestGcpProvisionerEnvOverrides:
         assert overrides["RANGE_NETWORK_CIDR"] == GCP_ENV["RANGE_NETWORK_CIDR"]
         assert overrides["PORTAL_NETWORK_CIDRS"] == GCP_ENV["PORTAL_NETWORK_CIDRS"]
         assert overrides["GCP_RANGE_BACKEND"] == GCP_ENV["GCP_RANGE_BACKEND"]
+        assert overrides["GCP_DYNAMIC_SECRET_PROJECT_ID"] == GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         assert overrides["GDC_ACCESS_SECRET_ID"] == GCP_ENV["GDC_ACCESS_SECRET_ID"]
         assert overrides["GDC_VM_IMAGE_GCS_SECRET_ID"] == GCP_ENV["GDC_VM_IMAGE_GCS_SECRET_ID"]
         assert overrides["GDC_KALI_IMAGE_URL"] == GCP_ENV["GDC_KALI_IMAGE_URL"]
@@ -169,12 +180,30 @@ class TestGcpProvisionerEnvOverrides:
         # as the default) must reach the provision Job for RangePodSSHExecutor.
         assert overrides["GDC_SETUP_RUNNER_IMAGE"] == GCP_ENV["GDC_SETUP_RUNNER_IMAGE"]
         assert overrides["ENGINE_TASK_IMAGE"] == GCP_ENV["ENGINE_TASK_IMAGE"]
-        assert overrides["DB_HOST"] == GCP_ENV["DB_HOST"]
+        assert overrides["DB_HOST"] == GCP_ENV["PROVISIONER_DB_HOST"]
+        assert overrides["DB_USER"] == GCP_ENV["PROVISIONER_DB_USER"]
+        assert overrides["DB_PASSWORD"] == GCP_ENV["PROVISIONER_DB_PASSWORD"]
+        assert overrides["DB_USER"] != GCP_ENV["DB_USER"]
+        assert overrides["DB_PASSWORD"] != GCP_ENV["DB_PASSWORD"]
+
+    def test_fails_closed_without_dedicated_database_identity(self, settings):
+        from django.core.exceptions import ImproperlyConfigured
+
+        from engine.ecs import _get_gcp_provisioner_env_overrides
+
+        settings.CLOUD_PROVIDER = "gcp"
+        incomplete = {key: value for key, value in GCP_ENV.items() if key != "PROVISIONER_DB_PASSWORD"}
+        with (
+            patch.dict(os.environ, incomplete, clear=True),
+            pytest.raises(ImproperlyConfigured, match="PROVISIONER_DB_PASSWORD"),
+        ):
+            _get_gcp_provisioner_env_overrides()
 
     def test_forwards_gce_range_cell_runtime_contract(self, settings):
         from engine.ecs import _get_gcp_provisioner_env_overrides
 
         settings.CLOUD_PROVIDER = "gcp"
+        settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         gce_env = {
             **GCP_ENV,
             "GCP_RANGE_BACKEND": "gce",
@@ -183,7 +212,7 @@ class TestGcpProvisionerEnvOverrides:
             "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@shifter-gcp-dev.iam.gserviceaccount.com",
             "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
             "GCP_RANGE_KALI_IMAGE": "projects/kali/global/images/kali",
-            "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": '{"kali":{"polaris-vm":{"disk_size_gb":210}}}',
+            "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": '{"kali":{"example-vm":{"disk_size_gb":210}}}',
             "GCP_RANGE_HOST_IDENTITY_POOL_SIZE": "200",
             "GCP_RANGE_WINDOWS_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
             "GCP_RANGE_DC_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",

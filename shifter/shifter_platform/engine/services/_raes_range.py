@@ -1,15 +1,9 @@
-"""Engine-side creation + dispatch for the RAES-native provisioning path (ADR-031).
+"""Engine-side creation and dispatch for the canonical RAES path (ADR-031).
 
-Parallel to :func:`engine.services.create_range` (the cyberscript path), but the
-persisted truth is the serialized RAES ``ProvisioningPlan`` stored in
-``mission_control_range.range_config`` (reused, no new table), realized by the
-provisioner's ``raes-range`` command. The cyberscript ``create_range`` /
-``interpret`` bodies are untouched (ADR-031-R2).
-
-This module is reached only through the RAES dispatch port
-(``cms.raes.dispatch``) which is constructed behind the
-``SHIFTER_RAES_NATIVE_PROVISIONING`` flag; nothing here runs on the cyberscript
-path.
+The persisted truth is the serialized RAES ``ProvisioningPlan`` stored in
+``mission_control_range.range_config`` and realized by the provisioner's
+``raes-range`` command. This module is reached through the RAES dispatch port
+(``cms.raes.dispatch``) and is the only range-creation authority.
 """
 
 from __future__ import annotations
@@ -21,6 +15,7 @@ from uuid import UUID, uuid4
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from installation.range_egress import RangeEgressMode
 
 from engine.ecs import start_raes_range_provisioning
 from shared.enums import RequestType
@@ -28,19 +23,29 @@ from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
+from ._common import _persist_task_arn
 from ._range_backend_binding import (
+    assert_backend_supports_egress,
     backend_binding_fields,
+    egress_binding_fields,
     require_workspace_binding,
     verify_existing_binding,
+    verify_existing_egress_binding,
     verify_existing_workspace_binding,
 )
 from ._range_placement import select_placement_zone
+from ._runtime_plugin_bindings import (
+    persist_runtime_plugin_pin,
+    resolve_runtime_plugin_pin,
+    retained_runtime_plugin_pin,
+)
 
 if TYPE_CHECKING:
     from engine.models import Range
     from shared.range_instantiation_policy import BackendAdmission
+    from shared.runtime_plugin_binding import RuntimePluginScope
 
-__all__ = ["RaesRangeRef", "RangeBindings", "create_raes_range"]
+__all__ = ["RaesRangeRef", "RangeBindings", "create_raes_range", "dispatch_created_raes_range"]
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,10 @@ class RangeBindings:
     delivery: tuple[DeliveryBinding, ...] = ()
     participant_access: tuple[ParticipantAccessBinding, ...] = ()
     artifact: tuple[ArtifactBinding, ...] = ()
+    runtime_plugin_scope: RuntimePluginScope | None = None
+    # CMS may finish downward authorization after Range creation signals, then
+    # dispatch in the same enclosing transaction. No worker sees a partial launch.
+    defer_dispatch: bool = False
 
 
 def create_raes_range(
@@ -75,6 +84,7 @@ def create_raes_range(
     user_id: int,
     compiled_plan: dict[str, Any],
     workspace_id: int,
+    egress_mode: str = RangeEgressMode.STATUS_QUO.value,
     backend_admission: BackendAdmission | None = None,
     bindings: RangeBindings | None = None,
 ) -> RaesRangeRef:
@@ -121,15 +131,9 @@ def create_raes_range(
     re-resolves; on the idempotent reuse path they are not re-created.
     """
     bindings = bindings or RangeBindings()
-    # Imported lazily (like the cyberscript ``create_range`` path) so importing
-    # the ``engine`` app does not define models before the app registry is ready.
-    from engine.models import (
-        RaesArtifactSatisfactionBinding,
-        RaesContentDeliveryBinding,
-        RaesParticipantAccessBinding,
-        Range,
-        Request,
-    )
+    # Imported lazily so importing the ``engine`` app does not define models
+    # before the app registry is ready.
+    from engine.models import Range, Request
 
     require_workspace_binding(workspace_id)
     request_uuid = request_id if isinstance(request_id, UUID) else UUID(str(request_id))
@@ -138,14 +142,24 @@ def create_raes_range(
     if existing is not None:
         verify_existing_binding(existing, request_uuid, backend_admission)
         verify_existing_workspace_binding(existing, request_uuid, workspace_id)
+        verify_existing_egress_binding(existing, request_uuid, egress_mode)
         _verify_existing_participant_access(existing, bindings.participant_access)
+        _verify_existing_plugin_scope(existing, bindings.runtime_plugin_scope)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
 
     binding_fields = backend_binding_fields(backend_admission)
+    egress_fields = egress_binding_fields(egress_mode)
+    assert_backend_supports_egress(binding_fields.get("range_backend"), egress_fields["egress_mode"])
     user_model = get_user_model()
     with transaction.atomic():
+        scope = bindings.runtime_plugin_scope
+        pin = (
+            resolve_runtime_plugin_pin(scope, compiled_plan, backend=str(binding_fields.get("range_backend") or ""))
+            if scope
+            else None
+        )
         user = user_model.objects.get(id=user_id)
         request = Request.objects.create(request_id=request_uuid, request_type=RequestType.RANGE.value, user=user)
         subnet_index = Range.allocate_subnet_index()
@@ -161,67 +175,111 @@ def create_raes_range(
             status=Range.Status.PROVISIONING,
             subnet_index=subnet_index,
             placement_zone=placement_zone,
+            resource_generation=uuid4() if binding_fields.get("range_backend") == "ec2" else None,
             range_config=compiled_plan,
             workspace_id=workspace_id,
             **binding_fields,
+            **egress_fields,
         )
-        RaesContentDeliveryBinding.objects.bulk_create(
-            RaesContentDeliveryBinding(
-                range=range_obj,
-                content_address=binding.content_address or "",
-                resource_type=binding.resource_type or "",
-                resource_address=binding.resource_address or "",
-                payload_kind=binding.payload_kind or "",
-                install_policy=binding.install_policy or "",
-                sha256=binding.sha256,
-                storage_key=binding.storage_key,
-                byte_count=binding.byte_count,
-                binding_version=binding.binding_version,
-            )
-            for binding in bindings.delivery
-        )
-        RaesParticipantAccessBinding.objects.bulk_create(
-            RaesParticipantAccessBinding(
-                range=range_obj,
-                target_address=binding.target_address,
-                channel=binding.channel,
-                account_address=binding.account_address,
-                binding_version=binding.binding_version,
-            )
-            for binding in bindings.participant_access
-        )
-        RaesArtifactSatisfactionBinding.objects.bulk_create(
-            RaesArtifactSatisfactionBinding(
-                range=range_obj,
-                target_address=binding.target,
-                requirement_id=binding.requirement_id,
-                artifact_id=binding.artifact_id,
-                artifact_version=binding.version,
-                digest=binding.digest,
-                media_type=binding.media_type,
-                mechanism=binding.mechanism,
-                acquisition=binding.acquisition,
-                timing=binding.timing,
-                image_ref=binding.image_ref,
-                machine_type=binding.machine_type,
-                disk_size_gb=binding.disk_size_gb,
-                disk_type=binding.disk_type,
-                binding_version=1,
-            )
-            for binding in bindings.artifact
-        )
+        _persist_range_bindings(range_obj, bindings)
+        persist_runtime_plugin_pin(range_obj, pin)
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
+    if bindings.defer_dispatch:
+        return RaesRangeRef(str(request_uuid), str(range_obj.uuid), range_obj.status, True)
+    return dispatch_created_raes_range(request_uuid)
+
+
+def _verify_existing_plugin_scope(existing: Range, scope: RuntimePluginScope | None) -> None:
+    """Reject replay that changes the administrator-selected tenant or pack revision."""
+    pin = retained_runtime_plugin_pin(existing)
+    if pin is not None and (
+        scope is None
+        or pin.organization_uuid != scope.organization_uuid
+        or pin.pack_digest != scope.pack_digest
+        or pin.pack_id != scope.pack_id
+    ):
+        raise ValueError("Range replay cannot change its runtime plugin pack identity")
+
+
+def dispatch_created_raes_range(request_uuid: UUID) -> RaesRangeRef:
+    """Dispatch an already persisted range through the incumbent launch outbox."""
+    from engine.models import Range
+
+    range_obj = Range.objects.get(request__request_id=request_uuid)
     try:
-        start_raes_range_provisioning(request_uuid)
+        task_ref = start_raes_range_provisioning(request_uuid)
     except Exception:
         range_obj.status = Range.Status.FAILED
         range_obj.error_message = "Provisioning dispatch failed"
         range_obj.save(update_fields=["status", "error_message", "updated_at"])
+        from ._receipt import revoke_receipt_verifier
+
+        revoke_receipt_verifier(request_uuid)
         raise
+    if task_ref:
+        _persist_task_arn(range_obj, "provision", task_ref)
 
     return RaesRangeRef(
         request_id=str(request_uuid), range_id=str(range_obj.uuid), status=range_obj.status, accepted=True
+    )
+
+
+def _persist_range_bindings(range_obj: Range, bindings: RangeBindings) -> None:
+    """Persist every byte-free RAES sidecar binding in the range transaction."""
+    from engine.models import (
+        RaesArtifactSatisfactionBinding,
+        RaesContentDeliveryBinding,
+        RaesParticipantAccessBinding,
+    )
+
+    RaesContentDeliveryBinding.objects.bulk_create(
+        RaesContentDeliveryBinding(
+            range=range_obj,
+            content_address=binding.content_address or "",
+            resource_type=binding.resource_type or "",
+            resource_address=binding.resource_address or "",
+            payload_kind=binding.payload_kind or "",
+            install_policy=binding.install_policy or "",
+            sha256=binding.sha256,
+            storage_key=binding.storage_key,
+            byte_count=binding.byte_count,
+            binding_version=binding.binding_version,
+        )
+        for binding in bindings.delivery
+    )
+    RaesParticipantAccessBinding.objects.bulk_create(
+        RaesParticipantAccessBinding(
+            range=range_obj,
+            target_address=binding.target_address,
+            channel=binding.channel,
+            account_address=binding.account_address,
+            binding_version=binding.binding_version,
+        )
+        for binding in bindings.participant_access
+    )
+    RaesArtifactSatisfactionBinding.objects.bulk_create(
+        RaesArtifactSatisfactionBinding(
+            range=range_obj,
+            target_address=binding.target,
+            requirement_id=binding.requirement_id,
+            artifact_id=binding.artifact_id,
+            artifact_version=binding.version,
+            digest=binding.digest,
+            media_type=binding.media_type,
+            mechanism=binding.mechanism,
+            acquisition=binding.acquisition,
+            timing=binding.timing,
+            image_ref=binding.image_ref,
+            image_id=binding.image_id,
+            machine_type=binding.machine_type,
+            disk_size_gb=binding.disk_size_gb,
+            disk_type=binding.disk_type,
+            management_ssh_port=binding.management_ssh_port,
+            management_ssh_username=binding.management_ssh_username,
+            binding_version=1,
+        )
+        for binding in bindings.artifact
     )
 
 

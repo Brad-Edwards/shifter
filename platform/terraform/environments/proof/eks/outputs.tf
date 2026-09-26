@@ -47,8 +47,11 @@ output "workload_role_arns" {
 
 output "runtime_env" {
   description = "Management-plane runtime bindings merged with the assembled provisioner Job environment, consumed by the AWS renderer."
-  value       = module.eks_provisioner_env.runtime_env
-  sensitive   = true
+  value = merge(module.eks_provisioner_env.runtime_env, {
+    PORTAL_NETWORK_CIDRS = join(",", module.eks.private_subnet_cidrs)
+    ACCESS_NETWORK_CIDRS = join(",", module.eks.private_subnet_cidrs)
+  })
+  sensitive = true
 }
 
 output "ingress_source_cidrs" {
@@ -74,4 +77,9 @@ output "private_service_cidrs" {
 output "kubernetes_api_cidrs" {
   description = "Private cluster API reachability CIDRs consumed by chart network policy."
   value       = var.private_subnet_cidrs
+}
+
+output "model_broker" {
+  description = "Applied private model broker configuration."
+  value       = module.eks.model_broker
 }

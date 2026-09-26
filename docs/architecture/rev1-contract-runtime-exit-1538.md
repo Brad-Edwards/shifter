@@ -128,17 +128,13 @@ closed. A limitation is never rendered as a pass.
   express allowed paths; they do not install listeners, prove readiness, or grant
   participant authorization.
 
-## Disclosed contradiction: runtime selector vs. ADR-024/#1862 hard cut
+## Selector contradiction resolved
 
-At this gate baseline, the validation command, catalog router, and
-image-management surfaces still consult `SHIFTER_RAES_NATIVE_PROVISIONING`, while
-current ADR-024 / #1862 describe a **no-selector hard cut**. This record
-**discloses** that contradiction; it does not resolve it by restoring an old path
-or adding another compatibility switch, and it does not claim the repository has
-independently demonstrated ADR-024's complete no-selector cutover. The REV1.2
-runtime verdict is bounded to the runtime-verification boundary named by #1538;
-completing/retiring the selector is owned by the ADR-024/#1862 cutover track and
-REV1.3 (#1539).
+The gate baseline originally disclosed that runtime selectors remained despite
+ADR-024's hard-cut decision. Issue #1311 removed those selectors from validation,
+catalog, image-management, application settings, and deployment renderers. This
+historical REV1.2 verdict remains bounded to the runtime-verification boundary
+named by #1538; the later hard-cut evidence is recorded by #1311.
 
 ## Concept boundaries (the several meanings of "provider")
 

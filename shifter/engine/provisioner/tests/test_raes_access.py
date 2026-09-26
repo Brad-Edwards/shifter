@@ -27,7 +27,7 @@ def _account(
     address="provision.account.analyst",
     username="analyst",
     target=_WEB,
-    auth_method="publickey",
+    auth_method="key",
     disabled=False,
     domain_ref=None,
     domain_id=None,
@@ -45,7 +45,7 @@ def _account(
 
 def _plan(nodes=None, accounts=None):
     return RaesPlan(
-        raes_version="2.0.0",
+        raes_version="3.5.0",
         nodes=tuple(nodes if nodes is not None else (_node(),)),
         networks=(),
         accounts=tuple(accounts if accounts is not None else (_account(),)),
@@ -65,12 +65,12 @@ class TestJoin:
     def test_empty_sidecar_joins_to_nothing(self):
         assert join_participant_access([], _plan()) == ()
 
-    def test_ssh_binding_resolves_publickey_account(self):
+    def test_ssh_binding_resolves_key_account(self):
         joined = join_participant_access([_transport()], _plan())
         assert len(joined) == 1
         binding = joined[0]
         assert (binding.target_address, binding.channel) == (_WEB, "ssh")
-        assert (binding.username, binding.auth_method) == ("analyst", "publickey")
+        assert (binding.username, binding.auth_method) == ("analyst", "key")
 
     def test_rdp_binding_resolves_password_account(self):
         plan = _plan(
@@ -85,7 +85,7 @@ class TestJoin:
         plan = _plan(
             nodes=(_node(os_family="windows"),),
             accounts=(
-                _account(address="provision.account.a", username="sshuser", auth_method="publickey"),
+                _account(address="provision.account.a", username="sshuser", auth_method="key"),
                 _account(address="provision.account.b", username="rdpuser", auth_method="password"),
             ),
         )
@@ -146,7 +146,7 @@ class TestFailClosed:
         with pytest.raises(RaesAccessError, match="auth method"):
             join_participant_access(transports, plan)
 
-    def test_rdp_against_publickey_account_is_rejected(self):
+    def test_rdp_against_key_account_is_rejected(self):
         transports = [_transport(channel="rdp")]
         plan = _plan()
         with pytest.raises(RaesAccessError, match="auth method"):
@@ -184,7 +184,7 @@ class TestManagementBoundary:
 
     @pytest.mark.parametrize(
         ("channel", "auth_method"),
-        [("ssh", "publickey"), ("rdp", "password")],
+        [("ssh", "key"), ("rdp", "password")],
     )
     def test_account_resolving_to_the_management_login_is_rejected(self, channel, auth_method):
         # A scenario author may name any local account, including one whose

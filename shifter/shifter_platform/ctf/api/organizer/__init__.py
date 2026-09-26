@@ -51,6 +51,7 @@ from ctf.api.organizer.lifecycle import (
     EventTasksView,
     TaskRunNowView,
 )
+from ctf.api.organizer.model_access import EventModelAccessAssessmentView
 from ctf.api.organizer.moderation import (
     ParticipantBanView,
     ParticipantDisqualifyView,
@@ -95,11 +96,15 @@ from ctf.api.organizer.ranges import (
     ParticipantRangeStopView,
     ParticipantVpnProfileView,
 )
+from ctf.api.organizer.registration import (
+    PublicRegistrationDispositionView,
+    PublicRegistrationRequestListView,
+)
 from ctf.api.organizer.scoreboard import (
     OrganizerScoreboardView,
     ScoreTimelineView,
 )
-from ctf.api.organizer.staff import EventStaffMemberView, EventStaffView
+from ctf.api.organizer.staff import EventOwnershipTransferView, EventStaffMemberView, EventStaffView
 from ctf.api.organizer.transfer import (
     ChallengeExportView,
     ChallengeImportView,
@@ -127,6 +132,8 @@ __all__ = [
     "EventEmailTemplateView",
     "EventLifecycleView",
     "EventListView",
+    "EventModelAccessAssessmentView",
+    "EventOwnershipTransferView",
     "EventPageDetailView",
     "EventPagesView",
     "EventRangeListView",
@@ -167,6 +174,8 @@ __all__ = [
     "ParticipantUsernameView",
     "ParticipantVpnProfileView",
     "PrerequisiteDeleteView",
+    "PublicRegistrationDispositionView",
+    "PublicRegistrationRequestListView",
     "RateChallengeView",
     "RemoveFlagView",
     "ScenarioListView",

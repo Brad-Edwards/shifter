@@ -11,6 +11,7 @@ this same module without circular import gymnastics.
 from __future__ import annotations
 
 import logging
+from typing import Any
 from uuid import uuid4
 
 from django.conf import settings
@@ -61,10 +62,12 @@ class EntityBase(SoftDeleteMixin, models.Model):
     all_objects = SoftDeleteQuerySet.as_manager()
 
     class Meta:
+        """Model metadata: abstract base using the unfiltered manager."""
+
         abstract = True
         base_manager_name = "all_objects"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
         """Save with terminal-status soft-delete invariant enforcement."""
         apply_terminal_soft_delete(self, kwargs)
         super().save(*args, **kwargs)
@@ -110,8 +113,17 @@ class Request(SoftDeleteMixin, models.Model):
     # exactly what the non-null constraint exists to prevent.
     workspace_id = models.IntegerField(
         db_index=True,
+        null=True,
+        blank=True,
         help_text="Workspace this request was launched in (soft reference; see ADR-046).",
     )
+    # Empty kind is the pre-S8 workspace-bound representation only. New account
+    # scopes must name their kind and account; no missing ID implies installation.
+    scope_kind = models.CharField(
+        max_length=16, blank=True, default="", choices=(("installation", "Installation"), ("account", "Account"))
+    )
+    account_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    organization_id = models.PositiveBigIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 
@@ -119,12 +131,34 @@ class Request(SoftDeleteMixin, models.Model):
     all_objects = SoftDeleteQuerySet.as_manager()
 
     class Meta:
+        """Model metadata: ordering, verbose names, and base manager."""
+
         ordering = ["-created_at"]
         verbose_name = "Request"
         verbose_name_plural = "Requests"
         base_manager_name = "all_objects"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        scope_kind="", account_id__isnull=True, organization_id__isnull=True, workspace_id__isnull=False
+                    )
+                    | models.Q(
+                        scope_kind="installation",
+                        account_id__isnull=True,
+                        organization_id__isnull=True,
+                        workspace_id__isnull=True,
+                    )
+                    | (
+                        models.Q(scope_kind="account", account_id__isnull=False)
+                        & (models.Q(workspace_id__isnull=True) | models.Q(organization_id__isnull=False))
+                    )
+                ),
+                name="cms_request_resource_scope_shape",
+            ),
+        ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Request {self.request_id}"
 
 
@@ -164,6 +198,8 @@ class Instance(EntityBase):
     )
 
     class Meta:
+        """Model metadata: ordering, verbose names, and base manager."""
+
         ordering = ["-created_at"]
         verbose_name = "Instance"
         verbose_name_plural = "Instances"
@@ -172,7 +208,7 @@ class Instance(EntityBase):
         # admin introspection stay on the unfiltered manager.
         base_manager_name = "all_objects"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.id})"
 
 
@@ -215,13 +251,15 @@ class App(EntityBase):
     )
 
     class Meta:
+        """Model metadata: ordering, verbose names, and base manager."""
+
         ordering = ["-created_at"]
         verbose_name = "App"
         verbose_name_plural = "Apps"
         # See Instance.Meta.base_manager_name for rationale.
         base_manager_name = "all_objects"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.id})"
 
 
@@ -255,6 +293,8 @@ class Subnet(EntityBase):
     )
 
     class Meta:
+        """Model metadata: ordering, verbose names, and base manager."""
+
         ordering = ["-created_at"]
         verbose_name = "Subnet"
         verbose_name_plural = "Subnets"
@@ -286,7 +326,7 @@ class Subnet(EntityBase):
         """
         from shared.schemas import SubnetSpec
 
-        spec_data: dict = {"name": self.name, **self.data}
+        spec_data: dict[str, Any] = {"name": self.name, **self.data}
         if self.id:
             spec_data["uuid"] = str(self.id)
         SubnetSpec.model_validate(spec_data)

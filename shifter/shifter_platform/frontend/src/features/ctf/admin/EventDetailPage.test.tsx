@@ -17,6 +17,8 @@ const EVENT = {
   id: "e1",
   name: "Spring CTF",
   description: "A spring event",
+  public_registration_enabled: true,
+  public_registration_url: "https://ctf.example.test/ctf/public/events/e1/",
   status: "active",
   event_start: "2026-08-01T10:00:00Z",
   event_end: "2026-08-01T18:00:00Z",
@@ -45,7 +47,9 @@ function render() {
   });
 }
 
-beforeEach(() => mockApi.mockReset());
+beforeEach(() => {
+  mockApi.mockReset();
+});
 
 describe("EventDetailPage", () => {
   it("renders the overview and management links", async () => {
@@ -55,6 +59,10 @@ describe("EventDetailPage", () => {
     expect(screen.getByRole("link", { name: "Challenges" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Participants" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Monitoring" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open public registration page" })).toHaveAttribute(
+      "href",
+      EVENT.public_registration_url,
+    );
   });
 
   it("keeps force-delete disabled until the event name is typed", async () => {

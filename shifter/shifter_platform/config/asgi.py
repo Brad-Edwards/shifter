@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-# Add shifter/ to path so 'cyberscript' package is importable
+# Add shifter/ to the path for sibling runtime packages.
 SHIFTER_DIR = Path(__file__).resolve().parent.parent.parent
 if str(SHIFTER_DIR) not in sys.path:
     sys.path.insert(0, str(SHIFTER_DIR))
@@ -45,7 +45,7 @@ log_settings_posture(os.environ)
 from django.conf import settings  # noqa: E402
 
 from config.capacity_metrics import build_emitter_from_config  # noqa: E402
-from config.websocket_auth import CTFAccountWebSocketBoundary  # noqa: E402
+from config.websocket_auth import CredentialSessionWebSocketBoundary, CTFAccountWebSocketBoundary  # noqa: E402
 
 portal_capacity_emitter = build_emitter_from_config(
     enabled=settings.PORTAL_CAPACITY_METRICS_ENABLED,
@@ -63,7 +63,11 @@ application = ProtocolTypeRouter(
     {
         "http": django_asgi_app,
         "websocket": AllowedHostsOriginValidator(
-            AuthMiddlewareStack(CTFAccountWebSocketBoundary(URLRouter(websocket_urlpatterns + shared_ws_urlpatterns)))
+            AuthMiddlewareStack(
+                CredentialSessionWebSocketBoundary(
+                    CTFAccountWebSocketBoundary(URLRouter(websocket_urlpatterns + shared_ws_urlpatterns))
+                )
+            )
         ),
     }
 )

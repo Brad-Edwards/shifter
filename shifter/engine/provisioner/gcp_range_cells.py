@@ -6,7 +6,7 @@ import base64
 import logging
 from collections.abc import Callable
 
-from config import GCERangeCellConfig, load_gce_range_cell_config
+from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import (
     GCEGuestSecretOps,
@@ -15,19 +15,25 @@ from gcp_range_cell_credentials import (
     _default_vertex_ops,
 )
 from gcp_range_cell_destroy import destroy_range_cell
-from gcp_range_cell_ops import _get_or_none, _wait_for_operation
+from gcp_range_cell_host_binding import (
+    _assert_instance_image_binding,
+    _assert_preconfigured_host_binding,
+    _host_public_key_from_instance,
+)
+from gcp_range_cell_ops import _get_or_none, _wait_for_operation, insert_instance_with_machine_image_retry
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, range_cell_result, subnet_outputs
 from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_resources import (
-    HOST_PUBLIC_KEY_METADATA_KEY,
     address_resource,
     firewall_resource,
     instance_resource,
     network_resource,
     openvpn_gateway_address_resource,
     openvpn_gateway_instance_resource,
+    router_nat_resource,
     subnetwork_resource,
 )
+from gcp_range_cell_shared_nat import assert_shared_nat_capacity, ensure_shared_nat
 from gcp_range_cell_types import (
     FirewallPlan,
     InstancePlan,
@@ -50,18 +56,19 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> None:
+def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> bool:
     """Create the range VPC if it is missing."""
     name = plan["network"]["name"]
     existing = _get_or_none(clients.networks.get, clients.google_exceptions, project=plan["project_id"], network=name)
     if existing is not None:
         logger.info("GCE range network exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.networks.insert(project=plan["project_id"], network_resource=network_resource(plan))
     _wait_for_operation(plan, clients, operation, "global")
+    return True
 
 
-def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetPlan) -> None:
+def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetPlan) -> bool:
     """Create a range subnetwork if it is missing."""
     name = subnet["resource_name"]
     existing = _get_or_none(
@@ -73,29 +80,76 @@ def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetP
     )
     if existing is not None:
         logger.info("GCE range subnetwork exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.subnetworks.insert(
         project=plan["project_id"],
         region=plan["region"],
         subnetwork_resource=subnetwork_resource(plan, subnet),
     )
     _wait_for_operation(plan, clients, operation, "region")
+    return True
 
 
-def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> None:
-    """Create one range firewall rule if it is missing."""
+def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> bool:
+    """Create one range firewall rule, or reconcile an existing rule to the plan.
+
+    Name existence is not correctness (#1711 / ADR-039-R9): a rule that already
+    exists may carry a stale, broader body -- most importantly a legacy combined
+    ``*-mgmt`` rule that opened participant RDP from the broad management source
+    before this issue split participant access onto its own dedicated-source rule.
+    Trusting the name would leave that broad rule live on already-active cells.
+    So an existing rule is patched to converge on the freshly rendered body rather
+    than skipped. Patch is idempotent: an already-matching rule is a no-op update.
+    """
     name = firewall["name"]
+    body = firewall_resource(plan, firewall)
     existing = _get_or_none(clients.firewalls.get, clients.google_exceptions, project=plan["project_id"], firewall=name)
-    if existing is not None:
-        logger.info("GCE range firewall exists name_fp=%s", safe_log_fingerprint(name))
-        return
-    operation = clients.firewalls.insert(
-        project=plan["project_id"], firewall_resource=firewall_resource(plan, firewall)
-    )
+    if existing is None:
+        operation = clients.firewalls.insert(project=plan["project_id"], firewall_resource=body)
+        _wait_for_operation(plan, clients, operation, "global")
+        return True
+    logger.info("GCE range firewall reconcile name_fp=%s", safe_log_fingerprint(name))
+    operation = clients.firewalls.patch(project=plan["project_id"], firewall=name, firewall_resource=body)
     _wait_for_operation(plan, clients, operation, "global")
+    return False
 
 
-def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> None:
+def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
+    """Create the range-owned Cloud Router + NAT if the plan carries one (PLAT-238).
+
+    Present only for a non-``none`` range; a zero-egress range has no ``router_nat``
+    element and therefore no NAT path. Idempotent: an existing router of the same
+    name is left in place (the NAT config is deterministic from the plan).
+    """
+    shared_nat = plan.get("shared_nat")
+    if shared_nat is not None:
+        ensure_shared_nat(plan, clients)
+    router_nat = plan.get("router_nat")
+    # A shared-NAT range delegates egress to the shared router; a zero-egress
+    # range carries no router_nat. Neither owns a range-scoped router here.
+    if shared_nat is not None or router_nat is None:
+        return False
+    name = router_nat["router_name"]
+    existing = _get_or_none(
+        clients.routers.get,
+        clients.google_exceptions,
+        project=plan["project_id"],
+        region=plan["region"],
+        router=name,
+    )
+    if existing is not None:
+        logger.info("GCE range router/NAT exists name_fp=%s", safe_log_fingerprint(name))
+        return False
+    operation = clients.routers.insert(
+        project=plan["project_id"],
+        region=plan["region"],
+        router_resource=router_nat_resource(plan),
+    )
+    _wait_for_operation(plan, clients, operation, "region")
+    return True
+
+
+def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> bool:
     """Reserve an internal address for one range instance."""
     name = instance["address_name"]
     existing = _get_or_none(
@@ -107,49 +161,14 @@ def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: Instance
     )
     if existing is not None:
         logger.info("GCE range address exists name_fp=%s", safe_log_fingerprint(name))
-        return
+        return False
     operation = clients.addresses.insert(
         project=plan["project_id"],
         region=plan["region"],
         address_resource=address_resource(instance),
     )
     _wait_for_operation(plan, clients, operation, "region")
-
-
-def _host_public_key_from_instance(existing: object) -> str:
-    """Read the provisioner-issued SSH host public key from an existing instance.
-
-    On a reconcile the guest already serves the host key injected at create time,
-    so recover it from instance metadata rather than minting a mismatched one.
-    """
-    metadata = getattr(existing, "metadata", None)
-    for item in getattr(metadata, "items", None) or []:
-        if getattr(item, "key", None) == HOST_PUBLIC_KEY_METADATA_KEY:
-            return str(getattr(item, "value", "") or "")
-    return ""
-
-
-def _existing_label(existing: object, key: str) -> str:
-    """Read one label from a dict-like Compute instance response."""
-    labels = getattr(existing, "labels", None)
-    getter = getattr(labels, "get", None)
-    if callable(getter):
-        return str(getter(key, "") or "")
-    return ""
-
-
-def _assert_instance_image_binding(existing: object, instance: InstancePlan) -> None:
-    """Reject a keyed deterministic VM whose recorded profile differs from the plan."""
-    expected_key = instance["image_key"]
-    if not expected_key:
-        return
-    actual_key = _existing_label(existing, "image-key")
-    actual_profile = _existing_label(existing, "image-profile")
-    if actual_key != expected_key or actual_profile != instance["image_profile_fingerprint"]:
-        raise RuntimeError(
-            "Existing GCE range instance has an image-profile binding that differs from the current plan; "
-            f"ami_key={expected_key!r}. Recreate the range instead of reusing the drifted instance."
-        )
+    return True
 
 
 def _ensure_attached_disks_auto_delete(
@@ -175,6 +194,41 @@ def _ensure_attached_disks_auto_delete(
         _wait_for_operation(plan, clients, operation, "zone")
 
 
+def _insert_instance(
+    plan: RangeCellPlan,
+    clients: GCEClients,
+    instance: InstancePlan,
+    instance_body: ResourceDict,
+) -> None:
+    """Insert an instance and finalize ownership of machine-image disks."""
+    insert_kwargs: dict[str, object] = {
+        "project": plan["project_id"],
+        "zone": plan["zone"],
+        "instance_resource": instance_body,
+    }
+    machine_image = instance["profile"].source_machine_image
+    if not machine_image:
+        operation = clients.instances.insert(**insert_kwargs)
+        _wait_for_operation(plan, clients, operation, "zone")
+        return
+    # The generated Compute client does not expose source_machine_image as a
+    # flattened keyword. It is accepted only through InsertInstanceRequest.
+    insert_request = {**insert_kwargs, "source_machine_image": machine_image}
+    raced = insert_instance_with_machine_image_retry(plan, clients, insert_request, instance["resource_name"])
+    if raced is not None:
+        # A rate-limited operation raced a successful one; finalize the instance a
+        # prior attempt created instead of issuing a duplicate insert.
+        _assert_instance_image_binding(raced, instance)
+        _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], raced)
+        return
+    created = clients.instances.get(
+        project=plan["project_id"],
+        zone=plan["zone"],
+        instance=instance["resource_name"],
+    )
+    _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], created)
+
+
 def _ensure_instance(
     plan: RangeCellPlan,
     clients: GCEClients,
@@ -198,6 +252,7 @@ def _ensure_instance(
         instance=name,
     )
     if existing is not None:
+        _assert_preconfigured_host_binding(existing, plan, instance)
         _assert_instance_image_binding(existing, instance)
     host_secret_ref, host_management_public_key = secret_ops.ensure_ssh(plan["range_id"], instance["source"])
     access_channels = set(instance["participant_access_channels"])
@@ -218,7 +273,7 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
-        if instance["profile"].source_machine_image:
+        if instance["profile"].bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
             _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return (
             host_secret_ref,
@@ -230,10 +285,11 @@ def _ensure_instance(
 
     host_private_key, host_public_key = generate_ssh_host_keypair()
     host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
-    insert_kwargs: dict[str, object] = {
-        "project": plan["project_id"],
-        "zone": plan["zone"],
-        "instance_resource": instance_resource(
+    _insert_instance(
+        plan,
+        clients,
+        instance,
+        instance_resource(
             plan,
             instance,
             config,
@@ -241,26 +297,7 @@ def _ensure_instance(
             host_private_key_b64=host_private_key_b64,
             host_public_key=host_public_key,
         ),
-    }
-    if instance["profile"].source_machine_image:
-        # The generated Compute client does not expose source_machine_image as
-        # a flattened keyword. It is accepted only through InsertInstanceRequest.
-        operation = clients.instances.insert(
-            request={
-                **insert_kwargs,
-                "source_machine_image": instance["profile"].source_machine_image,
-            }
-        )
-    else:
-        operation = clients.instances.insert(**insert_kwargs)
-    _wait_for_operation(plan, clients, operation, "zone")
-    if instance["profile"].source_machine_image:
-        created = clients.instances.get(
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=name,
-        )
-        _ensure_attached_disks_auto_delete(plan, clients, name, created)
+    )
     return host_secret_ref, participant_ssh_secret_ref, rdp_password_secret_ref, scenario_public_key, host_public_key
 
 
@@ -269,7 +306,6 @@ def _provision_range_resources(
     clients: GCEClients,
     config: GCERangeCellConfig,
     secret_ops: GCEGuestSecretOps,
-    vertex_ops: GCEVertexCredentialOps,
 ) -> list[ResourceDict]:
     """Create the network, subnets, firewalls, instances, and per-range creds.
 
@@ -277,17 +313,12 @@ def _provision_range_resources(
     shared-vpc mode the pre-existing platform-peered VPC is reused and only the
     per-range subnets/firewalls/instances are created here.
     """
-    if config.vertex_service_account_email:
-        vertex_ops.ensure(
-            plan["range_id"],
-            config.vertex_service_account_email,
-            plan["project_id"],
-            config.service_account_email,
-        )
+    assert_shared_nat_capacity(plan, clients)
     if plan["manage_network"]:
         _ensure_network(plan, clients)
     for subnet in plan["subnets"]:
         _ensure_subnetwork(plan, clients, subnet)
+    _ensure_router_nat(plan, clients)
     for firewall in plan["firewalls"]:
         _ensure_firewall(plan, clients, firewall)
     instance_outputs: list[ResourceDict] = []
@@ -415,9 +446,7 @@ def apply_range_cell(
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     try:
-        instance_outputs = _provision_range_resources(
-            plan, resolved_clients, resolved_config, resolved_secret_ops, resolved_vertex_ops
-        )
+        instance_outputs = _provision_range_resources(plan, resolved_clients, resolved_config, resolved_secret_ops)
         vpn_gateway = _ensure_openvpn_gateway(plan, resolved_clients, resolved_config)
         closed_result = range_cell_result(variables, plan, instance_outputs)
     except Exception:

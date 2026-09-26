@@ -43,7 +43,7 @@ _SDL = """name: e2e-composition
 version: "1.0.0"
 nodes:
   web:
-    type: vm
+    type: compute
     os: linux
     source: base-linux
 content:
@@ -59,7 +59,7 @@ accounts:
   bob:
     username: bob
     node: web
-    auth_method: publickey
+    auth_method: key
     password_strength: strong
 """
 
@@ -116,5 +116,5 @@ def test_authored_scenario_realizes_genuine_bootstrap(provisioner):
     accounts = {account.username: account for account in parsed.accounts}
     assert accounts["alice"].auth_method == "password"  # upstream default still gets a credential
     assert accounts["alice"].password_strength == "medium"
-    assert accounts["bob"].auth_method == "publickey"
+    assert accounts["bob"].auth_method == "key"
     assert accounts["bob"].password_strength == "strong"

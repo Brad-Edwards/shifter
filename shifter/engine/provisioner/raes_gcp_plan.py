@@ -8,7 +8,9 @@ GCE apply layer (``_ensure_network``/``_ensure_subnetwork``/``_ensure_firewall``
 cyberscript scenario semantics: the image comes from the authored RAES ``source``
 resolved against the tenant registry (``resolve_gce_image``), sizing from
 ``resources``, and ``os_family`` drives only the OS realization dialect. Nodes are
-placed on their authored network; each ``count`` yields a distinct instance.
+placed on their authored network when one is selected. The GCE adapter supplies
+a backend-owned subnet when the portable plan leaves that selection open; each
+``count`` yields a distinct instance.
 
 Base range firewalls (intra-subnet allow, management, egress posture) are reused
 from ``gcp_range_cell_firewall.build_firewall_plan``; authored node ACLs are
@@ -20,8 +22,12 @@ from __future__ import annotations
 
 import ipaddress
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import cast
 
 from config import (
+    GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+    GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCERangeCellConfig,
     GCERangeImageProfile,
     gce_image_profile_fingerprint,
@@ -35,15 +41,23 @@ from gcp_range_cell_naming import (
     _short_resource_name,
     _subnet_tag,
     _subnetwork_self_link,
+    range_router_nat_plan,
+    shared_router_nat_plan,
 )
 from gcp_range_cell_plan import _range_labels
 from gcp_range_cell_types import (
+    DEFAULT_GCE_EGRESS_POLICY,
     FirewallPlan,
+    GceEgressPolicy,
     InstancePlan,
     RangeCellPlan,
+    RouterNatPlan,
     SubnetPlan,
 )
 from raes_access import RealizedAccessBinding
+from raes_gcp_adapter import RaesGceAdapterError, adapt_raes_plan_for_gce
+from raes_gcp_addressing import instance_key as _instance_key
+from raes_gcp_addressing import ip_assignments as _ip_assignments
 from raes_gcp_firewall import (
     acl_cidr_lookup,
     build_acl_firewalls,
@@ -51,16 +65,31 @@ from raes_gcp_firewall import (
     node_tag,
     service_base_priority,
 )
+from raes_gcp_plan_errors import RaesGcePlanError
 from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 
 #: Default guest login user the provisioner injects (management reachability). The
 #: participant-facing user is a later participant-runtime concern (not provisioning).
 _DEFAULT_SSH_USERNAME = "raes"
-_DEFAULT_SSH_PORT = 22
+#: A prepromoted-domain-controller guest is a pre-baked Windows DC. Its accounts
+#: are domain accounts (a promoted DC has no local SAM), so the GCE guest agent
+#: cannot create the "raes" local user the standard RAES node setup connects as,
+#: and raes@22 is refused. The Windows boot script authorizes the provisioner key
+#: via ``administrators_authorized_keys`` (any Administrators-group member), so
+#: guest setup connects as the built-in domain "Administrator". Mirrors the legacy
+#: get_ssh_username(role="dc") host access on the RAES-native path.
+_WINDOWS_DC_ADMIN_USERNAME = "Administrator"
 
 
-class RaesGcePlanError(RuntimeError):
-    """Raised when an RAES plan cannot be realized as a GCE range-cell plan."""
+@dataclass(frozen=True)
+class RaesGcePlanOptions:
+    """Optional realization inputs grouped at the GCE adapter boundary."""
+
+    config: GCERangeCellConfig | None = None
+    access_bindings: Sequence[RealizedAccessBinding] = ()
+    egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
+    reconstruct_for_teardown: bool = False
 
 
 def build_raes_range_cell_plan(
@@ -68,8 +97,8 @@ def build_raes_range_cell_plan(
     range_id: int,
     raes_plan: RaesPlan,
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
-    config: GCERangeCellConfig | None = None,
-    access_bindings: Sequence[RealizedAccessBinding] = (),
+    options: GCERangeCellConfig | RaesGcePlanOptions | None = None,
+    **legacy: object,
 ) -> RangeCellPlan:
     """Render the deterministic GCE range-cell plan for a parsed RAES plan.
 
@@ -80,8 +109,22 @@ def build_raes_range_cell_plan(
     joined to this plan by ``raes_access.join_participant_access``. They are the
     only source of a node's participant channels: authored services, ACLs, OS
     family, image, and account existence never synthesize one.
+
+    ``egress_policy.model_broker`` is separately admitted and bound to the deployment VIP;
+    neither scenario authorship nor installation enablement grants it.
     """
-    resolved_config = config or load_gce_range_cell_config()
+    resolved_options = _plan_options(options, legacy)
+    resolved_config = resolved_options.config or load_gce_range_cell_config()
+    authored_networks = {network.address: network for network in raes_plan.networks}
+    try:
+        raes_plan = adapt_raes_plan_for_gce(
+            raes_plan,
+            resolved_config,
+            allocated_network_cidrs=resolved_options.allocated_network_cidrs,
+            reconstruct_for_teardown=resolved_options.reconstruct_for_teardown,
+        )
+    except RaesGceAdapterError as exc:
+        raise RaesGcePlanError(str(exc)) from None
     network_name, network_link, manage_network = _network_placement(resolved_config, range_id)
 
     networks_by_address = {network.address: network for network in raes_plan.networks}
@@ -89,7 +132,13 @@ def build_raes_range_cell_plan(
 
     subnet_plans = [
         _subnet_plan(
-            network, nodes_by_network.get(network.address, ()), range_id, resolved_config, network_name, network_link
+            network,
+            authored_networks.get(network.address),
+            nodes_by_network.get(network.address, ()),
+            range_id,
+            resolved_config,
+            network_name,
+            network_link,
         )
         for network in raes_plan.networks
     ]
@@ -97,19 +146,32 @@ def build_raes_range_cell_plan(
         network.address: subnet for network, subnet in zip(raes_plan.networks, subnet_plans, strict=True)
     }
 
-    access_by_node = _access_by_node(access_bindings)
+    access_by_node = _access_by_node(resolved_options.access_bindings)
 
+    # The deployment may expose a broker endpoint without admitting this range
+    # to use it. Only a range-bound broker capability suppresses the host
+    # identity; broker-free ranges keep their direct keyless Vertex path.
+    attach_model_identity = (
+        bool(resolved_config.service_account_email) and resolved_options.egress_policy.model_broker is None
+    )
     instance_plans: list[InstancePlan] = []
     for network in raes_plan.networks:
         subnet = subnet_by_address[network.address]
         for node in nodes_by_network.get(network.address, ()):
             instance_plans.extend(
-                _instance_plans_for_node(node, subnet, range_id, resolve_image, access_by_node.get(node.address, ()))
+                _instance_plans_for_node(
+                    node,
+                    subnet,
+                    range_id,
+                    resolve_image,
+                    access_by_node.get(node.address, ()),
+                    attach_model_identity=attach_model_identity,
+                )
             )
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
 
-    return {
+    plan: RangeCellPlan = {
         "project_id": resolved_config.project_id,
         "region": resolved_config.region,
         "zone": resolved_config.zone,
@@ -127,8 +189,41 @@ def build_raes_range_cell_plan(
             instance_plans,
             raes_plan,
             resolved_config,
+            resolved_options.egress_policy,
         ),
     }
+    # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
+    # a `none` (zero-egress) range omits it so its subnets carry no NAT path.
+    if (resolved_options.egress_policy.mode or "status-quo").strip().lower() != "none":
+        if manage_network:
+            plan["router_nat"] = cast(
+                RouterNatPlan, range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
+            )
+        else:
+            plan["shared_nat"] = cast(
+                RouterNatPlan, shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
+            )
+    return plan
+
+
+def _plan_options(
+    options: GCERangeCellConfig | RaesGcePlanOptions | None, legacy: dict[str, object]
+) -> RaesGcePlanOptions:
+    """Handle plan options."""
+    resolved = options if isinstance(options, RaesGcePlanOptions) else RaesGcePlanOptions(config=options)
+    allowed = {"config", "access_bindings", "egress_policy", "allocated_network_cidrs", "reconstruct_for_teardown"}
+    if set(legacy) - allowed:
+        raise TypeError("unknown GCE plan option")
+    return RaesGcePlanOptions(
+        config=cast(GCERangeCellConfig | None, legacy.get("config", resolved.config)),
+        access_bindings=cast(Sequence[RealizedAccessBinding], legacy.get("access_bindings", resolved.access_bindings)),
+        egress_policy=cast(GceEgressPolicy, legacy.get("egress_policy", resolved.egress_policy)),
+        allocated_network_cidrs=cast(
+            Sequence[tuple[str, str]] | None,
+            legacy.get("allocated_network_cidrs", resolved.allocated_network_cidrs),
+        ),
+        reconstruct_for_teardown=cast(bool, legacy.get("reconstruct_for_teardown", resolved.reconstruct_for_teardown)),
+    )
 
 
 def _all_firewalls(
@@ -137,6 +232,7 @@ def _all_firewalls(
     instance_plans: list[InstancePlan],
     raes_plan: RaesPlan,
     config: GCERangeCellConfig,
+    egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY,
 ) -> list[FirewallPlan]:
     """Base range firewalls (reused, neutral) plus authored node ACL and service firewalls.
 
@@ -149,6 +245,7 @@ def _all_firewalls(
         subnet_plans,
         config,
         instance_plans=instance_plans,
+        egress_policy=egress_policy,
     )
     cidr_lookup = acl_cidr_lookup(raes_plan.networks)
     # Validate the range-scoped service source set once, up front, only when needed --
@@ -254,13 +351,9 @@ def _instance_keys(nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode]) -> list
     return [_instance_key(node, index) for node in nodes for index in range(node.count)]
 
 
-def _instance_key(node: RaesPlanNode, index: int) -> str:
-    """Return the stable IP-assignment key for one instance of a node."""
-    return f"{node.address}#{index}"
-
-
 def _subnet_plan(
     network: RaesPlanNetwork,
+    authored_network: RaesPlanNetwork | None,
     nodes: tuple[RaesPlanNode, ...] | list[RaesPlanNode],
     range_id: int,
     config: GCERangeCellConfig,
@@ -277,6 +370,7 @@ def _subnet_plan(
         raise RaesGcePlanError(
             f"subnet {network.cidr} has {len(usable)} usable addresses but {len(keys)} instances were requested"
         )
+    assignments = _ip_assignments(network, authored_network, nodes, keys, usable)
     return {
         "name": network.name,
         "uuid": network.address,
@@ -290,7 +384,7 @@ def _subnet_plan(
         # RAES segments via node ACLs (realized separately); the base firewall
         # allows intra-subnet traffic only.
         "connected_source_ranges": [network.cidr],
-        "ip_assignments": dict(zip(keys, usable, strict=False)),
+        "ip_assignments": assignments,
         "instances": [],
     }
 
@@ -311,6 +405,8 @@ def _instance_plans_for_node(
     range_id: int,
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
     access_bindings: Sequence[RealizedAccessBinding] = (),
+    *,
+    attach_model_identity: bool = False,
 ) -> list[InstancePlan]:
     """Render one InstancePlan per ``count`` for a node placed on ``subnet``.
 
@@ -319,6 +415,13 @@ def _instance_plans_for_node(
     the channels bind to that instance without any fan-out choice.
     """
     profile = resolve_image(node)
+    # A promoted domain controller has no local SAM. Its existing domain
+    # administrator receives the key through administrators_authorized_keys.
+    host_ssh_username = profile.host_ssh_username or (
+        _WINDOWS_DC_ADMIN_USERNAME
+        if profile.bootstrap_capability == GCE_BOOTSTRAP_PREPROMOTED_DC
+        else _DEFAULT_SSH_USERNAME
+    )
     os_type = node.os_family or "linux"
     plans: list[InstancePlan] = []
     for index in range(node.count):
@@ -344,16 +447,20 @@ def _instance_plans_for_node(
                 "image_key": "",
                 "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
                 "source": {},
-                "ssh_username": _DEFAULT_SSH_USERNAME,
-                "host_ssh_username": _DEFAULT_SSH_USERNAME,
-                "ssh_port": _DEFAULT_SSH_PORT,
+                "ssh_username": (
+                    profile.participant_username
+                    if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
+                    else _DEFAULT_SSH_USERNAME
+                ),
+                "host_ssh_username": host_ssh_username,
+                "ssh_port": profile.host_ssh_port,
                 # The closed realized access binding the portal authorizes
                 # against (#1349), sourced only from the authored RAES
                 # interactive_access declarations joined to this plan (#1710).
                 # Empty when the scenario authored none.
                 "participant_access_channels": [binding.channel for binding in access_bindings],
                 "participant_access_usernames": {binding.channel: binding.username for binding in access_bindings},
-                "attach_service_account": False,
+                "attach_service_account": attach_model_identity,
             }
         )
     return plans

@@ -38,6 +38,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     is_personal: false,
     is_archived: false,
     archived_at: null,
+    egress_policy: "status-quo",
     created_at: "2026-02-01T00:00:00Z",
     updated_at: "2026-02-01T00:00:00Z",
     ...overrides,

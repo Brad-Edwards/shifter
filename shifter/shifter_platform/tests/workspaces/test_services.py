@@ -10,6 +10,7 @@ import dataclasses
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from workspaces import services
 from workspaces.models import Organization, OrganizationMembership, Workspace, WorkspaceMembership
@@ -160,6 +161,44 @@ def test_unknown_operation_is_denied_fail_closed():
 
     with pytest.raises(services.WorkspaceAuthorizationError):
         services.authorize_workspace(user, personal.workspace_uuid, "delete_everything")
+
+
+def test_model_access_workspace_and_organization_scopes_use_public_ids_and_admin_authority():
+    owner = _user("model-access-owner")
+    personal = services.resolve_personal_workspace(owner)
+    second = Workspace.objects.create(
+        organization_id=personal.organization_id,
+        name="Second",
+    )
+
+    workspace_scope = services.resolve_model_access_workspace(owner, personal.workspace_uuid)
+    assert workspace_scope.workspace_id == personal.workspace_id
+    assert workspace_scope.authority_reference == f"workspace:{personal.workspace_uuid}"
+
+    organization = Organization.objects.get(pk=personal.organization_id)
+    organization_scope = services.resolve_model_access_organization(owner, organization.uuid)
+    assert organization_scope.workspace_ids == tuple(sorted((personal.workspace_id, second.pk)))
+    assert organization_scope.authority_reference == f"organization:{organization.uuid}"
+
+
+def test_model_access_workspace_scope_denies_members_and_archived_workspaces():
+    owner = _user("model-access-owner-deny")
+    member = _user("model-access-member-deny")
+    personal = services.resolve_personal_workspace(owner)
+    WorkspaceMembership.objects.create(
+        workspace_id=personal.workspace_id,
+        user=member,
+        role=WorkspaceRole.MEMBER.value,
+    )
+
+    with pytest.raises(services.WorkspaceAuthorizationError):
+        services.resolve_model_access_workspace(member, personal.workspace_uuid)
+
+    workspace = Workspace.objects.get(pk=personal.workspace_id)
+    workspace.archived_at = timezone.now()
+    workspace.save(update_fields=["archived_at"])
+    with pytest.raises(services.WorkspaceAuthorizationError):
+        services.resolve_model_access_workspace(owner, personal.workspace_uuid)
 
 
 @pytest.mark.parametrize("role", [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER])

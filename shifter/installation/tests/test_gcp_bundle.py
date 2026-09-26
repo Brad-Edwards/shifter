@@ -24,9 +24,13 @@ _GCP_SECRET_ID_KEYS = frozenset(
     {
         "APP_SECRET_ID",
         "DB_SECRET_ID",
+        "PROVISIONER_DB_SECRET_ID",
         "REDIS_SECRET_ID",
         "GUACAMOLE_SECRET_ID",
         "GDC_ACCESS_SECRET_ID",
+        "GDC_VM_IMAGE_GCS_SECRET_ID",
+        "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+        "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
         "DC_DOMAIN_PASSWORD_SECRET_ID",
         "EMAIL_API_KEY_SECRET_ID",
     }
@@ -112,10 +116,21 @@ class TestGcpGeneratedOutputs:
         # The GeneratedOutput RUNTIME_ENV projection is the single, drift-proof mirror of
         # runtime_inventory's authoritative GCP key set (required + optional).
         names = {o.name for o in _gcp().generated_outputs if o.kind is OutputKind.RUNTIME_ENV}
-        expected = set(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS) | set(
-            runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
+        expected = (
+            set(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS)
+            | set(runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
+            | set(runtime_inventory_gcp.GCP_CAPACITY_RUNTIME_ENV_KEYS)
         )
-        assert names == expected
+        from installation.gcp_model_broker import BROKER_RUNTIME_ENV_KEYS
+
+        assert names == expected | BROKER_RUNTIME_ENV_KEYS
+
+    def test_capacity_outputs_publish_their_actual_projection_owner(self):
+        outputs = self._by_name()
+        for name in runtime_inventory_gcp.GCP_CAPACITY_RUNTIME_ENV_KEYS:
+            output = outputs[name]
+            assert output.owner == "canonical GCP shared-service capacity profile Helm projection"
+            assert "capacity profile" in output.source
 
     def test_secret_id_outputs_are_classified_as_secret_references(self):
         outputs = self._by_name()
@@ -140,8 +155,14 @@ class TestGcpGeneratedOutputs:
         # The standalone provisioner reads CLOUD_PROVIDER to select its adapter family.
         assert ProcessRole.PROVISIONER in outputs["CLOUD_PROVIDER"].process_roles
 
-    def test_every_runtime_output_declares_at_least_portal_and_worker(self):
+    def test_guest_provider_credentials_are_not_published(self):
+        assert not any("VERTEX" in name or "ANTHROPIC" in name for name in self._by_name())
+
+    def test_runtime_outputs_declare_their_isolated_consumers(self):
         for output in _gcp().generated_outputs:
+            if ProcessRole.MODEL_BROKER in output.process_roles:
+                assert output.process_roles == (ProcessRole.MODEL_BROKER,)
+                continue
             assert ProcessRole.PORTAL in output.process_roles, output.name
             assert ProcessRole.WORKER in output.process_roles, output.name
 
@@ -179,7 +200,13 @@ class TestGcpPublishedSettingsSchemaConstraints:
         return jsonschema.Draft202012Validator(schema)
 
     def test_valid_settings_pass_the_published_schema(self):
-        assert self._validator().is_valid({"project_id": "acme-shifter", "region": "us-central1"})
+        assert self._validator().is_valid(
+            {
+                "project_id": "acme-shifter",
+                "dynamic_secret_project_id": "acme-range-secrets",
+                "region": "us-central1",
+            }
+        )
 
     def test_published_schema_rejects_what_the_model_rejects(self):
         validator = self._validator()

@@ -84,6 +84,21 @@ def _stage(storage, **overrides):
 
 
 class TestStageObjectPackHappyPath:
+    def test_upstream_export_preserves_registered_pack_identity_and_digest(self, tmp_path):
+        from raes_env_packs import export_pack_archive, pack_content_digest, validate_pack
+
+        name = "preparation-http-smoke"
+        source = Path(__file__).resolve().parents[5] / "scenario-dev" / name
+        archive = tmp_path / "export.tar.gz"
+        export_pack_archive(source, archive)
+        storage = _FakeStorage(archive.read_bytes())
+        with _stage(storage, expected_pack_name=name) as root:
+            assert root.name == name
+            assert not validate_pack(root).errors
+            assert pack_content_digest(root) == pack_content_digest(source)
+            staging_root = root.parents[1]
+        assert not staging_root.exists()
+
     def test_yields_single_pack_root_with_contents(self):
         storage = _FakeStorage(_good_pack("mypack"))
         with _stage(storage) as pack_root:
@@ -116,6 +131,13 @@ class TestStageObjectPackHappyPath:
 
 
 class TestStageObjectPackFailsClosed:
+    @pytest.mark.parametrize("name", ["../outside", "/absolute", ".", "..", "a/b", "a\\b"])
+    def test_registered_name_cannot_control_staging_parent(self, name):
+        storage = _FakeStorage(_tar([("pack.yaml", b"name: mypack\n")]))
+        with pytest.raises(RaesPackageError), _stage(storage, expected_pack_name=name):
+            pass
+        assert storage.download_calls == []
+
     def test_unconfigured_bucket_or_key(self):
         storage = _FakeStorage(_good_pack())
         with pytest.raises(RaesPackageError), _stage(storage, bucket=""):

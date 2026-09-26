@@ -32,8 +32,6 @@ class DeployPortalScriptTests(unittest.TestCase):
         invalid_ctf_content_prefix: bool = False,
         zero_workers: bool = False,
         zero_terminal_cap: bool = False,
-        raes_cutover_active: bool = False,
-        raes_cutover_malformed: bool = False,
     ) -> dict[str, str]:
         bin_dir = root / "bin"
         bin_dir.mkdir()
@@ -73,6 +71,8 @@ class DeployPortalScriptTests(unittest.TestCase):
                   fi
                   ;;
                 */environment) printf 'development\\n' ;;
+                */cloud-provider) printf 'aws\\n' ;;
+                */audit-deployment-scope) printf 'aws:123456789012:us-east-2:dev\\n' ;;
                 */image-tag) printf 'abc123\\n' ;;
                 */ecr-registry) printf '123456789012.dkr.ecr.us-east-2.amazonaws.com\\n' ;;
                 */ecr-repository) printf 'shifter-dev-portal\\n' ;;
@@ -233,22 +233,6 @@ class DeployPortalScriptTests(unittest.TestCase):
                     printf '30\\n'
                   fi
                   ;;
-                */shifter-raes-native-provisioning)
-                  if [[ "${RAES_CUTOVER_ACTIVE:-}" == "1" ]]; then
-                    printf 'true\\n'
-                  else
-                    printf '\\n'
-                  fi
-                  ;;
-                */shifter-raes-catalog-cutovers)
-                  if [[ "${RAES_CUTOVER_MALFORMED:-}" == "1" ]]; then
-                    printf 'polaris=x;touch pwned\\n'
-                  elif [[ "${RAES_CUTOVER_ACTIVE:-}" == "1" ]]; then
-                    printf 'polaris=polaris-raes\\n'
-                  else
-                    printf '\\n'
-                  fi
-                  ;;
                 *) printf '\\n' ;;
               esac
               exit 0
@@ -306,15 +290,9 @@ class DeployPortalScriptTests(unittest.TestCase):
             env["ZERO_WORKERS"] = "1"
         if zero_terminal_cap:
             env["ZERO_TERMINAL_CAP"] = "1"
-        if raes_cutover_active:
-            env["RAES_CUTOVER_ACTIVE"] = "1"
-        if raes_cutover_malformed:
-            env["RAES_CUTOVER_MALFORMED"] = "1"
         return env
 
-    def _script_args(
-        self, root: Path, *, ps_prefix: str = "/shifter/dev/portal"
-    ) -> list[str]:
+    def _script_args(self, root: Path, *, ps_prefix: str = "/shifter/dev/portal") -> list[str]:
         return [
             str(SCRIPT_PATH),
             "--aws-region",
@@ -399,25 +377,17 @@ class DeployPortalScriptTests(unittest.TestCase):
             env = self._install_stubs(root)
             args = self._script_args(root)
 
-            first = subprocess.run(
-                args, check=False, capture_output=True, text=True, env=env
-            )
-            second = subprocess.run(
-                args, check=False, capture_output=True, text=True, env=env
-            )
+            first = subprocess.run(args, check=False, capture_output=True, text=True, env=env)
+            second = subprocess.run(args, check=False, capture_output=True, text=True, env=env)
 
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(
-                (root / "usr" / "local" / "bin" / "shifter-worker-health.sh").read_text(
-                    encoding="utf-8"
-                ),
+                (root / "usr" / "local" / "bin" / "shifter-worker-health.sh").read_text(encoding="utf-8"),
                 "monitor-v1\n",
             )
             self.assertEqual(
-                (root / "etc" / "shifter-worker-health.env").read_text(
-                    encoding="utf-8"
-                ),
+                (root / "etc" / "shifter-worker-health.env").read_text(encoding="utf-8"),
                 "WH_NAME_PREFIX=dev-portal\n",
             )
             log = (root / "calls.log").read_text(encoding="utf-8")
@@ -429,19 +399,21 @@ class DeployPortalScriptTests(unittest.TestCase):
                     "docker stop --time 35 portal worker-cms worker-engine worker-mc "
                     "worker-outbox-drainer worker-reconciler worker-provisioner-launcher "
                     "worker-operation-result-applier ctf-scheduler "
-                    "guacamole-bootstrap-prune raes-operation-record-prune"
+                    "ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune"
                 ),
             )
             self.assertIn("python manage.py migrate --noinput", log)
             self.assertIn("SKIP_MIGRATIONS=1", log)
-            self.assertIn(
-                "-e SHIFTER_CTF_CONTENT_BUCKET=shifter-private-ctf-content", log
-            )
+            self.assertIn("-e SHIFTER_CTF_CONTENT_BUCKET=shifter-private-ctf-content", log)
             self.assertIn("-e SHIFTER_CTF_CONTENT_PREFIX=ctf/content-bundles/", log)
             self.assertIn("-e SHIFTER_CTF_CONTENT_MAX_BYTES=8388608", log)
             # ENVIRONMENT must reach the container (config.settings
             # require_environment() fails closed when it is blank, #948).
             self.assertIn("-e ENVIRONMENT=development", log)
+            self.assertIn(
+                "-e AUDIT_DEPLOYMENT_SCOPE=aws:123456789012:us-east-2:dev",
+                log,
+            )
             for name in ("worker-cms", "worker-engine", "worker-mc", "ctf-scheduler"):
                 self.assertIn(f"docker run -d --name {name}", log)
             self.assertIn("run_worker --queue cms", log)
@@ -452,7 +424,7 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "docker stop --time 35 portal worker-cms worker-engine worker-mc "
                 "worker-outbox-drainer worker-reconciler worker-provisioner-launcher "
                 "worker-operation-result-applier ctf-scheduler "
-                "guacamole-bootstrap-prune raes-operation-record-prune",
+                "ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune",
                 log,
             )
             self.assertIn(
@@ -533,9 +505,7 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "SHIFTER_CTF_CONTENT_MAX_BYTES",
             ):
                 self.assertNotIn(f"{name}=", log)
-            self.assertIn(
-                "EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend", log
-            )
+            self.assertIn("EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend", log)
 
     def test_terminal_capacity_params_emitted_as_docker_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -561,52 +531,6 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "TERMINAL_READ_POLL_SECONDS=30",
             ):
                 self.assertIn(pair, log)
-
-    def test_raes_cutover_params_emitted_as_docker_env(self) -> None:
-        """The SSM redeploy path delivers the RAES cutover selector + flag when set (#1310)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            env = self._install_stubs(root, raes_cutover_active=True)
-
-            result = subprocess.run(
-                self._script_args(root),
-                check=False,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            log = (root / "calls.log").read_text(encoding="utf-8")
-            self.assertIn("SHIFTER_RAES_NATIVE_PROVISIONING=true", log)
-            self.assertIn("SHIFTER_RAES_CATALOG_CUTOVERS=polaris=polaris-raes", log)
-
-    def test_malformed_raes_cutovers_rejected_before_docker(self) -> None:
-        """validate_slug_pairs rejects a malformed SHIFTER_RAES_CATALOG_CUTOVERS
-        (here a shell-injection attempt) before it can reach docker argv (#1310).
-
-        The regex guard is the argv-injection defense for this selector; without
-        negative-path coverage a regression that weakened it would go undetected.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            env = self._install_stubs(root, raes_cutover_malformed=True)
-
-            result = subprocess.run(
-                self._script_args(root),
-                check=False,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("Invalid SHIFTER_RAES_CATALOG_CUTOVERS", result.stderr)
-            log_path = root / "calls.log"
-            log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
-            self.assertNotIn("docker run", log)
-            # The injection payload never reaches any argv the script logs.
-            self.assertNotIn("touch pwned", log)
 
     def test_non_numeric_terminal_capacity_param_rejected_before_docker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

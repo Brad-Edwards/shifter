@@ -19,6 +19,8 @@ export function adminUser(overrides: Partial<AdminUserDetail> = {}): AdminUserDe
     organizer_grant_source: "",
     must_change_password: false,
     groups: [],
+    lifecycle_state: "active",
+    available_actions: [],
     ...overrides,
   };
 }
@@ -31,6 +33,7 @@ export function auditEvent(overrides: Partial<AuditLog> = {}): AuditLog {
     entity_id: 42,
     action: "role_sync",
     actor_type: "user",
+    actor_principal_uuid: null,
     actor_id: 5,
     timestamp: "2026-08-01T12:00:00Z",
     previous_state: null,

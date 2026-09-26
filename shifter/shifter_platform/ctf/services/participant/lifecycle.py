@@ -152,13 +152,22 @@ def delete_participant(participant_id: UUID) -> bool:
             details={"participant_id": str(participant_id)},
         ) from None
 
-    # Clear CTF participant profile if user was linked
-    if participant.user is not None:
-        from ctf.services.participant.accounts import anonymize_participant_account
+    with transaction.atomic():
+        # Clear CTF participant profile if user was linked
+        if participant.user is not None:
+            from ctf.services.participant.accounts import anonymize_participant_account
 
-        anonymize_participant_account(participant.pk)
+            anonymize_participant_account(participant.pk)
 
-    participant.delete(soft=True)
+        participant.delete(soft=True)
+
+        # Stop this participation's unclaimed communications and erase its delivery
+        # coordinate in the same transaction as the removal; the immutable snapshot
+        # identity survives as bounded evidence (#2099, AC3).
+        from ctf.services.communication import on_participant_removed
+
+        on_participant_removed(participant)
+
     logger.info("Deleted participant %s", safe_log_value(participant_id))
 
     return True

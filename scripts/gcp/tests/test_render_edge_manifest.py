@@ -98,7 +98,8 @@ def test_main_writes_to_repo_managed_output_path(tmp_path, monkeypatch):
     assert output_path.parent.exists()
 
 
-def test_main_writes_manifest_to_stdout(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("environment", ["gcp-dev", "workshop-east", "Workshop_2"])
+def test_main_writes_manifest_to_stdout(tmp_path, monkeypatch, capsys, environment):
     module = _load_module()
     tf_output = tmp_path / "terraform-output.json"
     tf_output.write_text(json.dumps(_outputs(public_hostname="portal.example.test", managed_tls_enabled=True)))
@@ -112,7 +113,7 @@ def test_main_writes_manifest_to_stdout(tmp_path, monkeypatch, capsys):
         [
             "render_edge_manifest.py",
             "--environment",
-            "gcp-dev",
+            environment,
         ],
     )
 
@@ -120,3 +121,10 @@ def test_main_writes_manifest_to_stdout(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "kind: Ingress" in captured.out
     assert "platform-managed-cert" in captured.out
+
+
+@pytest.mark.parametrize("environment", ["../outside", "/tmp/outside", "x/y", "x\ny"])
+def test_output_environment_cannot_escape_overlay_directory(environment):
+    module = _load_module()
+    with pytest.raises(ValueError):
+        module._output_path_for_environment(environment)

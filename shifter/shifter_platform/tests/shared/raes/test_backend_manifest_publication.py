@@ -45,9 +45,13 @@ from shared.raes.manifest import (
     create_shifter_backend_manifest,
     render_shifter_backend_manifest_payload,
 )
-from shared.raes.realization import SHIFTER_REALIZER_CONFIGURATION
+from shared.raes.realization import (
+    SHIFTER_REALIZER_CONFIGURATION,
+    create_shifter_realization_envelope,
+)
 
 PUBLISHED_MANIFEST_PATH = Path(__file__).resolve().parents[3] / "shared" / "raes" / "backend-manifest.json"
+PUBLISHED_ENVELOPE_PATH = Path(__file__).resolve().parents[3] / "shared" / "raes" / "backend-realization-envelope.json"
 
 # A realization-support constraint kind is truthful only when the provisioner
 # capability surface that backs it is non-empty.
@@ -87,6 +91,21 @@ def test_supported_contract_versions_cover_provisioning_only_profile():
     assert manifest.supported_contract_versions == SHIFTER_SUPPORTED_CONTRACT_VERSIONS
 
 
+def test_generic_manifest_withholds_scenario_bound_realization_envelope():
+    """Publication cannot claim a constructive carrier before target selection."""
+    manifest = create_shifter_backend_manifest()
+
+    assert manifest.realization_envelope is None
+    assert "realization-envelope-v1" not in manifest.supported_contract_versions
+
+
+def test_checked_in_envelope_is_the_configured_conformance_fixture():
+    """The standalone qualification carrier is generated for its named fixture."""
+    expected = create_shifter_realization_envelope(scenario_name="shifter-conformance", compute_node_name="vm")
+
+    assert json.loads(PUBLISHED_ENVELOPE_PATH.read_text()) == expected.model_dump(mode="json")
+
+
 def test_realizer_configuration_is_public_complete_and_digest_bound():
     """The independent realization evidence uses RAES's published model."""
     manifest = create_shifter_backend_manifest()
@@ -117,6 +136,15 @@ def test_realization_support_is_not_hollow():
     for declaration in declarations:
         assert declaration["disclosure_kinds"], "realization-support must disclose backend evidence kinds"
         for kind in declaration.get("supported_constraint_kinds", ()):
+            if kind == "source-artifact":
+                # Artifact authority is in the public mechanism declaration;
+                # node/OS capability lists do not describe portable identities.
+                mechanisms = declaration["artifact_mechanisms"]
+                assert mechanisms and all(
+                    "source-artifact" in item["supported_requirement_kinds"] for item in mechanisms
+                )
+                assert {item["mechanism"]["mechanism"] for item in mechanisms} == {"exact-artifact"}
+                continue
             surface = _CONSTRAINT_KIND_TO_PROVISIONER_SURFACE.get(kind)
             assert surface is not None, f"unmapped realization constraint kind {kind!r}"
             assert getattr(provisioner, surface), (

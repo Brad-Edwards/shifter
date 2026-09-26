@@ -13,9 +13,7 @@ import type {
   CtfEventPage,
   CtfEventPagesResponse,
   CtfEventPageWrite,
-  CtfNotificationAnnounceRequest,
   CtfNotificationListResponse,
-  CtfNotificationSendResult,
   CtfChallengeImportResult,
   CtfCleanupControlRequest,
   CtfEventLifecycleAction,
@@ -101,6 +99,23 @@ export function useRevokeCtfEventStaff(eventId: string) {
   });
 }
 
+/** Transfer canonical ownership to a current co-organizer (owner-only, #1922). */
+export function useTransferCtfEventOwnership(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) =>
+      apiFetch<CtfEventMutationResult>(`${BASE}/events/${eventId}/transfer-ownership/`, {
+        method: "POST",
+        body: { user_id: userId },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.events() });
+    },
+  });
+}
+
 // --- Notifications --------------------------------------------------------
 
 export function useCtfNotifications(eventId: string, enabled = true) {
@@ -112,32 +127,7 @@ export function useCtfNotifications(eventId: string, enabled = true) {
   });
 }
 
-export function useAnnounceCtfNotification(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfNotificationAnnounceRequest) =>
-      apiFetch<unknown>(`${BASE}/events/${eventId}/notifications/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
-
-export function useSendCtfNotification(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (notificationId: string) =>
-      apiFetch<CtfNotificationSendResult>(`${BASE}/notifications/${notificationId}/send/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
-
-export function useCancelCtfScheduledNotification(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (notificationId: string) =>
-      apiFetch<unknown>(`${BASE}/notifications/${notificationId}/cancel-schedule/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
+export { useAnnounceCtfNotification } from "./ctfCommunications";
 
 // --- Analytics + custom pages (CTF-1302/1303) -----------------------------
 

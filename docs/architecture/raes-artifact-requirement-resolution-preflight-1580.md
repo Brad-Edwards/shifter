@@ -5,7 +5,7 @@ capabilities."
 
 Status: pre-implementation architecture guidance. This note does not implement
 catalog ingestion, resolution, preparation, or provisioning. The issue is the
-authoritative contract for this requirement-free run. ADR-033 and ADR-034 are
+authoritative contract for this requirement-free run. ADR-053 and ADR-034 are
 the governing decisions; no new ADR is needed.
 
 ## Dependency Gate
@@ -172,7 +172,7 @@ semantics.
 
 The later implementation must evaluate together:
 
-- ADR-033/034 and the #1566, #1567, #1578, #1579, #1581, #1583, and #1837
+- ADR-053/034 and the #1566, #1567, #1578, #1579, #1581, #1583, and #1837
   boundary notes;
 - exact dependency pins in `shifter/shifter_platform/pyproject.toml` and
   `uv.lock`;
@@ -226,8 +226,9 @@ The later implementation must evaluate together:
 - Defining or extending the RAES portable requirement, Environment Packs
   publication profile, trust model, registry/distribution protocol,
   materialization vocabulary, or commercial entitlement model.
-- Implementing the object-backed acquisition transport from #1567, operated
-  channel behavior from #1582, or optional preparation workflow from #1583.
+- Implementing the object-backed acquisition transport from #1567 or the
+  optional preparation workflow from #1583. (Operated distribution channels are
+  not a BigRAE concern; #1582 was closed as misconceived under ADR-053.)
 - Making every artifact buildable, adding an implicit exact-artifact fallback,
   or treating preparation as the universal answer to unavailable supply.
 - Moving artifact publication/promotion into the Shifter product plane or

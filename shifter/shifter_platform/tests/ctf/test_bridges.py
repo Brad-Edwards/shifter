@@ -21,7 +21,7 @@ def _make_raes(user, scenario_id, **overrides):
         "scenario_id": scenario_id,
         "contract_kind": "raes",
         "contract_profile": "shifter",
-        "package_ref": "scenario-dev/polaris/content-packages/polaris",
+        "package_ref": "scenario-dev/example/content-packages/example",
         "package_version": "1.0.0",
         "package_digest": "sha256:" + "a" * 64,
         "registered_by": user,
@@ -31,26 +31,40 @@ def _make_raes(user, scenario_id, **overrides):
 
 
 class TestCmsListScenariosLaunchability:
-    def test_excludes_non_launchable_raes_but_keeps_legacy(self, user):
-        # No runtime adapter is wired, so all RAES entries are review-only and
-        # excluded from CTF event selection; legacy scenarios remain selectable.
-        _make_raes(user, "polaris-ok", conformance_status="passed")
-        _make_raes(user, "polaris-pending", conformance_status="pending")
+    def test_includes_only_launchable_raes_sources(self, user):
+        _make_raes(user, "example-ok", conformance_status="passed")
+        _make_raes(user, "example-pending", conformance_status="pending")
 
         ids = {sid for sid, _ in bridges.cms_list_scenarios(user)}
 
-        assert "basic" in ids  # legacy YAML default stays selectable
-        assert "polaris-ok" not in ids  # review-only until an adapter exists
-        assert "polaris-pending" not in ids  # non-launchable RAES entry excluded
+        assert "example-ok" in ids
+        assert "example-pending" not in ids
 
-    def test_includes_launchable_raes_with_adapter(self, user, monkeypatch):
-        from django.conf import settings
 
-        monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", True)
-        _make_raes(user, "polaris-ok", conformance_status="passed")
-        _make_raes(user, "polaris-pending", conformance_status="pending")
+class TestCmsRangeControlRequiresOwningUser:
+    """cms_stop_range/cms_start_range require the range's owning user at the
+    CTF/CMS boundary before forwarding to CMS (bridges.py:189, 199)."""
 
-        ids = {sid for sid, _ in bridges.cms_list_scenarios(user)}
+    def test_stop_range_forwards_to_pause(self, user, monkeypatch):
+        calls: list = []
+        monkeypatch.setattr("cms.services.pause_range", lambda u, rid: calls.append((u, rid)))
 
-        assert "polaris-ok" in ids
-        assert "polaris-pending" not in ids
+        bridges.cms_stop_range(user, 42)
+
+        assert calls == [(user, 42)]
+
+    def test_start_range_forwards_to_resume(self, user, monkeypatch):
+        calls: list = []
+        monkeypatch.setattr("cms.services.resume_range", lambda u, rid: calls.append((u, rid)))
+
+        bridges.cms_start_range(user, 7)
+
+        assert calls == [(user, 7)]
+
+    def test_stop_range_requires_a_user(self):
+        with pytest.raises(AssertionError):
+            bridges.cms_stop_range(None, 42)
+
+    def test_start_range_requires_a_user(self):
+        with pytest.raises(AssertionError):
+            bridges.cms_start_range(None, 7)

@@ -2,17 +2,13 @@
 
 Drives the real ``/api/v1/cms/raes-image-mappings/`` endpoints against a real
 database and the real ``engine.services`` write path: register/upsert, list with
-the allowlisted projection, soft-disable, CMS-authoring authz, and the
-``SHIFTER_RAES_NATIVE_PROVISIONING`` gate (every endpoint 404s with the flag off).
+the allowlisted projection, soft-disable, and CMS-authoring authorization.
 """
 
 from __future__ import annotations
 
-import importlib
-
 import pytest
 from django.contrib.auth.models import Group
-from django.urls import clear_url_caches
 from rest_framework.test import APIClient
 
 from engine.models import RaesImageMapping
@@ -21,7 +17,7 @@ from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from shared.auth import THREAT_RESEARCH_GROUP
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
 
 LIST_CREATE_URL = "/api/v1/cms/raes-image-mappings/"
 DISABLE_URL = "/api/v1/cms/raes-image-mappings/disable/"
@@ -35,6 +31,14 @@ _VIEW_FIELDS = {
     "machine_type",
     "disk_size_gb",
     "disk_type",
+    "management_ssh_port",
+    "management_ssh_username",
+    "image_kind",
+    "bootstrap_capability",
+    "participant_container_name",
+    "participant_username",
+    "participant_readiness_contract",
+    "participant_readiness_manifest_sha256",
     "enabled",
     "notes",
     "artifact_id",
@@ -46,24 +50,6 @@ _VIEW_FIELDS = {
     "created_at",
     "updated_at",
 }
-
-
-@pytest.fixture(autouse=True)
-def _restore_urlconf() -> None:
-    yield
-    _reload_urlconfs()
-
-
-def _reload_urlconfs() -> None:
-    import cms.api.urls
-    import config.api_urls
-    import config.urls
-
-    clear_url_caches()
-    importlib.reload(cms.api.urls)
-    importlib.reload(config.api_urls)
-    importlib.reload(config.urls)
-    clear_url_caches()
 
 
 @pytest.fixture
@@ -110,9 +96,46 @@ def _bearer(client: APIClient, raw: str) -> APIClient:
 
 
 class TestRegister:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
+    def test_registers_preconfigured_machine_host_profile(self, api_client, threat_research_user):
+        api_client.force_authenticate(user=threat_research_user)
+        response = api_client.post(
+            LIST_CREATE_URL,
+            {
+                "provider": "gce",
+                "source_name": "nested-host",
+                "image_ref": "projects/example/global/machineImages/nested-host-v1",
+                "image_kind": "machine-image",
+                "bootstrap_capability": "preconfigured-machine-host",
+                "management_ssh_username": "host-admin",
+                "participant_container_name": "participant-desktop",
+                "participant_username": "student",
+                "participant_readiness_contract": "participant-readiness/v1",
+                "participant_readiness_manifest_sha256": "a" * 64,
+            },
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.json()["image_kind"] == "machine-image"
+        assert response.json()["participant_container_name"] == "participant-desktop"
+
+    def test_management_port_survives_registration_and_list(self, api_client, staff_user):
+        api_client.force_authenticate(user=staff_user)
+        body = {
+            "provider": "gce",
+            "source_name": "container-host",
+            "image_ref": "projects/x/global/images/host",
+            "management_ssh_port": 2222,
+            "management_ssh_username": "image-admin",
+        }
+        response = api_client.post(LIST_CREATE_URL, body, format="json")
+        assert response.status_code == 200
+        assert response.json()["management_ssh_port"] == 2222
+        assert response.json()["management_ssh_username"] == "image-admin"
+        assert api_client.get(LIST_CREATE_URL).json()[0]["management_ssh_port"] == 2222
+        for invalid in (0, 65536, -1):
+            response = api_client.post(LIST_CREATE_URL, {**body, "management_ssh_port": invalid}, format="json")
+            assert response.status_code == 400
+        assert RaesImageMapping.objects.get(source_name="container-host").management_ssh_port == 2222
 
     def test_register_creates_mapping(self, api_client, threat_research_user):
         api_client.force_authenticate(user=threat_research_user)
@@ -252,10 +275,6 @@ class TestRegister:
 
 
 class TestList:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-
     def test_lists_rows_with_allowlisted_fields(self, api_client, threat_research_user):
         upsert_raes_image_mapping(provider="gce", source_name="alpine", image_ref="img-any")
         api_client.force_authenticate(user=threat_research_user)
@@ -297,10 +316,6 @@ class TestList:
 
 
 class TestDisable:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-
     def test_disable_sets_enabled_false_preserving_image_ref(self, api_client, threat_research_user):
         upsert_raes_image_mapping(provider="gce", source_name="kali", image_ref="img-keep")
         api_client.force_authenticate(user=threat_research_user)
@@ -337,10 +352,6 @@ class TestDisable:
 
 
 class TestAuthentication:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-
     def test_anonymous_cannot_list(self, api_client):
         assert api_client.get(LIST_CREATE_URL).status_code in {401, 403}
 
@@ -363,30 +374,19 @@ class TestAuthentication:
         assert RaesImageMapping.objects.get(source_name="kali").enabled is True
 
 
-class TestNativeProvisioningGate:
-    """With SHIFTER_RAES_NATIVE_PROVISIONING off, the surface is inert (404)."""
+def test_registry_validation_response_uses_public_message(api_client, staff_user, monkeypatch):
+    from engine.services import RaesImageMappingError
 
-    @pytest.fixture(autouse=True)
-    def _native_off(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = False
+    class DiagnosticError(RaesImageMappingError):
+        def __str__(self):
+            return "internal-storage-diagnostic"
 
-    def test_list_is_404_when_flag_off(self, api_client, threat_research_user):
-        api_client.force_authenticate(user=threat_research_user)
-        response = api_client.get(LIST_CREATE_URL)
-        assert response.status_code == 404
-        assert response.json()["error"]["code"] == "not_found"
+    def reject(**kwargs):
+        raise DiagnosticError("Unsupported image provider")
 
-    def test_register_is_404_when_flag_off(self, api_client, threat_research_user):
-        api_client.force_authenticate(user=threat_research_user)
-        response = api_client.post(
-            LIST_CREATE_URL,
-            {"provider": "gce", "source_name": "kali", "image_ref": "img"},
-            format="json",
-        )
-        assert response.status_code == 404
-        assert RaesImageMapping.objects.count() == 0
-
-    def test_disable_is_404_when_flag_off(self, api_client, threat_research_user):
-        api_client.force_authenticate(user=threat_research_user)
-        response = api_client.post(DISABLE_URL, {"provider": "gce", "source_name": "kali"}, format="json")
-        assert response.status_code == 404
+    monkeypatch.setattr("cms.api.raes_image_registry.list_raes_image_mappings", reject)
+    api_client.force_authenticate(user=staff_user)
+    response = api_client.get(LIST_CREATE_URL)
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Unsupported image provider"
+    assert "internal-storage-diagnostic" not in response.content.decode()

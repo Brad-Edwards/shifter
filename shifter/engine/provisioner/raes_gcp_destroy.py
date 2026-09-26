@@ -14,11 +14,16 @@ both this module and ``raes_gcp_apply`` import from independently.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_destroy import _mark_disks_auto_delete
+from gcp_range_cell_firewall import public_web_firewall_name
+from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _delete_resource
+from gcp_range_cell_shared_nat import remove_shared_nat
 from gcp_range_cell_types import InstancePlan, RangeCellPlan
 from raes_account_credentials import (
     RaesAccountCredentialOps,
@@ -30,7 +35,7 @@ from raes_active_directory import (
     default_directory_secret_ops,
     delete_raes_directory_secrets,
 )
-from raes_gcp_plan import build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
 
@@ -41,8 +46,13 @@ __all__ = ["RaesGceDestroyOptions", "destroy_raes_range_cell"]
 class RaesGceDestroyOptions:
     """Optional account and directory cleanup bindings for RAES teardown."""
 
+    config: GCERangeCellConfig | None = None
+    clients: GCEClients | None = None
+    secret_ops: RaesGceSecretOps | None = None
     account_secret_ops: RaesAccountCredentialOps | None = None
     directory_secret_ops: RaesDirectorySecretOps | None = None
+    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
+    reconstruct_without_allocation: bool = False
 
 
 @dataclass(frozen=True)
@@ -62,16 +72,13 @@ def _default_destroy_profile(_node: RaesPlanNode) -> GCERangeImageProfile:
 
 
 def _destroy_runtime(
-    config: GCERangeCellConfig | None,
-    clients: GCEClients | None,
-    secret_ops: RaesGceSecretOps | None,
     options: RaesGceDestroyOptions,
 ) -> _RaesGceDestroyRuntime:
     """Resolve optional teardown bindings exactly once."""
     return _RaesGceDestroyRuntime(
-        config=config or load_gce_range_cell_config(),
-        clients=clients or _build_clients(),
-        secret_ops=secret_ops or _default_secret_ops(),
+        config=options.config or load_gce_range_cell_config(),
+        clients=options.clients or _build_clients(),
+        secret_ops=options.secret_ops or _default_secret_ops(),
         account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
     )
@@ -81,14 +88,22 @@ def destroy_raes_range_cell(
     request_uuid: str,
     range_id: int,
     raes_plan: RaesPlan,
-    config: GCERangeCellConfig | None = None,
-    clients: GCEClients | None = None,
-    secret_ops: RaesGceSecretOps | None = None,
     options: RaesGceDestroyOptions | None = None,
 ) -> None:
     """Destroy every GCE resource owned by one RAES range cell."""
-    runtime = _destroy_runtime(config, clients, secret_ops, options or RaesGceDestroyOptions())
-    plan = build_raes_range_cell_plan(request_uuid, range_id, raes_plan, _default_destroy_profile, runtime.config)
+    resolved_options = options or RaesGceDestroyOptions()
+    runtime = _destroy_runtime(resolved_options)
+    plan = build_raes_range_cell_plan(
+        request_uuid,
+        range_id,
+        raes_plan,
+        _default_destroy_profile,
+        RaesGcePlanOptions(
+            config=runtime.config,
+            allocated_network_cidrs=resolved_options.allocated_network_cidrs,
+            reconstruct_for_teardown=resolved_options.reconstruct_without_allocation,
+        ),
+    )
     _destroy_instances(plan, raes_plan, runtime)
     delete_raes_directory_secrets(plan["range_id"], raes_plan, runtime.directory_secret_ops)
     _destroy_network_resources(plan, runtime.clients)
@@ -101,6 +116,7 @@ def _destroy_instances(
 ) -> None:
     """Delete instances, addresses, and their deterministic guest secrets."""
     for instance in reversed(plan["instances"]):
+        _mark_disks_auto_delete(plan, runtime.clients, instance["resource_name"])
         _delete_resource(
             plan,
             runtime.clients,
@@ -141,8 +157,28 @@ def _instance_accounts(raes_plan: RaesPlan, instance: InstancePlan) -> tuple[Rae
 
 
 def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None:
-    """Delete firewalls, subnets, and an owned per-range network in dependency order."""
-    for firewall in reversed(plan["firewalls"]):
+    """Delete the range-owned router/NAT, firewalls, subnets, and an owned network in order."""
+    remove_shared_nat(plan, clients)
+    # The range-owned Cloud Router (carrying the Cloud NAT) references this range's
+    # subnets, so it is torn down before them (PLAT-238). Absent for a `none` range.
+    router_nat = plan.get("router_nat")
+    if router_nat is not None:
+        _delete_resource(
+            plan,
+            clients,
+            clients.routers.get,
+            clients.routers.delete,
+            "region",
+            project=plan["project_id"],
+            region=plan["region"],
+            router=router_nat["router_name"],
+        )
+
+    firewall_names = {rule["name"] for rule in plan["firewalls"]} | {
+        broker_firewall_name(plan["range_id"]),
+        public_web_firewall_name(plan["range_id"]),
+    }
+    for firewall_name in sorted(firewall_names, reverse=True):
         _delete_resource(
             plan,
             clients,
@@ -150,7 +186,7 @@ def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None
             clients.firewalls.delete,
             "global",
             project=plan["project_id"],
-            firewall=firewall["name"],
+            firewall=firewall_name,
         )
 
     for subnet in reversed(plan["subnets"]):

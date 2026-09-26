@@ -2,6 +2,8 @@
 
 Django application architecture for the Shifter cyber range platform.
 
+- [Unified access credentials](access-credentials.md)—admission, lifecycle and renewable client setup.
+
 ## Domains
 
 Five bounded contexts, each a Django app with distinct responsibilities.
@@ -33,6 +35,7 @@ graph TB
 | **Shifter CMS** | `cms` | User content. Assets, credentials, scenario catalog. |
 | **Shifter Management** | `management` | Platform administration. Audit logging, user management. |
 | **[Workspaces](workspaces)** | `workspaces` | Organization/workspace tenancy above range ownership. |
+| **[Authorization](authorization)** | `shared.authorization` / `workspaces` | Closed OpenFGA contracts, scoped policy administration, durable writes. |
 
 ## Model Ownership
 
@@ -154,6 +157,28 @@ new authority model or feature flag.
 - [Organization/workspace admin console](org-workspace-admin-console.md): the
   `/api/v1/workspaces/context/` projection, staff-session boundary, and SPA
   shell/routing/selection.
+- [User lifecycle administration](user-lifecycle-administration.md): the
+  `management.lifecycle` transition service and `UserProfile.suspended_at`
+  discriminator, inactive-account authentication enforcement, the Django
+  password-reset dispatcher, and the bounded ownership-transfer command
+  (ADR-046-R13).
+- [Range-to-workspace scoping administration](range-workspace-scoping-administration.md):
+  the CMS list and expected-source compare-and-set rebind seams, the owner/admin
+  workspace scope operations, the Engine compare-and-set facade, and the
+  fail-closed handling of domain-owned aggregates (ADR-046-R14).
+
+## Retry-safe range operations
+
+- [Retry-safe range operations](retry-safe-range-operations.md): the caller
+  retry identity, immutable-intent binding and canonical digest, the PostgreSQL-
+  arbitrated retry binding, reauthorized replay/status/cancel, and truthful
+  teardown/residual retention (ADR-063, #2086).
+
+## Artifact preparation
+
+The [artifact preparation design](../../architecture/raes-in-tenant-artifact-preparation-design-1583.md)
+defines adapter ownership, private registration, worker isolation, independent
+verification and inventory admission before ordinary range launch.
 
 ## Audit logging
 
@@ -165,3 +190,7 @@ read API.
 - [Administrator audit and activity history](admin-audit-activity.md): the
   hardened `/api/v1/audit/` read API, its typed filters, and the staff-facing
   `/administer/audit` SPA surface.
+
+## Scoped communications
+
+- [Communication API and receipt boundaries](ctf-communications.md)

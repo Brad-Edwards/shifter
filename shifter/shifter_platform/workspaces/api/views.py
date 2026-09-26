@@ -19,6 +19,7 @@ from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.audit import get_actor_from_request, get_client_ip, get_request_id
 from workspaces import services
 from workspaces.api.permissions import WORKSPACE_MEMBERSHIP_PERMISSIONS
+from workspaces.api.schema import SESSION_ONLY_SCHEMA_AUTH
 from workspaces.api.serializers import (
     AddWorkspaceMemberSerializer,
     ChangeWorkspaceMemberRoleSerializer,
@@ -76,6 +77,22 @@ class _WorkspaceAPIError(Exception):
         "name_blank": 400,
         "name_too_long": 400,
         "name_taken": 409,
+        "default_workspace": 409,
+        # Workspace invitations (#1942)
+        "invitation_invalid": 400,
+        "invitation_not_found": 404,
+        "invitation_exists": 409,
+        "invitation_not_current": 409,
+        "invitation_throttled": 429,
+        "invitation_delivery_unavailable": 503,
+        "workspace_archived": 409,
+        # Workspace resource quotas (#1946, PLAT-239)
+        "workspace_member_seats_exhausted": 409,
+        "quota_policy_forbidden": 403,
+        "quota_workspace_not_found": 404,
+        "quota_resource_invalid": 400,
+        "quota_mode_invalid": 400,
+        "quota_limit_invalid": 400,
     }
 
     def __init__(self, *, code: str, message: str, status_code: int, request: Request) -> None:
@@ -101,7 +118,15 @@ class _WorkspaceAPIError(Exception):
                 status_code=403,
                 request=request,
             )
-        if isinstance(exc, (services.WorkspaceMembershipError, services.WorkspaceLifecycleError)):
+        if isinstance(
+            exc,
+            (
+                services.WorkspaceMembershipError,
+                services.WorkspaceLifecycleError,
+                services.WorkspaceInvitationError,
+                services.WorkspaceQuotaError,
+            ),
+        ):
             return cls(
                 code=exc.code,
                 message=exc.message,
@@ -111,12 +136,15 @@ class _WorkspaceAPIError(Exception):
         raise exc
 
     def to_response(self) -> Response:
-        return api_error_response(
+        response = api_error_response(
             code=self.code,
             message=self.message,
             status_code=self.status_code,
             request=self.request,
         )
+        if self.code == "invitation_throttled":
+            response["Retry-After"] = "3600"
+        return response
 
 
 class _WorkspaceAPIView(APIView):
@@ -158,6 +186,7 @@ class PrincipalWorkspaceContextView(ListAPIView):
     @extend_schema(
         responses={200: PrincipalWorkspaceContextSerializer(many=True), 403: ApiErrorSerializer},
         operation_id="api_v1_workspaces_principal_context",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
@@ -334,6 +363,7 @@ class OrganizationListView(ListAPIView):
     @extend_schema(
         responses={200: OrganizationProfileSerializer(many=True), 403: ApiErrorSerializer},
         operation_id="api_v1_organizations_administrable_list",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
@@ -370,6 +400,7 @@ class OrganizationProfileView(APIView):
     @extend_schema(
         responses={200: OrganizationProfileSerializer, 403: ApiErrorSerializer},
         operation_id="api_v1_organization_retrieve",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request, organization_uuid: UUID) -> Response:
         try:
@@ -382,6 +413,7 @@ class OrganizationProfileView(APIView):
         request=OrganizationProfileUpdateSerializer,
         responses={200: OrganizationProfileSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer},
         operation_id="api_v1_organization_update",
+        auth=SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def patch(self, request: Request, organization_uuid: UUID) -> Response:
         command = OrganizationProfileUpdateSerializer(data=request.data)

@@ -15,12 +15,14 @@ not cross the boundary.
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from engine.models import Instance, Range, Request
 from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import (
     RaesInputBindings,
+    RaesRangeIdentity,
     build_raes_operation_input,
     candidate_key,
     plan_image_lookup_keys,
@@ -28,6 +30,9 @@ from shared.raes.operation_input import (
 from shared.raes.participant_access import ParticipantAccessBinding
 
 __all__ = ["operation_input_payload"]
+
+if TYPE_CHECKING:
+    from engine.models import RaesImageMapping
 
 
 # Durable ownership discriminants persisted on ``engine_instance.state`` (#1666).
@@ -94,16 +99,35 @@ def _raes_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, 
         "provider", "source_name", "source_version"
     )
     for row in rows:
-        projected.setdefault(candidate_key(str(row.provider), str(row.source_name)), []).append(
-            {
-                "source_version": row.source_version,
-                "image_ref": row.image_ref,
-                "machine_type": row.machine_type,
-                "disk_size_gb": row.disk_size_gb,
-                "disk_type": row.disk_type,
-            }
-        )
+        key = candidate_key(str(row.provider), str(row.source_name))
+        projected.setdefault(key, []).append(_image_candidate_row(row))
     return projected
+
+
+def _image_candidate_row(row: RaesImageMapping) -> dict[str, object]:
+    """Project only resolver columns, omitting unchanged optional defaults."""
+    candidate: dict[str, object] = {
+        "source_version": row.source_version,
+        "image_ref": row.image_ref,
+        "machine_type": row.machine_type,
+        "disk_size_gb": row.disk_size_gb,
+        "disk_type": row.disk_type,
+    }
+    optional_defaults = {
+        "management_ssh_port": 22,
+        "management_ssh_username": "",
+        "image_kind": "image",
+        "bootstrap_capability": "standard",
+        "participant_container_name": "",
+        "participant_username": "",
+        "participant_readiness_contract": "",
+        "participant_readiness_manifest_sha256": "",
+    }
+    for key, default in optional_defaults.items():
+        value = getattr(row, key)
+        if value != default:
+            candidate[key] = value
+    return candidate
 
 
 def _raes_delivery_bindings(target: Range) -> list[DeliveryBinding]:
@@ -165,50 +189,141 @@ def _raes_artifact_bindings(target: Range) -> list[ArtifactBinding]:
             acquisition=row.acquisition,
             timing=row.timing,
             image_ref=row.image_ref,
+            image_id=row.image_id,
             machine_type=row.machine_type,
             disk_size_gb=row.disk_size_gb,
             disk_type=row.disk_type,
+            management_ssh_port=row.management_ssh_port,
+            management_ssh_username=row.management_ssh_username,
         )
         for row in RaesArtifactSatisfactionBinding.objects.filter(range=target).order_by("pk")
     ]
 
 
-def _raes_input_payload(target: Range, request: Request) -> dict[str, object]:
+def _raes_input_payload(target: Range, request: Request, *, suppress_access: bool = False) -> dict[str, object]:
     """Compose the RAES operation input (ADR-043 phase 5, #1837).
 
     Replaces direct provisioner reads with one immutable row: the serialized
     plan, the delivery bindings, the participant-access bindings, the fenced
     artifact bindings, the plan-scoped image candidates, and the normalized
     backend ownership.
+
+    ``suppress_access`` (#28) drops the participant-access bindings so a warm-prepare
+    provision realizes a system-owned, quarantined generation with no participant
+    access; warm activation later carries the access bindings and realizes the
+    claimant's fresh access.
     """
+    from engine.services._model_guest_bindings import project_model_guest_bindings
+    from engine.services._runtime_plugin_bindings import retained_runtime_plugin_pin
+
     plan = target.range_config or {}
+    pin = retained_runtime_plugin_pin(target)
     return build_raes_operation_input(
         plan=plan,
         bindings=RaesInputBindings(
             delivery=_raes_delivery_bindings(target),
-            access=_raes_access_bindings(target),
+            access=() if suppress_access else _raes_access_bindings(target),
             artifact=_raes_artifact_bindings(target),
+            runtime_plugin=pin,
+            model_enrollments=project_model_guest_bindings(target, pin) if not suppress_access else (),
         ),
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,
-        legacy_range_id=target.id,
+        identity=RaesRangeIdentity(target.id, str(target.resource_generation) if target.resource_generation else None),
+        egress_mode=target.egress_mode,
     )
 
 
-def operation_input_payload(target: Range | Instance, resource: str, request: Request) -> dict[str, object]:
+def _activation_input_payload(target: Range, request: Request) -> dict[str, object]:
+    """Compose the warm-pool ``activate`` claimant projection (#28).
+
+    Self-sufficient from the claimed warm-generation ledger row plus the Range,
+    which has already been reassigned to the claimant at claim time. The claimant
+    identity comes from this immutable projection, never from HTTP/env/argv
+    (preflight #28 security gate 6).
+    """
+    from engine.models import WarmRangeGeneration
+    from shared.warm_pool.activation_input import ActivationClaimant, ActivationGeneration, build_activation_input
+
+    gen = (
+        WarmRangeGeneration.objects.filter(request_id=request.request_id, state=WarmRangeGeneration.State.CLAIMED)
+        .order_by("pk")
+        .first()
+    )
+    if gen is None:
+        raise ValueError("activation requires a claimed warm generation for the request")
+    claimant = target.user
+    purpose = target.instantiation_purpose or "live_fire"
+    workspace_id = target.workspace_id
+    if workspace_id is None:
+        raise ValueError("activation requires a workspace-scoped range")
+    return build_activation_input(
+        claimant=ActivationClaimant(
+            user_id=int(target.cms_user_id or claimant.id),
+            username=str(claimant.username),
+            workspace_id=workspace_id,
+        ),
+        generation=ActivationGeneration(
+            range_source=gen.range_source,
+            instantiation_purpose=str(purpose),
+            range_backend=str(target.range_backend or gen.backend),
+            legacy_range_id=int(target.id),
+            compatibility_digest=gen.compatibility_digest,
+            prepared_generation_fence=str(gen.operation_id or ""),
+        ),
+        # The full realization projection (plan + the now-unsuppressed participant
+        # access bindings) so the provisioner can locate the realized hosts and
+        # realize the claimant's fresh access.
+        raes_input=_raes_input_payload(target, request),
+    )
+
+
+def _request_has_pending_warm_generation(request: Request) -> bool:
+    """Return True when a warm generation is provisioning against this request (#28).
+
+    The signal that a ``raes-range provision`` is a *warm-prepare*: its participant
+    access is suppressed so the realized generation is quarantined until activation.
+    """
+    from engine.models import WarmRangeGeneration
+
+    return WarmRangeGeneration.objects.filter(
+        request_id=request.request_id, state=WarmRangeGeneration.State.PROVISIONING
+    ).exists()
+
+
+def _range_operation_payload(target: Range, resource: str, request: Request, operation: str) -> dict[str, object]:
+    """Compose the operation-input projection for a :class:`Range` target."""
+    if resource == "raes-range" and operation == "activate":
+        return _activation_input_payload(target, request)
+    if resource == "raes-range":
+        # A warm-prepare provision suppresses participant access so the realized
+        # generation is system-owned and quarantined until it is claimed and
+        # activated (#28).
+        return _raes_input_payload(target, request, suppress_access=_request_has_pending_warm_generation(request))
+    return {
+        "range_spec": target.range_config or {},
+        "legacy_range_backend": _resolved_range_backend(target, request),
+        # Effective egress posture pinned at create (PLAT-238, ADR-017-R5).
+        # Delivered per-range so the provisioner realizes it from the operation
+        # input, never from the deployment-owned RANGE_EGRESS_MODE env once a
+        # decision is pinned. Always present on a new generation; the provisioner
+        # parser fails closed on absence rather than defaulting (ADR-043 window).
+        "egress_mode": target.egress_mode,
+    }
+
+
+def operation_input_payload(
+    target: Range | Instance, resource: str, request: Request, *, operation: str = "provision"
+) -> dict[str, object]:
     """Compose the immutable operation-input projection from engine-owned models.
 
     A reference-only projection of the existing persisted contracts, not an ORM
     dump. The RAES family consumes the full projection (#1837); the cyberscript
     range family still reads most of its inputs directly, and takes only the
-    normalized legacy backend it can no longer resolve for itself.
+    normalized legacy backend it can no longer resolve for itself. The warm-pool
+    ``activate`` operation (#28) carries the claimant projection instead.
     """
     if isinstance(target, Range):
-        if resource == "raes-range":
-            return _raes_input_payload(target, request)
-        return {
-            "range_spec": target.range_config or {},
-            "legacy_range_backend": _resolved_range_backend(target, request),
-        }
+        return _range_operation_payload(target, resource, request, operation)
     return {"role": str(target.role), "os_type": str(target.os_type)}

@@ -9,6 +9,7 @@ the boundary-mock policy.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -71,6 +72,30 @@ class TestExclusionHook:
 
 
 class TestPublishedContract:
+    def test_personal_credential_operations_advertise_only_session_auth(self, openapi_document):
+        paths = openapi_document["paths"]
+        collection = paths["/api/v1/credentials/personal/"]
+        operations = [collection["get"], collection["post"]]
+        for action in ("revoke", "rotate"):
+            operations.append(paths[f"/api/v1/credentials/personal/{{credential_uuid}}/{action}/"]["post"])
+        assert all(operation["security"] == [{"cookieAuth": []}] for operation in operations)
+
+    @pytest.mark.parametrize("collection", ["personal", "services"])
+    def test_credential_collections_publish_bounded_pagination(self, openapi_document, collection):
+        operation = openapi_document["paths"][f"/api/v1/credentials/{collection}/"]["get"]
+        parameters = {item["name"]: item for item in operation.get("parameters", [])}
+        for name, default, minimum, maximum in (("offset", 0, 0, 100000), ("limit", 50, 1, 200)):
+            assert name in parameters
+            parameter = parameters[name]
+            assert parameter["in"] == "query"
+            assert not parameter.get("required", False)
+            assert parameter["schema"] == {
+                "type": "integer",
+                "default": default,
+                "minimum": minimum,
+                "maximum": maximum,
+            }
+
     def test_ctf_surface_published(self, openapi_document: dict[str, Any]) -> None:
         # CTF joined the published contract when its SPA consumer (#1372) landed.
         paths = openapi_document["paths"]
@@ -133,6 +158,55 @@ class TestPublishedContract:
             security = openapi_document["paths"][path]["get"]["security"]
             assert security == [{"cookieAuth": []}]
 
+    def test_workspace_invitations_advertise_only_session_auth(self, openapi_document: dict[str, Any]) -> None:
+        collection = openapi_document["paths"]["/api/v1/workspaces/{workspace_uuid}/invitations/"]
+        resend = openapi_document["paths"]["/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/resend/"]
+        revoke = openapi_document["paths"]["/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/revoke/"]
+
+        for operation in (collection["get"], collection["post"], resend["post"], revoke["post"]):
+            assert operation["security"] == [{"cookieAuth": []}]
+
+    def test_workspace_session_operations_advertise_only_session_auth(self, openapi_document: dict[str, Any]) -> None:
+        paths = openapi_document["paths"]
+        operations = (
+            paths["/api/v1/workspaces/context/"]["get"],
+            paths["/api/v1/workspaces/organizations/"]["get"],
+            paths["/api/v1/workspaces/organizations/{organization_uuid}/"]["get"],
+            paths["/api/v1/workspaces/organizations/{organization_uuid}/"]["patch"],
+        )
+
+        for operation in operations:
+            assert operation["security"] == [{"cookieAuth": []}]
+
+    def test_range_launch_declares_validation_denial_and_quota_conflict(self, openapi_document: dict[str, Any]) -> None:
+        responses = openapi_document["paths"]["/api/v1/mission-control/range/launch/"]["post"]["responses"]
+
+        for status in ("400", "403", "409"):
+            schema = responses[status]["content"]["application/json"]["schema"]
+            assert schema["$ref"].endswith("/ApiError")
+        assert "workspace_range_quota_exceeded" in responses["409"]["description"]
+
+    def test_public_scoreboard_contract_matches_the_stable_runtime_shape(
+        self, openapi_document: dict[str, Any]
+    ) -> None:
+        schema = openapi_document["paths"]["/api/v1/ctf/events/{event_id}/scoreboard/"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]
+        name = schema["$ref"].rsplit("/", 1)[-1]
+        scoreboard = openapi_document["components"]["schemas"][name]
+
+        expected = {
+            "scoreboard_hidden",
+            "event_id",
+            "team_mode",
+            "frozen",
+            "rankings",
+            "bracket_rankings",
+            "brackets",
+        }
+        assert set(scoreboard["required"]) == expected
+        assert set(scoreboard["properties"]) == expected
+
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
         ngfw = openapi_document["paths"]["/api/v1/mission-control/ngfw/"]["post"]
@@ -148,14 +222,50 @@ class TestPublishedContract:
         # Admin-only audit reads are not token-scoped; they must not advertise a scope.
         assert "x-required-scopes" not in openapi_document["paths"]["/api/v1/audit/"]["get"]
 
-    def test_method_scoped_permissions_are_reported(self, openapi_document: dict[str, Any]) -> None:
-        # ScenarioResourceView resolves scopes per method via get_permissions().
-        detail = openapi_document["paths"]["/api/v1/cms/scenario-editor/scenarios/{scenario_id}/"]
+    def test_scenario_detail_is_read_scoped_and_read_only(self, openapi_document: dict[str, Any]) -> None:
+        detail = openapi_document["paths"]["/api/v1/cms/scenarios/{scenario_id}/"]
         assert detail["get"]["x-required-scopes"] == ["cms:authoring:read"]
-        assert detail["patch"]["x-required-scopes"] == ["cms:authoring:write"]
+        assert "patch" not in detail
+
+    def test_legacy_scenario_editor_api_is_retired_exactly(self) -> None:
+        metadata = json.loads(contract.retirement_path().read_text(encoding="utf-8"))
+        retirement = next(item for item in metadata["retirements"] if item["issue"] == 1311)
+
+        assert retirement["adr"] == "ADR-024"
+        assert set(retirement["paths"]) == {
+            "/api/v1/cms/scenario-editor/scenarios/",
+            "/api/v1/cms/scenario-editor/scenarios/from-yaml/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/",
+            "/api/v1/cms/scenario-editor/validate-yaml/",
+        }
+        assert {tuple(item.values()) for item in retirement["response_schema_properties"]} == {
+            ("Bootstrap", "feature_flags"),
+            ("ScenarioDetail", "deletable"),
+            ("ScenarioDetail", "description"),
+            ("ScenarioDetail", "editable"),
+            ("ScenarioDetail", "exportable"),
+            ("ScenarioDetail", "instances"),
+            ("ScenarioDetail", "is_default"),
+            ("ScenarioDetail", "ngfw"),
+            ("ScenarioDetail", "participant_access"),
+            ("ScenarioDetail", "subnets"),
+        }
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])
+
+    def test_pack_registration_digest_default_satisfies_its_own_pattern(self, openapi_document: dict[str, Any]) -> None:
+        # A published default that violates its property's pattern makes the whole
+        # document fail OpenAPI/JSON-Schema validation before any operation can be
+        # checked (#2212). expected_package_digest is optional and accepts an empty
+        # string ("no expected digest"), so the pattern must admit "" alongside a
+        # sha256 digest and the emitted default must match it.
+        digest = openapi_document["components"]["schemas"]["PackRegistration"]["properties"]["expected_package_digest"]
+        assert re.fullmatch(digest["pattern"], digest["default"]) is not None
 
 
 @pytest.mark.django_db

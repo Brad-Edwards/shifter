@@ -21,8 +21,10 @@ Programmable flags enable dynamic validation logic, for example, verifying a sub
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/validators.py` (Validator registry and HTTP validation module)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/challenge.py` (Challenge service - programmable/http flag verification and creation)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models.py` (CTFFlag model - programmable/http flag_type and validator_config field)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/validators/_registry.py` (Programmable validator registry)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/validators/_http.py` (DNS-pinned HTTP validation transport and strict verdict parsing)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/challenge/_flag_verify.py` (Programmable/HTTP verification dispatch and validator configuration)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/challenge/_flag_crud.py` (Programmable/HTTP flag creation and updates)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models/flag.py` (CTFFlag programmable/HTTP type and validator configuration)
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_programmable_flags.py` (Programmable and HTTP flag validation tests)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#509` (CTF-118: Programmable Flag Validation)

@@ -13,6 +13,11 @@ updated_at: 2026-06-25T02:41:49.102085Z
 
 ## Statement
 
+ADR-066 clarification (#2316): programmatic credentials include Knox personal
+tokens and native service principals. Their scopes/actions are immutable ceilings,
+not permission grants; live application policy and domain lifecycle also apply.
+Services must never be resolved as their creator's human user.
+
 All non-public platform HTTP/JSON API endpoints shall be served through Django REST Framework (DRF) and shall enforce the platform's API authentication and scope-based authorization established by PLAT-102: session-cookie authentication with CSRF for browser/SPA clients, and scoped API tokens for programmatic clients. Each endpoint shall declare its required scopes from the central scope registry. Application logic shall remain in the service layer; the DRF layer shall own only HTTP concerns (authentication, scope authorization, serialization/validation, error envelope, pagination). Ad-hoc Django function-view JSON endpoints outside DRF (Mission Control, CTF, CMS) shall be migrated onto this surface. The platform API shall expose an OpenAPI schema.
 
 ## Rationale
@@ -21,6 +26,15 @@ PLAT-102 establishes the token + scope authentication foundation, but the platfo
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/management/api/credential_views.py` (Closed credential-management API)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/credentials.py` (Provider-neutral credential ceiling and explicit identity)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/api/principals.py` (Neutral credential resolution without service-to-human substitution)
+- TESTS → TEST `shifter/shifter_platform/tests/management/test_credential_api.py`
+- TESTS → TEST `shifter/shifter_platform/tests/config/test_service_identity.py`
+
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/cms/api/artifact_preparation.py` (Preparation lifecycle DRF endpoints with service-owned application logic)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/cms/api/preparation_adapters.py` (Private adapter administration through scoped DRF endpoints)
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_preparation_api.py` (Preparation authentication, scopes, CSRF and rejected executable overrides)
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#1122` (PLAT-106: Migrate CMS (experiments + scenario editor) JSON API to DRF + scoped auth)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#1119` (PLAT-106: Establish platform DRF API conventions and OpenAPI schema)
 - IMPLEMENTS → CONFIG `shifter/shifter_platform/config/_drf_settings.py` (Platform DRF defaults, schema, pagination, and local docs assets)
@@ -30,7 +44,7 @@ PLAT-102 establishes the token + scope authentication foundation, but the platfo
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/api/errors.py` (Shared platform API error envelope helpers)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/api/permissions.py` (Shared scoped API permission base for DRF endpoints)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/api/schema.py` (Shared OpenAPI authentication and error-envelope schema extensions)
-- IMPLEMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/dev/api.md` (Developer guide for platform DRF API conventions)
+- IMPLEMENTS → DOCUMENTATION `docs/technical/dev/api.md` (Developer guide for platform DRF API conventions)
 - TESTS → TEST `shifter/shifter_platform/tests/config/test_api_urls.py` (Tests for authenticated schema/docs and v1 API routing)
 - TESTS → TEST `shifter/shifter_platform/tests/config/test_settings.py` (Tests for platform DRF settings defaults)
 - TESTS → TEST `shifter/shifter_platform/tests/shared/test_api_errors.py` (Tests for the shared platform API error envelope)
@@ -67,7 +81,7 @@ PLAT-102 establishes the token + scope authentication foundation, but the platfo
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/cms/api/views.py` (CMS DRF views delegating scenario-editor and experiment API behavior to CMS services)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/cms/scenario_editor/_validation.py` (Scenario-editor YAML validation with safe API-facing parse error text)
 - DOCUMENTS → DOCUMENTATION `docs/architecture/cms-drf-api-preflight-1122.md` (CMS DRF API migration preflight and binding architecture guidance)
-- DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/dev/api.md` (Developer guide for platform and CMS DRF API conventions)
+- DOCUMENTS → DOCUMENTATION `docs/technical/dev/api.md` (Developer guide for platform and CMS DRF API conventions)
 - TESTS → TEST `shifter/shifter_platform/tests/cms/test_drf_api_token_access.py` (CMS scoped API-token, session, feature-flag, YAML, and script upload DRF tests)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#1124` (PLAT-106: Retire deprecated risk_register APIKey in favor of platform ApiToken)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#1244` (PLAT-106: drop dead risk_register APIKey reference from access.py (follow-up to #1124))

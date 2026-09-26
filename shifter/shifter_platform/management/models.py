@@ -3,11 +3,17 @@
 Platform administration models for user profiles and activity logging.
 """
 
-from typing import Any
+from __future__ import annotations
+
+import uuid
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 
 class UserProfile(models.Model):
@@ -94,10 +100,24 @@ class UserProfile(models.Model):
             "auto-revoked. Empty when the user is not a tracked organizer."
         ),
     )
+    suspended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Temporary-suspension discriminator (issue #1943). When set, the "
+            "account is suspended: authentication is blocked (User.is_active is "
+            "held False) while assignments and owned resources are retained. It "
+            "distinguishes a reversible security hold from a plain deactivation "
+            "and from soft deletion; User.is_active remains the sole "
+            "authentication-enforcement bit."
+        ),
+    )
     deleted_at = models.DateTimeField(null=True, blank=True)
     anonymized_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Table mapping, labels, and CTF-account identity invariants."""
+
         db_table = "mission_control_userprofile"
         verbose_name = "User Profile"
         verbose_name_plural = "User Profiles"
@@ -121,7 +141,7 @@ class UserProfile(models.Model):
         super().save(*args, **kwargs)
 
     @property
-    def is_deleted(self):
+    def is_deleted(self) -> bool:
         return self.deleted_at is not None
 
     @property
@@ -154,16 +174,183 @@ class ActivityLog(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
+        """Table mapping, default ordering, and labels for the activity log."""
+
         db_table = "mission_control_activitylog"
         ordering = ["-timestamp"]
         verbose_name = "Activity Log"
         verbose_name_plural = "Activity Logs"
 
-    def __str__(self):
+    def __str__(self) -> str:
         user_str = self.user.email if self.user else "anonymous"
         return f"{self.action} by {user_str} at {self.timestamp}"
 
     @classmethod
-    def log(cls, action: str, user=None, **metadata):
+    def log(cls, action: str, user: User | None = None, **metadata: Any) -> ActivityLog:
         """Convenience method to log an activity."""
         return cls.objects.create(user=user, action=action, metadata=metadata)
+
+
+class ModelAccessGroupEligibility(models.Model):
+    """Explicit funded-access policy for one canonical Django auth group.
+
+    Direct group membership remains only an applicability fact.  A funded
+    model-access binding additionally requires either administrator-managed
+    membership or an independent spending approval recorded here.
+    """
+
+    group = models.OneToOneField(
+        "auth.Group",
+        on_delete=models.CASCADE,
+        related_name="model_access_eligibility",
+    )
+    managed_membership = models.BooleanField(default=False)
+    spending_approved = models.BooleanField(default=False)
+    revision = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Database table and integrity constraints for the eligibility record."""
+
+        db_table = "management_model_access_group_eligibility"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(revision__gt=0),
+                name="management_model_access_group_revision_positive",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Model-access eligibility for {self.group.name} (revision {self.revision})"
+
+
+class Principal(models.Model):
+    """Stable human or service identity, separate from credentials and contacts."""
+
+    class Kind(models.TextChoices):
+        """Closed durable principal kinds."""
+
+        HUMAN = "human", "Human"
+        SERVICE = "service", "Service"
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="identity_principal",
+    )
+    name = models.CharField(max_length=200, blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_service_principals",
+    )
+    responsible_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="responsible_service_principals",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Database metadata and identity-shape constraints."""
+
+        db_table = "management_principal"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(kind__in=("human", "service")),
+                name="principal_kind_closed",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind="human", user__isnull=False, created_by__isnull=True, responsible_user__isnull=True)
+                    | models.Q(kind="service", user__isnull=True)
+                ),
+                name="principal_human_service_shape",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"principal:{self.uuid}"
+
+
+class PrincipalConflictError(ValueError):
+    """Principal or provider binding conflicts with durable identity."""
+
+
+class ProviderBinding(models.Model):
+    """Immutable exact provider tuple attached to one principal."""
+
+    principal = models.ForeignKey(Principal, on_delete=models.PROTECT, related_name="provider_bindings")
+    issuer = models.CharField(max_length=255)
+    subject = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Database metadata and immutable tuple constraints."""
+
+        db_table = "management_provider_binding"
+        constraints = [
+            models.UniqueConstraint(fields=["issuer", "subject"], name="uniq_provider_principal_tuple"),
+            models.CheckConstraint(
+                condition=~models.Q(issuer="") & ~models.Q(subject=""),
+                name="provider_binding_nonblank_tuple",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"provider-binding:{self.pk}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self.pk:
+            prior = type(self).objects.filter(pk=self.pk).values("principal_id", "issuer", "subject").first()
+            if prior is None or (
+                prior["principal_id"] != self.principal_id
+                or prior["issuer"] != self.issuer
+                or prior["subject"] != self.subject
+            ):
+                raise PrincipalConflictError("Provider binding is immutable")
+        super().save(*args, **kwargs)
+
+
+class ServiceCredentialAdmission(models.Model):
+    """Administrator-configured limits for one native service identity."""
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    binding = models.ForeignKey(ProviderBinding, on_delete=models.PROTECT, related_name="service_admissions")
+    audience = models.URLField(max_length=500)
+    scopes = models.JSONField(default=list)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Service credentials store admission metadata, never provider secrets."""
+
+        db_table = "management_service_credential_admission"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["binding", "audience"],
+                condition=models.Q(is_active=True),
+                name="unique_active_service_admission",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"service-credential:{self.uuid}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self.pk:
+            fields = ("binding_id", "audience", "scopes", "uuid")
+            previous = type(self).objects.filter(pk=self.pk).values(*fields).first()
+            if previous is None or any(previous[field] != getattr(self, field) for field in fields):
+                raise PrincipalConflictError("Service admission is immutable; disable and register a new binding")
+        super().save(*args, **kwargs)

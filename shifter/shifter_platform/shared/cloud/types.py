@@ -8,6 +8,7 @@ right methods satisfies the protocol, no explicit inheritance required.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from uuid import UUID
 
 if TYPE_CHECKING:
     from shared.capacity import CapacityMetricSpec, ObservationResult, PartitionRef
@@ -91,7 +92,16 @@ class ObjectStorage(Protocol):
         key: str,
         content_type: str,
         expires_in: int,
-    ) -> str: ...
+        content_length: int | None = None,
+    ) -> str:
+        """Presign a single-object PUT.
+
+        When ``content_length`` is given the adapter binds the exact byte length
+        into its signed request where the provider reliably enforces it, so an
+        oversized transfer fails at the storage layer. This is defense in depth
+        only; it never replaces the server-side finalization size check.
+        """
+        ...
 
     def generate_presigned_download_url(
         self,
@@ -180,6 +190,14 @@ class SecretsStore(Protocol):
     """Protocol for secrets retrieval (Secrets Manager, Secret Manager, etc.)."""
 
     def get_secret(self, secret_id: str) -> str: ...
+
+    def create_owned_secret(self, source_id: UUID, version_id: UUID, value: str) -> str:
+        """Create a fresh immutable model credential and return its pinned reference."""
+        ...
+
+    def retire_owned_secret(self, source_id: UUID, version_id: UUID) -> None:
+        """Retire only a server-owned model credential, including incomplete writes."""
+        ...
 
 
 @runtime_checkable

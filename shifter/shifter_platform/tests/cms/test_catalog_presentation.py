@@ -40,13 +40,13 @@ def _make_raes_source(staff_user, scenario_id, **overrides):
         "scenario_id": scenario_id,
         "contract_kind": "raes",
         "contract_profile": "shifter",
-        "package_ref": "scenario-dev/polaris/content-packages/polaris",
+        "package_ref": "scenario-dev/example/content-packages/example",
         "package_version": "1.0.0",
         "package_digest": "sha256:" + "a" * 64,
-        "lock_ref": "scenario-dev/polaris/content-packages/polaris.lock",
+        "lock_ref": "scenario-dev/example/content-packages/example.lock",
         "lock_digest": "sha256:" + "b" * 64,
         "conformance_status": "passed",
-        "conformance_report_ref": "reports/polaris-conformance.json",
+        "conformance_report_ref": "reports/example-conformance.json",
         "provenance": {"repo": "acme/raes", "commit": "c" * 40, "tool": "raes-cli"},
         "registered_by": staff_user,
     }
@@ -56,31 +56,31 @@ def _make_raes_source(staff_user, scenario_id, **overrides):
 
 class TestRaesPresentation:
     def test_raes_entry_exposes_allowlisted_fields(self, staff_user):
-        _make_raes_source(staff_user, "polaris-raes")
+        _make_raes_source(staff_user, "example-raes")
 
-        entry = get_catalog_presentation("polaris-raes")
+        entry = get_catalog_presentation("example-raes")
 
         assert entry is not None
-        assert entry["id"] == "polaris-raes"
+        assert entry["id"] == "example-raes"
         assert entry["scenario_type"] == "raes"
         assert entry["is_default"] is False
-        assert entry["launchable"] is False
+        assert entry["launchable"] is True
         raes = entry["raes"]
         assert raes["source_kind"] == "repo"
         assert raes["contract_kind"] == "raes"
         assert raes["contract_profile"] == "shifter"
-        assert raes["package_ref"] == "scenario-dev/polaris/content-packages/polaris"
+        assert raes["package_ref"] == "scenario-dev/example/content-packages/example"
         assert raes["package_version"] == "1.0.0"
         assert raes["package_digest"] == "sha256:" + "a" * 64
         assert raes["lock_ref"].endswith(".lock")
         assert raes["lock_digest"] == "sha256:" + "b" * 64
         assert raes["conformance_status"] == "passed"
-        assert raes["conformance_report_ref"] == "reports/polaris-conformance.json"
+        assert raes["conformance_report_ref"] == "reports/example-conformance.json"
 
     def test_provenance_summary_only_carries_allowlisted_keys(self, staff_user):
-        _make_raes_source(staff_user, "polaris-raes")
+        _make_raes_source(staff_user, "example-raes")
 
-        entry = get_catalog_presentation("polaris-raes")
+        entry = get_catalog_presentation("example-raes")
 
         summary = entry["raes"]["provenance_summary"]
         assert summary == {"repo": "acme/raes", "commit": "c" * 40, "tool": "raes-cli"}
@@ -95,12 +95,12 @@ class TestRaesPresentation:
         redaction boundary and must still strip keys outside
         ``PROVENANCE_SUMMARY_KEYS`` — a passthrough no-op would leak them.
         """
-        _make_raes_source(staff_user, "polaris-raes")
-        RaesPackageSource.objects.filter(scenario_id="polaris-raes").update(
+        _make_raes_source(staff_user, "example-raes")
+        RaesPackageSource.objects.filter(scenario_id="example-raes").update(
             provenance={"repo": "acme/raes", "leaked_token": "SECRET", "sdl": "print('x')"}
         )
 
-        entry = get_catalog_presentation("polaris-raes")
+        entry = get_catalog_presentation("example-raes")
 
         summary = entry["raes"]["provenance_summary"]
         assert summary == {"repo": "acme/raes"}
@@ -108,51 +108,43 @@ class TestRaesPresentation:
         assert "sdl" not in summary
 
     def test_access_overlay_applies_to_raes(self, staff_user):
-        _make_raes_source(staff_user, "polaris-raes")
+        _make_raes_source(staff_user, "example-raes")
         ScenarioMetadata.objects.create(
-            scenario_id="polaris-raes",
+            scenario_id="example-raes",
             enabled=False,
             staff_only=True,
             updated_by=staff_user,
         )
 
-        entry = get_catalog_presentation("polaris-raes")
+        entry = get_catalog_presentation("example-raes")
 
         assert entry["enabled"] is False
         assert entry["staff_only"] is True
 
 
-class TestLegacyPresentation:
-    def test_yaml_default_has_no_raes_block(self, db):
-        entry = get_catalog_presentation("basic")
-
-        assert entry is not None
-        assert entry["raes"] is None
-        assert entry["is_default"] is True
-
+class TestMissingPresentation:
     def test_unknown_scenario_returns_none(self, db):
         assert get_catalog_presentation("does-not-exist") is None
 
 
 class TestListPresentation:
-    def test_list_includes_raes_and_legacy(self, staff_user):
-        _make_raes_source(staff_user, "polaris-raes")
+    def test_list_contains_only_registered_raes_sources(self, staff_user):
+        _make_raes_source(staff_user, "example-raes")
 
         entries = list_catalog_presentations()
 
         by_id = {e["id"]: e for e in entries}
-        assert "basic" in by_id
-        assert by_id["basic"]["raes"] is None
-        assert by_id["polaris-raes"]["raes"] is not None
+        assert set(by_id) == {"example-raes"}
+        assert by_id["example-raes"]["raes"] is not None
 
     def test_non_staff_listing_preserves_access_filtering(self, staff_user, regular_user):
-        _make_raes_source(staff_user, "polaris-raes")
+        _make_raes_source(staff_user, "example-raes")
         ScenarioMetadata.objects.create(
-            scenario_id="polaris-raes",
+            scenario_id="example-raes",
             staff_only=True,
             updated_by=staff_user,
         )
 
         ids = [e["id"] for e in list_catalog_presentations(user=regular_user)]
 
-        assert "polaris-raes" not in ids
+        assert "example-raes" not in ids

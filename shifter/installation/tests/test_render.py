@@ -24,8 +24,9 @@ import sys
 
 import pytest
 
+from installation.errors import InstallationConfigError
 from installation.loader import load_root_config
-from installation.render import render_cloud_provider_tfvars, render_tfvars
+from installation.render import render_capacity_projection, render_cloud_provider_tfvars, render_tfvars
 
 
 def _aws(settings: dict | None, aws_config: dict) -> dict:
@@ -42,7 +43,12 @@ def _gcp(settings: dict | None, gcp_config: dict) -> dict:
     # The GCP backend now has a closed settings model (#729) that requires project_id and
     # region; merge them in so these range-egress-focused render cases load cleanly while
     # still controlling the range_egress block under test.
-    merged = {"project_id": "acme-shifter", "region": "us-central1", **gcp_config.get("settings", {})}
+    merged = {
+        "project_id": "acme-shifter",
+        "dynamic_secret_project_id": "acme-range-secrets",
+        "region": "us-central1",
+        **gcp_config.get("settings", {}),
+    }
     if settings is not None:
         merged.update(settings)
     cfg["settings"] = merged
@@ -100,6 +106,70 @@ class TestRenderAws:
 
 
 class TestRenderGcp:
+    def test_capacity_projection_is_stable_machine_readable_json(self, write_config, gcp_config):
+        path = write_config(_gcp({"shared_service_capacity_profile": "gcp-shared-v1-p30"}, gcp_config))
+        config = load_root_config(path)
+
+        desired = render_capacity_projection(config, "desired-state")
+        gate = render_capacity_projection(config, "gate")
+
+        assert '"profile_id":"gcp-shared-v1-p30"' in desired
+        assert '"deployment/portal-web.spec.replicas":5' in desired
+        assert '"capacity_profile_id":"gcp-shared-v1-p30"' in gate
+        assert '"concurrency":30' in gate
+
+    def test_tfvars_emit_every_selected_capacity_projection_field(self, write_config, gcp_config):
+        path = write_config(_gcp({"shared_service_capacity_profile": "gcp-shared-v1-p30"}, gcp_config))
+
+        out = render_tfvars(load_root_config(path))
+
+        expected_lines = {
+            'shared_service_capacity_profile = "gcp-shared-v1-p30"',
+            'access_machine_type = "e2-standard-8"',
+            "access_node_count = 3",
+            "access_node_max_count = 8",
+            'cloud_sql_tier = "db-custom-4-15360"',
+            'cloud_sql_availability_type = "REGIONAL"',
+            "cloud_sql_disk_size_gb = 60",
+            'redis_tier = "STANDARD_HA"',
+            "redis_memory_size_gb = 8",
+        }
+        assert expected_lines <= set(out.splitlines())
+        assert all(out.count(line) == 1 for line in expected_lines)
+
+    def test_capacity_projection_rejects_non_gcp_backend(self, write_config, aws_config):
+        path = write_config(_aws(None, aws_config))
+
+        with pytest.raises(InstallationConfigError, match="GCP only"):
+            render_capacity_projection(load_root_config(path), "desired-state")
+
+    def test_renders_dynamic_secret_project_from_the_validated_config(self, write_config, gcp_config):
+        path = write_config(_gcp(None, gcp_config))
+
+        out = render_tfvars(load_root_config(path))
+
+        assert 'dynamic_secret_project_id = "acme-range-secrets"' in out
+        assert "provisioner_static_secret_refs = {}" in out
+
+    def test_gcp_static_secret_refs_render_once_for_iam_and_runtime(self, write_config, gcp_config):
+        path = write_config(
+            _gcp(
+                {
+                    "provisioner_static_secret_refs": {
+                        "GDC_ACCESS_SECRET_ID": "projects/acme-shifter/secrets/gdc-access",
+                        "GDC_VM_IMAGE_GCS_SECRET_ID": "projects/acme-shifter/secrets/gdc-image",
+                    }
+                },
+                gcp_config,
+            )
+        )
+
+        out = render_tfvars(load_root_config(path))
+
+        assert "provisioner_static_secret_refs = {" in out
+        assert 'GDC_ACCESS_SECRET_ID = "projects/acme-shifter/secrets/gdc-access"' in out
+        assert 'GDC_VM_IMAGE_GCS_SECRET_ID = "projects/acme-shifter/secrets/gdc-image"' in out
+
     def test_allowlist_renders_mode_and_cidrs(self, write_config, gcp_config):
         path = write_config(
             _gcp({"range_egress": {"mode": "allowlist", "allowed_cidrs": ["203.0.113.0/24"]}}, gcp_config)

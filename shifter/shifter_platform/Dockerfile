@@ -21,9 +21,8 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # Export the platform's frozen lock to a hashed requirements.txt and install every
 # third-party dependency with hashes enforced and wheels only — no source builds, so no
 # setup scripts execute at install time (docker:S8541) and every version is locked and
-# integrity-checked (docker:S8544). requirements-gcp.lock is installed the same way and
-# is constrained to the frozen lock, so shared transitive deps stay at the locked
-# versions rather than an unpinned rebuild-time resolution.
+# integrity-checked (docker:S8544). Install requirements-gcp.lock in the same
+# resolution so a stale cloud pin cannot silently replace a platform dependency.
 # --no-config: requirements.txt / requirements-gcp.lock are already fully resolved
 # against the frozen lock (which incorporated [tool.uv].constraint-dependencies), so the
 # install must NOT re-read pyproject's unpinned [tool.uv] constraints — under
@@ -31,9 +30,9 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # py-ubjson (a vestigial autobahn->daphne transitive) ships sdist-only with no wheel on
 # any platform, so it is the single --no-binary source exception; it is version-pinned
 # and hash-verified, with a pure-Python fallback so it needs no compiler.
-# The first-party packages (cyberscript, installation) are NOT installed here: they are
-# first-party source with no external resolution to lock or hash, so they ride on
-# PYTHONPATH in the production stage instead of through a pip install.
+# The first-party installation package is NOT installed here: it is first-party
+# source with no external resolution to lock or hash, so it rides on PYTHONPATH
+# in the production stage instead of through a pip install.
 # --no-dev excludes the [dependency-groups].dev group from the export: dev/test
 # tooling (ruff, pytest, mypy, ...) has no place in the production image. Runtime
 # deps live in [project].dependencies and are exported here. `raes` is a
@@ -44,10 +43,7 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: --no-binary py-ubjson \
-        -r requirements.txt && \
-    uv pip install --system --no-cache --no-config \
-        --require-hashes --only-binary :all: \
-        -r requirements-gcp.lock
+        -r requirements.txt -r requirements-gcp.lock
 
 # Frontend build stage (ADR-029 / #1302). Builds the SPA bundle into the static
 # tree so collectstatic folds it into STATIC_ROOT. Node is a build-time-only
@@ -63,8 +59,13 @@ WORKDIR /app/shifter_platform/frontend
 # --ignore-scripts blocks package lifecycle scripts (docker:S6505); Vite's esbuild
 # resolves its prebuilt platform binary from its optional dependency without a
 # postinstall, so the build still works.
+# --fetch-retries hardens the build against transient npm-registry network blips
+# (self-hosted runners intermittently see ECONNRESET during `npm ci`), so a single
+# registry hiccup does not fail the whole image build / deploy.
 COPY shifter_platform/frontend/package.json shifter_platform/frontend/package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts \
+    --fetch-retries=5 --fetch-retry-factor=2 \
+    --fetch-retry-mintimeout=10000 --fetch-retry-maxtimeout=60000
 
 # SPA sources. Vite emits the content-hashed bundle + manifest to
 # /app/shifter_platform/static/spa (frontend/vite.config.ts); tsc typecheck runs
@@ -90,15 +91,24 @@ LABEL maintainer="Shifter maintainers" \
 
 WORKDIR /app
 
-# Create non-root user and its writable home. Gunicorn and provisioner helpers
-# resolve HOME to /home/appuser in production containers.
+# Create non-root user and its writable home (Gunicorn and provisioner helpers
+# resolve HOME to /home/appuser in production containers) and install runtime
+# dependencies in the same layer. gettext provides msgfmt, required by
+# `manage.py compilemessages` in entrypoint.sh (added in #1260, Django i18n adoption).
+# `apt-get upgrade` applies the current Debian security updates (the deb13uN
+# point releases for perl-base, openssl/libssl3, the util-linux family,
+# libsqlite3-0, libpcre2-8-0, gzip, etc.) to the pinned base image's OS packages,
+# so the exact-release Trivy gate sees no fixable HIGH/CRITICAL base-OS CVEs. The
+# base image stays digest-pinned for build provenance (ADR-037-R2) and is
+# refreshed only via the reviewed process in
+# docs/architecture/rev1-build-deployment-provenance.md; this in-layer upgrade is
+# the deterministic path to the security-suite versions regardless of the base
+# image's rebuild cadence.
 RUN groupadd --gid 1000 appgroup && \
-    useradd --uid 1000 --gid appgroup --create-home --home-dir /home/appuser --shell /bin/bash appuser
-
-# Install runtime dependencies
-# gettext provides msgfmt, required by `manage.py compilemessages` in
-# entrypoint.sh (added in #1260, Django i18n adoption).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+    useradd --uid 1000 --gid appgroup --create-home --home-dir /home/appuser --shell /bin/bash appuser && \
+    apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
+    apt-get install -y --no-install-recommends \
     libpq5 \
     gettext \
     && rm -rf /var/lib/apt/lists/*
@@ -107,13 +117,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin/gunicorn /usr/local/bin/daphne /usr/local/bin/django-admin /usr/local/bin/
 
-# First-party shared packages on PYTHONPATH (cyberscript = data contracts, installation =
-# root installation config). They are first-party source with no external dependency to
-# lock/hash, so they ride on PYTHONPATH rather than a pip install, which Sonar flags as an
-# unlocked/unhashed resolution (docker:S8544). Flat-layout packages: the directory IS the
-# importable package.
-COPY cyberscript /opt/shifter-libs/cyberscript
+# First-party installation config on PYTHONPATH. It is first-party source with
+# no external dependency to lock/hash, so it rides on PYTHONPATH rather than a
+# pip install, which Sonar flags as an unlocked/unhashed resolution
+# (docker:S8544). Flat-layout package: the directory IS the importable package.
 COPY installation /opt/shifter-libs/installation
+COPY shifter_adapter_sdk /opt/shifter-libs/shifter_adapter_sdk
 
 # Copy application code (context is now shifter/, so path is shifter_platform)
 COPY --chown=appuser:appgroup shifter_platform .

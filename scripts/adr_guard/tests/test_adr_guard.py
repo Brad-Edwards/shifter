@@ -90,6 +90,121 @@ class AdrGuardTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertIn("unknown rule id", violations[0].message)
 
+    def test_adr_008_registers_range_secret_boundary_evidence(self) -> None:
+        registry_path = ADR_GUARD.REPO_ROOT / "docs" / "adr" / "index.yaml"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        adr_008 = next(entry for entry in registry if entry["id"] == "ADR-008")
+
+        self.assertIn(
+            "docs/architecture/gcp-range-secret-project-boundary-preflight-1586.md",
+            adr_008["evidence"],
+        )
+
+    def test_raes_plan_accessor_boundary_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "raes-plan-accessor-boundary/v1",
+            "transport": {
+                "input": "serialized-raes-provisioning-plan",
+                "owner": "shifter",
+                "producer": "shared.raes",
+                "consumer": "standalone-provisioner-plain-data-reader",
+                "provisioner_imports_raes": False,
+                "competing_projection": False,
+            },
+            "ownership": {
+                "semantics": "raes",
+                "producer_validation": "shared.raes",
+                "serialization": "shared.raes.runtime_target",
+                "cross_process_validation": "shifter.engine.provisioner.raes_plan",
+                "payload_access": "standalone-versioned-reader",
+                "backend_policy": "shifter-provider-realization",
+            },
+            "failure_policy": {
+                "compatibility_selection": "before-payload-access",
+                "missing_required": "reject-before-provider-mutation",
+                "malformed_present": "reject-before-provider-mutation",
+                "wrong_resource_or_domain": "reject-before-provider-mutation",
+                "unsupported_version": "reject-before-provider-mutation",
+                "unresolved_reference": "reject-before-provider-mutation",
+                "missing_optional": "absent-only-when-contract-declares-optional",
+            },
+            "naming": {
+                "neutral_fallback": "full-canonical-planned-address",
+                "provider_safe_conversion": "backend-naming-boundary",
+                "stable_identity": "compiled-resource-address",
+            },
+            "compatibility": {
+                "typed_oracle": "released-public-plannedresource-accessors",
+                "accessor_first_release": "raes-3.3.0",
+                "wire_oracle": "public-compiler-conformance-and-exact-pin-serialized-fixtures",
+                "private_backend_helpers": False,
+                "exact_pin_required": True,
+            },
+            "delivery": {
+                "decision_issue": 1937,
+                "implementation_issue": 2082,
+                "behavior_change_in_decision_issue": False,
+            },
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-032"), [])
+
+        mutations = {
+            "provisioner imports RAES": lambda value: value["transport"].update(
+                {"provisioner_imports_raes": True}
+            ),
+            "competing projection": lambda value: value["transport"].update(
+                {"competing_projection": True}
+            ),
+            "accessor used as consumer": lambda value: value["ownership"].update(
+                {"payload_access": "raes-python-accessor"}
+            ),
+            "validation after payload access": lambda value: value["failure_policy"].update(
+                {"compatibility_selection": "after-payload-access"}
+            ),
+            "malformed value defaults": lambda value: value["failure_policy"].update(
+                {"malformed_present": "treat-as-absent"}
+            ),
+            "version skew accepted": lambda value: value["failure_policy"].update(
+                {"unsupported_version": "best-effort-read"}
+            ),
+            "wrong resource accepted": lambda value: value["failure_policy"].update(
+                {"wrong_resource_or_domain": "return-none"}
+            ),
+            "leaf fallback": lambda value: value["naming"].update(
+                {"neutral_fallback": "address-leaf"}
+            ),
+            "private helper oracle": lambda value: value["compatibility"].update(
+                {"private_backend_helpers": True}
+            ),
+            "unversioned compatibility": lambda value: value["compatibility"].update(
+                {"exact_pin_required": False}
+            ),
+            "behavior changes in decision issue": lambda value: value["delivery"].update(
+                {"behavior_change_in_decision_issue": True}
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-032"))
+
+        entry_without_contract = {
+            "id": "ADR-032",
+            "title": "How Shifter realizes RAES scenarios",
+            "status": "accepted",
+            "scope": "shifter_platform",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
     def test_range_substrate_interface_contract_is_structurally_enforced(self) -> None:
         contract = {
             "kind": "range-substrate/v1",
@@ -100,7 +215,7 @@ class AdrGuardTests(unittest.TestCase):
                 "real_provider_promotion_evidence": True,
             },
             "adapters": {
-                "initial": ["aws-terraform", "gcp-gdc"],
+                "initial": ["aws-terraform", "gcp-gce", "gcp-gdc"],
                 "deferred": ["azure"],
             },
             "issue_references": {
@@ -120,7 +235,7 @@ class AdrGuardTests(unittest.TestCase):
                 {"real_provider_promotion_evidence": False}
             ),
             "azure not deferred": lambda value: value["adapters"].update(
-                {"initial": ["aws-terraform", "gcp-gdc", "azure"], "deferred": []}
+                {"initial": ["aws-terraform", "gcp-gce", "gcp-gdc", "azure"], "deferred": []}
             ),
             "missing program reference": lambda value: value["issue_references"].pop("478"),
             "unmapped program reference": lambda value: value["issue_references"].update(
@@ -183,6 +298,440 @@ class AdrGuardTests(unittest.TestCase):
             "title": "Provider-neutral range substrate",
             "status": "accepted",
             "scope": "range_provisioning",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
+    def test_ctf_communications_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "ctf-communications/v1",
+            "scope": {
+                "campaign_workspace_count": 1,
+                "event_authorization": "every-target-event",
+                "recipient_authority": "event-scoped-ctf-participant",
+                "platform_root": "audited-django-superuser-single-workspace",
+            },
+            "intent": {
+                "type": "CommunicationIntent",
+                "immutable": True,
+                "sources": [
+                    "manual",
+                    "static-scenario",
+                    "dynamic-platform",
+                    "timed",
+                    "raes-runtime",
+                    "range-signal",
+                ],
+                "audiences": [
+                    "participant",
+                    "participant-set",
+                    "teams",
+                    "event",
+                    "events",
+                ],
+            },
+            "raes": {
+                "interpreter": "shared.raes",
+                "delivery_kinds": [
+                    "disclosure",
+                    "external-direction",
+                    "intervention",
+                ],
+                "unsupported": "reject-before-persistence-delivery-effect",
+            },
+            "range_ingress": {
+                "trust": "compromised",
+                "authentication": "dedicated-generation-fenced-range-trigger",
+                "credential": "opaque-show-once-revocable",
+                "binding": "issuer-deployment-audience-expiry-current-generation",
+                "request_fields": [
+                    "protocol_version",
+                    "declaration_id",
+                    "occurrence",
+                    "nonce",
+                ],
+                "forbidden_authority": [
+                    "workspace",
+                    "event",
+                    "scenario",
+                    "campaign",
+                    "subject",
+                    "body",
+                    "locale",
+                    "link",
+                    "channel",
+                    "user",
+                    "email",
+                    "team",
+                    "participant",
+                    "schedule",
+                    "policy",
+                    "control",
+                ],
+                "replay_fence": "database-unique-occurrence",
+                "rate_limit": "shared-fail-closed",
+                "audit_order": "before-effect",
+            },
+            "content": {
+                "profile": "ctf-communication-markdown/v1",
+                "subject_codepoints": 200,
+                "source_bytes": 65536,
+                "rendered_bytes": 131072,
+                "link_policy": "relative-or-allowlisted-https",
+                "raw_html": False,
+                "remote_media": False,
+                "executable_behavior": False,
+            },
+            "delivery": {
+                "workflow_truth": "postgresql",
+                "semantics": "at-least-once",
+                "timing": "ctf-scheduler",
+                "states": [
+                    "in-app-available",
+                    "email-backend-accepted",
+                    "websocket-published",
+                    "socket-written",
+                    "read",
+                    "acknowledged",
+                    "control-effect",
+                ],
+                "aggregate_overclaim": False,
+            },
+            "verification": [
+                "authorization-isolation",
+                "content-safety",
+                "raes-conformance",
+                "adversarial-ingress-replay",
+                "credential-lifecycle",
+                "postgresql-concurrency-recovery",
+                "delivery-load",
+                "retention-redaction",
+                "configuration-parity",
+                "migration-api-contract",
+                "browser",
+            ],
+            "documentation": [
+                "participant",
+                "organizer",
+                "scenario-author",
+                "technical",
+                "operator",
+                "api-client",
+            ],
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-051"), [])
+
+        mutations = {
+            "cross-workspace campaign": lambda value: value["scope"].update({"campaign_workspace_count": 2}),
+            "first-event-only authorization": lambda value: value["scope"].update(
+                {"event_authorization": "first-target-event"}
+            ),
+            "email as recipient authority": lambda value: value["scope"].update(
+                {"recipient_authority": "email-address"}
+            ),
+            "missing trigger source": lambda value: value["intent"]["sources"].remove("range-signal"),
+            "missing audience": lambda value: value["intent"]["audiences"].remove("participant-set"),
+            "collapsed RAES delivery kind": lambda value: value["raes"]["delivery_kinds"].remove("intervention"),
+            "approximated unsupported profile": lambda value: value["raes"].update(
+                {"unsupported": "deliver-as-disclosure"}
+            ),
+            "trusted range": lambda value: value["range_ingress"].update({"trust": "trusted"}),
+            "reusable range credential": lambda value: value["range_ingress"].update(
+                {"credential": "reusable-bearer"}
+            ),
+            "range credential lacks generation binding": lambda value: value["range_ingress"].update(
+                {"binding": "event-only"}
+            ),
+            "range-selected participant": lambda value: value["range_ingress"]["request_fields"].append("participant"),
+            "range participant authority omitted": lambda value: value["range_ingress"]["forbidden_authority"].remove(
+                "participant"
+            ),
+            "replay not database fenced": lambda value: value["range_ingress"].update(
+                {"replay_fence": "process-memory"}
+            ),
+            "content limit widened": lambda value: value["content"].update({"source_bytes": 65537}),
+            "raw HTML enabled": lambda value: value["content"].update({"raw_html": True}),
+            "exactly-once overclaim": lambda value: value["delivery"].update({"semantics": "exactly-once"}),
+            "delivery states collapsed": lambda value: value["delivery"]["states"].remove("acknowledged"),
+            "missing recovery verification": lambda value: value["verification"].remove(
+                "postgresql-concurrency-recovery"
+            ),
+            "missing scenario-author docs": lambda value: value["documentation"].remove("scenario-author"),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-051"))
+
+        entry_without_contract = {
+            "id": "ADR-051",
+            "title": "CTF communications",
+            "status": "accepted",
+            "scope": "shifter_platform",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
+    def test_dedicated_customer_authority_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "dedicated-customer-authority/v1",
+            "deployment": {
+                "customer_count": 1,
+                "unrelated_customer_shared_control_plane": False,
+                "isolation_proof": "effective-config-identity-network-data-secret-evidence",
+            },
+            "authorities": {
+                "composition": "owning-service-boundaries",
+                "workspace_membership_grants_event_authority": False,
+                "external_client_effect_ownership": False,
+                "scopes": [
+                    "deployment-customer",
+                    "organization",
+                    "workspace",
+                    "event",
+                    "participant",
+                    "application-operator",
+                    "cloud-operator",
+                    "external-client",
+                ],
+            },
+            "event_transition": {
+                "pre_migration": "deployment-global-event-records",
+                "activation": "issue-2048-required-backfill-and-schema",
+                "post_migration": "required-immutable-workspace-binding",
+                "unresolved_backfill": "fail-closed",
+                "event_authority": "event-native-before-and-after",
+            },
+            "ownership": {
+                "api_services": "versioned-api-to-domain-service-facades",
+                "iam": "deployment-operator-provider-policy",
+                "datastore": "domain-owned-postgresql",
+                "secrets": "deployment-local-secret-authority",
+                "network": "platform-and-range-infrastructure",
+                "evidence": "shared-audit-and-provider-observations",
+            },
+            "outages": {
+                "identity_provider": "deny-new-idp-session",
+                "datastore": "deny-state-dependent-admission",
+                "registry": "deny-new-acquisition-without-validated-local-state",
+                "secret_store": "deny-secret-dependent-effect",
+                "model_provider": "fail-dependent-capability-without-authority-change",
+                "provider_api": "retain-failed-or-indeterminate-truth",
+                "audit": "strict-mutation-fails-or-degraded-state-visible",
+            },
+            "verification": [
+                "session-token-parity",
+                "revoked-authority",
+                "cross-event-denial",
+                "event-binding-migration",
+                "remote-access-revocation",
+                "audited-platform-override",
+                "effective-iam-network-denial",
+                "dependency-outage-behavior",
+            ],
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-054"), [])
+
+        mutations = {
+            "multiple customers": lambda value: value["deployment"].update({"customer_count": 2}),
+            "shared unrelated-customer control plane": lambda value: value["deployment"].update(
+                {"unrelated_customer_shared_control_plane": True}
+            ),
+            "label-only isolation proof": lambda value: value["deployment"].update(
+                {"isolation_proof": "customer-label"}
+            ),
+            "workspace role grants event authority": lambda value: value["authorities"].update(
+                {"workspace_membership_grants_event_authority": True}
+            ),
+            "external client owns effects": lambda value: value["authorities"].update(
+                {"external_client_effect_ownership": True}
+            ),
+            "missing cloud operator": lambda value: value["authorities"]["scopes"].remove("cloud-operator"),
+            "post-migration state claimed before activation": lambda value: value["event_transition"].update(
+                {"pre_migration": "workspace-bound-events"}
+            ),
+            "nullable post-migration binding": lambda value: value["event_transition"].update(
+                {"post_migration": "nullable-workspace-binding"}
+            ),
+            "best-effort unresolved backfill": lambda value: value["event_transition"].update(
+                {"unresolved_backfill": "skip-event"}
+            ),
+            "client-owned API service": lambda value: value["ownership"].update(
+                {"api_services": "external-client"}
+            ),
+            "shared secret fallback": lambda value: value["outages"].update(
+                {"secret_store": "shared-admin-fallback"}
+            ),
+            "model outage grants authority": lambda value: value["outages"].update(
+                {"model_provider": "fallback-with-elevated-tools"}
+            ),
+            "missing migration evidence": lambda value: value["verification"].remove(
+                "event-binding-migration"
+            ),
+            "missing token parity evidence": lambda value: value["verification"].remove(
+                "session-token-parity"
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-054"))
+
+        entry_without_contract = {
+            "id": "ADR-054",
+            "title": "Dedicated customer authority",
+            "status": "accepted",
+            "scope": "repository",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
+    def test_accessibility_enforcement_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "accessibility-enforcement/v1",
+            "standard": {
+                "target": "wcag-2.2-aa",
+                "governed_scope": "complete-human-facing-pages-and-processes",
+                "automated_conformance_claim": False,
+            },
+            "toolchain": {
+                "static": "eslint-plugin-jsx-a11y",
+                "component": "vitest-axe",
+                "browser": "@axe-core/playwright",
+                "runner": "playwright",
+                "parallel_conformance_runners": False,
+                "wcag_tags": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
+            },
+            "cadence": {
+                "pull_request": "complete-registered-pr-matrix",
+                "nightly": "same-matrix-expanded-browser-projects",
+                "on_demand": "same-runner-allowlisted-deployed-target",
+                "manual": "material-release-and-annual",
+            },
+            "coverage": {
+                "source": "test-owned-surface-state-matrix",
+                "new_surface": "fail-until-registered",
+                "removed_surface": "fail-until-pruned",
+                "surface_kinds": [
+                    "spa-route",
+                    "django-html-route",
+                    "mkdocs-page",
+                    "enabled-third-party-ui",
+                ],
+            },
+            "baseline": {
+                "comparison": "trusted-base-exact-finding-set",
+                "additions": "forbidden",
+                "resolved_entries": "must-be-removed",
+                "counts_or_thresholds": False,
+                "raw_dom": False,
+                "tool_upgrade": "remediate-or-separately-waive",
+            },
+            "manual_audit": {
+                "method": "wcag-em",
+                "initial_trigger": "before-first-conforming-release",
+                "release_trigger": "new-or-materially-changed-surface-or-process",
+                "incident_trigger": "accessibility-critical-incident",
+                "maximum_interval_days": 365,
+                "reviewer": "accessibility-trained-independent-when-practicable",
+                "record": "docs/audit/accessibility",
+                "release_gate": "before-write-capable-release",
+            },
+            "waivers": {
+                "registry": "docs/adr/exceptions.yaml",
+                "scope": "exact-fingerprint",
+                "approval": "adr-codeowner-no-self-approval",
+                "expiry": "no-later-than-next-planned-release",
+                "conformance_effect": "release-only-not-conformance",
+            },
+            "security": {
+                "pr_permissions": "contents-read",
+                "normal_auth_boundaries": True,
+                "csp_relaxation": False,
+                "free_form_target_url": False,
+                "sensitive_artifacts": False,
+            },
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-055"), [])
+
+        mutations = {
+            "weakened WCAG target": lambda value: value["standard"].update(
+                {"target": "wcag-2.1-aa"}
+            ),
+            "automated conformance overclaim": lambda value: value["standard"].update(
+                {"automated_conformance_claim": True}
+            ),
+            "parallel browser runner": lambda value: value["toolchain"].update(
+                {"runner": "pa11y"}
+            ),
+            "missing inherited WCAG tag": lambda value: value["toolchain"]["wcag_tags"].remove(
+                "wcag2a"
+            ),
+            "changed-page-only PR scan": lambda value: value["cadence"].update(
+                {"pull_request": "changed-pages-only"}
+            ),
+            "unregistered page allowed": lambda value: value["coverage"].update(
+                {"new_surface": "warn"}
+            ),
+            "count threshold baseline": lambda value: value["baseline"].update(
+                {"counts_or_thresholds": True}
+            ),
+            "baseline can grow": lambda value: value["baseline"].update(
+                {"additions": "reviewed"}
+            ),
+            "manual audit only on demand": lambda value: value["manual_audit"].update(
+                {"release_trigger": "optional"}
+            ),
+            "critical incident audit removed": lambda value: value["manual_audit"].update(
+                {"incident_trigger": "none"}
+            ),
+            "second waiver registry": lambda value: value["waivers"].update(
+                {"registry": "frontend/accessibility-waivers.json"}
+            ),
+            "self-approved waiver": lambda value: value["waivers"].update(
+                {"approval": "author"}
+            ),
+            "CSP relaxation": lambda value: value["security"].update(
+                {"csp_relaxation": True}
+            ),
+            "authenticated traces uploaded": lambda value: value["security"].update(
+                {"sensitive_artifacts": True}
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-055"))
+
+        entry_without_contract = {
+            "id": "ADR-055",
+            "title": "Continuous accessibility enforcement",
+            "status": "accepted",
+            "scope": "repository",
             "decision": "d",
             "rules": [],
             "exceptions": [],
@@ -370,6 +919,25 @@ class LayerImportTighteningTests(unittest.TestCase):
 
             self.assertEqual(violations, [])
 
+    def test_preparation_worker_cannot_import_raes_packages_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/packer/preparation/worker.py"
+            self._write_layer_repo(repo_root, rel, "from raes_contracts.json_ingress import parse\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-031-R1")
+
+    def test_preparation_worker_may_use_shared_raes_facade(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/packer/preparation/worker.py"
+            self._write_layer_repo(repo_root, rel, "from shared.raes.json_ingress import parse\n")
+
+            self.assertEqual(ADR_GUARD.check_layer_imports(repo_root, [rel]), [])
+
 
 class SymbolFacadeAllowlistTests(unittest.TestCase):
     """ADR-001-R4: mission_control -> engine.services is a per-symbol seam.
@@ -465,6 +1033,12 @@ class SymbolFacadeAllowlistTests(unittest.TestCase):
         self.assertEqual(
             ADR_GUARD.load_allowed_symbols(cfg),
             {
+                "engine": {
+                    "workspaces.services": ["OrganizationAuthorizationError", "get_organization_profile"]
+                },
+                "config": {
+                    "workspaces.services": ["list_administrable_organizations", "hierarchy_target_scope"]
+                },
                 "mission_control": {
                     "engine.services": [
                         "SSHConnection",
@@ -560,8 +1134,8 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
         ]
         portal_image_globs = portal_image_globs or ["shifter/shifter_platform/**"]
         quality_only_globs = quality_only_globs or [
-            "scripts/polaris-aws-range/**",
-            "scenario-dev/polaris/tests/**",
+            "scripts/stack-smoke/**",
+            "scenario-dev/**",
         ]
         platform_lines = "".join(f"              - '{glob}'\n" for glob in platform_globs)
         quality_non_docs_filter = ""
@@ -855,8 +1429,8 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "            portal_image:\n"
                 "              - 'shifter/shifter_platform/**'\n"
                 "            quality_only:\n"
-                "              - 'scripts/polaris-aws-range/**'\n"
-                "              - 'scenario-dev/polaris/tests/**'\n"
+                "              - 'scripts/stack-smoke/**'\n"
+                "              - 'scenario-dev/**'\n"
                 "  pr-gate:\n"
                 "    steps:\n"
                 "      - run: |\n"
@@ -977,33 +1551,33 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertIn("quality_only", violations[0].message)
 
-    def test_flags_quality_only_filter_without_polaris_range_glob(self) -> None:
+    def test_flags_quality_only_filter_without_smoke_glob(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             self._write_workflows(
                 repo_root,
-                self._deploy_text(quality_only_globs=["scenario-dev/polaris/tests/**"]),
+                self._deploy_text(quality_only_globs=["scenario-dev/**"]),
                 self._platform_text(),
             )
 
             violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
 
             self.assertEqual(len(violations), 1)
-            self.assertIn("scripts/polaris-aws-range/**", violations[0].message)
+            self.assertIn("scripts/stack-smoke/**", violations[0].message)
 
-    def test_flags_quality_only_filter_without_polaris_tests_glob(self) -> None:
+    def test_flags_quality_only_filter_without_scenario_glob(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             self._write_workflows(
                 repo_root,
-                self._deploy_text(quality_only_globs=["scripts/polaris-aws-range/**"]),
+                self._deploy_text(quality_only_globs=["scripts/stack-smoke/**"]),
                 self._platform_text(),
             )
 
             violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
 
             self.assertEqual(len(violations), 1)
-            self.assertIn("scenario-dev/polaris/tests/**", violations[0].message)
+            self.assertIn("scenario-dev/**", violations[0].message)
 
     def test_flags_missing_portal_image_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1126,8 +1700,8 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "            portal_image:\n"
                 "              - 'shifter/shifter_platform/**'\n"
                 "            quality_only:\n"
-                "              - 'scripts/polaris-aws-range/**'\n"
-                "              - 'scenario-dev/polaris/tests/**'\n"
+                "              - 'scripts/stack-smoke/**'\n"
+                "              - 'scenario-dev/**'\n"
                 "      - id: quality_non_docs\n"
                 "        with:\n"
                 "          predicate-quantifier: every\n"
@@ -4508,10 +5082,10 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
                 self.assertEqual(v.rule_id, "ADR-004-R8")
                 self.assertNotIn("XYZ-123", v.message)
 
-    def test_flags_polaris_build_output(self) -> None:
+    def test_flags_scenario_build_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            build_dir = repo_root / "scenario-dev" / "polaris" / "build" / "A16-research-analyst"
+            build_dir = repo_root / "scenario-dev" / "example" / "build" / "guest"
             build_dir.mkdir(parents=True)
             (build_dir / "runtime-token").write_text("challenge-local-token", encoding="utf-8")
 
@@ -4519,15 +5093,15 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
 
             self.assertEqual(
                 {v.path for v in violations},
-                {"scenario-dev/polaris/build/A16-research-analyst/runtime-token"},
+                {"scenario-dev/example/build/guest/runtime-token"},
             )
             self.assertEqual({v.rule_id for v in violations}, {"ADR-004-R8"})
             self.assertNotIn("challenge-local-token", violations[0].message)
 
-    def test_flags_polaris_operator_run_outputs(self) -> None:
+    def test_flags_operator_run_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            script_dir = repo_root / "scripts" / "polaris-aws-range"
+            script_dir = repo_root / "scripts" / "example-range"
             script_dir.mkdir(parents=True)
             (script_dir / "provisioning_state.json").write_text('{"outcomes": {}}', encoding="utf-8")
             (script_dir / "provisioning_status.md").write_text("# status", encoding="utf-8")
@@ -4538,11 +5112,11 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
             violations = ADR_GUARD.check_no_tracked_generated_artifacts(repo_root, None)
 
             flagged_paths = {v.path for v in violations}
-            self.assertIn("scripts/polaris-aws-range/provisioning_state.json", flagged_paths)
-            self.assertIn("scripts/polaris-aws-range/provisioning_status.md", flagged_paths)
-            self.assertIn("scripts/polaris-aws-range/health_report.md", flagged_paths)
-            self.assertIn("scripts/polaris-aws-range/postprovision_status.md", flagged_paths)
-            self.assertNotIn("scripts/polaris-aws-range/README.md", flagged_paths)
+            self.assertIn("scripts/example-range/provisioning_state.json", flagged_paths)
+            self.assertIn("scripts/example-range/provisioning_status.md", flagged_paths)
+            self.assertIn("scripts/example-range/health_report.md", flagged_paths)
+            self.assertIn("scripts/example-range/postprovision_status.md", flagged_paths)
+            self.assertNotIn("scripts/example-range/README.md", flagged_paths)
             for v in violations:
                 self.assertEqual(v.rule_id, "ADR-004-R8")
                 self.assertNotIn("outcomes", v.message)
@@ -5305,7 +5879,7 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
     # A globally-routable public IPv4 not in the well-known-infra allowlist,
     # assembled so the literal never appears in this tracked source.
     REAL_PUBLIC_IP = "45.77." + "12.9"
-    ACCT_BUCKET = "shifter-polaris-bake-dev-" + "9" * 12
+    ACCT_BUCKET = "shifter-example-bake-dev-" + "9" * 12
     UUID_BUCKET = "shifter-dev-infra-" + "-".join(
         ["a" * 8, "b" * 4, "c" * 4, "d" * 4, "e" * 12]
     )
@@ -5709,6 +6283,201 @@ class DocumentationCoverageTests(unittest.TestCase):
         self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["fast"])
 
 
+class LilraeIdentityBoundaryTests(unittest.TestCase):
+    """ADR-024-R6: LilRAE identity and the TechVault pack boundary stay explicit."""
+
+    def _write(self, repo_root: Path, rel: str, text: str) -> None:
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _write_adr_index(self, repo_root: Path, decision: str) -> str:
+        rel = "docs/adr/index.yaml"
+        self._write(
+            repo_root,
+            rel,
+            json.dumps(
+                [
+                    {
+                        "id": "ADR-024",
+                        "decision": decision,
+                        "rules": [
+                            {
+                                "id": "ADR-024-R6",
+                                "description": "LilRAE identity and TechVault boundary",
+                                "checks": ["lilrae-identity-boundary"],
+                            }
+                        ],
+                    }
+                ]
+            ),
+        )
+        return rel
+
+    def test_rejects_false_product_split(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "APTL and LilRAE are separate products.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-024-R6")
+
+    def test_rejects_techvault_as_product(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "TechVault is a product hosted by LilRAE.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("scenario pack", violations[0].message)
+
+    def test_rejects_aptl_as_lilrae_hosted_experience(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "APTL is an experience hosted by LilRAE.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("rename", violations[0].message)
+
+    def test_rejects_false_slash_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "The TechVault/APTL integration owns this path.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("false pairing", violations[0].message)
+
+    def test_targeted_registry_rejects_false_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = self._write_adr_index(
+                repo_root, "The TechVault/APTL integration owns this path."
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].path, rel)
+
+    def test_full_registry_scan_rejects_false_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = self._write_adr_index(
+                repo_root, "The TechVault/APTL integration owns this path."
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].path, rel)
+
+    def test_current_prose_requires_rename_continuity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/requirements/PLAT-211/requirement.md"
+            self._write(repo_root, rel, "APTL defines the reference contract.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("rename continuity", violations[0].message)
+
+    def test_current_prose_accepts_explicit_rename_continuity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/requirements/PLAT-211/requirement.md"
+            self._write(
+                repo_root,
+                rel,
+                "LilRAE (formerly APTL) defines the reference contract.\n",
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+    def test_release_history_is_exempt_from_conceptual_reclassification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "CHANGELOG.md"
+            self._write(repo_root, rel, "Historical TechVault/APTL release entry.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+    def test_identity_preflight_may_name_prohibited_relationships(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/aptl-lilrae-techvault-identity-preflight-2062.md"
+            self._write(
+                repo_root,
+                rel,
+                "Do not preserve the false TechVault/APTL pairing.\n",
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+    def test_retired_techvault_note_requires_historical_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/techvault-encrypted-ami-preflight-1455.md"
+            self._write(repo_root, rel, "# TechVault Encrypted AMI Preflight\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("historical boundary", violations[0].message)
+
+    def test_current_boundary_and_retired_notice_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            current_rel = "docs/architecture/example.md"
+            retired_rel = "docs/architecture/techvault-encrypted-ami-preflight-1455.md"
+            self._write(
+                repo_root,
+                current_rel,
+                "LilRAE (formerly APTL) is one continuous identity. "
+                "TechVault is a scenario pack.\n",
+            )
+            self._write(
+                repo_root,
+                retired_rel,
+                "# Historical record\n\n"
+                "> **Historical boundary (issue #2062, 2026-08-19):** "
+                "TechVault is a scenario pack. APTL is the former name of LilRAE. "
+                "The bespoke implementation was retired by the RAES hard cut.\n",
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(
+                repo_root, [current_rel, retired_rel]
+            )
+
+            self.assertEqual(violations, [])
+
+    def test_check_is_registered(self) -> None:
+        self.assertIn("lilrae-identity-boundary", ADR_GUARD.CHECKS)
+        self.assertIn("lilrae-identity-boundary", ADR_GUARD.CHECK_LEVELS["ci"])
+        self.assertIn("lilrae-identity-boundary", ADR_GUARD.CHECK_LEVELS["fast"])
+
+    def test_repository_identity_boundary_is_clean(self) -> None:
+        violations = ADR_GUARD.check_lilrae_identity_boundary(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+
 class MissionControlFlagLiteralsTests(unittest.TestCase):
     """Tests for ADR-004-R16: forbid hardcoded CTF flag literals in Mission
     Control runtime code (Python under the mission_control package and the
@@ -5800,13 +6569,13 @@ class MissionControlFlagLiteralsTests(unittest.TestCase):
     def test_ignores_flags_outside_mc_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            # Tests, native CTF, docs, Polaris content, and non-MC templates all
+            # Tests, native CTF, docs, Example content, and non-MC templates all
             # legitimately carry flag literals; none are MC runtime surfaces.
             self._write(repo_root, "shifter/shifter_platform/tests/mission_control/test_x.py", f'F = "{self.CONCRETE}"\n')
             self._write(repo_root, "shifter/shifter_platform/ctf/models/challenge.py", f'F = "{self.CONCRETE}"\n')
             self._write(repo_root, "shifter/shifter_platform/templates/ctf/board.html", f"<i>{self.CONCRETE}</i>\n")
             self._write(repo_root, "docs/example.md", f"Example flag: {self.CONCRETE}\n")
-            self._write(repo_root, "scenario-dev/polaris/board/challenge.json", f'{{"flag": "{self.CONCRETE}"}}\n')
+            self._write(repo_root, "scenario-dev/example/board/challenge.json", f'{{"flag": "{self.CONCRETE}"}}\n')
             violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
             self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
 

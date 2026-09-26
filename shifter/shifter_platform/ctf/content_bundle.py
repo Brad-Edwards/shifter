@@ -13,14 +13,12 @@ _MAX_CHALLENGES = 500
 _MAX_FLAGS = 8
 _MAX_HINTS = 32
 _MAX_PREREQUISITES = 64
-_MAX_HEADERS = 16
 _MAX_NESTING_DEPTH = 8
 _IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,99}$")
 _DIFFICULTIES = frozenset({"easy", "medium", "hard", "expert"})
 _VISIBILITIES = frozenset({"visible", "hidden", "locked"})
 _DECAY_FUNCTIONS = frozenset({"linear", "logarithmic"})
 _FLAG_TYPES = frozenset({"static", "regex", "http"})
-_HTTP_METHODS = frozenset({"GET", "POST"})
 
 
 class CtfContentBundleError(ValueError):
@@ -168,18 +166,6 @@ def _check_depth(value: object, depth: int = 0) -> None:
             _check_depth(item, depth + 1)
 
 
-def _parse_headers(value: object) -> dict[str, str]:
-    """Parse bounded HTTP validator headers."""
-    headers = _require_mapping(value, "HTTP flag headers")
-    if len(headers) > _MAX_HEADERS:
-        raise CtfContentBundleError("HTTP flag headers has too many entries")
-    result: dict[str, str] = {}
-    for key, item in headers.items():
-        name = _require_string(key, "HTTP header name", maximum=100)
-        result[name] = _require_string(item, "HTTP header value", maximum=2048, minimum=0)
-    return result
-
-
 def _parse_flag(value: object) -> BundleFlag:
     """Parse one supported native flag declaration."""
     flag = _require_mapping(value, "flag")
@@ -196,16 +182,24 @@ def _parse_flag(value: object) -> BundleFlag:
             value=_require_string(flag.get("value"), "flag value", maximum=2048),
         )
 
-    _reject_unknown(flag, common | {"url", "method", "timeout", "headers"}, "flag")
-    url = _require_string(flag.get("url"), "HTTP flag URL", maximum=2048)
-    method = _require_choice(flag.get("method", "POST"), "HTTP flag method", _HTTP_METHODS)
-    timeout = _require_int(flag.get("timeout", 5), "HTTP flag timeout", minimum=1, maximum=30)
-    headers = _parse_headers(flag.get("headers", {}))
+    _reject_unknown(
+        flag,
+        common | {"url", "method", "timeout", "headers", "protocol", "profile_id", "objective_id"},
+        "flag",
+    )
+    from ctf.validators import HTTPValidatorConfigError, normalize_http_validator_config
+
+    try:
+        validator_config = normalize_http_validator_config(
+            {key: item for key, item in flag.items() if key not in common}
+        )
+    except HTTPValidatorConfigError as exc:
+        raise CtfContentBundleError("HTTP flag configuration is invalid") from exc
     return BundleFlag(
         flag_type=flag_type,
         order=order,
         case_sensitive=case_sensitive,
-        validator_config={"url": url, "method": method, "timeout": timeout, "headers": headers},
+        validator_config=validator_config,
     )
 
 

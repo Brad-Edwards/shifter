@@ -25,7 +25,9 @@ function mockScoreboard(payload: Record<string, unknown>) {
   });
 }
 
-beforeEach(() => mockApi.mockReset());
+beforeEach(() => {
+  mockApi.mockReset();
+});
 
 describe("ScoreboardPage", () => {
   it("renders rankings", async () => {
@@ -58,7 +60,15 @@ describe("ScoreboardPage", () => {
   });
 
   it("shows the hidden sentinel when the scoreboard is hidden", async () => {
-    mockScoreboard({ scoreboard_hidden: true });
+    mockScoreboard({
+      scoreboard_hidden: true,
+      event_id: "e1",
+      team_mode: false,
+      frozen: false,
+      rankings: [],
+      bracket_rankings: null,
+      brackets: [],
+    });
     renderRoute(<ScoreboardPage />);
     expect(await screen.findByText("Scoreboard hidden")).toBeInTheDocument();
   });

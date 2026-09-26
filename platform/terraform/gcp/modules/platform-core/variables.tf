@@ -3,9 +3,26 @@ variable "project_id" {
   type        = string
 }
 
+variable "dynamic_secret_project_id" {
+  description = "Pre-existing deployment-scoped project for dynamic range secrets. May equal project_id only during staged migration."
+  type        = string
+}
+
+variable "provisioner_static_secret_refs" {
+  description = "Closed runtime-key map of exact operator-created GDC/Vertex Secret Manager resources outside the dynamic boundary."
+  type        = map(string)
+  default     = {}
+}
+
 variable "environment" {
   description = "Environment name."
   type        = string
+}
+
+variable "deploy_service_account_email" {
+  description = "Email of the CI deploy service account that runs terraform apply for this stack. Granted resource-scoped actAs on the GKE node SA (see modules/portal/iam). Empty when an operator identity with broad actAs applies the stack."
+  type        = string
+  default     = ""
 }
 
 variable "region" {
@@ -16,6 +33,12 @@ variable "region" {
 variable "artifact_registry_location" {
   description = "Artifact Registry location."
   type        = string
+}
+
+variable "release_scan_service_account_email" {
+  description = "Purpose-scoped CI identity granted read-only access to exact release images."
+  type        = string
+  default     = ""
 }
 
 variable "gke_release_channel" {
@@ -40,9 +63,29 @@ variable "gke_services_cidr" {
 }
 
 variable "gke_provisioner_pods_cidr" {
-  description = "Dedicated secondary pod range for the provisioner node pool. Isolating the provisioner's pod IPs from the shared pods range lets the range-VPC firewall scope admin-port ingress to just the provisioner — a compromised portal/worker/guacamole pod sourced from the shared pods range no longer satisfies range-allow-platform-provisioner (ADR-008-R4, #959)."
+  description = "Dedicated secondary pod range for the provisioner node pool. Isolating the provisioner's pod IPs from the shared pods range lets the range-VPC firewall scope admin-port ingress to just the provisioner — a compromised portal/worker/guacamole pod sourced from the shared pods range no longer satisfies range-allow-platform-provisioner (ADR-008-R4, #959). Also the per-range host-management ingress source (portal_network_cidrs) now that provisioner Jobs are pinned to the tainted provisioner pool (#1711)."
   type        = string
   default     = "10.46.0.0/20"
+}
+
+variable "gke_access_pods_cidr" {
+  description = "Dedicated secondary pod range for the access node pool. Portal + guacd pods receive alias IPs from this range on the exclusive (tainted) access pool, so the per-range GCE ingress firewall scopes participant SSH/RDP (22/3389) to just these access dialers instead of the broad platform pod range (ADR-039-R9, #1711). Must be disjoint from every other GKE, service, control-plane, private-service, and range network."
+  type        = string
+  default     = "10.47.0.0/20"
+
+  # Canonical IPv4 CIDR with an explicit, non-universal prefix. Full-topology
+  # disjointness (against every other network) is enforced deterministically by
+  # the network_topology_invariant precondition in main.tf before apply, per the
+  # #1711 preflight (provider rejection is only a backstop).
+  validation {
+    condition = (
+      can(cidrhost(var.gke_access_pods_cidr, 0))
+      && can(regex("/[0-9]+$", var.gke_access_pods_cidr))
+      && tonumber(regex("/([0-9]+)$", var.gke_access_pods_cidr)[0]) > 0
+      && cidrhost(var.gke_access_pods_cidr, 0) == split("/", var.gke_access_pods_cidr)[0]
+    )
+    error_message = "gke_access_pods_cidr must be a canonical IPv4 CIDR (network address, explicit /N, not /0)."
+  }
 }
 
 variable "gke_master_ipv4_cidr" {
@@ -113,6 +156,12 @@ variable "gke_provisioner_pods_secondary_range_name" {
   default     = "gke-provisioner-pods"
 }
 
+variable "gke_access_pods_secondary_range_name" {
+  description = "Secondary range name on the GKE subnet for the access node pool's dedicated pod range (#1711)."
+  type        = string
+  default     = "gke-access-pods"
+}
+
 variable "private_service_range_prefix_length" {
   description = "Prefix length for the reserved service networking range."
   type        = number
@@ -137,6 +186,12 @@ variable "provisioner_machine_type" {
   default     = "n2-standard-8"
 }
 
+variable "access_machine_type" {
+  description = "Machine type for the exclusive access node pool that hosts portal + guacd (#1711)."
+  type        = string
+  default     = "e2-standard-4"
+}
+
 variable "web_node_count" {
   description = "Desired size for the web node pool."
   type        = number
@@ -153,6 +208,34 @@ variable "provisioner_node_count" {
   description = "Desired size for the provisioner node pool."
   type        = number
   default     = 1
+}
+
+variable "access_node_count" {
+  description = "Desired size for the exclusive access node pool that hosts portal + guacd (#1711)."
+  type        = number
+  default     = 1
+}
+
+variable "access_node_max_count" {
+  description = "Autoscaling ceiling for the exclusive access node pool."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.access_node_max_count >= var.access_node_count
+    error_message = "access_node_max_count must be greater than or equal to access_node_count."
+  }
+}
+
+variable "shared_service_capacity_profile" {
+  description = "Immutable shared-service event-capacity profile identity."
+  type        = string
+  default     = "gcp-shared-v1-p10"
+
+  validation {
+    condition     = can(regex("^gcp-shared-v[1-9][0-9]*-p(10|30|50|100)$", var.shared_service_capacity_profile))
+    error_message = "shared_service_capacity_profile must be a versioned authored GCP p10/p30/p50/p100 profile."
+  }
 }
 
 variable "cloud_sql_database_version" {
@@ -179,7 +262,7 @@ variable "cloud_sql_availability_type" {
 }
 
 variable "cloud_sql_disk_size_gb" {
-  description = "Cloud SQL disk size in GiB."
+  description = "Minimum Cloud SQL disk size in GiB; provider storage does not shrink."
   type        = number
   default     = 20
 }
@@ -273,6 +356,18 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+variable "enable_gcs_usage_log_delivery" {
+  description = <<-EOT
+    Grant the Google-managed group cloud-storage-analytics@google.com objectCreator
+    on the audit-logs bucket for GCS usage-log delivery. It names a google.com
+    principal, which a Domain Restricted Sharing org policy
+    (iam.allowedPolicyMemberDomains) forbids; set to false in such projects, where
+    the binding fails with Error 412. Cloud Audit Logs are unaffected.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "enable_identity_blocking_function" {
   description = <<-EOT
     Deploy the gen1 beforeCreate blocking function enforcing the sign-up domain
@@ -339,14 +434,7 @@ variable "ctf_content_bucket_name" {
 variable "range_provisioner_ports" {
   description = "TCP ports the platform provisioner is allowed to reach on the range VPC. Used to construct the range-allow-platform-provisioner firewall rule. The range VPC otherwise denies all ingress (ADR-008-R4)."
   type        = list(number)
-  # Provisioner-to-range protocols today: SSH (22) for Linux range VMs and the
-  # Windows DC's setup SSH, RDP (3389) for Windows, Guacamole websocket port
-  # (8080) for remote display when proxied from the platform side, and 2222 —
-  # the Docker-host management sshd port (config.host_mgmt_ssh_port) used by
-  # Polaris range hosts, whose participant container binds host :22 and so
-  # forces the host sshd the provisioner drives onto a dedicated port. Update
-  # the list when a new provisioner protocol is introduced.
-  default = [22, 3389, 8080, 2222]
+  default     = [22, 3389, 8080, 2222]
 
   validation {
     condition     = length(var.range_provisioner_ports) > 0

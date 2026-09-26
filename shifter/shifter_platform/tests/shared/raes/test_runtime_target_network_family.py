@@ -94,6 +94,6 @@ def test_ipv4_network_is_accepted_and_dispatches() -> None:
     serialized, diagnostics = _interpret(plan)
     assert serialized is not None
     assert not any(d.code == _FAMILY_CODE for d in diagnostics)
-    result = ShifterProvisioner(port).apply(plan, RuntimeSnapshot())
-    assert result.success is True
+    result = ShifterProvisioner(port).enqueue(plan)
+    assert result.accepted is True
     assert len(port.plans) == 1

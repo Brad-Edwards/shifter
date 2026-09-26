@@ -44,7 +44,7 @@ DEVMAIN_BODY := Promotes dev to main. Merge this PR with a merge commit. Do not 
 .DEFAULT_GOAL := help
 .PHONY: help test test-platform test-platform-postgres test-platform-redis \
         test-provisioner test-packer test-installation test-bootstrap \
-        test-check-layer-imports test-js test-adr-guard policy devmain
+        test-check-layer-imports test-js test-platform-e2e test-platform-a11y test-adr-guard policy devmain
 
 help: ## Show this help
 	@echo "Shifter developer entrypoint. Test targets reproduce CI from a clean"
@@ -52,7 +52,11 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}'
 
-test: test-platform test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-charts test-js test-adr-guard ## Run every no-service (SQLite/pure-Python/JS) lane
+test: test-platform test-adapter-sdk test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-charts test-js test-adr-guard ## Run every no-service (SQLite/pure-Python/JS) lane
+
+.PHONY: test-adapter-sdk
+test-adapter-sdk: ## Independent adapter contract and packaging checks
+	cd shifter/shifter_adapter_sdk && uv sync --frozen --all-extras && uv run --all-extras pytest tests/ && uv build
 
 test-platform: ## Platform fast lane (SQLite; sole coverage publisher)
 	cd shifter/shifter_platform && uv sync --group dev && \
@@ -63,7 +67,7 @@ test-platform-postgres: ## Platform PostgreSQL semantics lane (needs a Postgres 
 	cd shifter/shifter_platform && uv sync --group dev && \
 	  TESTING=1 DJANGO_DEBUG=true TEST_DB_BACKEND=postgres DJANGO_SECRET_KEY=$(TEST_DJANGO_SECRET_KEY) \
 	  DB_HOST=localhost DB_PORT=5432 DB_NAME=shifter DB_USER=test DB_PASSWORD=test \
-	  uv run pytest tests/ -m "not redis"
+	  uv run pytest tests/ -m "not redis and not openfga"
 
 test-platform-redis: ## Platform Redis channel-layer integration lane (needs a Redis service on :6379)
 	cd shifter/shifter_platform && uv sync --group dev && \
@@ -95,6 +99,34 @@ test-charts: ## Helm chart contract suite (renders every backend profile)
 
 test-js: ## Platform JavaScript (Jest) suite with coverage
 	cd shifter/shifter_platform && npm ci && npm run test:coverage
+
+# Authenticated SPA E2E (#1526). Builds the real Django-hosted SPA, migrates and
+# seeds a hermetic SQLite stack, and drives Playwright journeys through normal
+# session/CSRF. Mirrors the `shifter-platform-e2e` CI job (which uses PostgreSQL).
+# LOCAL_PROVISIONER/ENGINE_TASK_* stay unset, so range launch enqueues nothing
+# and no cloud is contacted. Requires a Chromium build (installed below).
+test-platform-e2e: ## Authenticated SPA E2E (Playwright) against the hermetic Django-hosted SPA
+	cd shifter/shifter_platform && uv sync --group dev && \
+	  (cd frontend && npm ci && npm run build) && \
+	  rm -f db.sqlite3 && \
+	  $(PLATFORM_ENV) uv run python manage.py collectstatic --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py migrate --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py seed_e2e && \
+	  cd frontend && npx playwright install chromium && \
+	  ( $(PLATFORM_ENV) npm run test:e2e; status=$$?; rm -f ../db.sqlite3; exit $$status )
+
+# Browser accessibility scans (#1526, ADR-055). Same hermetic stack as the E2E
+# target; runs the @axe-core/playwright surface matrix. Mirrors the deploy.yml
+# `Accessibility` PR Gate job (which uses PostgreSQL).
+test-platform-a11y: ## Browser accessibility (Playwright + axe) against the hermetic Django-hosted SPA
+	cd shifter/shifter_platform && uv sync --group dev && \
+	  (cd frontend && npm ci && npm run build) && \
+	  rm -f db.sqlite3 && \
+	  $(PLATFORM_ENV) uv run python manage.py collectstatic --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py migrate --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py seed_e2e && \
+	  cd frontend && npx playwright install chromium && \
+	  ( $(PLATFORM_ENV) npm run test:e2e:a11y; status=$$?; rm -f ../db.sqlite3; exit $$status )
 
 # Mirrors the `adr-guard-tests` CI job, including its pinned interpreter and
 # pyyaml, so the guard suite runs from a clean checkout the same way. CI selects

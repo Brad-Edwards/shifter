@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from cms.models import ScenarioMetadata
+from cms.models import RaesPackageSource, ScenarioMetadata
 from cms.scenarios.realizability import get_scenario_realizability
 from cms.scenarios.registry import get_catalog_entry
 from shared.audit import AuditAction
@@ -23,18 +23,13 @@ logger = logging.getLogger(__name__)
 _MAX_REPORTED_GAPS = 3
 
 
-def _verify_scenario_exists(scenario_id: str, *, user_id: int) -> None:
-    """Confirm the scenario exists in the unified catalog before metadata changes.
-
-    Uses the catalog projection (not the legacy YAML/DB detail lookup) so the
-    access overlay can be toggled for RAES package-backed entries as well as
-    legacy YAML defaults and DB customs.
-    """
-    if get_catalog_entry(scenario_id) is None:
+def _verify_scenario_exists(scenario_id: str, *, user: User) -> None:
+    """Confirm the RAES source exists before metadata changes."""
+    if get_catalog_entry(scenario_id, user=user) is None:
         logger.error(
             "update_metadata: scenario not found, scenario_id=%s, user_id=%s",
             safe_log_value(scenario_id),
-            user_id,
+            user.id,
         )
         raise ScenarioEditorError(f"Scenario '{scenario_id}' not found")
 
@@ -101,8 +96,14 @@ def update_metadata(
     enabled: bool | None = None,
     staff_only: bool | None = None,
 ) -> ScenarioMetadata:
-    """Update metadata for a YAML default or DB-backed custom scenario."""
-    validate_user(user, "update_metadata")
+    """Update availability metadata for a RAES package source."""
+    source = RaesPackageSource.objects.filter(scenario_id=scenario_id).first()
+    if source is not None and source.organization_uuid is not None:
+        from workspaces.services import get_organization_profile
+
+        get_organization_profile(user, source.organization_uuid)
+    else:
+        validate_user(user, "update_metadata")
     logger.debug(
         "update_metadata called for user_id=%s, scenario_id=%s",
         user.id,
@@ -110,7 +111,7 @@ def update_metadata(
     )
 
     try:
-        _verify_scenario_exists(scenario_id, user_id=user.id)
+        _verify_scenario_exists(scenario_id, user=user)
         _assert_publishable(scenario_id, enabled=enabled)
 
         metadata, created = ScenarioMetadata.objects.get_or_create(

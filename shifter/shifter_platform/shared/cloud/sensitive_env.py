@@ -49,6 +49,8 @@ SENSITIVE_NAMES: frozenset[str] = frozenset(
         "DB_PASSWORD",
         "FIELD_ENCRYPTION_KEY",
         "DC_DOMAIN_PASSWORD",
+        "PREPARATION_TOKEN",
+        "SHIFTER_PLUGIN_INPUT",
     }
 )
 

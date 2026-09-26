@@ -374,25 +374,24 @@ from this shell without changing these platform-wide rules:
 - **One router, one bundle, one basename.** The single Vite bundle mounts one
   `createBrowserRouter` at basename `/`. There are no per-module routers,
   fetch clients, or error classes (ADR-013 / ADR-029).
-- **SPA host + prefix + flag + legacy fallback.** A single flag-gated host view
-  (`shared.spa_host.platform_spa_host`) serves each SPA-owned page path. The
+- **SPA host + prefix ownership.** A single host view
+  (`shared.spa_host.platform_spa_host`) serves every SPA-owned page path. The
   site root is wired as an *exact* match (no global catch-all), so `/privacy/`,
-  `/login/`, and other Django routes are untouched. Rollout is controlled by
-  the reversible, non-secret `PLATFORM_SPA_ENABLED` setting plus the
-  surface-specific flags retained by current modules.
+  `/login/`, and other Django routes are untouched. The completed cutover has
+  no runtime feature flags or server-rendered page fallback.
 - **Navigation is one shared contract.** Primary nav, mode switching,
   breadcrumbs, and contextual subnav render from `frontend/src/app/nav.ts`
   (UX-003 minimum fields plus the #1368 presentation fields). Adding a surface
-  adds one entry; not-yet-migrated surfaces link to their legacy Django route.
+  adds one entry owned by the same SPA router.
   Navigation visibility is advisory UX only; endpoints remain the authority.
 - **Shell state is typed bootstrap; dashboard data is a serializer-backed read.**
-  Principal, advisory permission flags, UX mode eligibility, and feature flags
-  extend the `/api/v1/bootstrap/` serializer (`shared`-layer, no cross-app
+  Principal, advisory permission flags, and UX mode eligibility extend the
+  `/api/v1/bootstrap/` serializer (`shared`-layer, no cross-app
   imports). The operational dashboard summary is a bounded cross-app read at the
   composition root (`config.api_dashboard`, `/api/v1/dashboard/summary/`),
   since `shared` may not import `cms`/`ctf` services (ADR-001).
-- **Deferred to module issues.** Per-surface implementation for Mission Control,
-  Scenario Editor, CTF, and Admin (#1370–#1373) is out of scope here; this issue
+- **Module delivery.** Mission Control, Scenario Editor, CTF, and Admin
+  implementations were delivered by #1370–#1373 and completed by #1311; this issue
   delivers the shell they mount into. See
   `docs/architecture/spa-platform-shell-preflight-1369.md`.
 
@@ -401,5 +400,6 @@ from this shell without changing these platform-wide rules:
 - Canonical DRF `/api/v1/` is the only data surface; no ad hoc JSON routes.
 - No CSRF exemptions for session-authenticated browser calls; CSRF via header.
 - No domain behavior or duplicated validation in frontend code.
-- Legacy routes remain until a module-specific issue retires them.
+- Server-rendered page routes are retired; required form-only authentication
+  posts and the canonical JSON API remain Django-owned.
 - ADR and import boundaries respected; new guardrails ship with ADR updates.

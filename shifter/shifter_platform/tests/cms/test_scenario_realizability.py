@@ -6,8 +6,7 @@ renders: it combines the capability envelope (via ``shared.raes.realizability``)
 with backend *supply* (the tenant image registry), reports a closed outcome with
 bounded gaps, and never reports "cannot assess" as realizable.
 
-Legacy YAML/DB scenarios have no RAES pack, so they are ``not_applicable`` -- the
-editor must not claim the RAES ledger checked something it never saw.
+Unknown scenario identifiers have no realizability projection.
 """
 
 from __future__ import annotations
@@ -74,14 +73,7 @@ def _map_base_os(os_family: str = "linux", image_ref: str = "projects/p/global/i
 
 
 class TestNotApplicable:
-    """Realizability is an RAES question; legacy entries must not be judged by it."""
-
-    def test_legacy_scenario_is_not_applicable(self, hydratable_scenario):
-        result = get_scenario_realizability(hydratable_scenario.scenario_id)
-
-        assert result is not None
-        assert result["outcome"] == RealizabilityOutcome.NOT_APPLICABLE
-        assert result["gaps"] == []
+    """Unknown identifiers cannot be assessed."""
 
     def test_unknown_scenario_returns_none(self):
         assert get_scenario_realizability("no-such-scenario") is None

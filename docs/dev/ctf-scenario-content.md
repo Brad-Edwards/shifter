@@ -64,6 +64,25 @@ regular expressions or HTTP validators, malformed prerequisite graphs, and
 content over the configured bounds. Bundle challenge IDs are stable,
 bundle-local identifiers; prerequisite entries refer to those IDs.
 
+Receipt-capable deployments may instead select an operator-registered verifier
+profile without placing its endpoint or credential in the bundle:
+
+```json
+{
+  "type": "http",
+  "protocol": "receipt-v1",
+  "profile_id": "example-penr1",
+  "objective_id": "flag-agent-control",
+  "case_sensitive": true,
+  "order": 0
+}
+```
+
+The profile and objective must already be installed and approved, and a
+profile/objective pair may belong to only one active challenge in the event.
+See [Signed-receipt CTF validators](ctf-signed-receipt-validators.md) for the
+deployment profile, callback, key lifecycle, replay, and failure contracts.
+
 ## Publish an immutable object
 
 1. Produce UTF-8 JSON using the bundle contract. Keep the source and generated

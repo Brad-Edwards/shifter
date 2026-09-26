@@ -209,6 +209,21 @@ def test_ctf_websocket_boundary_admits_live_participant_terminal(ctf_event_activ
 
 
 @pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_admits_live_participant_raes_terminal(ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+
+    path = "/ws/terminal/provision.node.attack-workstation#0/"
+    calls, messages = _websocket_boundary_messages(User.objects.get(pk=participant.user_id), path)
+
+    assert calls == [path]
+    assert messages == []
+
+
+@pytest.mark.django_db(transaction=True)
 def test_ctf_websocket_boundary_denies_other_platform_socket(ctf_event_active, monkeypatch):
     from management.services import set_ctf_password_change_required
 
@@ -396,10 +411,11 @@ def test_delivery_email_unique_per_event_not_global(ctf_event, ctf_event_active,
     assert first.user_id != other_event.user_id
 
 
-def test_legacy_resend_preserves_password_and_sends_login_information(ctf_event, monkeypatch):
+def test_legacy_resend_is_retired_without_mutating_password(ctf_event, monkeypatch):
+    from ctf.exceptions import CTFCommunicationError
+    from ctf.models import CommunicationIntent, MessageRevision
+
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    sent = []
-    monkeypatch.setattr("ctf.services.notification._send_email", lambda **kwargs: sent.append(kwargs))
     participant = create_participant_accounts(
         ctf_event.id,
         count=1,
@@ -411,16 +427,16 @@ def test_legacy_resend_preserves_password_and_sends_login_information(ctf_event,
     profile.must_change_password = False
     profile.save(update_fields=["must_change_password"])
 
-    reset_participant_credentials(participant.id)
+    with pytest.raises(CTFCommunicationError) as exc:
+        reset_participant_credentials(participant.id)
+    assert exc.value.code == "CTF_COMMUNICATION_RETIRED"
 
     participant.user.refresh_from_db()
     profile.refresh_from_db()
     assert participant.user.check_password("PrivateChangedPassword-42")
     assert profile.must_change_password is False
-    assert len(sent) == 1
-    assert participant.user.username in sent[0]["text_content"]
-    assert TEST_CTF_BOOTSTRAP_PASSWORD not in sent[0]["text_content"]
-    assert "PrivateChangedPassword-42" not in sent[0]["text_content"]
+    assert not CommunicationIntent.objects.exists()
+    assert not MessageRevision.objects.exists()
 
 
 def test_disqualification_keeps_account_live_for_view_access(ctf_event, monkeypatch):
@@ -492,38 +508,30 @@ def test_ctf_login_allows_event_users_behind_shared_source(client, settings):
     assert response["Retry-After"] == "300"
 
 
-def test_organizer_can_render_and_generate_participant_batch(
-    authenticated_organizer_client,
-    ctf_event,
-    monkeypatch,
-):
-    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    url = reverse("ctf:admin_participant_batch", kwargs={"event_id": ctf_event.id})
+@pytest.mark.django_db(transaction=True)
+def test_live_temporary_account_notification_socket_is_exact_and_password_gated(ctf_event_active):
+    from django.contrib.auth.models import Group
 
-    get_response = authenticated_organizer_client.get(url)
-    post_response = authenticated_organizer_client.post(url, {"count": 2})
+    from ctf.models import CTFParticipant
+    from management.services import configure_temporary_ctf_account, set_ctf_password_change_required
+    from shared.auth import CTF_PARTICIPANT_GROUP
 
-    assert get_response.status_code == 200
-    assert post_response.status_code == 302
-    assert ctf_event.participants.filter(user__profile__is_ctf_account=True).count() == 2
-
-
-def test_organizer_can_rename_and_attach_delivery_email(authenticated_organizer_client, ctf_event, monkeypatch):
-    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    participant = create_participant_accounts(ctf_event.id, count=1)[0]
-
-    rename_response = authenticated_organizer_client.post(
-        reverse("ctf:admin_participant_rename", kwargs={"participant_id": participant.id}),
-        {"username": "range-renamed-seat"},
+    user = User.objects.create_user(username="range-notice")
+    user.groups.add(Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)[0])
+    configure_temporary_ctf_account(user, ctf_event_active.pk)
+    CTFParticipant.objects.create(
+        event=ctf_event_active,
+        user=user,
+        name="Notice",
+        email="notice@example.test",
+        status="active",
+        registered_at=timezone.now(),
     )
-    email_response = authenticated_organizer_client.post(
-        reverse("ctf:admin_participant_email", kwargs={"participant_id": participant.id}),
-        {"email": "Delivery@Example.test"},
-    )
-
-    participant.refresh_from_db()
-    participant.user.refresh_from_db()
-    assert rename_response.status_code == 302
-    assert email_response.status_code == 302
-    assert participant.user.username == "range-renamed-seat"
-    assert participant.email == "delivery@example.test"
+    set_ctf_password_change_required(user, False)
+    calls, messages = _websocket_boundary_messages(User.objects.get(pk=user.pk), "/ws/notifications/")
+    assert calls == ["/ws/notifications/"] and not messages
+    calls, messages = _websocket_boundary_messages(User.objects.get(pk=user.pk), "/ws/notifications/extra/")
+    assert not calls and messages[0]["code"] == 4403
+    set_ctf_password_change_required(user, True)
+    calls, messages = _websocket_boundary_messages(User.objects.get(pk=user.pk), "/ws/notifications/")
+    assert not calls and messages[0]["code"] == 4403

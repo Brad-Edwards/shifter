@@ -9,9 +9,8 @@ ProvisioningPlan / ``shared.range_cells`` / ``shared.remote_access`` / …) and 
 validated by those contracts, not re-modelled here.
 
 This module stays dependency-light: the standalone provisioner image imports it
-without loading Django or the platform schema graph. There is exactly one
-boundary error type (reused from ``cyberscript``); callers do not add a parallel
-exception hierarchy.
+without loading Django or the platform schema graph. There is exactly one native
+shared boundary error type; callers do not add a parallel exception hierarchy.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ import json
 from typing import Any
 from uuid import UUID
 
-from cyberscript.exceptions import ValidationError as OperationEnvelopeError
+from shared.exceptions import ValidationError as OperationEnvelopeError
 
 __all__ = [
     "ACCEPTED_CONTRACT_VERSIONS",
@@ -48,7 +47,11 @@ ACCEPTED_CONTRACT_VERSIONS = frozenset({"1"})
 # by the domain authorization (engine.launch_intents); the envelope only bounds
 # the vocabulary so an unknown discriminator fails closed at the wire.
 RESOURCES = frozenset({"range", "raes-range", "ngfw"})
-OPERATIONS = frozenset({"provision", "destroy", "pause", "resume", "deprovision", "start", "stop"})
+# ``activate`` (#28, ADR-039-R11) hands an atomically claimed warm generation to
+# its claimant with fresh, fully sanitized access. Like every other value here it
+# is only a wire discriminator; engine.launch_intents authorizes which resource
+# may carry it (raes-range only).
+OPERATIONS = frozenset({"provision", "destroy", "pause", "resume", "deprovision", "start", "stop", "activate"})
 
 _ENVELOPE_KEYS = frozenset({"contract_version", "operation_id", "request_id", "resource", "operation", "payload"})
 _DIGEST_PREFIX = "sha256:"

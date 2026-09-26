@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-# Add shifter/ to path so 'cyberscript' package is importable
+# Add shifter/ to the path for sibling runtime packages.
 # Must be done before Django loads settings
 SHIFTER_DIR = Path(__file__).resolve().parent.parent.parent
 if str(SHIFTER_DIR) not in sys.path:
@@ -22,6 +22,22 @@ import pytest  # noqa: E402
 from django.test import Client  # noqa: E402
 
 TESTS_DIR = Path(__file__).parent
+
+
+@pytest.fixture
+def personal_token_use_grant(monkeypatch):
+    """Explicit external-policy fixture for incumbent bearer-using surface tests."""
+    from types import SimpleNamespace
+
+    from shared.authorization import AuthorizationDecision, DecisionKind, port
+
+    def check(request):
+        allowed = request.action == "installation.use_personal_tokens"
+        return AuthorizationDecision(
+            DecisionKind.ALLOWED if allowed else DecisionKind.DENIED, "policy_allowed" if allowed else "policy_denied"
+        )
+
+    monkeypatch.setattr(port, "_provider_factory", lambda: SimpleNamespace(check=check))
 
 
 # -----------------------------------------------------------------------------

@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/v1/administer/mission-control/lease-policy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read fallback, runtime tenant state, and policy-eligible groups. */
+        get: operations["api_v1_administer_mission_control_lease_policy_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace one policy-eligible RBAC group's complete lease policy. */
+        put: operations["api_v1_administer_mission_control_lease_policy_group_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/groups/{group_id}/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove one group policy so the group inherits tenant policy. */
+        post: operations["api_v1_administer_mission_control_lease_policy_group_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace the complete runtime tenant policy under revision CAS. */
+        put: operations["api_v1_administer_mission_control_lease_policy_tenant_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/mission-control/lease-policy/tenant/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly remove the runtime tenant replacement. */
+        post: operations["api_v1_administer_mission_control_lease_policy_tenant_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/administer/users/": {
         parameters: {
             query?: never;
@@ -85,6 +170,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/administer/users/{id}/lifecycle/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Activate, deactivate, or suspend a user account. Requires ``auth.change_user``.
+         *
+         *     The one closed desired-state lifecycle command (PLAT-236, #1943). Suspend and
+         *     deactivate both block sign-in and retain assignments; they differ only in the
+         *     suspension discriminator. Soft deletion is the separate ``/delete/`` endpoint
+         *     (``auth.delete_user``).
+         */
+        post: operations["api_v1_administer_users_lifecycle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/reset-password/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Trigger a Django password-reset email for an eligible account. ``auth.change_user``.
+         *
+         *     Uses Django's proven password-reset machinery for an active local, non-CTF
+         *     account only; a provider-bound account resets at its provider and a temporary
+         *     CTF account keeps its event-scoped credential flow (PLAT-236, #1943). Returns
+         *     a safe accepted/error envelope; no secret is ever returned.
+         */
+        post: operations["api_v1_administer_users_reset_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/administer/users/{id}/set-active/": {
         parameters: {
             query?: never;
@@ -96,6 +229,41 @@ export interface paths {
         put?: never;
         /** @description Activate or deactivate a user's login. Requires ``auth.change_user``. */
         post: operations["api_v1_administer_users_set_active"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/transfer-ownership/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Transfer a departing user's owned resources to a replacement. Superuser-only.
+         *
+         *     A single bounded composition-root command (never sequential SPA calls): it
+         *     resolves and authorizes both accounts, then delegates to
+         *     ``cms.services.transfer_user_ownership`` (the only layer permitted to reach
+         *     both the range and workspace domains). Both transfer kinds are the
+         *     ADR-046-R13 platform-administrator offboarding override.
+         *
+         *     This command requires a **superuser** session, not merely ``auth.change_user``
+         *     (issue #1943 review F5): a superuser already holds cross-tenant/root authority,
+         *     so transferring ranges and workspaces during offboarding is not an escalation.
+         *     Gating on ``auth.change_user`` alone would let a staff user who is merely a
+         *     member of another tenant's workspace acquire ranges they could not otherwise
+         *     administer. Range reassignment reuses the existing CMS/Engine authority and
+         *     refuses live-VPN ranges; workspace transfer requires the replacement to be an
+         *     existing member. It never removes memberships, transfers credentials/agents,
+         *     or rewrites provenance.
+         */
+        post: operations["api_v1_administer_users_transfer_ownership"];
         delete?: never;
         options?: never;
         head?: never;
@@ -153,6 +321,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/artifact-preparation/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description The CMS loads the selected private pack and the engine owns the job. */
+        post: operations["cms_artifact_preparation_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/artifact-preparation/{operation_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Status does not expose worker credentials or private manifests. */
+        get: operations["cms_artifact_preparation_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/artifact-preparation/{operation_id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Cancellation cannot supply resource names or deletion instructions. */
+        post: operations["cms_artifact_preparation_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/artifact-preparation/{operation_id}/retry/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description A retry supplies no new code, cloud grant, identities or resource names. */
+        post: operations["cms_artifact_preparation_retry_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/catalog/": {
         parameters: {
             query?: never;
@@ -160,7 +396,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return all catalog entries as read-only presentation DTOs. */
+        /** @description List the canonical RAES-backed catalog projection. */
         get: operations["cms_catalog_list"];
         put?: never;
         post?: never;
@@ -177,7 +413,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return one catalog entry's read-only presentation DTO. */
+        /** @description Return one canonical RAES-backed catalog projection. */
         get: operations["cms_catalog_retrieve"];
         put?: never;
         post?: never;
@@ -196,8 +432,267 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Validate and register a pack, returning a bounded 201 summary. */
+        /** @description Register an untrusted pack through the uniform ingestion service. */
         post: operations["cms_catalog_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/model-source-options/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Discover source choices under the current session authority. */
+        get: operations["cms_model_source_options_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-ranges/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List model-enabled ranges in administrable tenant workspaces. */
+        get: operations["cms_organizations_model_ranges_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-source-users/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Search tenant members eligible for explicit source-use grants. */
+        get: operations["cms_organizations_model_source_users_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List and create sources for an administrable organization. */
+        get: operations["cms_organizations_model_sources_retrieve"];
+        put?: never;
+        /** @description List and create sources for an administrable organization. */
+        post: operations["cms_organizations_model_sources_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace a source only at its expected revision. */
+        put: operations["cms_organizations_model_sources_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/{source_id}/retire-credentials/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Retire obsolete credentials after checking live references. */
+        post: operations["cms_organizations_model_sources_retire_credentials_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/model-sources/available/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List sources explicitly available to the current actor. */
+        get: operations["cms_organizations_model_sources_available_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate and install an organization-owned scenario pack. */
+        post: operations["cms_organizations_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List packs that the organization administrator can bind. */
+        get: operations["cms_organizations_plugin_packs_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugin-packs/{pack_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Inspect verified guests and update the organization's binding. */
+        get: operations["cms_organizations_plugin_packs_retrieve"];
+        put?: never;
+        /** @description Inspect verified guests and update the organization's binding. */
+        post: operations["cms_organizations_plugin_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Organization administrators install their own plugins without staff status. */
+        get: operations["cms_organizations_plugins_retrieve"];
+        put?: never;
+        /** @description Organization administrators install their own plugins without staff status. */
+        post: operations["cms_organizations_plugins_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/organizations/{organization_uuid}/plugins/{plugin_id}/actions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Apply authorized lifecycle actions to an organization's adapter. */
+        post: operations["cms_organizations_plugins_actions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/preparation-adapter-grants/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Grant selection is read-only; cloud authority is installed separately. */
+        get: operations["cms_preparation_adapter_grants_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/preparation-adapters/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List private registrations only for authorized administrators. */
+        get: operations["cms_preparation_adapters_list"];
+        put?: never;
+        /** @description Register another compatible private image without changing platform code. */
+        post: operations["cms_preparation_adapters_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/preparation-adapters/{adapter_id}/state/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Lifecycle authority remains independent of cloud-grant administration. */
+        post: operations["cms_preparation_adapters_state_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -239,7 +734,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/cms/scenario-editor/scenarios/": {
+    "/api/v1/cms/ranges/{request_id}/model-sources/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read or replace model sources under range administration authority. */
+        get: operations["cms_ranges_model_sources_retrieve"];
+        /** @description Read or replace model sources under range administration authority. */
+        put: operations["cms_ranges_model_sources_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/ranges/{request_id}/model-sources/revoke/": {
         parameters: {
             query?: never;
             header?: never;
@@ -248,99 +761,47 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Create a custom scenario through the scenario-editor service layer. */
-        post: operations["cms_scenario_editor_scenarios_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Return full structural detail (or a read-only RAES projection). */
-        get: operations["cms_scenario_editor_scenarios_retrieve"];
-        put?: never;
-        post?: never;
-        /** @description Soft-delete a custom scenario through the service layer. */
-        delete: operations["cms_scenario_editor_scenarios_destroy"];
-        options?: never;
-        head?: never;
-        /** @description Replace a custom scenario's definition through the service layer. */
-        patch: operations["cms_scenario_editor_scenarios_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Clone the source scenario through the service layer. */
-        post: operations["cms_scenario_editor_scenarios_clone_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Return the scenario's YAML rendering (metadata overlay stripped). */
-        get: operations["cms_scenario_editor_scenarios_export_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** @description Apply an explicit desired-state metadata update through the service layer. */
-        patch: operations["cms_scenario_editor_scenarios_metadata_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
         /**
-         * @description Return the bounded realizability assessment, or 404 for an unknown scenario.
+         * @description Revoke a range's model grants under range-administration authority (M09, #2126).
          *
-         *     A non-realizable or indeterminate result is a successful response with
-         *     gaps -- the author needs to read them. Only an unknown scenario is an
-         *     error.
+         *     Session/CSRF or a ``model-access:range:write`` scoped token; the service
+         *     re-checks workspace authority and fences the current generation's grants and
+         *     dispatch leases with real-actor audit. Revocation never proves provider
+         *     cancellation, refunds spend or releases outstanding liabilities.
          */
-        get: operations["cms_scenario_editor_scenarios_realizability_retrieve"];
+        post: operations["cms_ranges_model_sources_revoke_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/ranges/{request_id}/workspace/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Reassign a range's workspace scope. Staff + rebind op in both scopes. */
+        post: operations["api_v1_cms_range_workspace_rebind"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenarios/{scenario_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return a read-only RAES scenario detail projection. */
+        get: operations["cms_scenarios_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -349,7 +810,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
+    "/api/v1/cms/scenarios/{scenario_id}/metadata/": {
         parameters: {
             query?: never;
             header?: never;
@@ -358,15 +819,67 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Create a custom scenario through the scenario-editor service layer. */
-        post: operations["cms_scenario_editor_scenarios_from_yaml_create"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Update the availability/audience overlay for a RAES package source. */
+        patch: operations["cms_scenarios_metadata_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/cms/scenarios/{scenario_id}/realizability/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the backend realizability assessment for one RAES source. */
+        get: operations["cms_scenarios_realizability_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/cms/scenario-editor/validate-yaml/": {
+    "/api/v1/cms/workspaces/{workspace_uuid}/range-scoping/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paginated ranges scoped to a workspace by its public UUID. Staff + list op. */
+        get: operations["api_v1_cms_workspace_range_scope_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credentials/personal/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List the current user's safe personal credential metadata. */
+        get: operations["credentials_personal_retrieve"];
+        put?: never;
+        /** @description Issue one bounded personal credential and return its proof once. */
+        post: operations["credentials_personal_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credentials/personal/{credential_uuid}/revoke/": {
         parameters: {
             query?: never;
             header?: never;
@@ -375,8 +888,77 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Return a domain validation result for YAML editor callers. */
-        post: operations["cms_scenario_editor_validate_yaml_create"];
+        /** @description Idempotently revoke an owned personal credential. */
+        post: operations["credentials_personal_revoke_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credentials/personal/{credential_uuid}/rotate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Issue a replacement and revoke the selected old credential. */
+        post: operations["credentials_personal_rotate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credentials/services/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List safe service-principal admission metadata. */
+        get: operations["credentials_services_retrieve"];
+        put?: never;
+        /** @description Register a native Google service identity admission. */
+        post: operations["credentials_services_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credentials/services/{credential_uuid}/disable/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Disable admission while retaining its audit identity. */
+        post: operations["credentials_services_disable_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credentials/services/principals/{principal_uuid}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Apply lifecycle or contact changes without transferring identity. */
+        post: operations["credentials_services_principals_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -541,6 +1123,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/communications/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Create or list campaigns within one authorized workspace. */
+        get: operations["ctf_communications_list"];
+        put?: never;
+        /** @description Create or list campaigns within one authorized workspace. */
+        post: operations["ctf_communications_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Project a campaign only after complete-target authorization. */
+        get: operations["ctf_communications_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Cancel unclaimed work for an authorized campaign. */
+        post: operations["ctf_communications_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/release/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Accept a release or schedule declaration through the ledger. */
+        post: operations["ctf_communications_release_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/communications/{campaign_id}/revisions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Append validated content to an authorized draft campaign. */
+        post: operations["ctf_communications_revisions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/": {
         parameters: {
             query?: never;
@@ -548,10 +1216,26 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the organizer's events. */
+        /**
+         * @description Return the events the actor may administer (authority-aware, bounded).
+         *
+         *     A platform administrator sees all live events; an ordinary organizer sees
+         *     owned plus live staff-assigned events. Search/status/owner/ordering are
+         *     allowlisted data filters; the admin path is bounded to the canonical page
+         *     size. The v1 ``{"events": [...]}`` envelope is unchanged (ADR-040).
+         */
         get: operations["ctf_events_list"];
         put?: never;
-        /** @description Create an event from the request body. */
+        /**
+         * @description Create an event from the request body.
+         *
+         *     Creation is organizer authority, never the platform-admin override
+         *     (ADR-052): a new event has no existing event on which to resolve override
+         *     authority, and creation makes the actor ``created_by``. The list GET is
+         *     admitted for organizers or platform admins, but POST requires a genuine
+         *     CTF organizer, so a pure superuser cannot create an event and acquire
+         *     ownership.
+         */
         post: operations["ctf_events_create"];
         delete?: never;
         options?: never;
@@ -566,7 +1250,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the full event detail projection. */
+        /** @description Return the full event detail projection with owner and access context. */
         get: operations["ctf_events_retrieve"];
         /** @description Update mutable fields of an owned event. */
         put: operations["ctf_events_update"];
@@ -717,23 +1401,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ctf/events/{event_id}/invitations/send/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Rate-limit, enforce ownership, then queue the invitation emails. */
-        post: operations["ctf_events_invitations_send_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/ctf/events/{event_id}/lifecycle/": {
         parameters: {
             query?: never;
@@ -751,6 +1418,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/model-access/assessment/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Organizer read of an event's bounded model-access capacity assessment.
+         *
+         *     Returns only the safe summary — outcome, whether it blocks, the partition and
+         *     bounded reason codes. Raw quota limits, usage figures and account identifiers
+         *     stay operator-only. A ``None`` assessment (model access disabled, no
+         *     declaration, or the assessment itself unavailable) reports ``available:false``
+         *     with empty fields, never a fabricated positive decision.
+         */
+        get: operations["ctf_events_model_access_assessment_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/notifications/": {
         parameters: {
             query?: never;
@@ -761,8 +1453,7 @@ export interface paths {
         /** @description Return the notifications for an owned event, newest first. */
         get: operations["ctf_events_notifications_retrieve"];
         put?: never;
-        /** @description Send an announcement to an owned event from the request body. */
-        post: operations["ctf_events_notifications_create"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -844,6 +1535,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/principal-participants/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admit an existing service principal into one event. */
+        post: operations["ctf_events_principal_participants_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/ranges/": {
         parameters: {
             query?: never;
@@ -872,6 +1580,23 @@ export interface paths {
         put?: never;
         /** @description Enqueue (or coalesce onto) a background spin-up task and return 202 immediately. */
         post: operations["ctf_events_ranges_provision_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/registration-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the bounded pending queue for one authorized event. */
+        get: operations["ctf_events_registration_requests_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -992,6 +1717,23 @@ export interface paths {
         put?: never;
         /** @description Reschedule the task to now; the scheduler executes it on its next poll. */
         post: operations["ctf_events_tasks_run_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/transfer-ownership/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Promote a current co-organizer to owner; the previous owner stays a co-organizer. */
+        post: operations["ctf_events_transfer_ownership_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1161,6 +1903,116 @@ export interface paths {
         };
         /** @description Return the current-event projection, or 404 when there is none. */
         get: operations["ctf_me_event_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/communications/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List retained messages for the current participant and event. */
+        get: operations["ctf_communication_inbox_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Fetch one message within the authorized participant inbox. */
+        get: operations["ctf_me_events_communications_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/acknowledge/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Record acknowledgement under the pinned message policy. */
+        post: operations["ctf_me_events_communications_acknowledge_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/communications/{snapshot_id}/read/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Record an explicit, idempotent read interaction. */
+        post: operations["ctf_me_events_communications_read_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/events/{event_id}/participant/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the current-event projection for the authenticated principal. */
+        get: operations["ctf_me_events_participant_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/model-access/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Return the participant's own range model-access status: state and allowed aliases.
+         *
+         *     Range-scoped and redacted (management-preflight-2126.md): the participant sees
+         *     only their range's availability state and the logical model aliases they may
+         *     use. Provider/account identifiers, regions, source coordinates, rosters,
+         *     bindings and other members' usage never appear. An absent or unrealized range
+         *     reports ``unavailable`` with no aliases.
+         */
+        get: operations["ctf_me_model_access_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1374,40 +2226,6 @@ export interface paths {
         put?: never;
         /** @description Validate, apply, and audit the self-rename; return the fresh profile. */
         post: operations["ctf_me_username_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/ctf/notifications/{notification_id}/cancel-schedule/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Revert the notification to draft and cancel its scheduler task. */
-        post: operations["ctf_notifications_cancel_schedule_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/ctf/notifications/{notification_id}/send/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Resolve the notification, enforce ownership, then send it. */
-        post: operations["ctf_notifications_send_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1672,26 +2490,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ctf/participants/{participant_id}/resend-invite/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @deprecated
-         * @description Rate-limit, enforce ownership, then resend non-secret login information.
-         */
-        post: operations["ctf_participants_resend_invite_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/ctf/participants/{participant_id}/role/": {
         parameters: {
             query?: never;
@@ -1831,6 +2629,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/registration-requests/{request_id}/disposition/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate authority and apply exactly one terminal disposition. */
+        post: operations["ctf_registration_requests_disposition_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/scenarios/": {
         parameters: {
             query?: never;
@@ -1875,7 +2690,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Soft-delete the webhook after ownership checks. */
+        /** @description Soft-delete the webhook; the service asserts the config capability on its event. */
         delete: operations["ctf_webhooks_destroy"];
         options?: never;
         head?: never;
@@ -2095,6 +2910,23 @@ export interface paths {
         };
         /** @description Return the active range and connection URLs for the request user. */
         get: operations["api_v1_mission_control_range_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/{request_id}/cleanup-outcome/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the cleanup outcome for the owned range's request_id. */
+        get: operations["api_v1_mission_control_range_cleanup_outcome"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2392,6 +3224,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/model-access/bindings/drain/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Withdraw a binding (terminal revision + membership fence) under a CAS fence. */
+        post: operations["model_access_bindings_drain_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-access/bindings/policy-preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Preview the compiled effective policy for a subject: overlaps, conflicts, routings. */
+        post: operations["model_access_bindings_policy_preview_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-access/bindings/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Publish the next immutable binding revision under an optimistic CAS fence. */
+        post: operations["model_access_bindings_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-access/bindings/selector-preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Preview a selector's matched members and reason codes. Advisory, not authority. */
+        post: operations["model_access_bindings_selector_preview_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-access/bindings/validate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate a binding+pool draft against the pinned catalog. Confers no authority. */
+        post: operations["model_access_bindings_validate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/": {
         parameters: {
             query?: never;
@@ -2439,6 +3356,214 @@ export interface paths {
         put?: never;
         /** @description Archive a workspace (reversible soft-state marker). */
         post: operations["api_v1_workspace_archive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/direct-assignments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Change a direct principal or group action assignment. */
+        post: operations["workspaces_authorization_direct_assignments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/groups/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List or create display-only groups within an authorized workspace. */
+        get: operations["workspaces_authorization_groups_list"];
+        put?: never;
+        /** @description List or create display-only groups within an authorized workspace. */
+        post: operations["workspaces_authorization_groups_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/groups/{group_uuid}/memberships/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Accept exact-principal membership changes for a scoped native group. */
+        post: operations["workspaces_authorization_groups_memberships_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/operations/{operation_uuid}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read or explicitly reconcile an authorized workspace mutation. */
+        get: operations["workspaces_authorization_operations_retrieve"];
+        put?: never;
+        /** @description Read or explicitly reconcile an authorized workspace mutation. */
+        post: operations["workspaces_authorization_operations_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/policies/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List or create display-only policies within an authorized workspace. */
+        get: operations["workspaces_authorization_policies_list"];
+        put?: never;
+        /** @description List or create display-only policies within an authorized workspace. */
+        post: operations["workspaces_authorization_policies_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/policies/{policy_uuid}/actions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Change the explicit actions granted to a scoped custom policy. */
+        post: operations["workspaces_authorization_policies_actions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/policies/{policy_uuid}/assignments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Accept principal or group assignments to a scoped custom policy. */
+        post: operations["workspaces_authorization_policies_assignments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/authorization/predefined-assignments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Accept assignment of closed administrator policies at workspace scope. */
+        post: operations["workspaces_authorization_predefined_assignments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/egress-policy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945). */
+        put: operations["api_v1_workspace_set_egress_policy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/invitations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List invitation projections visible to the authorized actor. */
+        get: operations["api_v1_workspace_invitations_list"];
+        put?: never;
+        /** @description Issue and deliver one current workspace invitation. */
+        post: operations["api_v1_workspace_invitations_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/resend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Rotate and resend one authorized current invitation. */
+        post: operations["api_v1_workspace_invitations_resend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/revoke/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revoke one authorized current invitation. */
+        post: operations["api_v1_workspace_invitations_revoke"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2531,6 +3656,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_uuid}/quota/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Read a workspace's resource quota usage and recent decisions (owner/admin, PLAT-239).
+         *
+         *     Read-only. Usage against configured limits and the recent quota decisions let
+         *     an administrator see when and why a cap applied. Quota *policy* is authored
+         *     only through the superuser-only Django-admin escape hatch, never here.
+         */
+        get: operations["api_v1_workspace_quota"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_uuid}/restore/": {
         parameters: {
             query?: never;
@@ -2559,6 +3707,40 @@ export interface paths {
         put?: never;
         /** @description Transfer workspace ownership to an existing member (owner-only). */
         post: operations["api_v1_workspace_transfer_ownership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/authorization/catalog/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Expose the closed action vocabulary to authenticated callers. */
+        get: operations["workspaces_authorization_catalog_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/authorization/predefined-catalog/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Expose immutable predefined policy definitions to authenticated callers. */
+        get: operations["workspaces_authorization_predefined_catalog_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2661,14 +3843,65 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Per-dimension count of accounts the policy references (never balances). */
+        AccountSummary: {
+            capacity: number;
+            spend: number;
+            rate: number;
+            concurrency: number;
+        };
+        /**
+         * @description * `none` - none
+         *     * `read` - read
+         *     * `explicit` - explicit
+         * @enum {string}
+         */
+        AcknowledgementPolicyEnum: "none" | "read" | "explicit";
         /**
          * @description * `user` - User
          *     * `apikey` - API Key
          *     * `system` - System
          *     * `cognito` - Cognito
+         *     * `principal` - Principal
          * @enum {string}
          */
-        ActorTypeEnum: "user" | "apikey" | "system" | "cognito";
+        ActorTypeEnum: "user" | "apikey" | "system" | "cognito" | "principal";
+        /** @description Select existing authority without returning its private cloud configuration. */
+        AdapterGrantView: {
+            /** Format: uuid */
+            id: string;
+            active: boolean;
+            /** Format: date-time */
+            verified_at: string | null;
+        };
+        /** @description Only an existing grant and the closed versioned manifest enter installation. */
+        AdapterInstall: {
+            /** Format: uuid */
+            grant_id: string;
+            manifest: unknown;
+        };
+        /** @description Lifecycle changes retain immutable registration and cleanup references. */
+        AdapterState: {
+            state: components["schemas"]["AdapterStateStateEnum"];
+        };
+        /**
+         * @description * `enabled` - enabled
+         *     * `disabled` - disabled
+         *     * `retired` - retired
+         * @enum {string}
+         */
+        AdapterStateStateEnum: "enabled" | "disabled" | "retired";
+        /** @description Private administrative detail, never a public discovery/catalog response. */
+        AdapterView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            grant_id: string;
+            scope_digest: string;
+            manifest_digest: string;
+            manifest: unknown;
+            state: string;
+        };
         /** @description Add-existing-account command. */
         AddWorkspaceMember: {
             /** Format: email */
@@ -2701,6 +3934,8 @@ export interface components {
             readonly organizer_grant_source: string;
             readonly must_change_password: boolean;
             readonly groups: string[];
+            readonly lifecycle_state: string;
+            readonly available_actions: string[];
         };
         /**
          * @description Read-only summary of a user for the Administer list.
@@ -2726,6 +3961,12 @@ export interface components {
             /** Format: date-time */
             readonly last_login: string | null;
         };
+        /** @description Validate admission of one existing service principal into an event. */
+        AdmitPrincipalParticipant: {
+            /** Format: uuid */
+            principal_uuid: string;
+            name: string;
+        };
         /** @description One entry from ``cms.services.list_agents`` (``_agent_projection_dict``). */
         AgentListItem: {
             id: number;
@@ -2740,9 +3981,16 @@ export interface components {
             agent_type: components["schemas"]["AgentTypeEnum"];
             agent_type_display: string;
         };
-        /** @description Response body for ``AgentListView.get``. */
+        /**
+         * @description Response body for ``AgentListView.get``.
+         *
+         *     ``max_file_size_bytes`` is the server-owned per-file upload ceiling (bytes)
+         *     the SPA reads to guard uploads before initiation, so the frontend limit
+         *     cannot drift from the value the backend enforces.
+         */
         AgentListResponse: {
             agents: components["schemas"]["AgentListItem"][];
+            max_file_size_bytes: number;
         };
         /**
          * @description * `xdr` - xdr
@@ -2751,6 +3999,22 @@ export interface components {
          * @enum {string}
          */
         AgentTypeEnum: "xdr" | "xdr_collector" | "cloud_identity_engine";
+        /** @description The routing affinity chosen for one logical alias. */
+        AliasRouting: {
+            logical_alias: string;
+            affinity: string;
+        };
+        /** @description Compatible sources and mixing policy for one logical alias. */
+        AliasSourceOptions: {
+            logical_alias: string;
+            multiple_allowed: boolean;
+            sources: components["schemas"]["ModelSourceView"][];
+        };
+        /** @description Chosen source revisions for a logical model alias. */
+        AliasSourceSelection: {
+            logical_alias: string;
+            sources: components["schemas"]["SourceChoice"][];
+        };
         /**
          * @description Schema-only component for the canonical platform API error envelope.
          *
@@ -2796,6 +4060,8 @@ export interface components {
             readonly action: string;
             readonly actor_type: components["schemas"]["ActorTypeEnum"];
             readonly actor_id: number | null;
+            /** Format: uuid */
+            readonly actor_principal_uuid: string | null;
             /** Format: date-time */
             readonly timestamp: string;
             readonly previous_state: unknown;
@@ -2806,6 +4072,59 @@ export interface components {
             readonly user_agent: string;
             readonly request_id: string;
         };
+        /**
+         * @description * `workload-identity` - workload-identity
+         *     * `stored-credential` - stored-credential
+         * @enum {string}
+         */
+        AuthenticationEnum: "workload-identity" | "stored-credential";
+        /** @description One closed action-catalog entry. */
+        AuthorizationAction: {
+            readonly code: string;
+            readonly target_type: string;
+            readonly administrative: boolean;
+            readonly delegable: boolean;
+            readonly principal_kinds: string[];
+        };
+        /**
+         * @description * `principal` - principal
+         *     * `group` - group
+         * @enum {string}
+         */
+        AuthorizationAssignmentSubjectKindEnum: "principal" | "group";
+        /** @description UUID-only group/policy display metadata. */
+        AuthorizationMetadata: {
+            /** Format: uuid */
+            readonly uuid: string;
+            readonly name: string;
+            readonly description: string;
+            readonly predefined_code: string;
+            readonly is_active: boolean;
+        };
+        /** @description Bounded durable-operation projection. */
+        AuthorizationMutation: {
+            /** Format: uuid */
+            readonly operation_id: string;
+            readonly state: components["schemas"]["AuthorizationOperationStateEnum"];
+        };
+        /** @description Bounded operation-status projection with no provider payload. */
+        AuthorizationOperation: {
+            /** Format: uuid */
+            readonly uuid: string;
+            readonly relationship_kind: components["schemas"]["RelationshipKindEnum"];
+            readonly action: string;
+            readonly effect: components["schemas"]["EffectEnum"];
+            readonly state: components["schemas"]["AuthorizationOperationStateEnum"];
+            readonly outcome_reason: string;
+        };
+        /**
+         * @description * `requested` - requested
+         *     * `confirmed` - confirmed
+         *     * `denied` - denied
+         *     * `unresolved` - unresolved
+         * @enum {string}
+         */
+        AuthorizationOperationStateEnum: "requested" | "confirmed" | "denied" | "unresolved";
         /** @description One organizer-granted award row (CTF-204). */
         Award: {
             readonly id: string;
@@ -2823,21 +4142,20 @@ export interface components {
             points: number;
             reason: string;
         };
+        /** @description A binding + pool draft. Owner services revalidate the closed contracts. */
+        BindingDraft: {
+            binding: {
+                [key: string]: unknown;
+            };
+            pool: {
+                [key: string]: unknown;
+            };
+        };
         /** @description Top-level SPA bootstrap payload. */
         Bootstrap: {
             principal: components["schemas"]["BootstrapPrincipal"];
             permissions: components["schemas"]["BootstrapPermissions"];
             modes: components["schemas"]["BootstrapModes"];
-            feature_flags: components["schemas"]["BootstrapFeatureFlags"];
-        };
-        /** @description Server-owned feature flags surfaced to the SPA (no secret values). */
-        BootstrapFeatureFlags: {
-            platform_spa: boolean;
-            mission_control_spa: boolean;
-            scenario_editor_spa: boolean;
-            ctf_workspace_spa: boolean;
-            raes_native_provisioning: boolean;
-            administer_spa: boolean;
         };
         /** @description UX mode eligibility (participant/operator). Not an authorization fact. */
         BootstrapModes: {
@@ -2850,9 +4168,12 @@ export interface components {
             can_access_threat_research: boolean;
             is_ctf_organizer: boolean;
             is_ctf_participant: boolean;
+            can_administer_ctf: boolean;
             can_view_users: boolean;
             can_change_users: boolean;
             can_delete_users: boolean;
+            can_manage_adapters?: boolean;
+            can_manage_model_sources?: boolean;
         };
         /** @description Authenticated principal summary for the SPA shell. */
         BootstrapPrincipal: {
@@ -2863,12 +4184,16 @@ export interface components {
             is_staff: boolean;
             is_superuser: boolean;
         };
+        /** @description A bounded page; offset advances across authorized workspace candidates. */
+        CampaignList: {
+            results: components["schemas"]["CommunicationCampaignSummary"][];
+            next_offset: number | null;
+        };
         /**
          * @description Read-only catalog entry projection for the CMS catalog API.
          *
          *     Serializes the presentation DTO from ``cms.scenarios.catalog_presentation``.
-         *     ``raes`` is present only for RAES package-backed entries; legacy YAML/DB
-         *     entries serialize it as ``null``.
+         *     Every emitted entry is backed by a RAES package source.
          */
         CatalogEntry: {
             readonly id: string;
@@ -3015,11 +4340,11 @@ export interface components {
             role: components["schemas"]["WorkspaceRoleEnum"];
         };
         /**
-         * @description * `ssh` - ssh
-         *     * `rdp` - rdp
+         * @description * `in_app` - in_app
+         *     * `email` - email
          * @enum {string}
          */
-        ChannelEnum: "ssh" | "rdp";
+        ChannelsEnum: "in_app" | "email";
         /** @description Defer or cancel the pending automated range cleanup (CTF-1003). */
         CleanupControlRequest: {
             action: components["schemas"]["CleanupControlRequestActionEnum"];
@@ -3031,11 +4356,264 @@ export interface components {
          * @enum {string}
          */
         CleanupControlRequestActionEnum: "defer" | "cancel";
+        /** @description One retained cleanup obligation (#2086, ADR-063-R4). */
+        CleanupObligation: {
+            code: string;
+            detail: string;
+        };
+        /** @description Closed audience variants; semantics remain in the domain contract. */
+        CommunicationAudience: {
+            kind: components["schemas"]["CommunicationAudienceKindEnum"];
+            participant_ids?: string[];
+            team_ids?: string[];
+            event_ids?: string[];
+        } & ({
+            kind: string & "participant";
+            participant_ids: string[];
+        } | {
+            kind: string & "participant_set";
+            participant_ids: string[];
+        } | {
+            kind: string & "team";
+            team_ids: string[];
+        } | {
+            kind: string & "event";
+            event_ids: string[];
+        } | {
+            kind: string & "multi_event";
+            event_ids: string[];
+        });
+        /**
+         * @description * `participant` - participant
+         *     * `participant_set` - participant_set
+         *     * `team` - team
+         *     * `event` - event
+         *     * `multi_event` - multi_event
+         * @enum {string}
+         */
+        CommunicationAudienceKindEnum: "participant" | "participant_set" | "team" | "event" | "multi_event";
+        /** @description Organizer-facing campaign summary; carries shape and counts, never recipients. */
+        CommunicationCampaignSummary: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly title: string;
+            readonly status: string;
+            readonly origin: string;
+            readonly channels: string[];
+            readonly acknowledgement_policy: string;
+            /** @description Return the number of events the campaign targets (no identities exposed). */
+            readonly target_event_count: number;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Organizer authoring input; actor and provenance are always server derived. */
+        CommunicationCreate: {
+            subject: string;
+            body: string;
+            /** Format: uuid */
+            workspace_id: string;
+            title: string;
+            target_event_ids: string[];
+            audience_spec: components["schemas"]["CommunicationAudience"];
+            trigger_spec: components["schemas"]["CommunicationTrigger"];
+            channels: components["schemas"]["ChannelsEnum"][];
+            /** @default none */
+            acknowledgement_policy: components["schemas"]["AcknowledgementPolicyEnum"];
+        };
+        /** @description Actions with no caller-controlled state. */
+        CommunicationEmpty: Record<string, never>;
+        /**
+         * @description One inbox item for the requesting participant (never another's).
+         *
+         *     Bound to a ``RecipientSnapshot`` with its intent, revision, and receipt. The
+         *     encrypted delivery coordinate, the participant email, and every other
+         *     recipient are intentionally absent from the declared fields.
+         */
+        CommunicationInboxItem: {
+            /** Format: uuid */
+            readonly message_id: string;
+            readonly subject: string;
+            readonly body: string;
+            readonly content_profile: string;
+            readonly origin: string;
+            readonly acknowledgement_policy: string;
+            /** Format: date-time */
+            readonly read_at: string | null;
+            /** Format: date-time */
+            readonly acknowledged_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string | null;
+        };
+        /** @description Acceptance is distinct from channel delivery or participant interaction. */
+        CommunicationIntent: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: string;
+            /** Format: date-time */
+            readonly due_at: string | null;
+            /** Format: date-time */
+            readonly released_at: string | null;
+        };
+        /** @description Stable occurrence identity; scheduling time comes from the pinned trigger. */
+        CommunicationRelease: {
+            occurrence_key: string;
+            /** Format: uuid */
+            revision_id?: string;
+        };
+        /** @description Append-only content revision input. */
+        CommunicationRevision: {
+            subject: string;
+            body: string;
+        };
+        /** @description Typed trigger fields with UTC/reference rules delegated to the domain. */
+        CommunicationTrigger: {
+            kind: components["schemas"]["CommunicationTriggerKindEnum"];
+            due_at?: string;
+            event_status?: string;
+            declaration_ref?: string;
+            occurrence_ref?: string;
+        } & ({
+            kind: string & "manual";
+        } | {
+            kind: string & "absolute_time";
+            due_at: string;
+        } | {
+            kind: string & "event_lifecycle";
+            event_status: string;
+        } | {
+            kind: string & "raes_occurrence";
+            declaration_ref: string;
+            occurrence_ref: string;
+        } | {
+            kind: string & "range_signal";
+            declaration_ref: string;
+        });
+        /**
+         * @description * `manual` - manual
+         *     * `event_lifecycle` - event_lifecycle
+         *     * `absolute_time` - absolute_time
+         *     * `raes_occurrence` - raes_occurrence
+         *     * `range_signal` - range_signal
+         * @enum {string}
+         */
+        CommunicationTriggerKindEnum: "manual" | "event_lifecycle" | "absolute_time" | "raes_occurrence" | "range_signal";
         /** @description One entry from ``mission_control.utils.build_connection_urls``. */
         ConnectionUrl: {
             uuid: string | null;
             terminal_url: string;
         };
+        /** @description Closed custom group/policy creation command. */
+        CreateAuthorizationMetadata: {
+            name: string;
+            /** @default  */
+            description: string;
+        };
+        /** @description Validate a closed native service admission command. */
+        CreateServiceCredential: {
+            name: string;
+            subject: string;
+            scopes: components["schemas"]["CreateServiceCredentialScopesEnum"][];
+            /** Format: uuid */
+            principal_uuid?: string | null;
+        };
+        /**
+         * @description * `authorization:account.create_event` - authorization:account.create_event
+         *     * `authorization:account.delegate_authorization` - authorization:account.delegate_authorization
+         *     * `authorization:account.delete` - authorization:account.delete
+         *     * `authorization:account.manage_authorization` - authorization:account.manage_authorization
+         *     * `authorization:account.manage_members` - authorization:account.manage_members
+         *     * `authorization:account.manage_organizations` - authorization:account.manage_organizations
+         *     * `authorization:account.read` - authorization:account.read
+         *     * `authorization:account.update` - authorization:account.update
+         *     * `authorization:event.delegate_authorization` - authorization:event.delegate_authorization
+         *     * `authorization:event.delete` - authorization:event.delete
+         *     * `authorization:event.manage` - authorization:event.manage
+         *     * `authorization:event.manage_awards` - authorization:event.manage_awards
+         *     * `authorization:event.manage_challenges` - authorization:event.manage_challenges
+         *     * `authorization:event.manage_communications` - authorization:event.manage_communications
+         *     * `authorization:event.manage_config` - authorization:event.manage_config
+         *     * `authorization:event.manage_content` - authorization:event.manage_content
+         *     * `authorization:event.manage_lifecycle` - authorization:event.manage_lifecycle
+         *     * `authorization:event.manage_participants` - authorization:event.manage_participants
+         *     * `authorization:event.manage_ranges` - authorization:event.manage_ranges
+         *     * `authorization:event.manage_scoring` - authorization:event.manage_scoring
+         *     * `authorization:event.manage_staff` - authorization:event.manage_staff
+         *     * `authorization:event.manage_submissions` - authorization:event.manage_submissions
+         *     * `authorization:event.manage_teams` - authorization:event.manage_teams
+         *     * `authorization:event.participate` - authorization:event.participate
+         *     * `authorization:event.read` - authorization:event.read
+         *     * `authorization:event.transfer_ownership` - authorization:event.transfer_ownership
+         *     * `authorization:installation.delegate_authorization` - authorization:installation.delegate_authorization
+         *     * `authorization:installation.manage_accounts` - authorization:installation.manage_accounts
+         *     * `authorization:installation.manage_adapters` - authorization:installation.manage_adapters
+         *     * `authorization:installation.manage_authorization` - authorization:installation.manage_authorization
+         *     * `authorization:installation.manage_cloud_authority` - authorization:installation.manage_cloud_authority
+         *     * `authorization:installation.manage_model_sources` - authorization:installation.manage_model_sources
+         *     * `authorization:installation.manage_principals` - authorization:installation.manage_principals
+         *     * `authorization:installation.manage_service_credentials` - authorization:installation.manage_service_credentials
+         *     * `authorization:installation.read_audit` - authorization:installation.read_audit
+         *     * `authorization:installation.revoke_personal_tokens` - authorization:installation.revoke_personal_tokens
+         *     * `authorization:installation.use_personal_tokens` - authorization:installation.use_personal_tokens
+         *     * `authorization:organization.create_event` - authorization:organization.create_event
+         *     * `authorization:organization.delegate_authorization` - authorization:organization.delegate_authorization
+         *     * `authorization:organization.manage_authorization` - authorization:organization.manage_authorization
+         *     * `authorization:organization.manage_members` - authorization:organization.manage_members
+         *     * `authorization:organization.manage_workspaces` - authorization:organization.manage_workspaces
+         *     * `authorization:organization.read` - authorization:organization.read
+         *     * `authorization:organization.update` - authorization:organization.update
+         *     * `authorization:range.access` - authorization:range.access
+         *     * `authorization:range.manage` - authorization:range.manage
+         *     * `authorization:range.read` - authorization:range.read
+         *     * `authorization:workspace.archive` - authorization:workspace.archive
+         *     * `authorization:workspace.create_event` - authorization:workspace.create_event
+         *     * `authorization:workspace.delegate_authorization` - authorization:workspace.delegate_authorization
+         *     * `authorization:workspace.launch_range` - authorization:workspace.launch_range
+         *     * `authorization:workspace.manage_authorization` - authorization:workspace.manage_authorization
+         *     * `authorization:workspace.manage_egress` - authorization:workspace.manage_egress
+         *     * `authorization:workspace.manage_invitations` - authorization:workspace.manage_invitations
+         *     * `authorization:workspace.manage_members` - authorization:workspace.manage_members
+         *     * `authorization:workspace.manage_quota` - authorization:workspace.manage_quota
+         *     * `authorization:workspace.manage_range_scope` - authorization:workspace.manage_range_scope
+         *     * `authorization:workspace.publish_model_access` - authorization:workspace.publish_model_access
+         *     * `authorization:workspace.read` - authorization:workspace.read
+         *     * `authorization:workspace.restore` - authorization:workspace.restore
+         *     * `authorization:workspace.transfer` - authorization:workspace.transfer
+         *     * `authorization:workspace.update` - authorization:workspace.update
+         *     * `cms:authoring:read` - cms:authoring:read
+         *     * `cms:authoring:write` - cms:authoring:write
+         *     * `cms:preparation-adapters:read` - cms:preparation-adapters:read
+         *     * `cms:preparation-adapters:write` - cms:preparation-adapters:write
+         *     * `cms:preparation:read` - cms:preparation:read
+         *     * `cms:preparation:write` - cms:preparation:write
+         *     * `ctf:communication:read` - ctf:communication:read
+         *     * `ctf:communication:write` - ctf:communication:write
+         *     * `ctf:event:read` - ctf:event:read
+         *     * `ctf:event:write` - ctf:event:write
+         *     * `ctf:play:read` - ctf:play:read
+         *     * `ctf:play:write` - ctf:play:write
+         *     * `ctf:vpn-profile:read` - ctf:vpn-profile:read
+         *     * `mission_control:credentials:write` - mission_control:credentials:write
+         *     * `mission_control:guacamole:read` - mission_control:guacamole:read
+         *     * `mission_control:ngfw:read` - mission_control:ngfw:read
+         *     * `mission_control:ngfw:write` - mission_control:ngfw:write
+         *     * `mission_control:range:read` - mission_control:range:read
+         *     * `mission_control:range:write` - mission_control:range:write
+         *     * `mission_control:upload:write` - mission_control:upload:write
+         *     * `mission_control:vpn-profile:read` - mission_control:vpn-profile:read
+         *     * `model-access:event:read` - model-access:event:read
+         *     * `model-access:event:write` - model-access:event:write
+         *     * `model-access:operator:read` - model-access:operator:read
+         *     * `model-access:operator:write` - model-access:operator:write
+         *     * `model-access:participant:read` - model-access:participant:read
+         *     * `model-access:range:read` - model-access:range:read
+         *     * `model-access:range:write` - model-access:range:write
+         *     * `model-access:sharing:read` - model-access:sharing:read
+         *     * `model-access:sharing:write` - model-access:sharing:write
+         *     * `workspaces:membership:read` - workspaces:membership:read
+         *     * `workspaces:membership:write` - workspaces:membership:write
+         * @enum {string}
+         */
+        CreateServiceCredentialScopesEnum: "authorization:account.create_event" | "authorization:account.delegate_authorization" | "authorization:account.delete" | "authorization:account.manage_authorization" | "authorization:account.manage_members" | "authorization:account.manage_organizations" | "authorization:account.read" | "authorization:account.update" | "authorization:event.delegate_authorization" | "authorization:event.delete" | "authorization:event.manage" | "authorization:event.manage_awards" | "authorization:event.manage_challenges" | "authorization:event.manage_communications" | "authorization:event.manage_config" | "authorization:event.manage_content" | "authorization:event.manage_lifecycle" | "authorization:event.manage_participants" | "authorization:event.manage_ranges" | "authorization:event.manage_scoring" | "authorization:event.manage_staff" | "authorization:event.manage_submissions" | "authorization:event.manage_teams" | "authorization:event.participate" | "authorization:event.read" | "authorization:event.transfer_ownership" | "authorization:installation.delegate_authorization" | "authorization:installation.manage_accounts" | "authorization:installation.manage_adapters" | "authorization:installation.manage_authorization" | "authorization:installation.manage_cloud_authority" | "authorization:installation.manage_model_sources" | "authorization:installation.manage_principals" | "authorization:installation.manage_service_credentials" | "authorization:installation.read_audit" | "authorization:installation.revoke_personal_tokens" | "authorization:installation.use_personal_tokens" | "authorization:organization.create_event" | "authorization:organization.delegate_authorization" | "authorization:organization.manage_authorization" | "authorization:organization.manage_members" | "authorization:organization.manage_workspaces" | "authorization:organization.read" | "authorization:organization.update" | "authorization:range.access" | "authorization:range.manage" | "authorization:range.read" | "authorization:workspace.archive" | "authorization:workspace.create_event" | "authorization:workspace.delegate_authorization" | "authorization:workspace.launch_range" | "authorization:workspace.manage_authorization" | "authorization:workspace.manage_egress" | "authorization:workspace.manage_invitations" | "authorization:workspace.manage_members" | "authorization:workspace.manage_quota" | "authorization:workspace.manage_range_scope" | "authorization:workspace.publish_model_access" | "authorization:workspace.read" | "authorization:workspace.restore" | "authorization:workspace.transfer" | "authorization:workspace.update" | "cms:authoring:read" | "cms:authoring:write" | "cms:preparation-adapters:read" | "cms:preparation-adapters:write" | "cms:preparation:read" | "cms:preparation:write" | "ctf:communication:read" | "ctf:communication:write" | "ctf:event:read" | "ctf:event:write" | "ctf:play:read" | "ctf:play:write" | "ctf:vpn-profile:read" | "mission_control:credentials:write" | "mission_control:guacamole:read" | "mission_control:ngfw:read" | "mission_control:ngfw:write" | "mission_control:range:read" | "mission_control:range:write" | "mission_control:upload:write" | "mission_control:vpn-profile:read" | "model-access:event:read" | "model-access:event:write" | "model-access:operator:read" | "model-access:operator:write" | "model-access:participant:read" | "model-access:range:read" | "model-access:range:write" | "model-access:sharing:read" | "model-access:sharing:write" | "workspaces:membership:read" | "workspaces:membership:write";
         /**
          * @description Create-workspace command: an organization UUID and a display name.
          *
@@ -3064,6 +4642,10 @@ export interface components {
             name: string;
             credential_type: string;
         };
+        /** @description Number of obsolete credential versions retired. */
+        CredentialRetirement: {
+            retired: number;
+        };
         /** @description Envelope returned by the scenario list. */
         CtfScenarioListResponse: {
             readonly scenarios: components["schemas"]["CtfScenarioRef"][];
@@ -3073,6 +4655,17 @@ export interface components {
             readonly id: string;
             readonly name: string;
         };
+        /**
+         * @description * `AUD` - AUD
+         *     * `CAD` - CAD
+         *     * `CHF` - CHF
+         *     * `EUR` - EUR
+         *     * `GBP` - GBP
+         *     * `JPY` - JPY
+         *     * `USD` - USD
+         * @enum {string}
+         */
+        CurrencyEnum: "AUD" | "CAD" | "CHF" | "EUR" | "GBP" | "JPY" | "USD";
         /** @description Response body for ``CurrentRangeView.get``. */
         CurrentRangeResponse: {
             has_range: boolean;
@@ -3086,11 +4679,6 @@ export interface components {
             } | null;
             lifecycle: components["schemas"]["RangeLease"] | null;
             vpn_profile_available: boolean;
-        };
-        /** @description Domain-controller configuration, mirroring ``schema.DCConfig``. */
-        DCConfig: {
-            domain_name: string;
-            netbios_name: string;
         };
         /** @description Bounded active-event summary. */
         DashboardEvent: {
@@ -3117,6 +4705,47 @@ export interface components {
         DeleteSuccess: {
             readonly success: boolean;
         };
+        /** @description Assign an action directly to a principal or group. */
+        DirectActionAssignmentMutation: {
+            subject_kind: components["schemas"]["AuthorizationAssignmentSubjectKindEnum"];
+            /** Format: uuid */
+            subject_uuid: string;
+            effect: components["schemas"]["EffectEnum"];
+            idempotency_key: string;
+            action: string;
+        };
+        /** @description Drain request: the binding id and its expected definition revision. */
+        Drain: {
+            sharing_binding_id: string;
+            expected_definition_revision: number;
+        };
+        /**
+         * @description * `grant` - grant
+         *     * `revoke` - revoke
+         * @enum {string}
+         */
+        EffectEnum: "grant" | "revoke";
+        /** @description Bounded effective-policy projection: overlaps, conflicts, routings, account counts. */
+        EffectivePolicyResponse: {
+            stale: boolean;
+            is_admissible: boolean;
+            conflicts: components["schemas"]["PolicyConflict"][];
+            contributions: components["schemas"]["PolicyContribution"][];
+            alias_routings: components["schemas"]["AliasRouting"][];
+            account_summary: components["schemas"]["AccountSummary"];
+        };
+        /**
+         * @description * `deployment` - deployment
+         *     * `runtime` - runtime
+         * @enum {string}
+         */
+        EffectiveSourceEnum: "deployment" | "runtime";
+        /**
+         * @description * `status-quo` - Inherit deployment baseline
+         *     * `none` - Zero egress (no outbound NAT path)
+         * @enum {string}
+         */
+        EgressPolicyEnum: "status-quo" | "none";
         /** @description Per-event email-template override projection. */
         EmailTemplateResponse: {
             readonly id: string;
@@ -3163,11 +4792,18 @@ export interface components {
             readonly hint_count: number;
             readonly prerequisite_count: number;
         };
-        /** @description Full organizer-facing event detail projection. */
+        /** @description Full organizer-facing event detail projection with owner and access context. */
         EventDetail: {
+            readonly owner: components["schemas"]["OwnerRef"];
+            /** @description Return the closed authority source by which the actor reaches ``event``. */
+            readonly access_source: string;
+            readonly access_capabilities: string[];
             readonly id: string;
             readonly name: string;
             readonly description: string;
+            readonly public_registration_enabled: boolean;
+            /** Format: uri */
+            readonly public_registration_url: string | null;
             readonly status: string;
             /** Format: date-time */
             readonly event_start: string;
@@ -3200,6 +4836,12 @@ export interface components {
             readonly capacity_hints: {
                 [key: string]: unknown;
             };
+            readonly model_demand: {
+                [key: string]: unknown;
+            }[];
+            readonly model_sources: components["schemas"]["ModelSourceSelection"];
+            readonly workspace: string | null;
+            readonly model_source_revision: number;
             readonly logo_url: string;
             readonly visible_os_types: string[];
             readonly theme_color: string;
@@ -3223,11 +4865,23 @@ export interface components {
         EventListResponse: {
             readonly events: components["schemas"]["EventSummary"][];
         };
+        /** @description Bounded model-access capacity assessment for an event. */
+        EventModelAccessAssessment: {
+            available: boolean;
+            outcome: string | null;
+            blocking: boolean | null;
+            partition: string | null;
+            reason_codes: string[];
+        };
         /** @description Compact result returned after creating or updating an event. */
         EventMutationResult: {
             readonly id: string;
             readonly name: string;
             readonly status: string;
+        };
+        /** @description Ownership-transfer request: the target user's id (an existing co-organizer). */
+        EventOwnershipTransferRequest: {
+            user_id: number;
         };
         /** @description One organizer-authored event page (CTF-1303). */
         EventPage: {
@@ -3248,7 +4902,15 @@ export interface components {
         EventPagesResponse: {
             readonly pages: components["schemas"]["EventPage"][];
         };
-        /** @description Assignment request: organizer-tier user email plus staff role. */
+        /**
+         * @description Assignment request: organizer-tier user email plus staff role.
+         *
+         *     ``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the
+         *     v1 request contract backward-compatible (ADR-040 — a request enum is a
+         *     breaking change). The closed ``EventStaffRole`` vocabulary is still enforced
+         *     fail-closed in ``assign_event_staff``, which rejects an unknown role with a
+         *     400 (#1922).
+         */
         EventStaffAssignRequest: {
             /** Format: email */
             email: string;
@@ -3266,7 +4928,7 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string | null;
         };
-        /** @description List projection of one of an organizer's events. */
+        /** @description List projection of one event with owner and server-derived access context. */
         EventSummary: {
             readonly id: string;
             readonly name: string;
@@ -3276,6 +4938,10 @@ export interface components {
             /** Format: date-time */
             readonly event_end: string;
             readonly team_mode: boolean;
+            readonly owner: components["schemas"]["OwnerRef"];
+            /** @description Return the closed authority source by which the actor reaches ``event``. */
+            readonly access_source: string;
+            readonly access_capabilities: string[];
         };
         /**
          * @description Create/update request body: the mutable event fields only.
@@ -3287,6 +4953,7 @@ export interface components {
         EventWrite: {
             name: string;
             description?: string;
+            public_registration_enabled?: boolean;
             /** Format: date-time */
             event_start: string;
             /** Format: date-time */
@@ -3317,6 +4984,13 @@ export interface components {
             capacity_hints?: {
                 [key: string]: unknown;
             };
+            model_demand?: {
+                [key: string]: unknown;
+            }[];
+            model_sources?: components["schemas"]["ModelSourceSelection"];
+            /** Format: uuid */
+            workspace?: string;
+            expected_model_source_revision?: number;
             /** Format: uri */
             logo_url?: string;
             visible_os_types?: string[];
@@ -3415,24 +5089,27 @@ export interface components {
             penalty?: number;
             order?: number;
         };
+        /**
+         * @description * `image` - image
+         *     * `machine-image` - machine-image
+         * @enum {string}
+         */
+        ImageKindEnum: "image" | "machine-image";
+        /** @description Project one inbox page and its continuation offset. */
+        InboxPage: {
+            results: components["schemas"]["CommunicationInboxItem"][];
+            next_offset: number | null;
+        };
         /** @description Response-only projection of ``shared.schemas.InstanceContext``. */
         InstancePresentation: {
             uuid: string | null;
             name: string;
             role: components["schemas"]["InstancePresentationRoleEnum"];
-            os_type: components["schemas"]["InstancePresentationOsTypeEnum"];
+            os_type: components["schemas"]["OsTypeEnum"];
             join_domain: boolean;
             ami_key: string | null;
             private_ip: string | null;
         };
-        /**
-         * @description * `kali` - kali
-         *     * `ubuntu` - ubuntu
-         *     * `windows` - windows
-         *     * `panos` - panos
-         * @enum {string}
-         */
-        InstancePresentationOsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
         /**
          * @description * `attacker` - attacker
          *     * `victim` - victim
@@ -3441,14 +5118,110 @@ export interface components {
          * @enum {string}
          */
         InstancePresentationRoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        /** @description Validate a closed personal credential issue or rotation command. */
+        IssuePersonalCredential: {
+            name: string;
+            scopes: components["schemas"]["IssuePersonalCredentialScopesEnum"][];
+            /** Format: date-time */
+            expires_at: string;
+            target_type: components["schemas"]["TargetTypeEnum"];
+            /** Format: uuid */
+            target_uuid?: string | null;
+        };
         /**
-         * @description * `generated` - generated
-         *     * `set` - set
+         * @description * `authorization:account.create_event` - authorization:account.create_event
+         *     * `authorization:account.delegate_authorization` - authorization:account.delegate_authorization
+         *     * `authorization:account.delete` - authorization:account.delete
+         *     * `authorization:account.manage_authorization` - authorization:account.manage_authorization
+         *     * `authorization:account.manage_members` - authorization:account.manage_members
+         *     * `authorization:account.manage_organizations` - authorization:account.manage_organizations
+         *     * `authorization:account.read` - authorization:account.read
+         *     * `authorization:account.update` - authorization:account.update
+         *     * `authorization:event.delegate_authorization` - authorization:event.delegate_authorization
+         *     * `authorization:event.delete` - authorization:event.delete
+         *     * `authorization:event.manage` - authorization:event.manage
+         *     * `authorization:event.manage_awards` - authorization:event.manage_awards
+         *     * `authorization:event.manage_challenges` - authorization:event.manage_challenges
+         *     * `authorization:event.manage_communications` - authorization:event.manage_communications
+         *     * `authorization:event.manage_config` - authorization:event.manage_config
+         *     * `authorization:event.manage_content` - authorization:event.manage_content
+         *     * `authorization:event.manage_lifecycle` - authorization:event.manage_lifecycle
+         *     * `authorization:event.manage_participants` - authorization:event.manage_participants
+         *     * `authorization:event.manage_ranges` - authorization:event.manage_ranges
+         *     * `authorization:event.manage_scoring` - authorization:event.manage_scoring
+         *     * `authorization:event.manage_staff` - authorization:event.manage_staff
+         *     * `authorization:event.manage_submissions` - authorization:event.manage_submissions
+         *     * `authorization:event.manage_teams` - authorization:event.manage_teams
+         *     * `authorization:event.participate` - authorization:event.participate
+         *     * `authorization:event.read` - authorization:event.read
+         *     * `authorization:event.transfer_ownership` - authorization:event.transfer_ownership
+         *     * `authorization:installation.delegate_authorization` - authorization:installation.delegate_authorization
+         *     * `authorization:installation.manage_accounts` - authorization:installation.manage_accounts
+         *     * `authorization:installation.manage_adapters` - authorization:installation.manage_adapters
+         *     * `authorization:installation.manage_authorization` - authorization:installation.manage_authorization
+         *     * `authorization:installation.manage_cloud_authority` - authorization:installation.manage_cloud_authority
+         *     * `authorization:installation.manage_model_sources` - authorization:installation.manage_model_sources
+         *     * `authorization:installation.manage_principals` - authorization:installation.manage_principals
+         *     * `authorization:installation.manage_service_credentials` - authorization:installation.manage_service_credentials
+         *     * `authorization:installation.read_audit` - authorization:installation.read_audit
+         *     * `authorization:installation.revoke_personal_tokens` - authorization:installation.revoke_personal_tokens
+         *     * `authorization:installation.use_personal_tokens` - authorization:installation.use_personal_tokens
+         *     * `authorization:organization.create_event` - authorization:organization.create_event
+         *     * `authorization:organization.delegate_authorization` - authorization:organization.delegate_authorization
+         *     * `authorization:organization.manage_authorization` - authorization:organization.manage_authorization
+         *     * `authorization:organization.manage_members` - authorization:organization.manage_members
+         *     * `authorization:organization.manage_workspaces` - authorization:organization.manage_workspaces
+         *     * `authorization:organization.read` - authorization:organization.read
+         *     * `authorization:organization.update` - authorization:organization.update
+         *     * `authorization:range.access` - authorization:range.access
+         *     * `authorization:range.manage` - authorization:range.manage
+         *     * `authorization:range.read` - authorization:range.read
+         *     * `authorization:workspace.archive` - authorization:workspace.archive
+         *     * `authorization:workspace.create_event` - authorization:workspace.create_event
+         *     * `authorization:workspace.delegate_authorization` - authorization:workspace.delegate_authorization
+         *     * `authorization:workspace.launch_range` - authorization:workspace.launch_range
+         *     * `authorization:workspace.manage_authorization` - authorization:workspace.manage_authorization
+         *     * `authorization:workspace.manage_egress` - authorization:workspace.manage_egress
+         *     * `authorization:workspace.manage_invitations` - authorization:workspace.manage_invitations
+         *     * `authorization:workspace.manage_members` - authorization:workspace.manage_members
+         *     * `authorization:workspace.manage_quota` - authorization:workspace.manage_quota
+         *     * `authorization:workspace.manage_range_scope` - authorization:workspace.manage_range_scope
+         *     * `authorization:workspace.publish_model_access` - authorization:workspace.publish_model_access
+         *     * `authorization:workspace.read` - authorization:workspace.read
+         *     * `authorization:workspace.restore` - authorization:workspace.restore
+         *     * `authorization:workspace.transfer` - authorization:workspace.transfer
+         *     * `authorization:workspace.update` - authorization:workspace.update
          * @enum {string}
          */
-        KindEnum: "generated" | "set";
+        IssuePersonalCredentialScopesEnum: "authorization:account.create_event" | "authorization:account.delegate_authorization" | "authorization:account.delete" | "authorization:account.manage_authorization" | "authorization:account.manage_members" | "authorization:account.manage_organizations" | "authorization:account.read" | "authorization:account.update" | "authorization:event.delegate_authorization" | "authorization:event.delete" | "authorization:event.manage" | "authorization:event.manage_awards" | "authorization:event.manage_challenges" | "authorization:event.manage_communications" | "authorization:event.manage_config" | "authorization:event.manage_content" | "authorization:event.manage_lifecycle" | "authorization:event.manage_participants" | "authorization:event.manage_ranges" | "authorization:event.manage_scoring" | "authorization:event.manage_staff" | "authorization:event.manage_submissions" | "authorization:event.manage_teams" | "authorization:event.participate" | "authorization:event.read" | "authorization:event.transfer_ownership" | "authorization:installation.delegate_authorization" | "authorization:installation.manage_accounts" | "authorization:installation.manage_adapters" | "authorization:installation.manage_authorization" | "authorization:installation.manage_cloud_authority" | "authorization:installation.manage_model_sources" | "authorization:installation.manage_principals" | "authorization:installation.manage_service_credentials" | "authorization:installation.read_audit" | "authorization:installation.revoke_personal_tokens" | "authorization:installation.use_personal_tokens" | "authorization:organization.create_event" | "authorization:organization.delegate_authorization" | "authorization:organization.manage_authorization" | "authorization:organization.manage_members" | "authorization:organization.manage_workspaces" | "authorization:organization.read" | "authorization:organization.update" | "authorization:range.access" | "authorization:range.manage" | "authorization:range.read" | "authorization:workspace.archive" | "authorization:workspace.create_event" | "authorization:workspace.delegate_authorization" | "authorization:workspace.launch_range" | "authorization:workspace.manage_authorization" | "authorization:workspace.manage_egress" | "authorization:workspace.manage_invitations" | "authorization:workspace.manage_members" | "authorization:workspace.manage_quota" | "authorization:workspace.manage_range_scope" | "authorization:workspace.publish_model_access" | "authorization:workspace.read" | "authorization:workspace.restore" | "authorization:workspace.transfer" | "authorization:workspace.update";
+        /** @description Closed invitation-issuance command. */
+        IssueWorkspaceInvitation: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["WorkspaceRoleEnum"];
+        };
+        /** @description Return a newly issued proof exactly once with its safe metadata. */
+        IssuedPersonalCredential: {
+            /** Format: uuid */
+            credential_uuid: string;
+            name: string;
+            scopes: string[];
+            /** Format: date-time */
+            expires_at: string | null;
+            /** Format: date-time */
+            revoked_at: string | null;
+            /** Format: date-time */
+            last_used_at: string | null;
+            requires_reissue: boolean;
+            target_type: string;
+            /** Format: uuid */
+            target_uuid: string | null;
+            /** @description Shown once. Never returned by list or detail operations. */
+            token: string;
+        };
         /** @description Validate range launch requests. */
         LaunchRange: {
+            model_sources?: components["schemas"]["ModelSourceSelection"];
             agents?: {
                 [key: string]: number;
             };
@@ -3462,6 +5235,26 @@ export interface components {
         LaunchRangeResponse: {
             success: boolean;
             range: components["schemas"]["RangePresentation"];
+            recovered?: boolean;
+        };
+        /** @description The canonical four-field policy projection. */
+        LeasePolicy: {
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
+        /** @description Serialize one eligible group and its optional runtime override. */
+        LeasePolicyGroupSettings: {
+            id: number;
+            name: string;
+            revision: number;
+            override: components["schemas"]["LeasePolicyOverride"] | null;
+        };
+        /** @description Serialize one complete runtime override and its revision. */
+        LeasePolicyOverride: {
+            policy: components["schemas"]["LeasePolicy"];
+            revision: number;
         };
         /**
          * @description Schema-only description of the flat ``{"error": "<message>"}`` body some
@@ -3477,6 +5270,22 @@ export interface components {
             error: string;
         };
         /**
+         * @description Explicit request body for the account lifecycle transition operation.
+         *
+         *     ``action`` is the closed set of change-permission transitions; soft deletion
+         *     is a distinct endpoint gated on ``auth.delete_user``.
+         */
+        LifecycleTransitionRequest: {
+            action: components["schemas"]["LifecycleTransitionRequestActionEnum"];
+        };
+        /**
+         * @description * `activate` - activate
+         *     * `deactivate` - deactivate
+         *     * `suspend` - suspend
+         * @enum {string}
+         */
+        LifecycleTransitionRequestActionEnum: "activate" | "deactivate" | "suspend";
+        /**
          * @description Bounded managed-content status for the organizer (issue #1971).
          *
          *     Exposes only the current revision fence and drift state so the organizer can
@@ -3487,6 +5296,153 @@ export interface components {
             readonly declared_digest: string;
             readonly state: string;
             readonly is_refreshable: boolean;
+        };
+        /** @description One resolved selector member reference. */
+        Member: {
+            owner: string;
+            reference: string;
+        };
+        /** @description Serialize the complete administrator settings projection. */
+        MissionControlLeasePolicySettings: {
+            baseline: components["schemas"]["LeasePolicy"];
+            tenant_revision: number;
+            tenant_override: components["schemas"]["LeasePolicyOverride"] | null;
+            effective_tenant: components["schemas"]["LeasePolicy"];
+            effective_source: components["schemas"]["EffectiveSourceEnum"];
+            groups: components["schemas"]["LeasePolicyGroupSettings"][];
+        };
+        /**
+         * @description * `advisory` - Advisory (soft cap)
+         *     * `enforcing` - Enforcing (hard cap)
+         * @enum {string}
+         */
+        ModeEnum: "advisory" | "enforcing";
+        /** @description Effective provider assignment for a workload alias. */
+        ModelAssignment: {
+            workload: string;
+            logical_alias: string;
+            provider: string;
+            model: string;
+            region: string;
+        };
+        /** @description Runtime availability and effective model assignments. */
+        ModelPolicyRuntime: {
+            state: components["schemas"]["ModelPolicyRuntimeStateEnum"];
+            assignments: components["schemas"]["ModelAssignment"][];
+        };
+        /**
+         * @description * `active` - active
+         *     * `refresh_pending` - refresh_pending
+         *     * `unavailable` - unavailable
+         * @enum {string}
+         */
+        ModelPolicyRuntimeStateEnum: "active" | "refresh_pending" | "unavailable";
+        /** @description Paged tenant ranges with source policy metadata. */
+        ModelRangePage: {
+            count: number;
+            page: number;
+            has_next: boolean;
+            results: components["schemas"]["ModelRangeSummary"][];
+        };
+        /** @description Range identity and source policy status for tenant administration. */
+        ModelRangeSummary: {
+            /** Format: uuid */
+            request_id: string;
+            scenario: string;
+            status: string;
+            revision: number;
+            error: string;
+        };
+        /** @description Editable metadata; the service validates provider-specific combinations. */
+        ModelSourceConfiguration: {
+            name: string;
+            provider: components["schemas"]["ModelSourceConfigurationProviderEnum"];
+            authentication: components["schemas"]["AuthenticationEnum"];
+            model: string;
+            region: string;
+            /** @default  */
+            project: string;
+            /** @default  */
+            principal: string;
+            /** @default  */
+            count_region: string;
+            quota_identity: string;
+            context_window_tokens: number;
+            /** Format: int64 */
+            tokens_per_minute: number;
+            input_price_per_million: number;
+            output_price_per_million: number;
+            /** @default USD */
+            currency: components["schemas"]["CurrencyEnum"];
+            /** Format: date-time */
+            price_valid_until: string;
+            /** @default false */
+            allow_organization_members: boolean;
+            allowed_user_ids?: number[];
+            /** @default  */
+            upstream_provider: string;
+        };
+        /**
+         * @description * `vertex-v1` - vertex-v1
+         *     * `bedrock-v1` - bedrock-v1
+         *     * `anthropic-v1` - anthropic-v1
+         *     * `openai-v1` - openai-v1
+         *     * `openrouter-v1` - openrouter-v1
+         * @enum {string}
+         */
+        ModelSourceConfigurationProviderEnum: "vertex-v1" | "bedrock-v1" | "anthropic-v1" | "openai-v1" | "openrouter-v1";
+        /** @description Collection of authorized source metadata. */
+        ModelSourcePage: {
+            results: components["schemas"]["ModelSourceView"][];
+        };
+        /** @description Explicit source choices grouped by logical alias. */
+        ModelSourceSelection: {
+            aliases: components["schemas"]["AliasSourceSelection"][];
+        };
+        /** @description Revision-fenced replacement of source configuration and status. */
+        ModelSourceUpdate: {
+            configuration: components["schemas"]["ModelSourceConfiguration"];
+            credential?: unknown;
+            expected_revision: number;
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description Tenant directory identity for an explicit source-use grant. */
+        ModelSourceUser: {
+            id: number;
+            name: string;
+            username: string;
+        };
+        /** @description Bounded directory results and continuation indicator. */
+        ModelSourceUserPage: {
+            has_next: boolean;
+            results: components["schemas"]["ModelSourceUser"][];
+        };
+        /** @description Public source metadata with credential presence only. */
+        ModelSourceView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_uuid: string;
+            revision: number;
+            enabled: boolean;
+            state: components["schemas"]["ModelSourceViewStateEnum"];
+            configuration: components["schemas"]["ModelSourceConfiguration"];
+            has_credential: boolean;
+        };
+        /**
+         * @description * `pending` - pending
+         *     * `ready` - ready
+         *     * `failed` - failed
+         *     * `retired` - retired
+         *     * `disabled` - disabled
+         * @enum {string}
+         */
+        ModelSourceViewStateEnum: "pending" | "ready" | "failed" | "retired" | "disabled";
+        /** @description Source configuration and an optional transient credential. */
+        ModelSourceWrite: {
+            configuration: components["schemas"]["ModelSourceConfiguration"];
+            credential?: unknown;
         };
         /** @description Validate NGFW creation requests. */
         NGFWCreate: {
@@ -3527,27 +5483,12 @@ export interface components {
         NGFWListResponse: {
             ngfws: components["schemas"]["NGFWListItem"][];
         };
-        /**
-         * @description Request body for sending an announcement notification.
-         *
-         *     ``subject`` and ``body`` are blank-tolerant at this layer so the view can
-         *     apply the legacy strip-then-reject rule and return the exact ``Invalid
-         *     notification request.`` 400 envelope for an empty or whitespace-only value.
-         */
-        NotificationAnnounceRequest: {
-            /** @default  */
-            subject: string;
-            /** @default  */
-            body: string;
-            /** Format: date-time */
-            scheduled_at?: string | null;
-        };
-        /** @description Result returned after creating and sending an announcement (201). */
-        NotificationAnnounceResult: {
-            readonly id: string;
-            readonly subject: string;
-            readonly status: string;
-            readonly sent_count: number;
+        /** @description Closed group-member command; subjects are public principal UUIDs. */
+        NativeMembershipMutation: {
+            /** Format: uuid */
+            principal_uuid: string;
+            effect: components["schemas"]["EffectEnum"];
+            idempotency_key: string;
         };
         /** @description List projection of one notification for an event. */
         NotificationListItem: {
@@ -3567,11 +5508,8 @@ export interface components {
         NotificationListResponse: {
             readonly notifications: components["schemas"]["NotificationListItem"][];
         };
-        /** @description Result returned after dispatching a notification to its recipients. */
-        NotificationSendResult: {
-            readonly notification_id: string;
-            readonly status: string;
-        };
+        /** @enum {unknown} */
+        NullEnum: null;
         /**
          * @description Read-only organization profile projection (ADR-048, PLAT-232).
          *
@@ -3639,7 +5577,7 @@ export interface components {
          * @description Organizer monitoring scoreboard — always the full ranking payload.
          *
          *     Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
-         *     carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+         *     carries the ``scoreboard_hidden`` state and never withholds rows: an
          *     organizer sees every ranking regardless of the event's ``scoreboard_visible``
          *     flag or freeze window. ``frozen`` is reported for display only; the rankings
          *     are computed as of now (``freeze_at=None``).
@@ -3655,6 +5593,32 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
             readonly brackets: components["schemas"]["_NamedRef"][];
+        };
+        /**
+         * @description * `kali` - kali
+         *     * `ubuntu` - ubuntu
+         *     * `windows` - windows
+         *     * `panos` - panos
+         * @enum {string}
+         */
+        OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
+        /**
+         * @description * `admitted` - Admitted
+         *     * `warned` - Warned (soft cap applied)
+         *     * `rejected` - Rejected (hard cap applied)
+         * @enum {string}
+         */
+        OutcomeEnum: "admitted" | "warned" | "rejected";
+        /**
+         * @description Bounded event-owner projection: stable id and display name only (ADR-052).
+         *
+         *     Never serializes the Django ``User``, provider subject, email, groups, or role
+         *     facts. Consumed by the organizer/platform-admin list and detail so the owner
+         *     is visible without leaking identity payload.
+         */
+        OwnerRef: {
+            readonly id: string;
+            readonly display_name: string;
         };
         /**
          * @description Validate the shape of a uniform pack-registration request body (#1578).
@@ -3673,6 +5637,8 @@ export interface components {
             package_ref: string;
             package_version: string;
             package_digest: string;
+            /** @default  */
+            expected_package_digest: string;
             /** @default  */
             lock_ref: string;
             /** @default  */
@@ -3746,6 +5712,36 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["PrincipalWorkspaceContext"][];
+        };
+        PaginatedRangeScopeBindingList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["RangeScopeBinding"][];
+        };
+        PaginatedRuntimePluginPackList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["RuntimePluginPack"][];
         };
         /**
          * @description Request body for inviting a single participant.
@@ -3947,13 +5943,29 @@ export interface components {
             readonly participants: components["schemas"]["ParticipantSummary"][];
             readonly total: number;
         };
+        /**
+         * @description Participant-safe model-access state for the participant's own range (M09).
+         *
+         *     ``state`` is one of ``active``, ``refresh_pending`` or ``unavailable`` (a plain
+         *     string in the contract to avoid an ambiguous shared ``state`` enum).
+         */
+        ParticipantModelAccess: {
+            state: string;
+            aliases: string[];
+        };
         /** @description Optional reason accompanying a ban or disqualification. */
         ParticipantModerationRequest: {
             reason?: string;
         };
+        /**
+         * @description * `generated` - generated
+         *     * `set` - set
+         * @enum {string}
+         */
+        ParticipantPasswordKindEnum: "generated" | "set";
         /** @description Closed write-only request for generated or supplied issuance. */
         ParticipantPasswordRequest: {
-            kind: components["schemas"]["KindEnum"];
+            kind: components["schemas"]["ParticipantPasswordKindEnum"];
             password?: string;
         };
         /** @description One-time participant password issuance returned by the mutation only. */
@@ -3962,7 +5974,7 @@ export interface components {
             readonly event_id: string;
             readonly username: string;
             readonly password: string;
-            readonly kind: components["schemas"]["KindEnum"];
+            readonly kind: components["schemas"]["ParticipantPasswordKindEnum"];
         };
         /** @description Event-scoped self profile (CTF-610). */
         ParticipantProfile: {
@@ -4063,15 +6075,84 @@ export interface components {
             enabled?: boolean;
             staff_only?: boolean;
         };
-        /** @description Structured update request: full definition replacement (no identity change). */
-        PatchedScenarioUpdate: {
-            name?: string;
-            description?: string;
-            /** @default false */
-            ngfw: boolean;
-            instances?: components["schemas"]["ScenarioInstance"][];
-            subnets?: components["schemas"]["ScenarioSubnet"][];
-            participant_access?: components["schemas"]["ScenarioParticipantAccess"][];
+        /** @description Project non-secret personal credential lifecycle metadata. */
+        PersonalCredential: {
+            /** Format: uuid */
+            credential_uuid: string;
+            name: string;
+            scopes: string[];
+            /** Format: date-time */
+            expires_at: string | null;
+            /** Format: date-time */
+            revoked_at: string | null;
+            /** Format: date-time */
+            last_used_at: string | null;
+            requires_reissue: boolean;
+            target_type: string;
+            /** Format: uuid */
+            target_uuid: string | null;
+        };
+        /** @description Project one bounded page of personal credential metadata. */
+        PersonalCredentialPage: {
+            count: number;
+            next_offset: number | null;
+            results: components["schemas"]["PersonalCredential"][];
+        };
+        /** @description Change an action on the policy identified only by the route. */
+        PolicyActionMutation: {
+            action: string;
+            effect: components["schemas"]["EffectEnum"];
+            idempotency_key: string;
+        };
+        /** @description One priority/facet conflict in the compiled effective policy. */
+        PolicyConflict: {
+            code: string;
+            facet: string | null;
+            logical_alias: string | null;
+        };
+        /** @description One binding contributing to the compiled effective policy. */
+        PolicyContribution: {
+            sharing_binding_id: string;
+            definition_digest: string;
+            membership_revision: number;
+            routing_revision: number;
+            priority: number;
+            matched_reason: string;
+            facets: string[];
+        };
+        /** @description Closed built-in policy/assignment-group catalog entry. */
+        PredefinedAuthorizationPolicy: {
+            readonly code: string;
+            readonly name: string;
+            readonly assignment_group_name: string;
+            readonly target_type: string;
+            readonly actions: string[];
+        };
+        /** @description Assign one catalogued administrator policy at the route's workspace. */
+        PredefinedRoleMutation: {
+            subject_kind: components["schemas"]["AuthorizationAssignmentSubjectKindEnum"];
+            /** Format: uuid */
+            subject_uuid: string;
+            effect: components["schemas"]["EffectEnum"];
+            idempotency_key: string;
+            policy_code: string;
+        };
+        /** @description Identify authored intent, never cloud configuration or executable overrides. */
+        PreparationRequest: {
+            scenario_id: string;
+            requirement_address: string;
+            /** Format: uuid */
+            adapter_id: string;
+            specification_id: string;
+        };
+        /** @description Bounded progress without private recipe or worker evidence payloads. */
+        PreparationView: {
+            /** Format: uuid */
+            id: string | null;
+            state: string;
+            failure_code: string;
+            cleanup_pending: boolean;
+            reused: boolean;
         };
         /** @description List projection of one challenge prerequisite. */
         Prerequisite: {
@@ -4096,6 +6177,15 @@ export interface components {
             /** Format: uuid */
             required_challenge_id: string;
         };
+        /** @description Project neutral principal participation identifiers. */
+        PrincipalParticipant: {
+            /** Format: uuid */
+            participant_uuid: string;
+            /** Format: uuid */
+            principal_uuid: string;
+            /** Format: uuid */
+            event_uuid: string;
+        };
         /**
          * @description One workspace the caller belongs to, with role and advisory capabilities.
          *
@@ -4112,15 +6202,41 @@ export interface components {
             readonly role: components["schemas"]["WorkspaceRoleEnum"];
             readonly capabilities: string[];
         };
+        /** @description Closed organizer decision vocabulary. */
+        PublicRegistrationDisposition: {
+            action: components["schemas"]["PublicRegistrationDispositionActionEnum"];
+        };
         /**
-         * @description Public scoreboard read surface.
-         *
-         *     The runtime returns one of two shapes: the ``{"scoreboard_hidden": true}``
-         *     sentinel when the event hides its scoreboard, or the full ranking payload
-         *     (``event_id``, ``team_mode``, ``frozen``, ``rankings``, ``bracket_rankings``,
-         *     ``brackets``). Every field is optional so this one serializer documents the
-         *     union without changing the view's runtime ``JsonResponse``.
+         * @description * `approve` - approve
+         *     * `reject` - reject
+         * @enum {string}
          */
+        PublicRegistrationDispositionActionEnum: "approve" | "reject";
+        /** @description Terminal disposition result. */
+        PublicRegistrationDispositionResult: {
+            /** Format: uuid */
+            readonly request_id: string;
+            readonly disposition: string;
+            /** Format: uuid */
+            readonly participant_id: string | null;
+        };
+        /** @description One pending request visible only to an authorized event organizer. */
+        PublicRegistrationRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+            /** Format: email */
+            readonly email: string;
+            readonly disposition: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Paginated pending-request queue. */
+        PublicRegistrationRequestListResponse: {
+            readonly requests: components["schemas"]["PublicRegistrationRequest"][];
+            readonly total: number;
+        };
+        /** @description Stable public scoreboard response for both visible and hidden boards. */
         PublicScoreboardResponse: {
             readonly scoreboard_hidden: boolean;
             readonly event_id: string;
@@ -4133,6 +6249,18 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
             readonly brackets: components["schemas"]["_NamedRef"][];
+        };
+        /** @description Publish request: a binding+pool draft under an optimistic definition-revision fence. */
+        Publish: {
+            binding: {
+                [key: string]: unknown;
+            };
+            pool: {
+                [key: string]: unknown;
+            };
+            expected_definition_revision: number;
+            /** @default false */
+            empty_snapshot_ack: boolean;
         };
         /**
          * @description Read-only, allowlisted RAES package-source presentation fields.
@@ -4182,6 +6310,22 @@ export interface components {
             disk_size_gb?: number | null;
             /** @default  */
             disk_type: string;
+            /** @default  */
+            management_ssh_username: string;
+            /** @default 22 */
+            management_ssh_port: number;
+            /** @default image */
+            image_kind: components["schemas"]["ImageKindEnum"];
+            /** @default standard */
+            bootstrap_capability: string;
+            /** @default  */
+            participant_container_name: string;
+            /** @default  */
+            participant_username: string;
+            /** @default  */
+            participant_readiness_contract: string;
+            /** @default  */
+            participant_readiness_manifest_sha256: string;
             /** @default true */
             enabled: boolean;
             /** @default  */
@@ -4214,6 +6358,14 @@ export interface components {
             readonly machine_type: string;
             readonly disk_size_gb: number | null;
             readonly disk_type: string;
+            readonly management_ssh_username: string;
+            readonly management_ssh_port: number;
+            readonly image_kind: string;
+            readonly bootstrap_capability: string;
+            readonly participant_container_name: string;
+            readonly participant_username: string;
+            readonly participant_readiness_contract: string;
+            readonly participant_readiness_manifest_sha256: string;
             readonly enabled: boolean;
             readonly notes: string;
             readonly artifact_id: string;
@@ -4312,6 +6464,22 @@ export interface components {
             readonly redirect: string;
             readonly message: string;
         };
+        /** @description Truthful range cleanup-outcome projection (#2086, ADR-063-R4). */
+        RangeCleanupOutcomeResponse: {
+            /** Format: uuid */
+            request_id: string;
+            found: boolean;
+            operation_status: string;
+            dispatch_status: string;
+            cancel_state: string;
+            cleanup: string;
+            residual_obligations: components["schemas"]["CleanupObligation"][];
+            /** Format: date-time */
+            verification_observed_at?: string | null;
+            verification_scope?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /**
          * @description One entry in the range-history list (``GET .../ranges/``, #1370).
          *
@@ -4373,6 +6541,23 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description Range source policy and its current runtime status. */
+        RangeModelSources: {
+            /** Format: uuid */
+            request_id: string;
+            /** Format: uuid */
+            workspace: string;
+            scenario: string;
+            revision: number;
+            selection: components["schemas"]["ModelSourceSelection"];
+            error: string;
+            runtime: components["schemas"]["ModelPolicyRuntime"];
+        };
+        /** @description Revision-fenced source selection for an existing range. */
+        RangeModelSourcesWrite: {
+            expected_revision: number;
+            selection: components["schemas"]["ModelSourceSelection"];
+        };
         /**
          * @description Response-only projection of ``shared.schemas.RangeContext``.
          *
@@ -4392,6 +6577,8 @@ export interface components {
             is_ready: boolean;
             is_terminal: boolean;
             is_active: boolean;
+            pause_supported: boolean;
+            resume_supported: boolean;
         };
         /** @description Acknowledgement returned when bulk range provisioning is enqueued. */
         RangeProvisionQueued: {
@@ -4424,6 +6611,36 @@ export interface components {
             readonly phase: string;
             readonly failure_category: string | null;
         };
+        /**
+         * @description Bounded, read-only projection of a range scoped to a workspace.
+         *
+         *     Explicit fields only (never a ``ModelSerializer``): no internal workspace or
+         *     range id, range spec, instance/IP/access detail, credential, or ORM object is
+         *     exposed.
+         */
+        RangeScopeBinding: {
+            /** @description Return the durable request correlation UUID, or null for a legacy request-less row. */
+            readonly request_id: string | null;
+            owner_id: number;
+            range_source: string;
+            status: string;
+            scenario_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            expires_at: string | null;
+            /**
+             * @description Whether this range's scope may be reassigned here.
+             *
+             *     Authoritative, never provenance-based: a range is reassignable when it is
+             *     addressable by a request correlation and not owned by a domain aggregate
+             *     (the set of aggregate-bound ids is resolved once per page and passed in
+             *     via ``aggregate_bound_ids``). Advisory only; the server reauthorizes.
+             */
+            readonly is_reassignable: boolean;
+        };
         /** @description Participant range status projection (or the not-assigned sentinel). */
         RangeStatusResponse: {
             readonly participant_id: string;
@@ -4451,6 +6668,15 @@ export interface components {
          * @enum {string}
          */
         RangeTypeEnum: "demo";
+        /** @description Closed request body for a scope reassignment: a target workspace UUID only. */
+        RangeWorkspaceRebindRequest: {
+            /** Format: uuid */
+            target_workspace_uuid: string;
+        };
+        /** @description Bounded result: whether the binding changed (``false`` = idempotent no-op). */
+        RangeWorkspaceRebindResult: {
+            changed: boolean;
+        };
         /** @description Participant request body for rating a challenge (1-5). */
         RateChallengeRequest: {
             value: number;
@@ -4473,11 +6699,43 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
-        /** @description Confirmation returned after resending non-secret login information. */
-        ResendLoginInfoResult: {
-            readonly success: boolean;
-            readonly id: string;
+        /** @description Write-only credentials for the isolated image pull. */
+        RegistryCredentials: {
+            username: string;
+            password: string;
         };
+        /**
+         * @description * `action` - action
+         *     * `group_member` - group_member
+         *     * `role_assign` - role_assign
+         *     * `predefined` - predefined
+         * @enum {string}
+         */
+        RelationshipKindEnum: "action" | "group_member" | "role_assign" | "predefined";
+        /** @description Strict full replacement plus expected revision. */
+        ReplaceLeasePolicy: {
+            expected_revision: number;
+            initial_days: number;
+            extension_days: number;
+            maximum_days: number;
+            extensions_enabled: boolean;
+        };
+        /** @description Strict explicit reset command. */
+        ResetLeasePolicy: {
+            expected_revision: number;
+        };
+        /**
+         * @description * `concurrent_ranges` - Concurrent ranges
+         *     * `member_seats` - Member seats
+         * @enum {string}
+         */
+        ResourceEnum: "concurrent_ranges" | "member_seats";
+        /**
+         * @description * `ranges` - ranges
+         *     * `workspaces` - workspaces
+         * @enum {string}
+         */
+        ResourceKindsEnum: "ranges" | "workspaces";
         /**
          * @description * `pending` - pending
          *     * `provisioning` - provisioning
@@ -4491,96 +6749,173 @@ export interface components {
          * @enum {string}
          */
         ResourceStatusEnum: "pending" | "provisioning" | "ready" | "pausing" | "paused" | "resuming" | "destroying" | "destroyed" | "failed";
-        /** @description Clone request body. */
-        ScenarioClone: {
-            new_scenario_id: string;
-            /** @default  */
-            new_name: string;
+        /** @description Bounded published/drained binding-revision projection. */
+        RevisionResponse: {
+            sharing_binding_id: string;
+            definition_revision: number;
+            state: string;
         };
-        /** @description Structured create request: identity plus definition. */
-        ScenarioCreate: {
-            name: string;
-            description: string;
-            /** @default false */
-            ngfw: boolean;
-            instances: components["schemas"]["ScenarioInstance"][];
-            subnets?: components["schemas"]["ScenarioSubnet"][];
-            participant_access?: components["schemas"]["ScenarioParticipantAccess"][];
-            scenario_id: string;
+        /** @description Closed policy assignment command for a principal or group. */
+        RoleAssignmentMutation: {
+            subject_kind: components["schemas"]["AuthorizationAssignmentSubjectKindEnum"];
+            /** Format: uuid */
+            subject_uuid: string;
+            effect: components["schemas"]["EffectEnum"];
+            idempotency_key: string;
         };
-        /** @description Response for a create/clone: the new scenario's identity. */
-        ScenarioCreated: {
-            readonly scenario_id: string;
-            readonly name: string;
+        /** @description An administrator lifecycle action for an installed adapter. */
+        RuntimePluginAction: {
+            action: components["schemas"]["RuntimePluginActionActionEnum"];
+            registry_credentials?: components["schemas"]["RegistryCredentials"];
         };
         /**
-         * @description Full scenario detail with source-capability flags for the editor.
-         *
-         *     ``source`` classifies the entry (``builtin`` / ``custom`` / ``raes`` /
-         *     ``ctf``) and the capability booleans tell the SPA which actions to offer.
-         *     ``instances`` / ``subnets`` are populated for structural (demo) scenarios;
-         *     ``raes`` carries the read-only provenance block for RAES entries.
+         * @description * `disable` - disable
+         *     * `enable` - enable
+         *     * `retry` - retry
+         *     * `retire` - retire
+         * @enum {string}
          */
+        RuntimePluginActionActionEnum: "disable" | "enable" | "retry" | "retire";
+        /** @description Guest target mappings and bounded adapter parameters. */
+        RuntimePluginBindings: {
+            targets: {
+                [key: string]: string;
+            };
+            parameters?: {
+                [key: string]: string;
+            };
+            image_profiles?: {
+                [key: string]: components["schemas"]["RuntimeTargetImageProfile"];
+            };
+        };
+        /** @description A conforming adapter manifest and optional registry credentials. */
+        RuntimePluginInstall: {
+            manifest: unknown;
+            registry_credentials?: components["schemas"]["RegistryCredentials"];
+        };
+        /** @description Catalog pack identity with its current administrator binding. */
+        RuntimePluginPack: {
+            id: string;
+            name: string;
+            pack_digest: string;
+            binding: components["schemas"]["RuntimePluginPackBinding"] | null;
+            /** @default false */
+            can_update: boolean;
+        };
+        /** @description An organization's explicit pack-to-installation selection. */
+        RuntimePluginPackBinding: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_uuid: string;
+            pack_id: string;
+            pack_digest: string;
+            /** Format: uuid */
+            installation_id: string;
+            bindings: components["schemas"]["RuntimePluginBindings"];
+            enabled: boolean;
+            installation_state: string;
+        };
+        /** @description Verified pack revision and the guests available for binding. */
+        RuntimePluginPackDetail: {
+            id: string;
+            name: string;
+            pack_digest: string;
+            binding: components["schemas"]["RuntimePluginPackBinding"] | null;
+            /** @default false */
+            can_update: boolean;
+            targets: components["schemas"]["RuntimePluginTarget"][];
+        };
+        /** @description An optimistic update pinned to the verified pack digest. */
+        RuntimePluginPackUpdate: {
+            /** Format: uuid */
+            installation_id: string;
+            pack_digest: string;
+            bindings: components["schemas"]["RuntimePluginBindings"];
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description A bounded installation page with an opaque continuation cursor. */
+        RuntimePluginPage: {
+            results: components["schemas"]["RuntimePluginView"][];
+            /** Format: uuid */
+            next_cursor: string | null;
+        };
+        /** @description A selectable compiled guest address and operating system. */
+        RuntimePluginTarget: {
+            address: string;
+            os_family: string;
+        };
+        /** @description Installation status without stored registry credentials. */
+        RuntimePluginView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_uuid: string;
+            manifest: unknown;
+            manifest_digest: string;
+            state: components["schemas"]["RuntimePluginViewStateEnum"];
+            failure_code: string;
+            has_registry_credentials: boolean;
+        };
+        /**
+         * @description * `checking` - checking
+         *     * `ready` - ready
+         *     * `failed` - failed
+         *     * `disabled` - disabled
+         *     * `retired` - retired
+         * @enum {string}
+         */
+        RuntimePluginViewStateEnum: "checking" | "ready" | "failed" | "disabled" | "retired";
+        /** @description Closed provider image profile selected for one adapter target. */
+        RuntimeTargetImageProfile: {
+            provider: components["schemas"]["RuntimeTargetImageProfileProviderEnum"];
+            /** @default image */
+            image_kind: components["schemas"]["ImageKindEnum"];
+            image_ref: string;
+            /** @default  */
+            machine_type: string;
+            disk_size_gb?: number | null;
+            /** @default  */
+            disk_type: string;
+            /** @default false */
+            allow_public_web_egress: boolean;
+            /** @default standard */
+            bootstrap_capability: string;
+            /** @default  */
+            management_ssh_username: string;
+            /** @default 22 */
+            management_ssh_port: number;
+            /** @default  */
+            participant_container_name: string;
+            /** @default  */
+            participant_username: string;
+            /** @default  */
+            participant_readiness_contract: string;
+            /** @default  */
+            participant_readiness_manifest_sha256: string;
+            /** @default  */
+            domain_dns_name: string;
+            /** @default  */
+            domain_netbios_name: string;
+        };
+        /**
+         * @description * `gcp` - gcp
+         *     * `aws` - aws
+         * @enum {string}
+         */
+        RuntimeTargetImageProfileProviderEnum: "gcp" | "aws";
+        /** @description Read-only RAES package identity and availability for the SPA. */
         ScenarioDetail: {
             readonly id: string;
             readonly name: string;
-            readonly description: string;
             readonly scenario_type: string;
             readonly source: string;
-            readonly is_default: boolean;
             readonly enabled: boolean;
             readonly staff_only: boolean;
             readonly launchable: boolean;
-            readonly editable: boolean;
-            readonly deletable: boolean;
-            readonly exportable: boolean;
-            readonly ngfw: boolean;
-            readonly instances: components["schemas"]["ScenarioInstance"][];
-            readonly subnets: components["schemas"]["ScenarioSubnet"][];
-            readonly participant_access: components["schemas"]["ScenarioParticipantAccess"][];
             readonly raes: components["schemas"]["RaesCatalogFields"] | null;
         };
-        /** @description Response for an export: the scenario id and its YAML rendering. */
-        ScenarioExport: {
-            readonly scenario_id: string;
-            readonly yaml: string;
-        };
-        /**
-         * @description A single scenario instance, mirroring ``schema.InstanceConfig``.
-         *
-         *     Kept field-complete against the Pydantic schema so a round-trip through the
-         *     editor never silently drops instance fields (the legacy form hardcoded a
-         *     partial list). The service layer re-validates the full definition.
-         */
-        ScenarioInstance: {
-            name: string;
-            role: components["schemas"]["ScenarioInstanceRoleEnum"];
-            os_type: components["schemas"]["ScenarioInstanceOsTypeEnum"];
-            /** @default false */
-            xdr_agent: boolean;
-            /** @default false */
-            domain_controller: boolean;
-            /** @default false */
-            join_domain: boolean;
-            dc_config?: components["schemas"]["DCConfig"] | null;
-            ami_key?: string | null;
-            instance_type?: string | null;
-        };
-        /**
-         * @description * `kali` - kali
-         *     * `windows` - windows
-         *     * `ubuntu` - ubuntu
-         *     * `from_agent` - from_agent
-         * @enum {string}
-         */
-        ScenarioInstanceOsTypeEnum: "kali" | "windows" | "ubuntu" | "from_agent";
-        /**
-         * @description * `attacker` - attacker
-         *     * `victim` - victim
-         *     * `dc` - dc
-         * @enum {string}
-         */
-        ScenarioInstanceRoleEnum: "attacker" | "victim" | "dc";
         /**
          * @description One entry from ``cms.services.list_launchable_scenarios``.
          *
@@ -4618,11 +6953,6 @@ export interface components {
             readonly enabled: boolean;
             readonly staff_only: boolean;
         };
-        /** @description One participant-facing channel, mirroring ``ParticipantAccessConfig``. */
-        ScenarioParticipantAccess: {
-            target: string;
-            channel: components["schemas"]["ChannelEnum"];
-        };
         /**
          * @description Backend realizability assessment for one catalog entry (ADR-034-R3).
          *
@@ -4637,12 +6967,6 @@ export interface components {
             readonly target_id: string;
             readonly outcome: string;
             readonly gaps: components["schemas"]["RealizabilityGap"][];
-        };
-        /** @description A single scenario subnet, mirroring ``schema.SubnetConfig``. */
-        ScenarioSubnet: {
-            name: string;
-            instances: string[];
-            connected_to?: string[];
         };
         /** @description One scheduler row in the organizer task history (#526). */
         ScheduledTask: {
@@ -4668,17 +6992,82 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
-        /** @description Result returned after queuing invitation emails for an event. */
-        SendLoginInfoResult: {
-            readonly success: boolean;
-            readonly event_id: string;
-            readonly total: number;
-            readonly sent: number;
-            readonly failed: number;
+        /** @description Selector-preview request: one sharing selector to resolve. */
+        Selector: {
+            selector: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Matched selector members and their count (advisory). */
+        SelectorPreviewResponse: {
+            matched: number;
+            members: components["schemas"]["Member"][];
+        };
+        /** @description Project non-secret native service admission metadata. */
+        ServiceCredential: {
+            /** Format: uuid */
+            credential_uuid: string;
+            /** Format: uuid */
+            principal_uuid: string;
+            name: string;
+            subject: string;
+            /** Format: uri */
+            audience: string;
+            scopes: string[];
+            is_active: boolean;
+            admission_active: boolean;
+            principal_active: boolean;
+            responsible_user_id: number | null;
+        };
+        /** @description Project one bounded page of native service admissions. */
+        ServiceCredentialPage: {
+            count: number;
+            next_offset: number | null;
+            results: components["schemas"]["ServiceCredential"][];
+        };
+        /** @description Validate lifecycle and responsible-contact changes for a service. */
+        ServicePrincipalUpdate: {
+            is_active: boolean;
+            responsible_user_id?: number | null;
         };
         /** @description Explicit request body for the activate/deactivate operation. */
         SetActiveRequest: {
             is_active: boolean;
+        };
+        /**
+         * @description Set-egress-policy command: one closed choice from the workspace subset (PLAT-238).
+         *
+         *     The workspace-selectable vocabulary is the contextual subset of the canonical
+         *     ``installation.range_egress.RangeEgressMode`` (``status-quo`` / ``none``). The
+         *     serializer owns HTTP shape and rejects unknown fields; ``workspaces.services``
+         *     re-validates against the canonical enum and owns authority and persistence.
+         */
+        SetWorkspaceEgressPolicy: {
+            egress_policy: components["schemas"]["EgressPolicyEnum"];
+        };
+        /** @description Immutable source revision and its allocation weight. */
+        SourceChoice: {
+            /** Format: uuid */
+            source_id: string;
+            revision: number;
+            /** @default 1 */
+            weight: number;
+        };
+        /** @description Authorized workspaces and scenario-specific source choices. */
+        SourceOptions: {
+            workspaces: components["schemas"]["SourceWorkspace"][];
+            /** Format: uuid */
+            workspace: string | null;
+            aliases: components["schemas"]["AliasSourceOptions"][];
+            available: boolean;
+        };
+        /** @description Workspace identity displayed alongside tenant source options. */
+        SourceWorkspace: {
+            /** Format: uuid */
+            uuid: string;
+            name: string;
+            organization_name: string;
+            is_personal: boolean;
         };
         /** @description Organizer spare-pool top-up request body (``count`` bounded non-negative). */
         SparePoolRequest: {
@@ -4690,6 +7079,12 @@ export interface components {
             readonly target_count: number;
             readonly existing: number;
             readonly created: number;
+        };
+        /** @description Policy-preview request: the subject reference to compile an effective policy for. */
+        Subject: {
+            subject: {
+                [key: string]: unknown;
+            };
         };
         /** @description One of the requesting participant's own submissions. */
         SubmissionListItem: {
@@ -4736,6 +7131,16 @@ export interface components {
         SuccessResponse: {
             success: boolean;
         };
+        /**
+         * @description * `installation` - installation
+         *     * `account` - account
+         *     * `organization` - organization
+         *     * `workspace` - workspace
+         *     * `event` - event
+         *     * `range` - range
+         * @enum {string}
+         */
+        TargetTypeEnum: "installation" | "account" | "organization" | "workspace" | "event" | "range";
         /** @description Request body for creating a team. */
         TeamCreateRequest: {
             name: string;
@@ -4748,6 +7153,46 @@ export interface components {
         TeamMemberRequest: {
             /** Format: uuid */
             participant_id: string;
+        };
+        /** @description The immutable registered pack identity and conformance result. */
+        TenantPackInstalled: {
+            scenario_id: string;
+            name: string;
+            source_kind: string;
+            contract_kind: string;
+            contract_profile: string;
+            package_version: string;
+            package_digest: string;
+            conformance_status: string;
+            created: boolean;
+        };
+        /** @description Named pack archive with an optional expected revision digest. */
+        TenantPackUpload: {
+            name: string;
+            /** Format: uri */
+            archive: string;
+            /** @default  */
+            expected_digest: string;
+        };
+        /**
+         * @description Explicit request body for an offboarding ownership transfer.
+         *
+         *     ``resource_kinds`` is a closed allowlist; there is no wildcard or
+         *     "all resources" interpretation (PLAT-236, #1943).
+         */
+        TransferOwnershipRequest: {
+            replacement_user_id: number;
+            resource_kinds: components["schemas"]["ResourceKindsEnum"][];
+        };
+        /** @description Bounded, secret-free summary of an offboarding ownership transfer. */
+        TransferOwnershipResult: {
+            source_user_id: number;
+            replacement_user_id: number;
+            ranges_reassigned: number;
+            ranges_blocked: number;
+            workspaces_transferred: number;
+            workspaces_already_owned: number;
+            workspaces_blocked_no_membership: number;
         };
         /**
          * @description Transfer-ownership command: the internal id of the new owner account.
@@ -4816,6 +7261,10 @@ export interface components {
         UsernameChangeRequest: {
             username: string;
         };
+        /** @description Draft-validation result. */
+        ValidResponse: {
+            valid: boolean;
+        };
         /** @description One registered webhook endpoint (CTF-1203); secrets never round-trip. */
         Webhook: {
             readonly id: string;
@@ -4855,11 +7304,37 @@ export interface components {
             readonly is_archived: boolean;
             /** Format: date-time */
             readonly archived_at: string | null;
+            readonly egress_policy: components["schemas"]["EgressPolicyEnum"];
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /** @description Public invitation projection; bearer credentials never cross this API. */
+        WorkspaceInvitation: {
+            /** Format: uuid */
+            readonly invitation_uuid: string;
+            /** Format: uuid */
+            readonly workspace_uuid: string;
+            /** Format: email */
+            readonly email: string;
+            readonly role: components["schemas"]["WorkspaceRoleEnum"];
+            readonly status: components["schemas"]["WorkspaceInvitationStatusEnum"];
+            /** Format: date-time */
+            readonly expires_at: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `pending` - pending
+         *     * `expired` - expired
+         *     * `accepted` - accepted
+         *     * `revoked` - revoked
+         * @enum {string}
+         */
+        WorkspaceInvitationStatusEnum: "pending" | "expired" | "accepted" | "revoked";
         /** @description Minimum public membership projection. */
         WorkspaceMembership: {
             readonly membership_id: number;
@@ -4871,6 +7346,36 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        /** @description Read-only workspace quota surface: usage per resource + recent decisions (PLAT-239). */
+        WorkspaceQuota: {
+            /** Format: uuid */
+            readonly workspace_uuid: string;
+            readonly resources: components["schemas"]["WorkspaceQuotaResource"][];
+            readonly recent_decisions: components["schemas"]["WorkspaceQuotaDecision"][];
+        };
+        /** @description One recorded quota decision (append-only evidence) projection. */
+        WorkspaceQuotaDecision: {
+            readonly resource: components["schemas"]["ResourceEnum"];
+            readonly outcome: components["schemas"]["OutcomeEnum"];
+            readonly limit: number;
+            readonly mode: components["schemas"]["ModeEnum"];
+            readonly usage_before: number;
+            readonly requested_delta: number;
+            readonly reason_code: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description Per-resource usage-against-limit projection (PLAT-239).
+         *
+         *     ``limit``/``mode`` are ``null`` for an unconfigured resource (unlimited).
+         */
+        WorkspaceQuotaResource: {
+            readonly resource: components["schemas"]["ResourceEnum"];
+            readonly usage: number;
+            readonly limit: number | null;
+            readonly mode: (components["schemas"]["ModeEnum"] | components["schemas"]["NullEnum"]) | null;
+        };
         /**
          * @description * `owner` - Owner
          *     * `admin` - Admin
@@ -4878,18 +7383,6 @@ export interface components {
          * @enum {string}
          */
         WorkspaceRoleEnum: "owner" | "admin" | "member";
-        /** @description Validate a YAML-content request body. */
-        YAMLContent: {
-            yaml_content: string;
-        };
-        /** @description Response for the YAML validate endpoint. */
-        YAMLValidationResult: {
-            readonly valid: boolean;
-            readonly errors: string[];
-            readonly definition: {
-                [key: string]: unknown;
-            } | null;
-        };
         /** @description A minimal ``{id, name}`` reference to a related entity. */
         _NamedRef: {
             readonly id: string;
@@ -4909,6 +7402,219 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    api_v1_administer_mission_control_lease_policy_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_group_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ReplaceLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_mission_control_lease_policy_tenant_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLeasePolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetLeasePolicy"];
+                "multipart/form-data": components["schemas"]["ResetLeasePolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissionControlLeasePolicySettings"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_administer_users_list: {
         parameters: {
             query?: {
@@ -5083,6 +7789,90 @@ export interface operations {
             };
         };
     };
+    api_v1_administer_users_lifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifecycleTransitionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LifecycleTransitionRequest"];
+                "multipart/form-data": components["schemas"]["LifecycleTransitionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_users_reset_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_administer_users_set_active: {
         parameters: {
             query?: never;
@@ -5128,11 +7918,57 @@ export interface operations {
             };
         };
     };
+    api_v1_administer_users_transfer_ownership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferOwnershipRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TransferOwnershipRequest"];
+                "multipart/form-data": components["schemas"]["TransferOwnershipRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferOwnershipResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     audit_list: {
         parameters: {
             query?: {
                 action?: string;
                 actor_id?: number;
+                actor_principal_uuid?: string;
                 actor_type?: string;
                 entity_id?: number;
                 entity_type?: string;
@@ -5253,6 +8089,166 @@ export interface operations {
             };
         };
     };
+    cms_artifact_preparation_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparationRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PreparationRequest"];
+                "multipart/form-data": components["schemas"]["PreparationRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_artifact_preparation_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_artifact_preparation_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_artifact_preparation_retry_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparationView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     cms_catalog_list: {
         parameters: {
             query?: never;
@@ -5350,6 +8346,805 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackRegistrationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_model_source_options_retrieve: {
+        parameters: {
+            query?: {
+                /**
+                 * @description * `range` - range
+                 *     * `ctf` - ctf
+                 *     * `admin` - admin
+                 */
+                purpose?: "range" | "ctf" | "admin";
+                scenario?: string;
+                workspace?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOptions"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_ranges_retrieve: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRangePage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_source_users_retrieve: {
+        parameters: {
+            query?: {
+                page?: number;
+                search?: string;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourceUserPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourcePage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelSourceWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourceView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelSourceUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourceView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_retire_credentials_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialRetirement"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_model_sources_available_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSourcePage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TenantPackUpload"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantPackInstalled"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugin_packs_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedRuntimePluginPackList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugin_packs_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginPackDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugin_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePluginPackUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["RuntimePluginPackUpdate"];
+                "multipart/form-data": components["schemas"]["RuntimePluginPackUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginPackBinding"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugins_retrieve: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugins_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePluginInstall"];
+                "application/x-www-form-urlencoded": components["schemas"]["RuntimePluginInstall"];
+                "multipart/form-data": components["schemas"]["RuntimePluginInstall"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_organizations_plugins_actions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePluginAction"];
+                "application/x-www-form-urlencoded": components["schemas"]["RuntimePluginAction"];
+                "multipart/form-data": components["schemas"]["RuntimePluginAction"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePluginView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapter_grants_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterGrantView"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapters_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterView"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapters_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdapterInstall"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdapterInstall"];
+                "multipart/form-data": components["schemas"]["AdapterInstall"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_preparation_adapters_state_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdapterState"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdapterState"];
+                "multipart/form-data": components["schemas"]["AdapterState"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterView"];
                 };
             };
             /** @description Authentication failed. */
@@ -5498,27 +9293,23 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_create: {
+    cms_ranges_model_sources_retrieve: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                request_id: string;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScenarioCreate"];
-                "application/x-www-form-urlencoded": components["schemas"]["ScenarioCreate"];
-                "multipart/form-data": components["schemas"]["ScenarioCreate"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ScenarioCreated"];
+                    "application/json": components["schemas"]["RangeModelSources"];
                 };
             };
             /** @description Authentication failed. */
@@ -5541,7 +9332,142 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_retrieve: {
+    cms_ranges_model_sources_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RangeModelSourcesWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeModelSources"];
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeModelSources"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_ranges_model_sources_revoke_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeModelSources"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_cms_range_workspace_rebind: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RangeWorkspaceRebindRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RangeWorkspaceRebindRequest"];
+                "multipart/form-data": components["schemas"]["RangeWorkspaceRebindRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeWorkspaceRebindResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenarios_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -5580,174 +9506,7 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                scenario_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    cms_scenario_editor_scenarios_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                scenario_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedScenarioUpdate"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedScenarioUpdate"];
-                "multipart/form-data": components["schemas"]["PatchedScenarioUpdate"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScenarioDetail"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    cms_scenario_editor_scenarios_clone_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                scenario_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScenarioClone"];
-                "application/x-www-form-urlencoded": components["schemas"]["ScenarioClone"];
-                "multipart/form-data": components["schemas"]["ScenarioClone"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScenarioCreated"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    cms_scenario_editor_scenarios_export_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                scenario_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScenarioExport"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    cms_scenario_editor_scenarios_metadata_partial_update: {
+    cms_scenarios_metadata_partial_update: {
         parameters: {
             query?: never;
             header?: never;
@@ -5792,7 +9551,7 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_realizability_retrieve: {
+    cms_scenarios_realizability_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -5831,27 +9590,30 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_from_yaml_create: {
+    api_v1_cms_workspace_range_scope_list: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description A search term. */
+                search?: string;
+            };
             header?: never;
-            path?: never;
+            path: {
+                workspace_uuid: string;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["YAMLContent"];
-                "application/x-www-form-urlencoded": components["schemas"]["YAMLContent"];
-                "multipart/form-data": components["schemas"]["YAMLContent"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ScenarioCreated"];
+                    "application/json": components["schemas"]["PaginatedRangeScopeBindingList"];
                 };
             };
             /** @description Authentication failed. */
@@ -5874,7 +9636,47 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_validate_yaml_create: {
+    credentials_personal_retrieve: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalCredentialPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    credentials_personal_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -5883,19 +9685,259 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["YAMLContent"];
-                "application/x-www-form-urlencoded": components["schemas"]["YAMLContent"];
-                "multipart/form-data": components["schemas"]["YAMLContent"];
+                "application/json": components["schemas"]["IssuePersonalCredential"];
             };
         };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedPersonalCredential"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    credentials_personal_revoke_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    credentials_personal_rotate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssuePersonalCredential"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedPersonalCredential"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    credentials_services_retrieve: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["YAMLValidationResult"];
+                    "application/json": components["schemas"]["ServiceCredentialPage"];
                 };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    credentials_services_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateServiceCredential"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCredential"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    credentials_services_disable_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    credentials_services_principals_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                principal_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServicePrincipalUpdate"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Authentication failed. */
             401: {
@@ -6509,9 +10551,545 @@ export interface operations {
             };
         };
     };
-    ctf_events_list: {
+    ctf_communications_list: {
+        parameters: {
+            query: {
+                event_id?: string;
+                limit?: number;
+                offset?: number;
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_create: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunicationCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommunicationEmpty"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_release_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunicationRelease"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationIntent"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communications_revisions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunicationRevision"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationCampaignSummary"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_list: {
+        parameters: {
+            query?: {
+                /**
+                 * @description * `event_start` - event_start
+                 *     * `-event_start` - -event_start
+                 *     * `name` - name
+                 *     * `-name` - -name
+                 *     * `status` - status
+                 *     * `-status` - -status
+                 */
+                ordering?: "event_start" | "-event_start" | "name" | "-name" | "status" | "-status" | "";
+                owner?: string;
+                page?: number;
+                page_size?: number;
+                search?: string;
+                status?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7182,45 +11760,6 @@ export interface operations {
             };
         };
     };
-    ctf_events_invitations_send_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SendLoginInfoResult"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     ctf_events_lifecycle_create: {
         parameters: {
             query?: never;
@@ -7266,7 +11805,7 @@ export interface operations {
             };
         };
     };
-    ctf_events_notifications_retrieve: {
+    ctf_events_model_access_assessment_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -7282,7 +11821,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotificationListResponse"];
+                    "application/json": components["schemas"]["EventModelAccessAssessment"];
                 };
             };
             /** @description Authentication failed. */
@@ -7305,7 +11844,7 @@ export interface operations {
             };
         };
     };
-    ctf_events_notifications_create: {
+    ctf_events_notifications_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -7314,20 +11853,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["NotificationAnnounceRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["NotificationAnnounceRequest"];
-                "multipart/form-data": components["schemas"]["NotificationAnnounceRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotificationAnnounceResult"];
+                    "application/json": components["schemas"]["NotificationListResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -7602,6 +12135,49 @@ export interface operations {
             };
         };
     };
+    ctf_events_principal_participants_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdmitPrincipalParticipant"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrincipalParticipant"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_ranges_retrieve: {
         parameters: {
             query?: never;
@@ -7658,6 +12234,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RangeProvisionQueued"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_registration_requests_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationRequestListResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -7985,6 +12600,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledTask"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_transfer_ownership_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventOwnershipTransferRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventOwnershipTransferRequest"];
+                "multipart/form-data": components["schemas"]["EventOwnershipTransferRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventMutationResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -8418,6 +13078,432 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantCurrentEvent"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_communication_inbox_list: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxPage"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_events_communications_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationInboxItem"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_events_communications_acknowledge_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommunicationEmpty"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationInboxItem"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_events_communications_read_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommunicationEmpty"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunicationInboxItem"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_events_participant_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantCurrentEvent"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_model_access_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantModelAccess"];
                 };
             };
             /** @description Authentication failed. */
@@ -8939,84 +14025,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantProfile"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    ctf_notifications_cancel_schedule_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                notification_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationSendResult"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    ctf_notifications_send_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                notification_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationSendResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -9787,45 +14795,6 @@ export interface operations {
             };
         };
     };
-    ctf_participants_resend_invite_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResendLoginInfoResult"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     ctf_participants_role_create: {
         parameters: {
             query?: never;
@@ -10175,6 +15144,51 @@ export interface operations {
                 };
             };
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_registration_requests_disposition_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicRegistrationDisposition"];
+                "application/x-www-form-urlencoded": components["schemas"]["PublicRegistrationDisposition"];
+                "multipart/form-data": components["schemas"]["PublicRegistrationDisposition"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationDispositionResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10930,6 +15944,45 @@ export interface operations {
             };
         };
     };
+    api_v1_mission_control_range_cleanup_outcome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeCleanupOutcomeResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_mission_control_raes_operation_receipts_list: {
         parameters: {
             query?: never;
@@ -11275,7 +16328,10 @@ export interface operations {
     api_v1_mission_control_range_launch: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional caller retry key (max 200 characters; leading/trailing whitespace trimmed, empty treated as absent). When supplied the launch is idempotent: a retry with the same key and the same launch selections recovers the original range instead of dispatching a duplicate; the same key with different selections returns 409. */
+                "Idempotency-Key"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -11295,6 +16351,15 @@ export interface operations {
                     "application/json": components["schemas"]["LaunchRangeResponse"];
                 };
             };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -11304,8 +16369,17 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Permission denied. */
+            /** @description Workspace or range launch access denied. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Launch conflict, including workspace_range_quota_exceeded. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11706,6 +16780,211 @@ export interface operations {
             };
         };
     };
+    model_access_bindings_drain_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Drain"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    model_access_bindings_policy_preview_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Subject"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectivePolicyResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    model_access_bindings_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Publish"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    model_access_bindings_selector_preview_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Selector"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectorPreviewResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    model_access_bindings_validate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindingDraft"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_workspaces_list: {
         parameters: {
             query: {
@@ -11930,6 +17209,728 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_direct_assignments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectActionAssignmentMutation"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMutation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_groups_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMetadata"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_groups_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAuthorizationMetadata"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMetadata"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_groups_memberships_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeMembershipMutation"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMutation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_operations_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationOperation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_operations_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationOperation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_policies_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMetadata"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_policies_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAuthorizationMetadata"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMetadata"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_policies_actions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyActionMutation"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMutation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_policies_assignments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleAssignmentMutation"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMutation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_predefined_assignments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PredefinedRoleMutation"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationMutation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_set_egress_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceEgressPolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["SetWorkspaceEgressPolicy"];
+                "multipart/form-data": components["schemas"]["SetWorkspaceEgressPolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueWorkspaceInvitation"];
+                "application/x-www-form-urlencoded": components["schemas"]["IssueWorkspaceInvitation"];
+                "multipart/form-data": components["schemas"]["IssueWorkspaceInvitation"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_resend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"];
                 };
             };
             /** @description Authentication failed. */
@@ -12273,6 +18274,44 @@ export interface operations {
             };
         };
     };
+    api_v1_workspace_quota: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceQuota"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_workspace_restore: {
         parameters: {
             query?: never;
@@ -12370,6 +18409,80 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_catalog_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationAction"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    workspaces_authorization_predefined_catalog_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredefinedAuthorizationPolicy"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

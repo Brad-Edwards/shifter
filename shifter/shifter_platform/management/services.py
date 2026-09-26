@@ -1,12 +1,8 @@
-"""Management service interface.
-
-Platform administration for Shifter platform.
-"""
+"""Management service interface for platform administration."""
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -24,12 +20,35 @@ from shared.audit import (
 )
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.log_sanitize import safe_log_fingerprint, safe_log_value
+from shared.model_access import AuthorityInvalidation, AuthorityState, OwnedReference
+from shared.model_access.authority_port import invalidate_authority, suppress_authority_invalidation_signals
 
+from . import model_access_authority as _model_access_authority
+from . import principals as _principals
+from .audit_context import AuditContext
 from .models import ActivityLog, UserProfile
 
-# SonarCloud S1192: extracted duplicated string literals.
-USER_PK_REQUIRED_MSG = "user must have a primary key"
+PrincipalConflictError = _principals.PrincipalConflictError
+bind_principal_provider_identity = _principals.bind_principal_provider_identity
+create_service_principal = _principals.create_service_principal
+delete_managed_pool_user = _principals.delete_managed_pool_user
+ensure_human_principal = _principals.ensure_human_principal
+principal_for_user = _principals.principal_for_user
+resolve_principal = _principals.resolve_principal
+resolve_principal_uuid = _principals.resolve_principal_uuid
+resolve_service_credential = _principals.resolve_service_credential
+set_service_contact = _principals.set_service_contact
 
+ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView
+ModelAccessGroupScope = _model_access_authority.ModelAccessGroupScope
+ModelAccessIdentityAuthorityError = _model_access_authority.ModelAccessIdentityAuthorityError
+is_platform_operator = _model_access_authority.is_platform_operator
+resolve_model_access_group = _model_access_authority.resolve_model_access_group
+resolve_model_access_users = _model_access_authority.resolve_model_access_users
+resolve_model_preparation_user = _model_access_authority.resolve_model_preparation_user
+set_model_access_group_eligibility = _model_access_authority.set_model_access_group_eligibility
+
+USER_PK_REQUIRED_MSG = "user must have a primary key"
 if TYPE_CHECKING:
     from uuid import UUID
 
@@ -42,9 +61,7 @@ logger = logging.getLogger(__name__)
 def log_activity(action: str, user: User | None, **metadata: Any) -> None:
     """Log an activity for audit trail.
 
-    DEPRECATED: Use shared.audit.audit_log() instead.
-    This function is retained for backward compatibility only.
-
+    DEPRECATED: Use shared.audit.audit_log(); retained for compatibility.
     Args:
         action: Action identifier (e.g., "range_launched", "agent_uploaded")
         user: User who performed the action, or None for system actions
@@ -101,22 +118,6 @@ def get_user_profile(user: User) -> UserProfile:
         raise
 
 
-@dataclass(frozen=True)
-class AuditContext:
-    """Request-attributed audit fields bundled for the account-mutation services.
-
-    Bundling the attribution fields keeps the mutation service signatures small
-    and lets the HTTP layer build one object from the request (see
-    ``management.api.views._audit_context``).
-    """
-
-    actor_type: str
-    actor_id: int | None
-    request_id: str = ""
-    source_ip: str | None = None
-    user_agent: str = ""
-
-
 def mark_user_deleted(
     user: User,
     admin_user: User | None = None,
@@ -155,6 +156,27 @@ def mark_user_deleted(
             profile.deleted_at = timezone.now()
             profile.save(update_fields=["deleted_at"])
 
+            # Soft deletion must also block authentication (PLAT-236, #1943):
+            # User.is_active is the sole authentication-enforcement bit, so a
+            # soft-deleted account that kept is_active=True could still hold a
+            # session or re-login. Converge them here.
+            if user.is_active:
+                user.is_active = False
+                with suppress_authority_invalidation_signals():
+                    user.save(update_fields=["is_active"])
+
+            invalidate_authority(
+                AuthorityInvalidation(
+                    deployment_id=None,
+                    authority_refs=(
+                        OwnedReference(owner="management", reference=f"operator:{user.pk}"),
+                        OwnedReference(owner="management", reference=f"user:{user.pk}"),
+                    ),
+                    state=AuthorityState.REVOKED,
+                    reason="user-deleted",
+                )
+            )
+
             # Audit log user deletion inside the atomic boundary.
             audit_log(
                 AuditEvent(
@@ -175,6 +197,20 @@ def mark_user_deleted(
     except Exception:
         logger.exception("Failed to mark user %s as deleted", safe_log_value(user.email))
         raise
+
+
+def reset_eligibility(user: User) -> tuple[bool, str]:
+    """Facade re-export of :func:`management.password_reset.reset_eligibility`.
+
+    Exposed on the management service facade so the composition-root
+    password-reset landing view (``config.password_reset_views``) can re-check
+    eligibility at token redemption without importing a private management
+    submodule (ADR-001 layer contract). Imported lazily to avoid an import cycle
+    (``management.password_reset`` imports this module).
+    """
+    from management.password_reset import reset_eligibility as _reset_eligibility
+
+    return _reset_eligibility(user)
 
 
 def safe_user_profile(user: User) -> UserProfile | None:
@@ -340,10 +376,18 @@ def bind_provider_identity(user: User, issuer: str, subject: str) -> BindOutcome
     """
     _require_bind_inputs(user, issuer, subject)
 
+    from .principals import PrincipalConflictError, bind_principal_provider_identity, principal_for_user
+
     profile = get_user_profile(user)
     try:
         with transaction.atomic():
             locked_profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
+            if locked_profile.is_ctf_account:
+                raise BindingConflictError("Temporary participants cannot bind provider identities")
+            try:
+                bind_principal_provider_identity(principal_for_user(user), issuer, subject)
+            except PrincipalConflictError as exc:
+                raise BindingConflictError("Provider identity unavailable") from exc
             # issuer is non-null (default ""); "" marks an unbound/legacy row.
             stored_issuer = locked_profile.issuer
             stored_subject = locked_profile.cognito_sub or ""
@@ -418,8 +462,7 @@ def configure_temporary_ctf_account(user: User, event_id: UUID) -> None:
             "active_ctf_event_id",
         ]
     )
-    # The post-save profile signal may have populated the reverse one-to-one
-    # cache before this security mutation. Keep the in-memory user consistent
+    # Keep an already-populated reverse one-to-one cache consistent
     # with the just-committed marker for callers in the same transaction.
     user.profile = profile
 

@@ -83,6 +83,56 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  # GKE Workload Identity: pods mint their GSA token from the node-local GKE
+  # metadata server (169.254.169.254). Dataplane V2 enforces the default-deny
+  # egress, so without this allow the token mint hangs and every Google API call
+  # (Secret Manager, Pub/Sub) fails on auth. Mirrors the kustomize base
+  # (platform/k8s/gcp/base/networkpolicies.yaml) so the Helm and kustomize deploy
+  # paths enforce the same posture.
+  name: allow-platform-metadata-server-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32 # NOSONAR - GKE metadata server (Workload Identity).
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 988
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  # GKE Workload Identity token mint for range-provisioning Jobs (see the
+  # platform metadata-server policy above).
+  name: allow-jobs-metadata-server-egress
+  namespace: {{ .Values.namespaces.jobs }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32 # NOSONAR - GKE metadata server (Workload Identity).
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 988
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-public-ingress-to-platform-backends
   namespace: {{ .Values.namespaces.platform }}
   labels:
@@ -163,7 +213,11 @@ metadata:
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: NotIn
+        values: [model-broker, model-provider-egress]
   policyTypes:
     - Egress
   egress:
@@ -229,12 +283,78 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-jobs-private-service-egress
+  namespace: {{ .Values.namespaces.jobs }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  # The RAES range provisioner runs as a Job and connects to the platform
+  # database (subnet reservation + operation step results) and cache. Mirror the
+  # platform private-service egress in the jobs namespace, or the default-deny
+  # blocks it and provisioning fails to reach Postgres.
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.network.privateServiceCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          # Plaintext Redis (AWS ElastiCache + pre-#963 GCP Memorystore).
+          port: 6379
+        - protocol: TCP
+          # Memorystore TLS endpoint (ADR-008-R6, #963).
+          port: 6378
+{{- end }}
+{{- if .Values.network.rangeAccessCidrs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-jobs-range-access-egress
+  namespace: {{ .Values.namespaces.jobs }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  # The provisioner Job reaches range guests during provisioning (host/guest SSH
+  # setup). Range VMs are private-only, so without this the default-deny blocks
+  # the provisioner -> range path even though the per-range GCE firewall permits
+  # it. AWS/kustomize parity: render_private_service_netpol.py emits the same rule.
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.network.rangeAccessCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        {{- range .Values.network.rangeAccessPorts }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+{{- if .Values.network.privateServiceCidrs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-platform-private-service-egress
   namespace: {{ .Values.namespaces.platform }}
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: NotIn
+        values: [model-broker, model-provider-egress]
   policyTypes:
     - Egress
   egress:
@@ -296,8 +416,9 @@ spec:
   # range guests for the browser SSH terminal, and guacd dials them for
   # Guacamole SSH/RDP. Range VMs are private-only, so without this egress the
   # GKE default-deny blocks the portal/guacd -> range path even though the
-  # per-range GCE ingress firewall permits it. Scoped to just those two
-  # workloads (not all platform pods; guacd, not guacamole-client, is the
+  # per-range GCE ingress firewall permits it. The post-deploy smoke Job probes
+  # the same endpoints. Scoped to those dialers
+  # (not all platform pods; guacd, not guacamole-client, is the
   # dialer) and to the participant channel ports. AWS parity: the guacd egress
   # rule in platform/terraform/modules/guacamole/security.tf.
   podSelector:
@@ -307,6 +428,7 @@ spec:
         values:
           - portal
           - guacd
+          - post-deploy-smoke
   policyTypes:
     - Egress
   egress:
@@ -320,5 +442,73 @@ spec:
         - protocol: TCP
           port: {{ . }}
         {{- end }}
+{{- end }}
+{{- if .Values.openfga.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-portal-to-openfga
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: openfga
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: portal
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-portal-openfga-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: portal
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: openfga
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openfga-postgres-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [openfga, openfga-admin]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.openfga.databaseCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.openfga.databasePort }}
 {{- end }}
 {{- end }}

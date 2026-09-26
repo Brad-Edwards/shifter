@@ -26,6 +26,7 @@ _LABEL = "Range"
 
 
 def _get_provider() -> str:
+    """Return the resolved cloud provider identifier (e.g. ``aws`` or ``gcp``)."""
     return resolve_cloud_provider()
 
 

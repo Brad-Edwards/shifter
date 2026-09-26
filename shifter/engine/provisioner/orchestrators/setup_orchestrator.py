@@ -24,7 +24,7 @@ import time
 from typing import Any
 
 from executors.base import (
-    Executor,
+    CommandExecutor,
     ExecutorConnectionError,
     ExecutorError,
     ExecutorTimeoutError,
@@ -68,11 +68,12 @@ class SetupOrchestrator(_SetupOrchestratorPanOSMixin, _SetupOrchestratorLoggingM
     # Default reboot timeout (5 minutes)
     DEFAULT_REBOOT_TIMEOUT = 300
 
-    def __init__(self, executor: Executor) -> None:
-        """Initialize orchestrator with an executor.
+    def __init__(self, executor: CommandExecutor) -> None:
+        """Initialize orchestrator with a command executor.
 
         Args:
-            executor: Executor (SSMExecutor or SSHExecutor) to use for running commands
+            executor: CommandExecutor (SSMExecutor, SSHExecutor, etc.) used to
+                run guest commands
         """
         logger.debug("__init__: executor=%s", type(executor).__name__)
         self.executor = executor

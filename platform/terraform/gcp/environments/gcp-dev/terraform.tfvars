@@ -7,10 +7,15 @@
 
 # REPLACE: your GCP project id (no default — this must be your project).
 project_id                 = "REPLACE_WITH_YOUR_GCP_PROJECT_ID"
+dynamic_secret_project_id  = "REPLACE_WITH_YOUR_GCP_RANGE_SECRET_PROJECT_ID"
 environment                = "gcp-dev"
 region                     = "us-central1"
 artifact_registry_location = "us-central1"
-gke_release_channel        = "REGULAR"
+# RAPID carries GKE 1.37, which contains the upstream fix (k8s PR #134423) for the
+# ValidatingAdmissionPolicy param-informer bug (kubernetes/kubernetes #130887 etc.)
+# that denied every provisioner Job on 1.35.x. The fix is not backported to 1.35/1.36,
+# so REGULAR/STABLE cannot carry it yet; RAPID keeps the cluster on a fixed version.
+gke_release_channel = "RAPID"
 
 gke_subnet_cidr      = "10.40.0.0/20"
 gke_pods_cidr        = "10.44.0.0/16"
@@ -25,10 +30,12 @@ range_network_cidr          = "10.50.0.0/16"
 web_machine_type         = "e2-standard-4"
 worker_machine_type      = "e2-standard-4"
 provisioner_machine_type = "n2-standard-8"
+access_machine_type      = "e2-standard-4"
 
 web_node_count         = 1
 worker_node_count      = 1
 provisioner_node_count = 1
+access_node_count      = 1
 
 cloud_sql_database_version  = "POSTGRES_15"
 cloud_sql_tier              = "db-custom-1-3840"

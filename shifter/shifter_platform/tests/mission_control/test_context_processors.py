@@ -336,6 +336,24 @@ class TestActiveRangeContextTier:
         assert result["has_active_range"] is False
         assert result["active_range"] is None
 
+    def test_terminal_tier_fails_soft_on_service_error(self, user):
+        """A malformed persisted range makes real CMS RangeContext construction
+        raise; the terminal tier must swallow it into the safe empty context
+        rather than 500 the page.
+
+        Driven at the real persistence boundary (an invalid stored status the
+        service cannot project) rather than by patching the first-party
+        ``get_active_range`` — the boundary-mock policy #995 enforces.
+        """
+        from mission_control.context_processors import active_range
+
+        _seed_range(user, instances=[_instance("kali")], status="not-a-status")
+        result = active_range(_request(user))  # default view resolves to the terminal tier
+
+        assert result["has_active_range"] is False
+        assert result["active_range"] is None
+        assert result["terminal_instances"] == []
+
     def test_terminal_page_builds_full_payload(self, user):
         from mission_control.context_processors import active_range
         from shared.schemas import RangeContext

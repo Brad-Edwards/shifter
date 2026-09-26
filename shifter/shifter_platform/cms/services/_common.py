@@ -112,7 +112,9 @@ def _validate_positive_int(value: object, name: str, fn_name: str, user_id: obje
     if value is None:
         logger.error(_LOG_FMT_NONE_PARAM, fn_name, name, user_id)
         raise TypeError(f"{name} cannot be None")
-    if not isinstance(value, int):
+    # ``bool`` is a subclass of ``int`` in Python, so ``isinstance(True, int)``
+    # is True; reject it explicitly so ``True`` is never admitted as one byte.
+    if isinstance(value, bool) or not isinstance(value, int):
         logger.error(
             "%s called with invalid %s type: %s",
             fn_name,
@@ -252,3 +254,22 @@ def _resolve_runtime_ips(range_id: int | None) -> dict[str, str]:
     except Exception:
         logger.exception("Failed to resolve runtime IPs for range_id=%s", range_id)
         return {}
+
+
+def _resolve_pause_resume_supported(range_id: int | None) -> bool:
+    """Best-effort: whether the range's realized mix is losslessly pause/resume-safe.
+
+    Returns False when ``range_id`` is None or the engine lookup fails, so the SPA
+    fails safe (Pause/Resume controls hidden) rather than offering an action the
+    substrate cannot honor (ADR-039, issue #614). Calls through the
+    ``cms.services`` package so tests patching the engine alias keep working.
+    """
+    if range_id is None:
+        return False
+    try:
+        from cms import services as _cs
+
+        return bool(_cs.engine_get_range_pause_resume_capability(range_id).supported)
+    except Exception:
+        logger.exception("Failed to resolve pause/resume capability for range_id=%s", range_id)
+        return False

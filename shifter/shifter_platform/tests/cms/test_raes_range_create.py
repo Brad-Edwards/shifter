@@ -29,13 +29,6 @@ def user(django_user_model):
     return django_user_model.objects.create(username="raes-launcher")
 
 
-@pytest.fixture
-def native_on(monkeypatch):
-    from django.conf import settings
-
-    monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", True)
-
-
 def _make_source(user, scenario_id="raes-launch", **overrides):
     fields = {
         "scenario_id": scenario_id,
@@ -53,21 +46,12 @@ def _make_source(user, scenario_id="raes-launch", **overrides):
 
 
 @pytest.mark.django_db
-def test_flag_off_refuses(user, monkeypatch):
-    from django.conf import settings
-
-    monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False)
-    with pytest.raises(CMSError):
-        create_raes_native_range(user, "raes-launch")
-
-
-@pytest.mark.django_db
-def test_launch_persists_bookkeeping_and_dispatches(user, native_on, monkeypatch):
+def test_launch_persists_bookkeeping_and_dispatches(user, monkeypatch):
     _make_source(user)
     seen = {}
     monkeypatch.setattr(
         _DISPATCH,
-        lambda request_id, u, source, backend_admission=None, workspace_id=None: seen.update(
+        lambda request_id, u, source, backend_admission=None, workspace_id=None, egress_mode=None: seen.update(
             ref=source.package_ref,
             digest=source.package_digest,
         ),
@@ -81,10 +65,86 @@ def test_launch_persists_bookkeeping_and_dispatches(user, native_on, monkeypatch
     assert instance.scenario_id == "raes-launch"
     assert instance.range_spec is None  # no cyberscript RangeSpec for RAES
     assert instance.status == ResourceStatus.PROVISIONING.value
+    # New Mission Control ranges persist deadlines + the increment from the effective
+    # lease policy (default 30/30/365) as a per-generation snapshot (#27).
+    assert instance.expires_at is not None
+    assert instance.maximum_expires_at is not None
+    assert instance.extension_days == 30
+    # Deadlines derive from the default policy durations: maximum 365d, initial 30d.
+    assert (instance.maximum_expires_at - instance.expires_at).days == 365 - 30
 
 
 @pytest.mark.django_db
-def test_dispatch_failure_marks_failed_and_raises(user, native_on, monkeypatch):
+def test_launch_snapshots_the_configured_lease_policy_onto_the_generation(user, monkeypatch):
+    from django.test import override_settings
+
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    _make_source(user)
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
+    policy = MissionControlLeasePolicy(initial_days=7, extension_days=3, maximum_days=90)
+    with override_settings(MISSION_CONTROL_LEASE_POLICY=policy):
+        ctx = create_raes_native_range(user, "raes-launch")
+
+    instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
+    # The generation snapshots the increment; deadlines derive from the policy durations.
+    assert instance.extension_days == 3
+    delta_days = (instance.maximum_expires_at - instance.expires_at).days
+    assert delta_days == 90 - 7
+
+
+@pytest.mark.django_db
+def test_launch_resolves_group_policy_inside_reservation_and_records_provenance(user, monkeypatch):
+    from django.contrib.auth.models import Group
+    from django.db import connection
+
+    from cms.models import MissionControlGroupLeasePolicy
+    from shared.audit import AuditAction, AuditEntityType
+    from shared.models import AuditLog
+
+    _make_source(user)
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
+    group = Group.objects.create(name="Short Lease")
+    user.groups.add(group)
+    MissionControlGroupLeasePolicy.objects.create(
+        group=group,
+        initial_days=7,
+        extension_days=3,
+        maximum_days=90,
+        extensions_enabled=True,
+    )
+    from cms.services import _range_lease as lease_module
+
+    original = lease_module.resolve_mission_control_lease_policy
+
+    def assert_transaction(owner, *, for_update=False):
+        assert connection.in_atomic_block
+        assert for_update is True
+        return original(owner, for_update=for_update)
+
+    monkeypatch.setattr(lease_module, "resolve_mission_control_lease_policy", assert_transaction)
+
+    ctx = create_raes_native_range(user, "raes-launch")
+
+    instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
+    assert instance.extension_days == 3
+    assert instance.lease_initial_days == 7
+    assert instance.lease_maximum_days == 90
+    assert instance.lease_policy_source == "group"
+    assert instance.lease_policy_tenant_revision == 0
+    assert instance.lease_policy_group_revisions == [{"group_id": group.pk, "revision": 1}]
+    audit = AuditLog.objects.get(
+        entity_type=AuditEntityType.RANGE,
+        action=AuditAction.PROVISION,
+        entity_id=instance.pk,
+    )
+    assert audit.new_state["lease_policy_source"] == "group"
+    assert audit.new_state["lease_initial_days"] == 7
+    assert audit.new_state["lease_maximum_days"] == 90
+
+
+@pytest.mark.django_db
+def test_dispatch_failure_marks_failed_and_raises(user, monkeypatch):
     _make_source(user)
 
     def boom(*_args, **_kwargs):
@@ -99,24 +159,28 @@ def test_dispatch_failure_marks_failed_and_raises(user, native_on, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_non_launchable_pending_refused(user, native_on, monkeypatch):
+def test_non_launchable_pending_refused(user, monkeypatch):
     _make_source(user, conformance_status="pending")
     monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
-    with pytest.raises(CMSError):
+    with pytest.raises(CMSError, match="not available for launch"):
         create_raes_native_range(user, "raes-launch")
+    # Refused before any range row is created.
+    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
 
 
 @pytest.mark.django_db
-def test_active_range_refused(user, native_on, monkeypatch):
+def test_active_range_refused(user, monkeypatch):
     _make_source(user)
     monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
     create_raes_native_range(user, "raes-launch")
-    with pytest.raises(CMSError):
+    with pytest.raises(CMSError, match="already have an active range"):
         create_raes_native_range(user, "raes-launch")
+    # The second launch is refused; only the first range remains.
+    assert RangeInstance.objects.filter(user_id=user.id).count() == 1
 
 
 @pytest.mark.django_db
-def test_live_fire_gate_denies_gdc_before_dispatch(user, native_on, monkeypatch):
+def test_live_fire_gate_denies_gdc_before_dispatch(user, monkeypatch):
     # Issue #1348 / ADR-030: the RAES-native path shares the same live-fire gate;
     # a GDC selector is denied before the pack is resolved or dispatched.
     from django.conf import settings
@@ -135,7 +199,7 @@ def test_live_fire_gate_denies_gdc_before_dispatch(user, native_on, monkeypatch)
 
 
 @pytest.mark.django_db
-def test_live_fire_gate_admits_gce(user, native_on, monkeypatch):
+def test_live_fire_gate_admits_gce(user, monkeypatch):
     from django.conf import settings
 
     _make_source(user)
@@ -150,7 +214,7 @@ def test_live_fire_gate_admits_gce(user, native_on, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_policy_allowed_gdc_still_fails_unsupported_capability(user, native_on, monkeypatch):
+def test_policy_allowed_gdc_still_fails_unsupported_capability(user, monkeypatch):
     # Issue #1354: policy admission and adapter availability are separate gates.
     # raes_range_ops realizes GCE only, so a non-user purpose that the policy
     # permits on GDC must still fail closed before dispatch rather than binding
@@ -174,95 +238,21 @@ def test_policy_allowed_gdc_still_fails_unsupported_capability(user, native_on, 
 
 
 @pytest.mark.django_db
-def test_dispatch_routes_cyberscript_when_flag_off(user, monkeypatch):
-    from django.conf import settings
-
-    monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False)
-    routed = {}
-    monkeypatch.setattr(
-        "cms.services._raes_range_create._create_range_impl",
-        lambda *a, **k: routed.setdefault("path", "cyberscript"),
-    )
-    create_range_dispatch(user, "basic", {})
-    assert routed["path"] == "cyberscript"
-
-
-@pytest.mark.django_db
-def test_dispatch_routes_native_for_raes_when_flag_on(user, native_on, monkeypatch):
+def test_dispatch_routes_registered_raes_source(user, monkeypatch):
     _make_source(user, scenario_id="raes-x")
     routed = {}
     monkeypatch.setattr(
         "cms.services._raes_range_create._create_raes_native_range_impl",
-        lambda u, s, *, range_source=None, instantiation_purpose=None, raes_source_id=None, workspace_uuid=None: (
-            routed.update(scenario=s, purpose=instantiation_purpose, source=raes_source_id)
-        ),
+        lambda u, s, **kwargs: routed.update(scenario=s, purpose=kwargs.get("instantiation_purpose")),
     )
-    create_range_dispatch(user, "raes-x", {})
+    create_range_dispatch(user, "raes-x")
     assert routed["scenario"] == "raes-x"
-    # Unrouted direct RAES pick loads its own id as the internal source.
-    assert routed["source"] == "raes-x"
     # The product router always mints live-fire authority (#1354, ADR-030-R6).
     assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE
 
 
 @pytest.mark.django_db
-def test_dispatch_loads_distinct_routed_source_not_public_id(user, native_on, monkeypatch):
-    # ADR-031-R6 core deliverable. Drive the real resolve -> load chain for a
-    # routed public id (polaris -> polaris-raes) and observe which source
-    # actually reaches the dispatch seam: it must be the DISTINCT registered
-    # source (polaris-raes), not the public id passed straight through, while the
-    # persisted range still correlates by the stable public id. Unlike the
-    # unrouted case (scenario_id == source id) above, the differing ids make a
-    # straight-through regression observable at the seam.
-    from django.conf import settings
-
-    _make_source(user, scenario_id="polaris-raes")
-    monkeypatch.setattr(settings, "RAES_CATALOG_CUTOVERS", {"polaris": "polaris-raes"})
-    seen = {}
-    monkeypatch.setattr(
-        _DISPATCH,
-        lambda request_id, u, source, backend_admission=None, workspace_id=None: seen.update(
-            loaded_source_id=source.scenario_id
-        ),
-    )
-
-    ctx = create_range_dispatch(user, "polaris", {})
-
-    # The distinct internal source was actually loaded, not the public id.
-    assert seen["loaded_source_id"] == "polaris-raes"
-    # The range still correlates by the stable public id (projection + persistence).
-    assert ctx.scenario_id == "polaris"
-    assert RangeInstance.objects.get(request__request_id=ctx.request_id).scenario_id == "polaris"
-
-
-@pytest.mark.django_db
-def test_dispatch_fails_closed_for_route_to_legacy_target(user, native_on, monkeypatch):
-    # ADR-031-R6: a route to an existing legacy id ("basic") has no backing
-    # RaesPackageSource. Dispatch must fail closed -- refuse before any load --
-    # rather than advertise a launch that then crashes on a missing source.
-    from django.conf import settings
-
-    monkeypatch.setattr(settings, "RAES_CATALOG_CUTOVERS", {"polaris": "basic"})
-    monkeypatch.setattr(_DISPATCH, lambda *a, **k: pytest.fail("dispatch reached for a fail-closed route"))
-
-    with pytest.raises(CMSError):
-        create_range_dispatch(user, "polaris", {})
-    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
-
-
-@pytest.mark.django_db
-def test_dispatch_routes_cyberscript_for_non_raes_when_flag_on(user, native_on, monkeypatch):
-    routed = {}
-    monkeypatch.setattr(
-        "cms.services._raes_range_create._create_range_impl",
-        lambda *a, **k: routed.setdefault("path", "cyberscript"),
-    )
-    create_range_dispatch(user, "basic", {})
-    assert routed["path"] == "cyberscript"
-
-
-@pytest.mark.django_db
-def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tmp_path, monkeypatch):
+def test_end_to_end_chain_with_engine_seam_mocked(user, make_pack, tmp_path, monkeypatch):
     # Real resolve -> load SDL -> plan -> apply -> CmsRaesDispatchPort.realize;
     # only the engine service is mocked so no real provisioning is dispatched.
     from django.conf import settings
@@ -281,6 +271,7 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
         backend_admission=None,
         bindings=None,
         workspace_id=None,
+        egress_mode=None,
     ):
         captured["kind"] = compiled_plan.get("kind")
         captured["request_id"] = request_id
@@ -298,7 +289,7 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
 
 
 @pytest.mark.django_db
-def test_unsatisfiable_artifact_requirement_fails_launch_closed(user, native_on, make_pack, tmp_path, monkeypatch):
+def test_unsatisfiable_artifact_requirement_fails_launch_closed(user, make_pack, tmp_path, monkeypatch):
     # An authored artifact requirement the backend cannot satisfy raises
     # ArtifactSatisfactionError in the dispatch resolver (ADR-034-R8, fail closed).
     # The launch must surface a domain CMSError -- the range is not accepted -- and
@@ -325,7 +316,7 @@ def test_unsatisfiable_artifact_requirement_fails_launch_closed(user, native_on,
 
 
 @pytest.mark.django_db
-def test_launch_rejects_pack_mutated_after_registration(user, native_on, make_pack, tmp_path, monkeypatch):
+def test_launch_rejects_pack_mutated_after_registration(user, make_pack, tmp_path, monkeypatch):
     from django.conf import settings
 
     root = make_pack(tmp_path / _PACK_REF, name="raes-launch")
@@ -346,7 +337,7 @@ def test_launch_rejects_pack_mutated_after_registration(user, native_on, make_pa
 
 
 @pytest.mark.django_db
-def test_launch_rejects_valid_pack_resealed_after_registration(user, native_on, make_pack, tmp_path, monkeypatch):
+def test_launch_rejects_valid_pack_resealed_after_registration(user, make_pack, tmp_path, monkeypatch):
     from django.conf import settings
 
     root = make_pack(tmp_path / _PACK_REF, name="raes-launch")
@@ -401,9 +392,7 @@ def _patch_object_stage(monkeypatch, pack_root):
 
 class TestObjectPackageLaunch:
     @pytest.mark.django_db
-    def test_object_launch_validates_and_dispatches(
-        self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch
-    ):
+    def test_object_launch_validates_and_dispatches(self, user, object_bucket, make_pack, tmp_path, monkeypatch):
         from engine.services import RaesRangeRef
 
         root = make_pack(tmp_path / "raes-launch", name="raes-launch")
@@ -419,6 +408,7 @@ class TestObjectPackageLaunch:
             backend_admission=None,
             bindings=None,
             workspace_id=None,
+            egress_mode=None,
         ):
             captured["kind"] = compiled_plan.get("kind")
             return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
@@ -431,9 +421,7 @@ class TestObjectPackageLaunch:
         assert instance.status == ResourceStatus.PROVISIONING.value
 
     @pytest.mark.django_db
-    def test_object_launch_rejects_digest_mismatch(
-        self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch
-    ):
+    def test_object_launch_rejects_digest_mismatch(self, user, object_bucket, make_pack, tmp_path, monkeypatch):
         root = make_pack(tmp_path / "raes-launch", name="raes-launch")
         _make_object_source(user, "sha256:" + "b" * 64)
         _patch_object_stage(monkeypatch, root)
@@ -447,9 +435,7 @@ class TestObjectPackageLaunch:
         assert RangeInstance.all_objects.get(scenario_id="raes-launch").status == ResourceStatus.FAILED.value
 
     @pytest.mark.django_db
-    def test_object_launch_rejects_identity_mismatch(
-        self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch
-    ):
+    def test_object_launch_rejects_identity_mismatch(self, user, object_bucket, make_pack, tmp_path, monkeypatch):
         # Staged pack's validated identity ("other-name") must equal the
         # registered scenario_id ("raes-launch") or launch fails closed.
         root = make_pack(tmp_path / "other-name", name="other-name")
@@ -464,7 +450,7 @@ class TestObjectPackageLaunch:
             create_raes_native_range(user, "raes-launch")
 
     @pytest.mark.django_db
-    def test_object_launch_rejects_invalid_pack(self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch):
+    def test_object_launch_rejects_invalid_pack(self, user, object_bucket, make_pack, tmp_path, monkeypatch):
         # Object registration defers content validation to launch, so a staged
         # pack that fails validate_pack (here: missing pack.yaml) must fail closed
         # at dispatch. This pins the _dispatch_object_raes_package
@@ -484,7 +470,7 @@ class TestObjectPackageLaunch:
         assert RangeInstance.all_objects.get(scenario_id="raes-launch").status == ResourceStatus.FAILED.value
 
     @pytest.mark.django_db
-    def test_object_not_launchable_without_bucket(self, user, native_on, make_pack, tmp_path, monkeypatch):
+    def test_object_not_launchable_without_bucket(self, user, make_pack, tmp_path, monkeypatch):
         # No object_bucket fixture: an object row is non-launchable when no
         # package bucket is configured, so admission refuses it before dispatch.
         from django.conf import settings
@@ -493,5 +479,22 @@ class TestObjectPackageLaunch:
         root = make_pack(tmp_path / "raes-launch", name="raes-launch")
         _make_object_source(user, pack_digest(root))
 
-        with pytest.raises(CMSError):
+        with pytest.raises(CMSError, match="not available for launch"):
             create_raes_native_range(user, "raes-launch")
+        # Refused at admission, before any range row is created.
+        assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
+
+
+@pytest.mark.django_db
+def test_ec2_allowlist_denied_before_reservation_or_dispatch(user, monkeypatch, settings):
+    from unittest.mock import Mock
+
+    settings.CLOUD_PROVIDER = "aws"
+    _make_source(user)
+    monkeypatch.setattr("cms.services._range_workspace.resolve_effective_egress_mode", lambda _: "allowlist")
+    dispatch = Mock()
+    monkeypatch.setattr(_DISPATCH, dispatch)
+    with pytest.raises(CMSError, match="allowlist"):
+        create_raes_native_range(user, "raes-launch")
+    assert not RangeInstance.objects.filter(user_id=user.id).exists()
+    dispatch.assert_not_called()

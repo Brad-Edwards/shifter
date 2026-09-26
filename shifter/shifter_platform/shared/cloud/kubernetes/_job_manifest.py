@@ -171,6 +171,13 @@ def _build_container(
         "env": env,
         "image_pull_policy": profile.image_pull_policy,
     }
+    if profile.resource_requests is not None or profile.resource_limits is not None:
+        kwargs["resources"] = _api_call(
+            client,
+            "V1ResourceRequirements",
+            requests=dict(profile.resource_requests or {}),
+            limits=dict(profile.resource_limits or {}),
+        )
     hardening = profile.hardening_for(container_name)
     if hardening is not None:
         kwargs["security_context"] = _build_container_security_context(client, hardening)
@@ -200,6 +207,22 @@ def _build_job(
 
     if profile.service_account_name:
         pod_spec_kwargs["service_account_name"] = profile.service_account_name
+    if profile.runtime_class_name:
+        pod_spec_kwargs["runtime_class_name"] = profile.runtime_class_name
+    if profile.image_pull_secrets:
+        pod_spec_kwargs["image_pull_secrets"] = [
+            _api_call(client, "V1LocalObjectReference", name=name) for name in profile.image_pull_secrets
+        ]
+    if profile.node_selector:
+        # Provider-injected node placement (#1711): pins the launched Job onto a
+        # dedicated node pool so its pod IP comes from that pool's dedicated pod
+        # range (the range VPC scopes management ingress to it).
+        pod_spec_kwargs["node_selector"] = dict(profile.node_selector)
+    if profile.tolerations:
+        pod_spec_kwargs["tolerations"] = [
+            _api_call(client, "V1Toleration", key=key, operator=operator, value=value, effect=effect)
+            for (key, operator, value, effect) in profile.tolerations
+        ]
     pod_spec = _api_call(client, "V1PodSpec", **pod_spec_kwargs)
 
     metadata_kwargs: dict[str, Any] = {
@@ -228,12 +251,18 @@ def _build_job(
         spec=pod_spec,
     )
 
+    deadline = (
+        {"active_deadline_seconds": profile.active_deadline_seconds}
+        if profile.active_deadline_seconds is not None
+        else {}
+    )
     spec = _api_call(
         client,
         "V1JobSpec",
         template=template,
         backoff_limit=profile.backoff_limit,
         ttl_seconds_after_finished=profile.ttl_seconds_after_finished,
+        **deadline,
     )
 
     return _api_call(

@@ -53,7 +53,7 @@ def _terminal_instances_payload(instances: Iterable[InstanceContext]) -> list[di
 def _empty_active_range_context() -> dict[str, Any]:
     """Return the shared "no active range" context payload.
 
-    Centralizes the unauthenticated, invalid-type, and exception branches of
+    Centralizes the unauthenticated and reachable service-failure branches of
     ``active_range`` so the function stays under the Sonar return-count gate
     and so all empty payloads share one shape.
     """
@@ -179,14 +179,6 @@ def _safe_active_range(request: HttpRequest) -> dict[str, Any]:
         range_context = get_active_range(user, _range_source_for_user(user))
     except Exception:
         logger.exception("Error in active_range context processor for user_id=%s", user_id)
-        return _empty_active_range_context()
-
-    if range_context is not None and not isinstance(range_context, RangeContext):
-        logger.error(
-            "active_range context processor: get_active_range returned invalid type %s for user_id=%s",
-            type(range_context).__name__,
-            user_id,
-        )
         return _empty_active_range_context()
     return _build_active_range_context(range_context, request, user_id)
 

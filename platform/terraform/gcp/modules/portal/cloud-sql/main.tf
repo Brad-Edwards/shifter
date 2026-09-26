@@ -11,12 +11,34 @@ resource "random_password" "db_password" {
   }
 }
 
+resource "random_password" "runtime_db_password" {
+  length  = 32
+  special = true
+
+  keepers = {
+    rotation = 1
+  }
+}
+
+resource "random_password" "provisioner_db_password" {
+  length  = 32
+  special = true
+
+  keepers = {
+    rotation = 1
+  }
+}
+
 resource "random_password" "guacamole_db_password" {
   length  = 32
   special = true
 }
 
 resource "google_sql_database_instance" "platform" {
+  # checkov:skip=CKV_GCP_6:Reviewed false positive: ssl_mode=ENCRYPTED_ONLY rejects plaintext connections; Checkov 3.2 does not recognize the provider's replacement for require_ssl. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_79:The supported PostgreSQL major is a release/migration decision; silently changing the module default to Checkov's moving "latest" target can trigger a destructive major upgrade. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_109:Error-statement logging can capture participant data and credentials embedded in failed queries. Error severity and pgaudit logging remain enabled. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_111:Statement-level logging can capture participant data and credentials embedded in queries. Connection, error, duration, lock-wait, and pgaudit logging remain enabled. See ADR-004-R11 exception (#2084).
   name                = "${var.name_prefix}-pg"
   project             = var.project_id
   region              = var.region
@@ -46,6 +68,41 @@ resource "google_sql_database_instance" "platform" {
       value = "on"
     }
 
+    database_flags {
+      name  = "log_checkpoints"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_disconnections"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_duration"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_hostname"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_lock_waits"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_min_messages"
+      value = "error"
+    }
+
+    database_flags {
+      name  = "cloudsql.enable_pgaudit"
+      value = "on"
+    }
+
     user_labels = var.common_labels
   }
 
@@ -69,16 +126,38 @@ resource "google_sql_database" "guacamole" {
   instance = google_sql_database_instance.platform.name
 }
 
+# deletion_policy = "ABANDON": on PostgreSQL a role that owns objects cannot be
+# dropped via the Cloud SQL API ("role X cannot be dropped because some objects
+# depend on it"), which stalls `terraform destroy` before the instance is removed
+# (#2258). ABANDON drops the resource from state instead of issuing DROP ROLE; the
+# instance deletion that follows removes the role and its objects with it.
 resource "google_sql_user" "platform" {
-  name     = var.cloud_sql_user_name
+  name            = var.cloud_sql_user_name
+  project         = var.project_id
+  instance        = google_sql_database_instance.platform.name
+  password        = random_password.db_password.result
+  deletion_policy = "ABANDON"
+}
+
+resource "google_sql_user" "runtime" {
+  name            = "portal_runtime"
+  project         = var.project_id
+  instance        = google_sql_database_instance.platform.name
+  password        = random_password.runtime_db_password.result
+  deletion_policy = "ABANDON"
+}
+
+resource "google_sql_user" "provisioner" {
+  name     = "provisioner_runtime"
   project  = var.project_id
   instance = google_sql_database_instance.platform.name
-  password = random_password.db_password.result
+  password = random_password.provisioner_db_password.result
 }
 
 resource "google_sql_user" "guacamole" {
-  name     = "guacamole_admin"
-  project  = var.project_id
-  instance = google_sql_database_instance.platform.name
-  password = random_password.guacamole_db_password.result
+  name            = "guacamole_admin"
+  project         = var.project_id
+  instance        = google_sql_database_instance.platform.name
+  password        = random_password.guacamole_db_password.result
+  deletion_policy = "ABANDON"
 }

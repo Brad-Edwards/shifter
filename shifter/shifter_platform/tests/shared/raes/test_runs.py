@@ -27,7 +27,7 @@ name: imageless-run
 description: Image-less, non-parameterized scenario.
 nodes:
   lan: {type: Switch}
-  host: {type: VM, os: linux, resources: {ram: 512 mib, cpu: 1}}
+  host: {type: compute, os: linux, resources: {ram: 512 mib, cpu: 1}}
 infrastructure:
   lan: {count: 1, properties: {cidr: 10.90.0.0/24, gateway: 10.90.0.1}}
   host: {count: 1, links: [lan], properties: [{lan: 10.90.0.10}]}
@@ -43,7 +43,7 @@ variables:
   label: {type: string, required: false}
 nodes:
   lan: {type: Switch}
-  host: {type: VM, os: linux, resources: {ram: 512 mib, cpu: 1}}
+  host: {type: compute, os: linux, resources: {ram: 512 mib, cpu: 1}}
 infrastructure:
   lan: {count: 1, properties: {cidr: 10.91.0.0/24, gateway: 10.91.0.1}}
   host: {count: 1, links: [lan], properties: [{lan: 10.91.0.10}]}

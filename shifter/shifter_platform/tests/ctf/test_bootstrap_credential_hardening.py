@@ -129,7 +129,7 @@ def test_detail_view_never_retrieves_existing_credential(
     assert response.status_code == 200
     assert TEST_CTF_BOOTSTRAP_PASSWORD not in body
     assert "Reveal" not in body
-    assert "Generate new password" in body
+    assert 'id="root"' in body
 
 
 def test_resend_invite_does_not_mutate_password(
@@ -153,11 +153,13 @@ def test_resend_invite_does_not_mutate_password(
     )
 
     participant.user.refresh_from_db()
-    assert response.status_code == 200
+    assert response.status_code == 410
     assert participant.user.check_password("PrivateChangedPassword-42")
-    assert len(sent) == 1
-    assert "PrivateChangedPassword-42" not in sent[0]["text_content"]
-    assert TEST_CTF_BOOTSTRAP_PASSWORD not in sent[0]["text_content"]
+    from ctf.models import CommunicationIntent, MessageRevision
+
+    assert sent == []
+    assert not CommunicationIntent.objects.exists()
+    assert not MessageRevision.objects.exists()
 
 
 def test_first_password_change_rejects_current_issued_password(

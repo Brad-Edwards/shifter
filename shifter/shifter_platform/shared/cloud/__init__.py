@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from django.conf import settings
 from installation.contract import BackendCapability
@@ -34,6 +35,8 @@ from shared.cloud.exceptions import CloudProviderNotImplementedError
 PROVISIONER_CONTAINER_NAME = "pulumi-provisioner"
 
 if TYPE_CHECKING:
+    from shared.cloud.preparation_readback import GCEPreparationReadback
+    from shared.cloud.preparation_runtime import PreparationTask
     from shared.cloud.types import (
         CapacityInventory,
         EventBus,
@@ -43,9 +46,11 @@ if TYPE_CHECKING:
         SecretsStore,
         TaskRunner,
     )
+    from shared.preparation_grant import PreparationGrantConfiguration
 
 
 def _get_provider() -> str:
+    """Return the configured cloud provider identifier."""
     return settings.CLOUD_PROVIDER
 
 
@@ -92,6 +97,32 @@ def get_task_runner() -> TaskRunner:
 
         return GCPTaskRunner()
     raise CloudProviderNotImplementedError(provider, BackendCapability.TASK_RUNNER)
+
+
+def get_preparation_task(
+    grant: PreparationGrantConfiguration, phase: str, image: str, operation_id: UUID, attempt_id: UUID
+) -> PreparationTask:
+    """Compose an installed preparation grant only for this configured GCE tenant."""
+    provider = _require_capability(BackendCapability.TASK_RUNNER)
+    if provider != "gcp":
+        raise CloudProviderNotImplementedError(provider, BackendCapability.TASK_RUNNER)
+    if grant.project_id != settings.GCP_PROJECT_ID:
+        raise ValueError("preparation grant belongs to another cloud project")
+    from shared.cloud.preparation_runtime import preparation_task
+
+    return preparation_task(grant, phase, image, operation_id, attempt_id)
+
+
+def get_preparation_readback(grant: PreparationGrantConfiguration) -> GCEPreparationReadback:
+    """Return the independent observer only within the configured tenant scope."""
+    provider = _require_capability(BackendCapability.TASK_RUNNER)
+    if provider != "gcp":
+        raise CloudProviderNotImplementedError(provider, BackendCapability.TASK_RUNNER)
+    if grant.project_id != settings.GCP_PROJECT_ID:
+        raise ValueError("preparation grant belongs to another cloud project")
+    from shared.cloud.preparation_readback import GCEPreparationReadback
+
+    return GCEPreparationReadback(grant)
 
 
 def get_queue_consumer() -> QueueConsumer:

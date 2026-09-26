@@ -4,7 +4,6 @@
 # `*.auto.tfvars` and the local values win. CI deploys render the overrides
 # from GitHub secrets; see docs/dev/deploy-secrets.md.
 
-
 # ------------------------------------------------------------------------------
 # General
 # ------------------------------------------------------------------------------
@@ -71,7 +70,7 @@ ctfd_root_volume_size       = 50
 ctfd_root_volume_type       = "gp3"
 ctfd_root_volume_iops       = 3000
 ctfd_root_volume_throughput = 125
-ctfd_domain                 = "polaris.example.com"
+ctfd_domain                 = "ctf.example.com"
 ctfd_repo_url               = "https://github.com/CTFd/CTFd.git"
 ctfd_git_ref                = "b5f0cf2b7f0e29f72c9227ea9bc08024230b4f06"
 ctfd_docker_compose_version = "v5.1.0"

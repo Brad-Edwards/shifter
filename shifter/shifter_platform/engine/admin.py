@@ -17,13 +17,15 @@ from shared.schemas.persistence import unwrap_persisted_spec
 
 @admin.register(Range)
 class RangeAdmin(admin.ModelAdmin):
+    """Operator visibility for provisioned ranges."""
+
     list_display = ("id", "user", "scenario_id", "status", "created_at")
     list_filter = ("status", "created_at")
     search_fields = ("user__email",)
     raw_id_fields = ("user",)
 
     @admin.display(description="Scenario")
-    def scenario_id(self, obj):
+    def scenario_id(self, obj: Range) -> str:
         if obj.range_config:
             return unwrap_persisted_spec(obj.range_config).get("scenario_id", "—")
         return "—"
@@ -31,6 +33,8 @@ class RangeAdmin(admin.ModelAdmin):
 
 @admin.register(SubnetAllocation)
 class SubnetAllocationAdmin(admin.ModelAdmin):
+    """Operator visibility for VPC subnet allocations."""
+
     list_display = (
         "id",
         "vpc_id",

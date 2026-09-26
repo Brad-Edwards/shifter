@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from _symbol_facade import (
@@ -294,7 +296,7 @@ class TestCyberscriptImportPattern:
 
 
 class TestCyberscriptViolations:
-    """Tests for the cyberscript-only-via-shared rule."""
+    """Tests for the retired-package import prohibition."""
 
     def test_cms_direct_cyberscript_import_is_violation(self, tmp_path):
         cms_path = tmp_path / "cms" / "experiments"
@@ -302,10 +304,10 @@ class TestCyberscriptViolations:
         (cms_path / "orchestrator.py").write_text("from cyberscript.script_context import ScriptExecutionContext\n")
         imports = get_cyberscript_imports(cms_path.parent)
         assert imports == {"cyberscript.script_context"}
-        violations = compute_cyberscript_violations("cms", imports)
+        violations = compute_cyberscript_violations(imports)
         assert violations == ["cyberscript.script_context"]
 
-    def test_shared_may_import_cyberscript(self, tmp_path):
+    def test_shared_import_is_also_a_violation(self, tmp_path):
         shared_path = tmp_path / "shared"
         shared_path.mkdir()
         (shared_path / "script_context.py").write_text(
@@ -313,8 +315,8 @@ class TestCyberscriptViolations:
         )
         imports = get_cyberscript_imports(shared_path)
         assert "cyberscript.script_context" in imports
-        violations = compute_cyberscript_violations("shared", imports)
-        assert violations == []
+        violations = compute_cyberscript_violations(imports)
+        assert violations == ["cyberscript.script_context"]
 
 
 class TestPrivateFacadeImports:
@@ -543,14 +545,15 @@ class TestSymbolFacadeImports:
         ]
 
     def test_real_config_pins_sanctioned_engine_symbols(self):
-        """The production layer_imports.yaml must enumerate exactly the six
-        sanctioned mission_control -> engine.services data-plane symbols.
+        """Pin the sanctioned tenant-administration and six data-plane facade symbols.
 
         Guards the real security boundary against config drift (ADR-001-R4): a
         widened, emptied, or typo'd allowlist would silently stop enforcing the
         seam while every fixture-based test above kept passing.
         """
         assert load_allowed_symbols(LAYER_IMPORTS_YAML) == {
+            "engine": {"workspaces.services": ["OrganizationAuthorizationError", "get_organization_profile"]},
+            "config": {"workspaces.services": ["list_administrable_organizations", "hierarchy_target_scope"]},
             "mission_control": {
                 "engine.services": [
                     "SSHConnection",
@@ -560,7 +563,7 @@ class TestSymbolFacadeImports:
                     "get_rdp_connection_info",
                     "get_ssh_connection_info",
                 ]
-            }
+            },
         }
 
 
@@ -652,6 +655,8 @@ class TestMain:
             capture_output=True,
             text=True,
             check=False,
+            # --output is confined to the working directory (S8707); run from tmp_path.
+            cwd=str(tmp_path),
         )
         assert result.returncode == 0, result.stderr
         assert output_file.exists()
@@ -732,10 +737,30 @@ class TestMainInProcess:
             (platform / layer_name).mkdir(parents=True)
         output_file = tmp_path / "report.json"
 
+        # --output is confined to the working directory (S8707); run from tmp_path.
+        monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(cli, "__file__", str(script_dir / "check_layer_imports.py"))
         monkeypatch.setattr(sys, "argv", ["check_layer_imports", "-o", str(output_file)])
         assert cli.main() == 0
         assert output_file.exists()
+
+    def test_main_rejects_output_path_traversal(self, tmp_path, monkeypatch):
+        """--output escaping the working directory is refused (S8707 path traversal)."""
+        import check_layer_imports as cli
+
+        script_dir = tmp_path / "scripts" / "check_layer_imports"
+        script_dir.mkdir(parents=True)
+        (script_dir / "layer_imports.yaml").write_text("allowed:\n  cms:\n    - shared\n")
+        platform = tmp_path / "shifter" / "shifter_platform"
+        for layer_name in ALL_LAYERS:
+            (platform / layer_name).mkdir(parents=True)
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(cli, "__file__", str(script_dir / "check_layer_imports.py"))
+        monkeypatch.setattr(sys, "argv", ["check_layer_imports", "-o", "../escape.json"])
+        with pytest.raises(SystemExit):
+            cli.main()
+        assert not (tmp_path.parent / "escape.json").exists()
 
 
 class TestGetImportsEdgeCases:

@@ -36,6 +36,11 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
       { name = "CLOUD_PROVIDER", value = var.cloud_provider },
       { name = "SECRETS_KMS_KEY_ARN", value = var.secrets_manager_kms_key_arn },
       { name = "AWS_REGION", value = local.region },
+      # ExpectedBucketOwner guard for the provisioner's S3 adapter (python:S7608):
+      # bind every S3 Get/Head/Delete to the deployment's own account so a
+      # bucket-name collision in a foreign account fails closed. Sourced from the
+      # module's caller-identity account id (local.account_id).
+      { name = "AWS_S3_EXPECTED_BUCKET_OWNER", value = local.account_id },
       { name = "DB_HOST", value = var.db_host },
       { name = "DB_PORT", value = tostring(var.db_port) },
       { name = "DB_NAME", value = var.db_name },
@@ -73,21 +78,6 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
       { name = "NGFW_SUBNET_CIDR", value = var.ngfw_subnet_cidr },
       { name = "NGFW_BOOTSTRAP_BUCKET", value = var.agent_s3_bucket },
       { name = "NGFW_INSTANCE_PROFILE_NAME", value = var.ngfw_instance_profile_name },
-      # Polaris Bedrock agent config (#1377). See
-      # shifter/engine/provisioner/config.py load_aws_polaris_agent_config().
-      # RANGE_INSTANCE_ROLE_ARN reuses the existing shared range-host role
-      # ARN (already granted iam:PassRole above) as the per-range Polaris
-      # agent role's trust principal.
-      { name = "AWS_POLARIS_AGENT_REGION", value = var.aws_polaris_agent_region },
-      { name = "AWS_POLARIS_AGENT_MAIN_MODEL_ID", value = var.aws_polaris_agent_main_model_id },
-      { name = "AWS_POLARIS_AGENT_SMALL_MODEL_ID", value = var.aws_polaris_agent_small_model_id },
-      { name = "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN", value = var.aws_polaris_agent_main_inference_profile_arn },
-      { name = "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN", value = var.aws_polaris_agent_small_inference_profile_arn },
-      { name = "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS", value = join(",", var.aws_polaris_agent_main_backing_model_arns) },
-      { name = "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS", value = join(",", var.aws_polaris_agent_small_backing_model_arns) },
-      { name = "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS", value = tostring(var.aws_polaris_agent_sts_session_duration_seconds) },
-      { name = "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS", value = tostring(var.aws_polaris_agent_refresh_window_seconds) },
-      { name = "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN", value = var.permissions_boundary_arn },
       { name = "RANGE_INSTANCE_ROLE_ARN", value = var.range_instance_role_arn },
     ]
 

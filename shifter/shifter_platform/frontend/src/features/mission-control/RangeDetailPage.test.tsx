@@ -34,6 +34,8 @@ function activeRange(overrides: Partial<RangePresentation> = {}): RangePresentat
     is_ready: true,
     is_terminal: false,
     is_active: true,
+    pause_supported: true,
+    resume_supported: true,
     ...overrides,
   };
 }

@@ -15,9 +15,10 @@ from uuid import UUID
 from django.db import transaction
 from django.db.models import QuerySet
 
+from ctf.enums import EventCapability
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFChallengePrerequisite, CTFEvent, CTFParticipant
-from ctf.services.authorization import assert_actor_owns_event as _assert_actor_owns_event
+from ctf.services.authorization import assert_event_capability as _assert_event_capability
 from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def add_prerequisite(
             details={"challenge_id": str(challenge_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     try:
         required = CTFChallenge.objects.select_related("event").get(pk=required_challenge_id)
@@ -210,7 +211,7 @@ def remove_prerequisite(prerequisite_id: UUID, *, actor_id: int) -> None:
             details={"prerequisite_id": str(prerequisite_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, prereq.challenge.event)
+    _assert_event_capability(actor_id, prereq.challenge.event, EventCapability.CHALLENGES)
 
     if not prereq.challenge.event.is_content_modifiable:
         raise CTFStateError(

@@ -33,7 +33,7 @@ def _node(*, os_family: str = "linux", count: int = 2) -> RaesPlanNode:
 def _plan(*, node: RaesPlanNode | None = None) -> RaesPlan:
     target = node or _node()
     return RaesPlan(
-        raes_version="2.0.0",
+        raes_version="3.5.0",
         nodes=(target,),
         networks=(),
         content=(
@@ -89,7 +89,7 @@ def _account_variant_plan(*, os_family: str) -> RaesPlan:
                 username="keyholder",
                 target_address=plan.nodes[0].address,
                 home="/home/keyholder" if os_family == "linux" else None,
-                auth_method="publickey",
+                auth_method="key",
             ),
             RaesPlanAccount(
                 address="account.suspended",
@@ -254,7 +254,7 @@ def test_duplicate_or_extra_instance_output_fails_exact_fanout_coverage(outputs)
 def test_windows_shell_or_home_is_rejected_before_mutation() -> None:
     node = _node(os_family="windows", count=1)
     plan = RaesPlan(
-        raes_version="2.0.0",
+        raes_version="3.5.0",
         nodes=(node,),
         networks=(),
         accounts=(
@@ -274,7 +274,7 @@ def test_windows_shell_or_home_is_rejected_before_mutation() -> None:
 def test_source_less_file_without_inline_bytes_is_not_overclaimed() -> None:
     node = _node(count=1)
     plan = RaesPlan(
-        raes_version="2.0.0",
+        raes_version="3.5.0",
         nodes=(node,),
         networks=(),
         content=(
@@ -339,11 +339,11 @@ def test_windows_probe_verifies_public_key_and_disabled_account_state() -> None:
     verify_step = orchestrator.orchestrate.call_args.args[1].verify_step
     payload = json.loads(base64.b64decode(verify_step.stdin_input).decode())
     assert payload["accounts"] == [
-        {"username": "keyholder", "groups": [], "disabled": False, "auth_method": "publickey"},
+        {"username": "keyholder", "groups": [], "disabled": False, "auth_method": "key"},
         {"username": "suspended", "groups": [], "disabled": True, "auth_method": "password"},
     ]
     assert "$User.Enabled -ne (-not [bool]$Account.disabled)" in verify_step.script
-    assert "$Account.auth_method -eq 'publickey'" in verify_step.script
+    assert "$Account.auth_method -eq 'key'" in verify_step.script
     assert "authorized_keys" in verify_step.script
     assert "AreAccessRulesProtected" in verify_step.script
 

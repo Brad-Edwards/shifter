@@ -22,6 +22,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .image_policy import validate_management_ssh_port, validate_management_ssh_username
+
 __all__ = ["MAX_ARTIFACT_BINDINGS", "ArtifactBinding", "ArtifactBindingError"]
 
 # Bounded well within MAX_ENVELOPE_BYTES: one binding per node with an artifact
@@ -44,9 +46,12 @@ _KEYS = frozenset(
         "acquisition",
         "timing",
         "image_ref",
+        "image_id",
         "machine_type",
         "disk_size_gb",
         "disk_type",
+        "management_ssh_port",
+        "management_ssh_username",
     }
 )
 
@@ -79,6 +84,9 @@ class ArtifactBinding:
     machine_type: str = ""
     disk_size_gb: int | None = None
     disk_type: str = ""
+    image_id: str = ""
+    management_ssh_port: int = 22
+    management_ssh_username: str = ""
 
     @classmethod
     def from_transport(cls, raw: Mapping[str, Any]) -> ArtifactBinding:
@@ -89,7 +97,14 @@ class ArtifactBinding:
         unexpected = sorted(actual - _KEYS)
         if unexpected:
             raise ArtifactBindingError(f"artifact binding has unexpected field(s): {', '.join(unexpected)}")
-        required = _KEYS - {"machine_type", "disk_size_gb", "disk_type"}
+        required = _KEYS - {
+            "machine_type",
+            "disk_size_gb",
+            "disk_type",
+            "image_id",
+            "management_ssh_port",
+            "management_ssh_username",
+        }
         missing = sorted(required - actual)
         if missing:
             raise ArtifactBindingError(f"artifact binding is missing field(s): {', '.join(missing)}")
@@ -104,6 +119,12 @@ class ArtifactBinding:
         if timing not in _TIMINGS:
             raise ArtifactBindingError(f"artifact binding timing must be one of {sorted(_TIMINGS)}")
 
+        try:
+            management_port = validate_management_ssh_port(raw.get("management_ssh_port", 22))
+            management_user = validate_management_ssh_username(raw.get("management_ssh_username", ""))
+        except ValueError as exc:
+            raise ArtifactBindingError(str(exc)) from None
+
         return cls(
             target=_require_str(raw, "target"),
             requirement_id=_require_str(raw, "requirement_id"),
@@ -115,14 +136,19 @@ class ArtifactBinding:
             acquisition=acquisition,
             timing=timing,
             image_ref=_require_str(raw, "image_ref"),
+            image_id=_provider_image_id(raw.get("image_id", "")),
             machine_type=_optional_str(raw.get("machine_type")),
             disk_size_gb=_optional_positive_int(raw.get("disk_size_gb")),
             disk_type=_optional_str(raw.get("disk_type")),
+            management_ssh_port=management_port,
+            management_ssh_username=management_user,
         )
 
     def to_transport(self) -> dict[str, Any]:
         """Return the JSON-serialisable, byte-free transport row."""
         return {
+            **({"management_ssh_port": self.management_ssh_port} if self.management_ssh_port != 22 else {}),
+            **({"management_ssh_username": self.management_ssh_username} if self.management_ssh_username else {}),
             "target": self.target,
             "requirement_id": self.requirement_id,
             "artifact_id": self.artifact_id,
@@ -133,10 +159,20 @@ class ArtifactBinding:
             "acquisition": self.acquisition,
             "timing": self.timing,
             "image_ref": self.image_ref,
+            "image_id": self.image_id,
             "machine_type": self.machine_type,
             "disk_size_gb": self.disk_size_gb,
             "disk_type": self.disk_type,
         }
+
+
+def _provider_image_id(value: object) -> str:
+    """Legacy inventory has no provider ID; a supplied immutable ID must be valid."""
+    if value == "":
+        return ""
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9]\d{0,19}", value):
+        raise ArtifactBindingError("artifact image_id must be an immutable GCE numeric identity")
+    return value
 
 
 def _require_str(raw: Mapping[str, Any], field: str) -> str:

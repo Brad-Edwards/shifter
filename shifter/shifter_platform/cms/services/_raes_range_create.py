@@ -1,40 +1,32 @@
-"""RAES-native range launch — the flag-gated parallel to ``create_range`` (#1479).
+"""Authoritative RAES range launch path (#1479 / #1311).
 
 ``create_raes_native_range`` launches a registered RAES package through the
-native provisioning path: it reuses the create_range ownership / active-range /
+RAES provisioning path: it reuses the range ownership / active-range /
 audit helpers, persists the same CMS ``Request`` + ``RangeInstance`` bookkeeping
 (so Mission Control visibility, active-range admission, and the
 ``range.status.updated`` -> ``apply_range_status`` flow all work uniformly, keyed
 by ``request_id``), then drives the RAES backend + dispatch port instead of
-cyberscript hydration. The ``RangeInstance`` carries ``range_spec=None``: RAES
-ranges have no cyberscript spec (ADR-031-R2 -- no RangeSpec contamination).
-
-``create_range_dispatch`` is the thin router product callers use: with the
-SHIFTER_RAES_NATIVE_PROVISIONING flag off it always calls the cyberscript
-``create_range`` (behaviour byte-identical to today); with the flag on it routes
-a registered RAES scenario to the native path. The cyberscript ``create_range``
-body is never modified (ADR-031-R2); this module only adds parallel functions.
+legacy hydration. The ``RangeInstance`` carries ``range_spec=None`` because the
+serialized RAES provisioning plan is the only authored runtime contract.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from django.conf import settings
+from django.db import transaction
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from cms.services._range_backend_admission import assert_backend_admitted
-from cms.services._range_create import (
+from cms.services._range_launch_common import (
     LaunchOptions,
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
-    _create_range_impl,
     _reserve_active_range_slot,
     _set_range_instance_status,
     _validate_create_range_scenario,
@@ -54,12 +46,13 @@ if TYPE_CHECKING:
 
     from cms.models import RaesPackageSource, Request
     from shared.enums import RangeSource
+    from shared.model_access import OwnedReference
+    from shared.model_access.reservation import ModelLaunchScope
     from shared.range_instantiation_policy import BackendAdmission
     from shared.schemas.range import RangeContext
 
 logger = logging.getLogger(__name__)
 
-_NATIVE_DISABLED = "RAES-native provisioning is not enabled"
 _OBJECT_SOURCE_KIND = "object"
 # The only range backend raes_range_ops can realize today (#1354).
 _RAES_REALIZED_BACKEND = "gce"
@@ -81,6 +74,9 @@ def _dispatch_raes_package(
     source: RaesPackageSource,
     backend_admission: BackendAdmission | None,
     workspace_id: int,
+    egress_mode: str,
+    *,
+    content_authorizer: User | None = None,
 ) -> None:
     """Resolve, verify, load, plan, and dispatch one registered RAES pack.
 
@@ -93,138 +89,54 @@ def _dispatch_raes_package(
     tenancy scope) rides the same way so the RAES path scopes ranges exactly like
     the cyberscript path (ADR-046-R3).
     """
+    from cms.services._raes_dispatch import dispatch_object_raes_package, dispatch_repo_raes_package
+
     if source.source_kind == _OBJECT_SOURCE_KIND:
-        _dispatch_object_raes_package(request_id, user, source, backend_admission, workspace_id)
+        dispatch_object_raes_package(
+            request_id,
+            user,
+            source,
+            backend_admission,
+            workspace_id,
+            egress_mode,
+            content_authorizer=content_authorizer,
+        )
     else:
-        _dispatch_repo_raes_package(request_id, user, source, backend_admission, workspace_id)
+        dispatch_repo_raes_package(
+            request_id,
+            user,
+            source,
+            backend_admission,
+            workspace_id,
+            egress_mode,
+            content_authorizer=content_authorizer,
+        )
 
 
-def _dispatch_repo_raes_package(
+def _audit_raes_range_provision(
     request_id: UUID,
+    scenario: str,
     user: User,
-    source: RaesPackageSource,
-    backend_admission: BackendAdmission | None,
-    workspace_id: int,
+    range_source: RangeSource,
+    *,
+    egress_policy_workspace_id: int,
+    egress_mode: str,
 ) -> None:
-    """Resolve a repo pack under ``RAES_PACKAGE_ROOT``, verify its digest, launch."""
-    from cms.scenarios.pack_validation import PackDigestError, verify_pack_digest
-    from shared.raes.package_loader import RaesPackageError, resolve_pack_root
-
-    try:
-        pack_root = resolve_pack_root(source.package_ref, package_root=Path(settings.RAES_PACKAGE_ROOT))
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES package could not be resolved: {exc}") from exc
-    try:
-        digest_matches = verify_pack_digest(pack_root, source.package_digest)
-    except PackDigestError as exc:
-        raise CMSError("RAES pack content identity could not be verified") from exc
-    if not digest_matches:
-        raise CMSError("RAES pack content digest no longer matches registration")
-    _launch_pack(request_id, user, pack_root, backend_admission, workspace_id)
-
-
-def _dispatch_object_raes_package(
-    request_id: UUID,
-    user: User,
-    source: RaesPackageSource,
-    backend_admission: BackendAdmission | None,
-    workspace_id: int,
-) -> None:
-    """Stage an object-backed pack, bind its identity + digest, then launch.
-
-    Object rows are registered without content validation or digest binding
-    (#1578), so this resolver provides the equivalent identity guarantees repo
-    packs get (ADR-034-R5): it downloads the single immutable archive named by
-    ``package_ref`` into a private temp dir, safely extracts it, re-runs the
-    upstream pack contract validation, asserts the pack identity matches the
-    registered ``scenario_id``, and verifies the canonical ``package_digest`` --
-    all before SDL resolution, planning, or dispatch. The staged directory is
-    always cleaned up by the resolver context manager.
-    """
-    from cms.scenarios.pack_validation import (
-        PackDigestError,
-        PackValidationError,
-        validate_pack,
-        verify_pack_digest,
-    )
-    from shared.cloud import get_object_storage
-    from shared.raes.object_source import stage_object_pack
-    from shared.raes.package_loader import RaesPackageError
-
-    bucket = str(getattr(settings, "RAES_PACKAGE_BUCKET", "") or "").strip()
-    if not bucket:
-        raise CMSError("Object-backed RAES packages are not available: no package bucket is configured")
-
-    try:
-        with stage_object_pack(
-            storage=get_object_storage(),
-            bucket=bucket,
-            key=_object_package_key(source.package_ref),
-            max_archive_bytes=settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES,
-            max_uncompressed_bytes=settings.RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
-            max_entries=settings.RAES_PACKAGE_MAX_ENTRIES,
-        ) as pack_root:
-            try:
-                validated_name = validate_pack(pack_root)
-            except PackValidationError as exc:
-                raise CMSError("RAES pack failed validation") from exc
-            if validated_name != source.scenario_id:
-                raise CMSError("RAES pack identity does not match the registered scenario")
-            try:
-                digest_matches = verify_pack_digest(pack_root, source.package_digest)
-            except PackDigestError as exc:
-                raise CMSError("RAES pack content identity could not be verified") from exc
-            if not digest_matches:
-                raise CMSError("RAES pack content digest no longer matches registration")
-            _launch_pack(request_id, user, pack_root, backend_admission, workspace_id)
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES object package could not be resolved: {exc}") from exc
-
-
-def _object_package_key(package_ref: str) -> str:
-    """Join the configured object-package prefix with the row's ``package_ref``."""
-    prefix = str(getattr(settings, "RAES_PACKAGE_PREFIX", "") or "").strip().strip("/")
-    ref = package_ref.strip().lstrip("/")
-    return f"{prefix}/{ref}" if prefix else ref
-
-
-def _launch_pack(
-    request_id: UUID,
-    user: User,
-    pack_root: Path,
-    backend_admission: BackendAdmission | None,
-    workspace_id: int,
-) -> None:
-    """Select the single SDL entry, dispatch through the port, assert acceptance."""
-    from cms.raes.dispatch import CmsRaesDispatchPort
-    from shared.raes.package_loader import RaesPackageError, launch_raes_package, resolve_pack_scenario_path
-
-    try:
-        scenario_path = resolve_pack_scenario_path(pack_root)
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES package could not be resolved: {exc}") from exc
-
-    port = CmsRaesDispatchPort(
-        user_id=user.id,
-        request_id=str(request_id),
-        backend_admission=backend_admission,
-        pack_root=pack_root,
-        workspace_id=workspace_id,
-    )
-    try:
-        result = launch_raes_package(scenario_path=scenario_path, port=port)
-    except RaesPackageError as exc:
-        raise CMSError(f"RAES package could not be launched: {exc}") from exc
-    if not result.accepted:
-        logger.warning("create_raes_native_range: dispatch not accepted request_id=%s", request_id)
-        raise CMSError("RAES provisioning was not accepted")
-
-
-def _audit_raes_range_provision(request_id: UUID, scenario: str, user: User, range_source: RangeSource) -> None:
     """Write the audit-log entry for a successful RAES-native launch."""
+    instance = RangeInstance.objects.filter(request__request_id=request_id).first()
+    lease_state: dict[str, object] = {}
+    if instance is not None and instance.lease_policy_source:
+        lease_state = {
+            "lease_initial_days": instance.lease_initial_days,
+            "lease_maximum_days": instance.lease_maximum_days,
+            "lease_extension_days": instance.extension_days,
+            "lease_policy_source": instance.lease_policy_source,
+            "lease_policy_tenant_revision": instance.lease_policy_tenant_revision,
+            "lease_policy_group_revisions": instance.lease_policy_group_revisions,
+        }
     _audit_log_call(
         entity_type=AuditEntityType.RANGE,
-        entity_id=0,
+        entity_id=instance.pk if instance is not None else 0,
         action=AuditAction.PROVISION,
         actor_type=AuditActorType.USER,
         actor_id=user.id,
@@ -233,6 +145,9 @@ def _audit_raes_range_provision(request_id: UUID, scenario: str, user: User, ran
             "scenario": scenario,
             "provisioning": "raes-native",
             "range_source": range_source.value,
+            "egress_policy_workspace_id": egress_policy_workspace_id,
+            "egress_mode": egress_mode,
+            **lease_state,
         },
         request_id=str(request_id),
     )
@@ -262,11 +177,11 @@ def _assert_raes_adapter_supports(backend_admission: BackendAdmission | None) ->
     closed here -- before reservation and dispatch -- rather than binding ``gdc``
     and then running the hard-coded GCE adapter.
     """
-    if backend_admission is None or backend_admission.backend == _RAES_REALIZED_BACKEND:
+    if backend_admission is None or backend_admission.backend in {_RAES_REALIZED_BACKEND, "ec2"}:
         return
     raise CMSError(
         f"RAES-native provisioning has no realization adapter for range backend "
-        f"'{backend_admission.backend}'; only the GCE VM range-cell backend is implemented.",
+        f"'{backend_admission.backend}'; the GCE and EC2 VM range-cell backends are implemented.",
         details={"code": "unsupported-capability"},
     )
 
@@ -284,8 +199,7 @@ def create_raes_native_range(
     instantiation-purpose argument (ADR-030-R6). The operator-gated non-user
     entry point is ``cms.services.create_non_user_range``.
 
-    Flag-gated (raises if SHIFTER_RAES_NATIVE_PROVISIONING is off). Enforces the
-    same user/active-range/launchability admission as ``create_range``, persists
+    Enforces the user/active-range/launchability admission, persists
     the CMS Request + RangeInstance bookkeeping, then dispatches the compiled
     RAES plan. On any dispatch failure the RangeInstance is marked FAILED and the
     error propagates.
@@ -299,45 +213,50 @@ def create_raes_native_range(
     )
 
 
-def _create_raes_native_range_impl(
-    user: User,
+def _create_raes_native_range_impl(  # NOSONAR -- mirrors the stable launch service boundary.
+    user: User,  # NOSONAR -- stable launch boundary intentionally carries all reviewed inputs.
     scenario: str,
     *,
     range_source: RangeSource | None,
     instantiation_purpose: InstantiationPurpose,
-    raes_source_id: str | None = None,
     workspace_uuid: str | UUID | None = None,
+    enforced_deadline: datetime | None = None,
+    model_admission_subject: OwnedReference | None = None,
+    model_launch_scope: ModelLaunchScope | None = None,
+    model_sources: dict | None = None,
+    content_authorizer: User | None = None,
+    ctf_policy_workspace_id: int | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
-    Not a product facade; see ``_range_create._create_range_impl``. ``scenario``
-    is the stable public id used for persistence, correlation, and audit;
-    ``raes_source_id`` (default: ``scenario``) is the internal registered
-    package-source actually loaded, so a routed public id (``polaris``) launches
-    its distinct source (``polaris-raes``) while the range still correlates by the
-    public id (ADR-031-R5/R6).
+    ``scenario`` is both the stable public id used for persistence/correlation
+    and the immutable registered package-source id loaded for the launch.
     """
     from shared.enums import RangeSource
-
-    if not settings.RAES_NATIVE_PROVISIONING_ENABLED:
-        raise CMSError(_NATIVE_DISABLED)
 
     _validate_create_range_user(user)
     _validate_create_range_scenario(user, scenario)
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
-    from cms.services._range_lease import build_range_lease
-
-    lease = build_range_lease(range_source)
-
     backend_admission = assert_backend_admitted(instantiation_purpose, range_source)
     _assert_raes_adapter_supports(backend_admission)
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
-    source = _load_raes_source_or_raise(raes_source_id or scenario)
+    source = _load_raes_source_or_raise(scenario)
+    if source.organization_uuid is not None:
+        from cms.scenarios.registry import check_scenario_access
+
+        check_scenario_access(scenario, content_authorizer or user)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
+        from cms.services._range_lease import build_range_lease, build_resolved_mission_control_range_lease
+
+        lease = (
+            build_resolved_mission_control_range_lease(user, for_update=True)
+            if range_source is RangeSource.MISSION_CONTROL
+            else build_range_lease(range_source, enforced_deadline=enforced_deadline)
+        )
         return RangeInstance.objects.create(
             request=cms_request,
             scenario_id=scenario,
@@ -347,14 +266,32 @@ def _create_raes_native_range_impl(
             workspace_id=cms_request.workspace_id,
             range_source=range_source.value,
             range_spec=None,
+            model_launch_scope=model_launch_scope.model_dump(mode="json") if model_launch_scope else None,
+            model_sources=model_sources or {},
+            model_package_digest=source.package_digest,
             expires_at=lease.expires_at,
             maximum_expires_at=lease.maximum_expires_at,
+            extension_days=lease.extension_days,
+            lease_initial_days=lease.initial_days,
+            lease_maximum_days=lease.maximum_days,
+            lease_policy_source=lease.policy_source,
+            lease_policy_tenant_revision=lease.tenant_revision,
+            lease_policy_group_revisions=[
+                {"group_id": group_id, "revision": revision} for group_id, revision in lease.group_revisions
+            ],
         )
 
     from uuid import uuid4
 
     request_id = uuid4()
     workspace_id = resolve_launch_workspace(user, workspace_uuid)
+    if source.organization_uuid is not None:
+        from workspaces.services import WorkspaceOperation, authorize_bound_workspace
+
+        if content_authorizer is None:
+            authorization = authorize_bound_workspace(user, workspace_id, WorkspaceOperation.LAUNCH_RANGE)
+            if authorization.organization_uuid != source.organization_uuid:
+                raise CMSError("The pack is unavailable in this workspace")
     admit_workspace_launch(
         workspace_id=workspace_id,
         user=user,
@@ -362,95 +299,193 @@ def _create_raes_native_range_impl(
         instantiation_purpose=instantiation_purpose,
         correlation_key=request_id,
     )
-    _request_id, _cms_request, range_instance = _reserve_active_range_slot(
-        user, range_source, _persist, workspace_id, request_id
+
+    from cms.services._range_workspace import resolve_effective_egress_mode
+
+    policy_workspace_id = workspace_id
+    if ctf_policy_workspace_id is not None:
+        from cms.services._range_workspace import authorize_ctf_policy_workspace
+
+        if range_source is not RangeSource.CTF or content_authorizer is None:
+            raise CMSError("Selected workspace is not available")
+        authorize_ctf_policy_workspace(content_authorizer, ctf_policy_workspace_id)
+        policy_workspace_id = ctf_policy_workspace_id
+    egress_mode = resolve_effective_egress_mode(policy_workspace_id)
+    from shared.range_instantiation_policy import assert_range_backend_egress_supported
+
+    try:
+        assert_range_backend_egress_supported(backend_admission.backend if backend_admission else None, egress_mode)
+    except ValueError as exc:
+        raise CMSError(str(exc)) from exc
+
+    from django.conf import settings
+
+    from cms.services._model_source_selection import resolve_launch_sources
+    from shared.model_access import ContractError
+    from shared.model_access.sources import ModelSourceSelection
+    from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthorizationError
+
+    try:
+        model_sources = ModelSourceSelection.model_validate(model_sources or {}).model_dump(mode="json")
+        resolve_launch_sources(
+            user, workspace_id, model_sources, catalog=getattr(settings, "MODEL_ACCESS_CATALOG", None)
+        )
+    except (ValueError, ContractError, WorkspaceAuthorizationError, OrganizationAuthorizationError):
+        raise CMSError(
+            "Selected model sources are unavailable. Refresh the selection and try again.",
+            details={"code": "model-source-unavailable"},
+        ) from None
+
+    # PLAT-202: required model access is a fail-closed admission decision enforced
+    # here, before any dispatch (cold, warm-claim, or non-user), so every launch
+    # family is gated once. Distinct from the best-effort capacity path: a required
+    # denial or indeterminate outcome refuses the launch rather than proceeding. A
+    # scenario with no authored model need passes through unchanged.
+    from cms.services._model_admission import assert_launch_model_access
+
+    assert_launch_model_access(
+        user=user,
+        scenario_id=scenario,
+        egress_mode=egress_mode,
+        subject=model_admission_subject,
+        package_digest=source.package_digest,
+    )
+
+    # #28: attempt an atomic warm-pool claim before cold provisioning. A hit
+    # transfers a ready, compatible, system-owned generation to this user (audited
+    # ownership rehome) and enqueues activation, which realizes the claimant's
+    # fresh, sanitized access. A miss / disabled policy / unsupported backend
+    # cold-falls-back through the unchanged reservation + dispatch path below, with
+    # the inputs already validated for this launch.
+    from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
+
+    claimed_request_id = attempt_warm_claim(
+        WarmClaimRequest(
+            user=user,
+            scenario=scenario,
+            package_digest=source.package_digest,
+            lock_digest=source.lock_digest,
+            backend=backend_admission.backend if backend_admission else "",
+            instantiation_purpose=instantiation_purpose,
+            range_source=range_source,
+            workspace_id=workspace_id,
+            egress_mode=egress_mode,
+            request_id=request_id,
+            enforced_deadline=enforced_deadline,
+            model_launch_scope=model_launch_scope,
+            model_sources=model_sources,
+            policy_workspace_id=ctf_policy_workspace_id,
+        )
+    )
+    if claimed_request_id is not None:
+        _audit_raes_range_provision(
+            claimed_request_id,
+            scenario,
+            user,
+            range_source,
+            egress_policy_workspace_id=policy_workspace_id,
+            egress_mode=egress_mode,
+        )
+        return _build_raes_range_context(claimed_request_id, scenario, user)
+
+    _request_id, _cms_request, range_instance, egress_mode = _reserve_active_range_slot(
+        user,
+        range_source,
+        _persist,
+        workspace_id,
+        request_id,
+        policy_workspace_id=ctf_policy_workspace_id,
+        policy_actor=content_authorizer,
     )
 
     try:
-        _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id)
+        # PLAT-202/#2119: _reserve_active_range_slot resolves egress under the
+        # workspace lock, and that authoritative posture — not the earlier
+        # preliminary read — is what dispatch uses. Re-run the model gate against
+        # it so a posture change between admission and reservation cannot dispatch
+        # a required-model range with an incompatible egress. A denial here is
+        # released and marked FAILED by the surrounding handler.
+        assert_launch_model_access(
+            user=user,
+            scenario_id=scenario,
+            egress_mode=egress_mode,
+            subject=model_admission_subject,
+            package_digest=source.package_digest,
+        )
+        if content_authorizer is None:
+            _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
+        else:
+            _dispatch_raes_package(
+                request_id,
+                user,
+                source,
+                backend_admission,
+                workspace_id,
+                egress_mode,
+                content_authorizer=content_authorizer,
+            )
     except Exception:
-        _set_range_instance_status(range_instance, ResourceStatus.FAILED)
+        # Dispatch failed before an Engine lifecycle can converge, so mark the
+        # range FAILED and release the open concurrent-range reservation as one
+        # atomic convergence step. No terminal status event will arrive to repair
+        # a partial write, so the FAILED transition and the release must commit
+        # together or not at all (ADR-046-R10).
+        from workspaces.services import release_workspace_concurrent_range
+
+        with transaction.atomic():
+            _set_range_instance_status(range_instance, ResourceStatus.FAILED)
+            release_workspace_concurrent_range(workspace_id, request_id)
         raise
 
-    _audit_raes_range_provision(request_id, scenario, user, range_source)
+    _audit_raes_range_provision(
+        request_id,
+        scenario,
+        user,
+        range_source,
+        egress_policy_workspace_id=policy_workspace_id,
+        egress_mode=egress_mode,
+    )
     return _build_raes_range_context(request_id, scenario, user)
 
 
-def create_range_dispatch(
-    user: User,
+def create_range_dispatch(  # NOSONAR -- stable cross-service facade retained for existing callers.
+    user: User,  # NOSONAR -- compatibility facade retains its established public signature.
     scenario: str,
-    agents_by_os: dict[str, int],
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
     remote_access_teardown_at: datetime | None = None,
     workspace_uuid: str | UUID | None = None,
+    model_admission_subject: OwnedReference | None = None,
+    model_launch_scope: ModelLaunchScope | None = None,
+    model_sources: dict | None = None,
+    content_authorizer: User | None = None,
+    ctf_policy_workspace_id: int | None = None,
 ) -> RangeContext:
-    """Route a launch to the RAES-native or cyberscript path.
+    """Launch a registered RAES scenario through the authoritative path.
 
-    The thin product router, permanently live-fire (ADR-030-R6). With
-    SHIFTER_RAES_NATIVE_PROVISIONING off, always calls the cyberscript
-    ``create_range`` (byte-identical to today). With it on, a registered RAES
-    scenario is launched through ``create_raes_native_range`` (``agents_by_os`` /
-    ``ngfw_enabled`` do not apply to RAES packages); every other scenario stays
-    on the cyberscript path.
+    ``ngfw_enabled`` remains accepted at the public service seam while callers
+    migrate their request shape; RAES packages own topology and authored
+    infrastructure intent, so it does not change the plan.
 
     ``workspace_uuid`` is the optional public workspace selection (ADR-046-R9),
     threaded to whichever create path runs. Server-derived callers (e.g. the CTF
     bridge) omit it, so their ranges bind to the launcher's personal workspace.
     """
+    from cms.services._raes_range_dispatch import dispatch_range_launch
+
     return dispatch_range_launch(
         user,
         scenario,
-        agents_by_os,
         range_source=range_source,
         instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
         options=LaunchOptions(
             ngfw_enabled=ngfw_enabled,
             remote_access_teardown_at=remote_access_teardown_at,
             workspace_uuid=workspace_uuid,
+            model_admission_subject=model_admission_subject,
+            model_launch_scope=model_launch_scope,
+            model_sources=model_sources,
+            content_authorizer=content_authorizer,
+            ctf_policy_workspace_id=ctf_policy_workspace_id,
         ),
-    )
-
-
-def dispatch_range_launch(
-    user: User,
-    scenario: str,
-    agents_by_os: dict[str, int],
-    *,
-    range_source: RangeSource | None,
-    instantiation_purpose: InstantiationPurpose,
-    options: LaunchOptions,
-) -> RangeContext:
-    """Shared RAES/cyberscript routing body, parameterized by minted launch authority.
-
-    Not a product facade; see ``_range_create._create_range_impl``. Internal to
-    the CMS create seam -- ``cms.services`` exports the two facades that wrap it,
-    never this function. ``options`` bundles the optional launch-shaping inputs
-    (see :class:`cms.services._range_create.LaunchOptions`).
-    """
-    from cms.scenarios.cutover import resolve_launch
-
-    if settings.RAES_NATIVE_PROVISIONING_ENABLED:
-        resolution = resolve_launch(scenario)
-        if resolution.is_raes:
-            if resolution.raes_source_id is None:
-                # A routed internal source id is not offered as a direct launch choice.
-                raise CMSError(f"Scenario '{scenario}' is not available for launch")
-            if options.remote_access_teardown_at is not None:
-                raise CMSError("The RAES-native range adapter does not support CTF OpenVPN access")
-            return _create_raes_native_range_impl(
-                user,
-                scenario,
-                range_source=range_source,
-                instantiation_purpose=instantiation_purpose,
-                raes_source_id=resolution.raes_source_id,
-                workspace_uuid=options.workspace_uuid,
-            )
-    return _create_range_impl(
-        user,
-        scenario,
-        agents_by_os,
-        range_source,
-        instantiation_purpose,
-        options,
     )

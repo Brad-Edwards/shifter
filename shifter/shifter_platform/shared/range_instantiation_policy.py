@@ -43,7 +43,7 @@ UNSUPPORTED_CAPABILITY_CODE = "unsupported-capability"
 # so deterministic demo infrastructure is never mistaken for the approved
 # live-fire range backend.
 _APPROVED_SCOPE_NOTE = (
-    "Only the GCE VM range-cell backend is approved for live-fire ranges "
+    "On GCP, only the GCE VM range-cell backend is approved for live-fire ranges "
     "(set GCP_RANGE_BACKEND=gce); the retained GDC VM Runtime substrate is limited to the "
     "non-user demo/BAS and operator-validation modes named by ADR-030."
 )
@@ -96,6 +96,13 @@ class RangeBackendRegistration:
     slug: str
     provider: str
     permitted_purposes: frozenset[InstantiationPurpose]
+    #: Whether this backend implements the optional ``range-warm-activation/v1``
+    #: capability (ADR-039-R11, #28): warm-prepare a system-owned quarantined
+    #: generation and later ``activate`` it for a claimant with fresh, fully
+    #: sanitized access. Enumerated per backend, never inferred from the provider
+    #: name. A backend with ``False`` safely never yields a warm claim -- the
+    #: launch path falls back to cold provisioning before any warm mutation.
+    warm_activation: bool = False
 
 
 # The single registration surface (ADR-030-R6). GCE range cells are the approved
@@ -104,6 +111,18 @@ class RangeBackendRegistration:
 # names, and can never be selected for live fire.
 RANGE_BACKENDS: Mapping[str, RangeBackendRegistration] = MappingProxyType(
     {
+        "ec2": RangeBackendRegistration(
+            "ec2",
+            "aws",
+            frozenset(
+                {
+                    InstantiationPurpose.LIVE_FIRE,
+                    InstantiationPurpose.NON_USER_DEMO,
+                    InstantiationPurpose.OPERATOR_VALIDATION,
+                    InstantiationPurpose.NON_USER_VALIDATION,
+                }
+            ),
+        ),
         "gce": RangeBackendRegistration(
             "gce",
             _GCP_PROVIDER,
@@ -118,6 +137,11 @@ RANGE_BACKENDS: Mapping[str, RangeBackendRegistration] = MappingProxyType(
                     InstantiationPurpose.NON_USER_VALIDATION,
                 }
             ),
+            # GCE range cells are the only backend with a warm-activation adapter
+            # today (#28). AWS (legacy user_id-bearing intent) and GDC advertise it
+            # unsupported and cold-fall-back until their ownership-neutral
+            # realization exists (AWS: #2069).
+            warm_activation=True,
         ),
         "gdc": RangeBackendRegistration(
             "gdc",
@@ -210,6 +234,25 @@ def _denial_reason(registration: RangeBackendRegistration, purpose: Instantiatio
     )
 
 
+def assert_range_backend_egress_supported(backend: str | None, egress_mode: str) -> None:
+    """Reject unsupported egress before a launch is persisted or dispatched."""
+    if backend == "ec2" and egress_mode == "allowlist":
+        raise ValueError(
+            "Native EC2 does not support allowlist egress. Select a supported workspace "
+            "egress policy before launching this range."
+        )
+
+
+def evaluate_range_backend_admission(backend: str, purpose: InstantiationPurpose) -> BackendAdmission:
+    """Evaluate a persisted backend identity without rereading provider selectors."""
+    registration = RANGE_BACKENDS.get(backend)
+    if registration is None:
+        return BackendAdmission(False, "", purpose, PREREQUISITE_DENIAL_CODE, "Range backend is not registered")
+    if not isinstance(purpose, InstantiationPurpose) or purpose not in registration.permitted_purposes:
+        return BackendAdmission(False, backend, purpose, POLICY_DENIAL_CODE, "Range purpose is not admitted")
+    return BackendAdmission(True, backend, purpose, "", "")
+
+
 def evaluate_gcp_backend_admission(
     raw_backend: str | None,
     raw_plane: str | None,
@@ -236,3 +279,16 @@ def evaluate_gcp_backend_admission(
     if purpose in registration.permitted_purposes:
         return BackendAdmission(True, backend, purpose, "", "")
     return BackendAdmission(False, backend, purpose, POLICY_DENIAL_CODE, _denial_reason(registration, purpose))
+
+
+def backend_supports_warm_activation(backend: str | None) -> bool:
+    """Return whether ``backend`` advertises the ``range-warm-activation/v1`` capability.
+
+    The single capability lookup (#28, ADR-039-R11). An unknown or unregistered
+    backend is ``False``: warm activation is capability evidence from the registry,
+    never inferred, so an unrecognized value fails closed to the cold path.
+    """
+    if not backend:
+        return False
+    registration = RANGE_BACKENDS.get(backend.strip().lower())
+    return bool(registration and registration.warm_activation)

@@ -144,6 +144,7 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
     }
     outputs = {
         "cluster_name": {"value": "shifter-dev-eks"},
+        "cluster_access_role_arn": {"value": "arn:aws:iam::123456789012:role/shifter-dev-cluster-access"},
         "runtime_env": {"value": runtime_env},
         "workload_role_arns": {
             "value": {

@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 from django.contrib.auth import BACKEND_SESSION_KEY, get_user_model
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
-
-from config.views import logout_view
 
 User = get_user_model()
 
@@ -198,13 +197,33 @@ def test_identity_platform_session_rejects_non_json(client):
     DEBUG=False,
     IDENTITY_ALLOWED_EMAIL_DOMAIN="paloaltonetworks.com",
 )
-def test_identity_platform_session_creates_django_session(client, monkeypatch, identity_user):
+def test_identity_platform_session_creates_django_session(client, monkeypatch, identity_user, settings):
     from config import views
 
+    settings.IDENTITY_PLATFORM_PROJECT_ID = "synthetic-project"
+    settings.IDENTITY_PLATFORM_API_KEY = "synthetic-public-api-key"
+    provider = views.identity_platform_auth
+    monkeypatch.setattr(provider.firebase_admin, "get_app", lambda: object())
     monkeypatch.setattr(
-        views.identity_platform_auth,
-        "login_with_identity_token",
-        lambda request, id_token: identity_user,
+        provider.firebase_auth,
+        "verify_id_token",
+        lambda *args, **kwargs: {
+            "iss": "https://securetoken.google.com/synthetic-project",
+            "aud": "synthetic-project",
+            "sub": "synthetic-human",
+            "email": identity_user.email,
+            "email_verified": True,
+            "auth_time": int(time.time()),
+            "firebase": {"sign_in_second_factor": "totp"},
+        },
+    )
+    monkeypatch.setattr(
+        provider.requests,
+        "post",
+        lambda *args, **kwargs: SimpleNamespace(
+            ok=True,
+            json=lambda: {"users": [{"emailVerified": True, "mfaInfo": [{"mfaEnrollmentId": "factor"}]}]},
+        ),
     )
 
     response = client.post(
@@ -280,7 +299,7 @@ def test_identity_platform_session_returns_mfa_enrollment_error(client, monkeypa
     DEBUG=False,
     IDENTITY_ALLOWED_EMAIL_DOMAIN="paloaltonetworks.com",
 )
-def test_identity_platform_session_does_not_leak_exception_detail(client, monkeypatch):
+def test_identity_platform_session_does_not_leak_exception_detail(client, monkeypatch, caplog):
     """A 403 auth failure surfaces only the fixed error code and a classified
     message, never the raw exception text (CodeQL py/stack-trace-exposure).
 
@@ -299,11 +318,17 @@ def test_identity_platform_session_does_not_leak_exception_detail(client, monkey
         ),
     )
 
-    response = client.post(
-        reverse("identity_platform_session"),
-        data=json.dumps({"idToken": "boom"}),
-        content_type="application/json",
-    )
+    view_logger = logging.getLogger("config.views")
+    view_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING, logger=view_logger.name):
+            response = client.post(
+                reverse("identity_platform_session"),
+                data=json.dumps({"idToken": "boom"}),
+                content_type="application/json",
+            )
+    finally:
+        view_logger.removeHandler(caplog.handler)
 
     assert response.status_code == 403
     body = response.json()
@@ -311,6 +336,7 @@ def test_identity_platform_session_does_not_leak_exception_detail(client, monkey
     assert body["message"] == "Authentication failed"
     for leaked in ("non-JSON", "<html>", "upstream", "internal", "trace", "module.func"):
         assert leaked not in body["message"]
+        assert leaked not in caplog.text
 
 
 @override_settings(AUTH_PROVIDER="identity_platform", DEBUG=False)
@@ -451,26 +477,29 @@ def test_login_with_identity_token_requires_verified_email_and_enrolled_factor(m
 
 @override_settings(
     AUTH_PROVIDER="identity_platform",
+    AUTHENTICATION_BACKENDS=["config.identity_platform.IdentityPlatformBackend"],
     DEBUG=False,
     IDENTITY_PLATFORM_API_KEY="test-api-key",
     IDENTITY_PLATFORM_PROJECT_ID="test-project",
     IDENTITY_ALLOWED_EMAIL_DOMAIN="paloaltonetworks.com",
 )
-def test_identity_platform_logout_is_plain_session_logout(rf, identity_user):
-    request = rf.post("/logout/")
-    request.user = identity_user
-    request.session = {
-        BACKEND_SESSION_KEY: "config.identity_platform.IdentityPlatformBackend",
-    }
+def test_identity_platform_logout_is_plain_session_logout(client, identity_user):
+    from config.session_credentials import establish_identity_session
+    from management.services import bind_provider_identity
 
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        mock_logout = MagicMock()
-        monkeypatch.setattr("config.views.logout", mock_logout)
-        response = logout_view(request)
+    issuer = "https://securetoken.google.com/test-project"
+    bind_provider_identity(identity_user, issuer, "synthetic-human")
+    client.force_login(identity_user, backend="config.identity_platform.IdentityPlatformBackend")
+    session = client.session
+    establish_identity_session(session, {"iss": issuer, "sub": "synthetic-human", "auth_time": int(time.time())})
+    session.save()
+    assert "_auth_user_id" in client.session
 
-    mock_logout.assert_called_once_with(request)
+    response = client.post(reverse("logout"))
+
     assert response.status_code == 200
     assert b"identity_platform_logout.js" in response.content
+    assert "_auth_user_id" not in client.session
 
 
 def test_verify_identity_token_wraps_firebase_verification_errors(monkeypatch):
@@ -575,3 +604,50 @@ class TestIdentityPlatformBackendSubjectFirstResolution:
         assert result.pk == existing.pk
         profile.refresh_from_db()
         assert profile.issuer == _ISSUER
+
+
+# =============================================================================
+# Provider-routing guards in config/views.py
+# =============================================================================
+
+
+@override_settings(AUTH_PROVIDER="disabled", DEBUG=False)
+def test_platform_login_forbids_unsupported_auth_provider(client):
+    """An unsupported AUTH_PROVIDER makes the login route refuse rather than fall
+    through to a provider (config/views.py:90)."""
+    response = client.get(reverse("platform_login"))
+
+    assert response.status_code == 403
+    assert b"Unsupported auth provider" in response.content
+
+
+@override_settings(
+    AUTH_PROVIDER="identity_platform",
+    DEBUG=False,
+    IDENTITY_ALLOWED_EMAIL_DOMAIN="paloaltonetworks.com",
+)
+def test_identity_platform_session_rejects_blank_id_token(client):
+    """A syntactically valid body carrying a blank idToken is rejected as a
+    malformed request (config/views.py:119 -> 400 invalid_request)."""
+    response = client.post(
+        reverse("identity_platform_session"),
+        data=json.dumps({"idToken": "   "}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
+
+
+@override_settings(AUTH_PROVIDER="oidc", DEBUG=False)
+def test_identity_platform_session_forbidden_when_provider_not_identity_platform(client):
+    """The Identity Platform session exchange refuses when the deployment is not
+    configured for that provider (config/views.py:149)."""
+    response = client.post(
+        reverse("identity_platform_session"),
+        data=json.dumps({"idToken": "any-token"}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"] == "unsupported_auth_provider"

@@ -80,8 +80,8 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(
             {
                 "kali": {
-                    "polaris-vm": {
-                        "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                    "example-vm": {
+                        "source_image": "projects/test/global/images/family/shifter-example-vm",
                         "machine_type": "e2-standard-8",
                         "disk_size_gb": 210,
                         "disk_type": "pd-balanced",
@@ -101,13 +101,6 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_EGRESS_ALLOW_CIDRS": "10.60.0.0/16",
         "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
         "GCP_RANGE_HOST_MGMT_SSH_PORT": "2222",
-        "GCP_RANGE_VERTEX_PROJECT_ID": "shifter-gcp-dev",
-        "GCP_RANGE_VERTEX_REGION": "us-east5",
-        "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL": "range-vertex@shifter-gcp-dev.iam.gserviceaccount.com",
-        "GCP_RANGE_KALI_ANTHROPIC_MODEL": "claude-sonnet-4-6",
-        "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5",
-        "POLARIS_TESTS_BUCKET": "shifter-gcp-dev-polaris-tests",
-        "POLARIS_TESTS_KEY": "polaris/tests/polaris-tests.tar.gz",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -118,6 +111,7 @@ def _outputs(
     public_hostname: str = "portal.example.test",
     managed_tls_enabled: bool = True,
     identity_allowed_email_domain: str = "paloaltonetworks.com",
+    dynamic_secret_project_id: str | None = None,
     identity_allowed_emails: list[str] | None = None,
     email_config: dict | None = None,
     ctf_content_bucket_name: str = "",
@@ -138,12 +132,20 @@ def _outputs(
             "value": {
                 "app": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-app",
                 "db": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db",
+                "db-provisioner": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-provisioner",
+                "db-migration": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-migration",
                 "guacamole-json-auth": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-guacamole-json-auth",
                 "redis": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-redis",
             }
         },
         "identity_platform_api_key": {"value": "identity-platform-api-key"},
         "identity_platform_project_id": {"value": "shifter-gcp-dev"},
+        "dynamic_secret_project_id": {
+            "value": (
+                "shifter-gcp-dev-range-secrets" if dynamic_secret_project_id is None else dynamic_secret_project_id
+            )
+        },
+        "provisioner_static_secret_refs": {"value": {}},
         "identity_allowed_email_domain": {"value": identity_allowed_email_domain},
         "identity_allowed_emails": {"value": list(identity_allowed_emails or [])},
         "control_plane_database": {
@@ -151,7 +153,8 @@ def _outputs(
                 "private_ip": "10.0.0.10",
                 "port": 5432,
                 "database_name": "shifter",
-                "user_name": "shifter",
+                "user_name": "portal_runtime",
+                "provisioner_user_name": "provisioner_runtime",
             }
         },
         "control_plane_cache": {
@@ -181,7 +184,8 @@ def _outputs(
         "range_network_id": {"value": "projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range"},
         "range_network_cidr": {"value": "10.50.0.0/16"},
         "range_network_region": {"value": "us-central1"},
-        "portal_network_cidrs": {"value": ["10.40.0.0/20", "10.44.0.0/16"]},
+        "portal_network_cidrs": {"value": ["10.46.0.0/20"]},
+        "access_network_cidrs": {"value": ["10.47.0.0/20"]},
     }
     if email_config is not None:
         outputs["email_config"] = {"value": email_config}
@@ -212,23 +216,30 @@ def test_render_env_emits_production_security_profile():
     # bill the correct quota/consumer project, not the overlay placeholder.
     assert "GCP_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "GOOGLE_CLOUD_PROJECT=shifter-gcp-dev\n" in rendered
+    assert "GCP_DYNAMIC_SECRET_PROJECT_ID=shifter-gcp-dev-range-secrets\n" in rendered
     # #1742: DB_NAME/DB_USER/CLOUD_PROJECT_ID are literals the provisioner-launcher
     # emits and the restrict-provisioner-jobs admission policy validates against the
     # platform-runtime ConfigMap, so they MUST be rendered here or every GCP range
     # Job is denied.
     assert "DB_NAME=shifter\n" in rendered
-    assert "DB_USER=shifter\n" in rendered
+    assert "DB_USER=portal_runtime\n" in rendered
+    assert "PROVISIONER_DB_USER=provisioner_runtime\n" in rendered
+    assert "PROVISIONER_DB_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-provisioner\n" in rendered
+    assert "DB_MIGRATION_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-migration\n" in rendered
+    assert "AUDIT_DEPLOYMENT_SCOPE=gcp:shifter-gcp-dev\n" in rendered
+    assert "SKIP_MIGRATIONS=1\n" in rendered
     assert "CLOUD_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_AUTH_DOMAIN=shifter-gcp-dev.firebaseapp.com\n" in rendered
-    assert "GDC_ACCESS_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-gdc-access\n" in rendered
+    assert "GDC_ACCESS_SECRET_ID=" not in rendered
     assert (
         "DC_DOMAIN_PASSWORD_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-dc-domain-password\n" in rendered
     )
     assert "RANGE_NETWORK_ID=projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range\n" in rendered
     assert "RANGE_NETWORK_CIDR=10.50.0.0/16\n" in rendered
     assert "RANGE_NETWORK_REGION=us-central1\n" in rendered
-    assert "PORTAL_NETWORK_CIDRS=10.40.0.0/20,10.44.0.0/16\n" in rendered
+    assert "PORTAL_NETWORK_CIDRS=10.46.0.0/20\n" in rendered
+    assert "ACCESS_NETWORK_CIDRS=10.47.0.0/20\n" in rendered
     assert "GCP_RANGE_BACKEND=gce\n" in rendered
     # Range project derived from the range VPC self-link (real range project),
     # independent of the control-plane GCP_PROJECT_ID placeholder.
@@ -241,6 +252,69 @@ def test_render_env_emits_production_security_profile():
         "ENGINE_TASK_IMAGE=us-central1-docker.pkg.dev/"
         "shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner@" + PINNED_ENGINE_DIGEST + "\n"
     ) in rendered
+
+
+def test_render_env_publishes_static_refs_from_terraform_and_ignores_env_override(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    outputs = _outputs()
+    outputs["provisioner_static_secret_refs"] = {
+        "value": {
+            "GDC_ACCESS_SECRET_ID": "projects/owner-project/secrets/gdc-access",
+            "GDC_VM_IMAGE_GCS_SECRET_ID": "projects/image-project/secrets/image-key",
+        }
+    }
+    monkeypatch.setenv("GDC_VM_IMAGE_GCS_SECRET_ID", "projects/wrong-project/secrets/wrong-key")
+
+    rendered = module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
+
+    assert "GDC_ACCESS_SECRET_ID=projects/owner-project/secrets/gdc-access\n" in rendered
+    assert "GDC_VM_IMAGE_GCS_SECRET_ID=projects/image-project/secrets/image-key\n" in rendered
+    assert "wrong-project" not in rendered
+
+
+def test_render_env_drops_static_ref_missing_from_terraform_grant_map(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env_without_static_override")
+    outputs = _outputs()
+    monkeypatch.setenv(
+        "GDC_VM_IMAGE_GCS_SECRET_ID",
+        "projects/ungranted-project/secrets/ungranted-key",
+    )
+
+    rendered = module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
+
+    assert "GDC_VM_IMAGE_GCS_SECRET_ID=" not in rendered
+    assert "ungranted-project" not in rendered
+
+
+def test_retired_guest_model_inputs_cannot_reenter_runtime(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_without_guest_provider")
+    monkeypatch.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "retired-project")
+    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "projects/retired-project/secrets/shared-key")
+    monkeypatch.setenv("GCP_RANGE_KALI_ANTHROPIC_MODEL", "retired-model")
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    assert "retired-" not in rendered
+    outputs = _outputs()
+    outputs["provisioner_static_secret_refs"] = {
+        "value": {"GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID": "projects/retired-project/secrets/shared-key"}
+    }
+    with pytest.raises(ValueError):
+        module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
+
+
+@pytest.mark.parametrize(
+    "refs",
+    [
+        {"UNSUPPORTED": "projects/owner-project/secrets/input"},
+        {"GDC_ACCESS_SECRET_ID": "bare-secret-name"},
+    ],
+)
+def test_render_env_rejects_invalid_static_ref_contract(refs):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    outputs = _outputs()
+    outputs["provisioner_static_secret_refs"] = {"value": refs}
+
+    with pytest.raises(ValueError, match="provisioner_static_secret_refs"):
+        module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
 
 
 def test_render_env_emits_cloud_provider():
@@ -256,6 +330,61 @@ def test_render_env_emits_cloud_provider():
     assert "CLOUD_PROVIDER=gcp\n" in rendered
 
 
+def test_render_env_defaults_model_access_to_disabled_without_catalog_body():
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    assert "MODEL_ACCESS_ENABLED=false\n" in rendered
+    assert "MODEL_ACCESS_CATALOG_PATH=\n" in rendered
+    assert "MODEL_ACCESS_CATALOG_DIGEST=\n" in rendered
+    assert "model-access-policy/v1" not in rendered
+
+
+def test_render_env_rejects_incomplete_model_access_projection(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("MODEL_ACCESS_ENABLED", "true")
+    with pytest.raises(ValueError, match="path and digest"):
+        module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+
+
+def test_render_env_omits_mission_control_lease_when_unset():
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    # Absent -> omitted so the Django runtime applies the canonical defaults.
+    assert "MISSION_CONTROL_LEASE_POLICY_JSON" not in rendered
+
+
+def test_render_env_passes_through_configured_mission_control_lease(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv(
+        "MISSION_CONTROL_LEASE_POLICY_JSON",
+        '{"initial_days": 7, "extension_days": 3, "maximum_days": 90, "extensions_enabled": false}',
+    )
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    line = next(row for row in rendered.splitlines() if row.startswith("MISSION_CONTROL_LEASE_POLICY_JSON="))
+    assert json.loads(line.split("=", 1)[1]) == {
+        "initial_days": 7,
+        "extension_days": 3,
+        "maximum_days": 90,
+        "extensions_enabled": False,
+    }
+
+
+def test_render_env_rejects_malformed_mission_control_lease(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("MISSION_CONTROL_LEASE_POLICY_JSON", "{not json")
+    with pytest.raises(ValueError, match="MISSION_CONTROL_LEASE_POLICY_JSON"):
+        module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_render_env_rejects_present_but_blank_mission_control_lease(monkeypatch, value):
+    # Present but blank is a broken substitution, distinct from an unset variable.
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("MISSION_CONTROL_LEASE_POLICY_JSON", value)
+    with pytest.raises(ValueError, match="present but blank"):
+        module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+
+
 def test_render_env_keys_match_runtime_inventory(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
@@ -265,13 +394,29 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
 
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
+    monkeypatch.setenv(
+        "MISSION_CONTROL_LEASE_POLICY_JSON",
+        '{"initial_days":7,"extension_days":3,"maximum_days":90,"extensions_enabled":false}',
+    )
     _seed_gce_range_env(monkeypatch)
+    outputs = _outputs(
+        identity_allowed_emails=["alice@example.com", "bob@example.com"],
+        email_config=_FULL_MAILGUN_EMAIL_CONFIG,
+        ctf_content_bucket_name="private-ctf-content",
+    )
+    outputs["provisioner_static_secret_refs"] = {
+        "value": {
+            key: f"projects/static-project/secrets/{key.lower().replace('_', '-')}"
+            for key in (
+                "GDC_ACCESS_SECRET_ID",
+                "GDC_VM_IMAGE_GCS_SECRET_ID",
+                "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+                "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+            )
+        }
+    }
     rendered = module.render_env(
-        _outputs(
-            identity_allowed_emails=["alice@example.com", "bob@example.com"],
-            email_config=_FULL_MAILGUN_EMAIL_CONFIG,
-            ctf_content_bucket_name="private-ctf-content",
-        ),
+        outputs,
         engine_image=PINNED_ENGINE_DIGEST,
     )
 
@@ -315,7 +460,7 @@ def test_render_env_rejects_duplicate_image_profile_keys(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
     monkeypatch.setenv(
         "GCP_RANGE_IMAGE_KEY_PROFILES_JSON",
-        '{"kali":{"polaris-vm":{},"polaris-vm":{}}}',
+        '{"kali":{"example-vm":{},"example-vm":{}}}',
     )
 
     with pytest.raises(ValueError, match="duplicate JSON key"):
@@ -372,6 +517,7 @@ def test_main_writes_rendered_runtime_env(tmp_path, monkeypatch):
         ({"public_hostname": "   "}, "public_hostname"),
         ({"managed_tls_enabled": False}, "managed_tls_enabled"),
         ({"identity_allowed_email_domain": ""}, "identity_allowed_email_domain"),
+        ({"dynamic_secret_project_id": ""}, "dynamic_secret_project_id"),
     ],
 )
 def test_render_env_fails_closed_on_insecure_inputs(missing_kwargs, expected_substring):
@@ -488,6 +634,8 @@ def test_render_env_fails_closed_when_redis_secret_id_missing():
         "value": {
             "app": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-app",
             "db": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db",
+            "db-provisioner": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-provisioner",
+            "db-migration": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-db-migration",
             "guacamole-json-auth": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-guacamole-json-auth",
         }
     }

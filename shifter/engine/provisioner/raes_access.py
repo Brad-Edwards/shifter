@@ -21,7 +21,7 @@ Every rule here fails closed rather than widening access:
   account on the same node -- an omitted account is unsupported, never
   permission to broker the reserved provisioner-management user;
 - the channel must match the account's authored credential strategy (``ssh`` ->
-  ``publickey``, ``rdp`` -> ``password``), so realization never silently adds a
+  ``key``, ``rdp`` -> ``password``), so realization never silently adds a
   second authentication method to an authored account; and
 - no endpoint may be declared twice.
 """
@@ -46,7 +46,7 @@ class RaesAccessError(RuntimeError):
 #: The authored credential strategy each channel is brokered through. These are
 #: the existing ``raes_account_credentials`` strategies; a new channel extends
 #: that realizer and this map together, never this map alone.
-_AUTH_METHOD_BY_CHANNEL = {"ssh": "publickey", "rdp": "password"}
+_AUTH_METHOD_BY_CHANNEL = {"ssh": "key", "rdp": "password"}
 
 
 @dataclass(frozen=True)

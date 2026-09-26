@@ -11,9 +11,15 @@ from shared.audit import (
     AuditEntityType,
     AuditEvent,
     audit_log,
+    get_actor_from_request,
+    get_client_ip,
+    get_request_id,
 )
 
 if TYPE_CHECKING:
+    from django.http import HttpRequest
+    from rest_framework.request import Request
+
     from ctf.models import (
         CTFContentHydrationReceipt,
         CTFEvent,
@@ -22,9 +28,95 @@ if TYPE_CHECKING:
     )
 
 
+def audit_platform_admin_event_action(
+    *,
+    request: Request | HttpRequest,
+    event: CTFEvent,
+    operation: str,
+    effective_actor_id: int | None,
+    action: str = AuditAction.UPDATE,
+    changed_fields: list[str] | None = None,
+    outcome: str | None = None,
+) -> None:
+    """Strictly audit a successful platform-admin override mutation on an event (ADR-052-R4).
+
+    Records bounded identifiers and safe outcome metadata only. Request
+    attribution comes from the HTTP boundary, and strict persistence lets the
+    caller roll back a related database mutation if audit storage fails.
+    """
+    actor_type, actor_id = get_actor_from_request(request)
+    new_state: dict[str, Any] = {
+        "operation": operation,
+        "authority_source": "platform_admin",
+        "event_id": str(event.pk),
+        "effective_actor_user_id": effective_actor_id,
+    }
+    if changed_fields:
+        new_state["changed_fields"] = sorted(changed_fields)
+    if outcome:
+        new_state["outcome"] = outcome
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event.pk),
+            entity_ref=str(event.pk),
+            action=action,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            new_state=new_state,
+            context="ctf_platform_admin_event_action",
+            source_ip=get_client_ip(request),
+            request_id=get_request_id(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:255],
+        ),
+        strict=True,
+    )
+
+
 def _entity_id_from_uuid(entity_uuid: UUID) -> int:
     """Map a UUID to a positive int for AuditLog.entity_id."""
     return int.from_bytes(entity_uuid.bytes[:4], "big") % (2**31 - 1) or 1
+
+
+def audit_public_registration_publication(*, actor_id: int, event_id: UUID, enabled: bool) -> None:
+    """Strictly record an event's public-publication toggle without content or PII."""
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            entity_ref=str(event_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state={
+                "ctf_public_registration_publication": "enabled" if enabled else "disabled",
+                "event_id": str(event_id),
+            },
+            context="ctf_public_registration_publication",
+        ),
+        strict=True,
+    )
+
+
+def audit_public_registration_disposition(*, actor_id: int, event_id: UUID, request_id: UUID, disposition: str) -> None:
+    """Strictly record a registration-request disposition using identifiers only."""
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(request_id),
+            entity_ref=str(request_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state={
+                "ctf_public_registration_disposition": disposition,
+                "event_id": str(event_id),
+                "request_id": str(request_id),
+            },
+            context="ctf_public_registration_disposition",
+        ),
+        strict=True,
+    )
 
 
 def audit_live_flag_repair(
@@ -40,6 +132,7 @@ def audit_live_flag_repair(
         AuditEvent(
             entity_type=AuditEntityType.CONFIG,
             entity_id=_entity_id_from_uuid(challenge_id),
+            entity_ref=str(challenge_id),
             action=AuditAction.UPDATE,
             actor_type=AuditActorType.USER,
             actor_id=actor_id,
@@ -66,6 +159,7 @@ def audit_content_hydration(
         AuditEvent(
             entity_type=AuditEntityType.CONFIG,
             entity_id=_entity_id_from_uuid(event.pk),
+            entity_ref=str(event.pk),
             action=AuditAction.CREATE if outcome == "created" else AuditAction.UPDATE,
             actor_type=AuditActorType.USER,
             actor_id=actor_id,
@@ -103,6 +197,7 @@ def audit_content_refresh(
         AuditEvent(
             entity_type=AuditEntityType.CONFIG,
             entity_id=_entity_id_from_uuid(event.pk),
+            entity_ref=str(event.pk),
             action=AuditAction.UPDATE,
             actor_type=AuditActorType.USER,
             actor_id=actor_id,
@@ -134,6 +229,7 @@ def audit_content_hydration_drift(
         AuditEvent(
             entity_type=AuditEntityType.CONFIG,
             entity_id=_entity_id_from_uuid(receipt.event_id),
+            entity_ref=str(receipt.event_id),
             action=AuditAction.UPDATE,
             actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
             actor_id=actor_id,
@@ -173,6 +269,7 @@ def audit_event_page(
         AuditEvent(
             entity_type=AuditEntityType.CONFIG,
             entity_id=_entity_id_from_uuid(event_id),
+            entity_ref=str(event_id),
             action=action_map[action],
             actor_type=AuditActorType.USER,
             actor_id=actor_id,
@@ -250,6 +347,7 @@ def audit_spare_provisioning(
         AuditEvent(
             entity_type=AuditEntityType.RANGE,
             entity_id=_entity_id_from_uuid(event_id),
+            entity_ref=str(event_id),
             action=AuditAction.SPARE_PROVISION,
             actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
             actor_id=actor_id,
@@ -282,4 +380,118 @@ def audit_vpn_profile_download(
         generation=generation,
         profile_version=profile_version,
         product="ctf",
+    )
+
+
+def audit_communication_release(
+    *,
+    actor_id: int | None,
+    campaign_id: UUID,
+    intent_id: UUID,
+    workspace_id: int,
+    recipient_count: int,
+    channels: list[str],
+) -> None:
+    """Strictly record a scoped-communication intent release (ADR-051, #2048).
+
+    Records only bounded identifiers, the workspace scope, the recipient count,
+    and the selected channels. Never records subjects, bodies, recipient
+    addresses, participant lists, provider payloads, or RAES documents. Strict:
+    an audit failure rolls back the release transaction it runs inside.
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.COMMUNICATION,
+            entity_id=_entity_id_from_uuid(campaign_id),
+            entity_ref=str(campaign_id),
+            action=AuditAction.CREATE,
+            actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
+            actor_id=actor_id,
+            new_state={
+                "ctf_communication_release": "released",
+                "campaign_id": str(campaign_id),
+                "intent_id": str(intent_id),
+                "workspace_id": workspace_id,
+                "recipient_count": recipient_count,
+                "channels": sorted(channels),
+            },
+            context="ctf_communication_release",
+        ),
+        strict=True,
+    )
+
+
+def audit_event_staff_change(
+    *,
+    actor_id: int,
+    event_id: UUID,
+    target_user_id: int,
+    action: str,
+    role: str | None = None,
+    previous_role: str | None = None,
+) -> None:
+    """Strictly record an event-staff authority mutation (#1922).
+
+    ``action`` is one of ``assigned`` / ``reroled`` / ``revoked``. Records only
+    bounded IDs and role names — never email, tokens, or event content. Strict:
+    audit failure rolls back the mutation it accompanies.
+    """
+    action_map = {
+        "assigned": AuditAction.CREATE,
+        "reroled": AuditAction.UPDATE,
+        "revoked": AuditAction.DELETE,
+    }
+    new_state: dict[str, Any] = {
+        "ctf_event_staff": action,
+        "event_id": str(event_id),
+        "target_user_id": target_user_id,
+    }
+    if role is not None:
+        new_state["role"] = role
+    if previous_role is not None:
+        new_state["previous_role"] = previous_role
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            entity_ref=str(event_id),
+            action=action_map.get(action, AuditAction.UPDATE),
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state=new_state,
+            context="ctf_event_staff",
+        ),
+        strict=True,
+    )
+
+
+def audit_event_ownership_transferred(
+    *,
+    actor_id: int,
+    event_id: UUID,
+    previous_owner_id: int,
+    new_owner_id: int,
+) -> None:
+    """Strictly record a canonical-ownership transfer (#1922).
+
+    Records only the event and old/new owner IDs. Strict: audit failure rolls
+    back the transfer transaction.
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            entity_ref=str(event_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            previous_state={"owner_id": previous_owner_id},
+            new_state={
+                "ctf_event_ownership_transfer": "transferred",
+                "event_id": str(event_id),
+                "owner_id": new_owner_id,
+            },
+            context="ctf_event_ownership_transfer",
+        ),
+        strict=True,
     )

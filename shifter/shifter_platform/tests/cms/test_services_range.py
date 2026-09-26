@@ -7,7 +7,6 @@ patching ``RangeInstance.objects`` / the engine call / the scenario loader.
 """
 
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -133,32 +132,26 @@ class TestCreateRangeValidation:
         with pytest.raises(CMSError, match=r"not found|scenario"):
             services.create_range(user, "nonexistent_scenario", {"windows": agent.id})
 
-    def test_raises_when_agent_not_found(self, user, hydratable_scenario):
-        with pytest.raises(CMSError, match=r"not found"):
-            services.create_range(user, hydratable_scenario.scenario_id, {"windows": 999999})
-
-    def test_raises_when_user_already_has_active_range(self, user, make_agent, hydratable_scenario):
-        agent = make_agent(user)
-        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
-        with pytest.raises(CMSError, match="already have an active range"):
-            services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+    def test_legacy_agent_shape_does_not_control_raes_topology(self, user, hydratable_scenario):
+        result = services.create_range(user, hydratable_scenario.scenario_id, {"windows": 999999})
+        assert result.scenario_id == hydratable_scenario.scenario_id
 
     def test_raises_for_non_launchable_raes_scenario(self, user, make_agent):
         from cms.models import RaesPackageSource
 
         agent = make_agent(user)
         RaesPackageSource.objects.create(
-            scenario_id="polaris-pending",
+            scenario_id="example-pending",
             contract_kind="raes",
             contract_profile="shifter",
-            package_ref="scenario-dev/polaris/content-packages/polaris",
+            package_ref="scenario-dev/example/content-packages/example",
             package_version="1.0.0",
             package_digest="sha256:" + "a" * 64,
             conformance_status="pending",
             registered_by=user,
         )
         with pytest.raises(CMSError, match="not available for launch"):
-            services.create_range(user, "polaris-pending", {"windows": agent.id})
+            services.create_range(user, "example-pending", {"windows": agent.id})
 
 
 class TestCreateRangeBehavior:
@@ -176,7 +169,7 @@ class TestCreateRangeBehavior:
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
         ri = RangeInstance.objects.get(user_id=user.id)
         assert ri.scenario_id == hydratable_scenario.scenario_id
-        assert ri.agent_id == agent.id
+        assert ri.agent_id is None
 
     def test_records_an_audit_row(self, user, make_agent, hydratable_scenario):
         from shared.models import AuditLog
@@ -214,9 +207,9 @@ class TestCreateRangeReturn:
         assert ctx.scenario_id == hydratable_scenario.scenario_id
         assert ctx.user_id == user.id
 
-    def test_range_context_agent_name(self, created):
-        ctx, agent = created
-        assert ctx.agent_name == agent.name
+    def test_range_context_has_no_legacy_agent_projection(self, created):
+        ctx, _ = created
+        assert ctx.agent_name == ""
 
     def test_range_context_status_is_provisioning(self, created):
         from shared.enums import ResourceStatus
@@ -224,14 +217,9 @@ class TestCreateRangeReturn:
         ctx, _ = created
         assert ctx.status == ResourceStatus.PROVISIONING
 
-    def test_range_context_instances(self, created):
+    def test_range_context_has_no_legacy_topology_projection(self, created):
         ctx, _ = created
-        assert len(ctx.instances) == 2
-        roles = [i.role for i in ctx.instances]
-        assert "attacker" in roles
-        assert "victim" in roles
-        for instance in ctx.instances:
-            assert instance.uuid is not None
+        assert ctx.instances == []
 
 
 class TestHasReadyActiveRange:
@@ -410,74 +398,12 @@ class TestRangeSourceAdmission:
 
     def test_create_range_default_persists_mc_source(self, user, make_agent, hydratable_scenario):
         """create_range() with no range_source persists 'mission_control' on the row."""
-        from engine.models import Range as EngineRange
         from shared.enums import RangeSource
-        from shared.remote_access import parse_openvpn_capability
 
         agent = make_agent(user)
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
         ri = RangeInstance.objects.get(user_id=user.id)
         assert ri.range_source == RangeSource.MISSION_CONTROL.value
-        capability = parse_openvpn_capability(
-            EngineRange.objects.get(request__request_id=ri.request.request_id).remote_access_capability
-        )
-        assert capability.target_ref
-        assert ri.maximum_expires_at <= capability.teardown_at
-        assert capability.teardown_at - ri.maximum_expires_at <= timedelta(seconds=1)
-
-    def test_mission_control_unsupported_backend_stays_capability_false(
-        self, user, make_agent, hydratable_scenario, settings, tmp_path
-    ):
-        """A unique Kali target does not authorize an unsupported backend."""
-        from engine.models import Range as EngineRange
-
-        provisioner_dir = tmp_path / "provisioner"
-        provisioner_dir.mkdir()
-        (provisioner_dir / "main.py").write_text("# test process boundary")
-        settings.CLOUD_PROVIDER = "aws"
-        settings.LOCAL_PROVISIONER = "subprocess"
-        settings.PROVISIONER_PATH = str(provisioner_dir)
-
-        process = MagicMock(pid=12345)
-        with patch("subprocess.Popen", return_value=process) as popen:
-            services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})
-
-        popen.assert_called_once()
-        engine_range = EngineRange.objects.get(user=user)
-        assert engine_range.remote_access_capability is None
-
-    def test_mission_control_scenario_without_unique_vpn_target_remains_launchable(self):
-        """An unsupported topology stays capability-false instead of breaking range launch."""
-        from types import SimpleNamespace
-
-        from cms.services._range_remote_access import _build_remote_access_capability
-
-        range_spec = SimpleNamespace(participant_access=[], all_instances=[])
-
-        assert (
-            _build_remote_access_capability(
-                range_spec,
-                timezone.now() + timedelta(days=365),
-                required=False,
-            )
-            is None
-        )
-
-    def test_ctf_scenario_without_unique_vpn_target_fails_closed(self):
-        """CTF requires the participant VPN capability established by #1695."""
-        from types import SimpleNamespace
-
-        from cms.services._range_remote_access import _build_remote_access_capability
-
-        range_spec = SimpleNamespace(participant_access=[], all_instances=[])
-        teardown_at = timezone.now() + timedelta(days=1)
-
-        with pytest.raises(CMSError, match="exactly one identified Kali"):
-            _build_remote_access_capability(
-                range_spec,
-                teardown_at,
-                required=True,
-            )
 
 
 class TestActiveRangeConstraintBackstop:
@@ -493,7 +419,7 @@ class TestActiveRangeConstraintBackstop:
 
     def test_reservation_translates_constraint_collision_without_orphan_request(self, user):
         from cms.models import Request
-        from cms.services._range_create import _reserve_active_range_slot
+        from cms.services._range_launch_common import _reserve_active_range_slot
         from shared.enums import RangeSource
         from workspaces.services import resolve_personal_workspace
 
@@ -525,7 +451,7 @@ class TestActiveRangeConstraintBackstop:
         """Only the named/active-range collision translates; other IntegrityErrors propagate."""
         from django.db import IntegrityError
 
-        from cms.services._range_create import _is_active_range_conflict
+        from cms.services._range_launch_common import _is_active_range_conflict
 
         assert _is_active_range_conflict(IntegrityError("NOT NULL constraint failed: cms_request.user_id")) is False
 

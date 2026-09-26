@@ -16,6 +16,8 @@ const EVENT = {
   id: "e1",
   name: "Spring CTF",
   description: "A spring event",
+  public_registration_enabled: true,
+  public_registration_url: "https://ctf.example.test/ctf/public/events/e1/",
   status: "registration",
   event_start: "2026-08-01T10:00:00Z",
   event_end: "2026-08-01T18:00:00Z",
@@ -38,10 +40,16 @@ const EVENT = {
 };
 
 function routeApi(handlers: (path: string, options?: { method?: string }) => unknown) {
-  mockApi.mockImplementation((path: string, options?: { method?: string }) => Promise.resolve(handlers(path, options)));
+  mockApi.mockImplementation((path: string, options?: { method?: string }) => Promise.resolve(
+    path === "/cms/model-source-options/"
+      ? { available: false, workspace: null, workspaces: [], aliases: [] }
+      : handlers(path, options),
+  ));
 }
 
-beforeEach(() => mockApi.mockReset());
+beforeEach(() => {
+  mockApi.mockReset();
+});
 
 describe("EventFormPage (create)", () => {
   it("submits a create request via POST /ctf/events/", async () => {
@@ -53,12 +61,15 @@ describe("EventFormPage (create)", () => {
     const user = userEvent.setup();
     renderRoute(<EventFormPage mode="create" />, { path: "/*", initialEntries: ["/ctf/admin/events/create"] });
 
+    expect(await screen.findByRole("checkbox", { name: "Publish public registration page" })).not.toBeChecked();
     await user.type(await screen.findByLabelText("Name"), "New event");
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
-    await waitFor(() =>
-      expect(mockApi.mock.calls.some(([p, o]) => p === "/ctf/events/" && o?.method === "POST")).toBe(true),
-    );
+    await waitFor(() => {
+      const call = mockApi.mock.calls.find(([p, o]) => p === "/ctf/events/" && o?.method === "POST");
+      expect(call).toBeDefined();
+      expect(call?.[1]?.body).toMatchObject({ public_registration_enabled: false });
+    });
   });
 });
 
@@ -75,6 +86,8 @@ describe("EventFormPage (edit)", () => {
     });
 
     expect(await screen.findByDisplayValue("Spring CTF")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Publish public registration page" })).toBeChecked();
+    expect(screen.getByText(/publishes the event name, description, dates, and registration deadline/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
   });
 });

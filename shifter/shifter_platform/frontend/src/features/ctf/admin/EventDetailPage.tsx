@@ -28,6 +28,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 
 import { EventContentCard } from "./EventContentCard";
 import { EventLifecycleCard } from "./EventLifecycleCard";
+import { EventModelAccessCard } from "./EventModelAccessCard";
 import { EventStaffCard } from "./EventStaffCard";
 import { EventPagesCard } from "./EventPagesCard";
 import { EventWebhooksCard } from "./EventWebhooksCard";
@@ -150,7 +151,23 @@ function EventOverview({ event }: Readonly<{ event: CtfEventDetail }>) {
           <Detail label="Max participants" value={event.max_participants ?? "Unlimited"} />
           <Detail label="Range spin-up" value={`${event.range_spinup_minutes} min`} />
           <Detail label="Scoreboard" value={event.scoreboard_visible ? "Visible" : "Hidden"} />
+          <Detail label="Public registration" value={event.public_registration_enabled ? "Published" : "Off"} />
         </dl>
+        {event.public_registration_enabled && event.public_registration_url ? (
+          <div className="mt-5 border-t border-border/60 pt-4">
+            <a
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              href={event.public_registration_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open public registration page
+            </a>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Anyone with this link can see the allowlisted event details and submit a request for organizer review.
+            </p>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -219,12 +236,26 @@ export function EventDetailPage() {
         }
       />
 
+      {event.access_source === "platform_admin" ? (
+        <Alert className="mb-4">
+          <AlertTitle>Acting as platform administrator</AlertTitle>
+          <AlertDescription>
+            You are not the owner of this event ({event.owner.display_name}). Changes you make here use
+            platform-administration authority and are audited.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="space-y-6">
         <EventLifecycleCard event={event} />
         <EventOverview event={event} />
         <EventContentCard event={event} />
-        <EventStaffCard eventId={event.id} />
+        <EventStaffCard
+          eventId={event.id}
+          canManage={event.access_source === "owner" || event.access_source === "platform_admin"}
+        />
         <EventWebhooksCard eventId={event.id} />
+        <EventModelAccessCard eventId={event.id} />
         <EventPagesCard eventId={event.id} />
         <EventLinks eventId={event.id} />
       </div>

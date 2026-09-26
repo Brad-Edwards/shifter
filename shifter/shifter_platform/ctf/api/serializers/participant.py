@@ -217,7 +217,13 @@ class SubmitFlagRequestSerializer(serializers.Serializer):
     action.`` 400 envelope for an empty or whitespace-only flag.
     """
 
-    flag = serializers.CharField(required=False, allow_blank=True, allow_null=True, write_only=True)
+    flag = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        write_only=True,
+        max_length=4096,
+    )
 
 
 class SubmitFlagResultSerializer(serializers.Serializer):

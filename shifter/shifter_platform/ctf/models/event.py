@@ -19,7 +19,6 @@ from django.utils import timezone
 from ctf.enums import (
     EVENT_TERMINAL_STATUSES,
     AttemptLimitMode,
-    EventStaffRole,
     EventStatus,
     RatingVisibility,
     ScoreboardVisibility,
@@ -27,7 +26,7 @@ from ctf.enums import (
 )
 from shared.field_encryption import EncryptedStringField
 
-from ._base import CTFBaseModel
+from ._base import CTFBaseModel, ImmutableFieldsMixin
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -47,7 +46,7 @@ def _scoring_mode_choices() -> list[tuple[str, str]]:
     return ScoringMode.choices() + [(mode, mode.title()) for mode in sorted(registered_scoring_modes())]
 
 
-class CTFEvent(CTFBaseModel):
+class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
     """CTF competition event.
 
     Represents a single CTF competition with its configuration,
@@ -97,6 +96,18 @@ class CTFEvent(CTFBaseModel):
         blank=True,
         help_text="Organizer-authored shared-resource demand hints declared to the engine (CTF-908)",
     )
+    model_sources = models.JSONField(default=dict, blank=True)
+    model_source_actor_id = models.PositiveIntegerField(null=True, blank=True)
+    model_source_revision = models.PositiveIntegerField(default=0)
+    model_demand = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Typed organizer model demand per workload role (CTF-908, PLAT-202): a list of "
+            "shared.model_access.EventModelDemand payloads. Constrained by the scenario need; "
+            "never names a provider, account, region, shard, credential, or price"
+        ),
+    )
     rules = models.TextField(
         blank=True,
         default="",
@@ -107,12 +118,33 @@ class CTFEvent(CTFBaseModel):
         default="",
         help_text="Detailed event description (supports Markdown)",
     )
+    public_registration_enabled = models.BooleanField(
+        default=False,
+        help_text="Whether the event's unauthenticated registration page is explicitly published",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="ctf_events_created",
         help_text="User who created this event",
     )
+    workspace_id = models.IntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Workspace this event is scoped to (immutable soft reference; ADR-046/ADR-051, #2048). "
+            "Resolved at creation from an authorized workspace or the creator's personal workspace "
+            "(existing events are backfilled). Never a cross-layer foreign key and, once set, never "
+            "changed. Cross-event campaign confinement is enforced against this scalar at the "
+            "campaign boundary; an event without a scope simply cannot be targeted by a campaign."
+        ),
+    )
+    scope_kind = models.CharField(
+        max_length=16, blank=True, default="", choices=(("installation", "Installation"), ("account", "Account"))
+    )
+    account_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    organization_id = models.PositiveBigIntegerField(null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=EventStatus.choices(),
@@ -247,6 +279,37 @@ class CTFEvent(CTFBaseModel):
             models.Index(fields=["status", "event_start"]),
             models.Index(fields=["created_by", "status"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(scope_kind="", account_id__isnull=True, organization_id__isnull=True)
+                    | models.Q(
+                        scope_kind="installation",
+                        account_id__isnull=True,
+                        organization_id__isnull=True,
+                        workspace_id__isnull=True,
+                    )
+                    | (
+                        models.Q(scope_kind="account", account_id__isnull=False)
+                        & (models.Q(workspace_id__isnull=True) | models.Q(organization_id__isnull=False))
+                    )
+                ),
+                name="ctf_event_resource_scope_shape",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(public_registration_enabled=False)
+                    | models.Q(workspace_id__isnull=False)
+                    | models.Q(scope_kind="account", account_id__isnull=False)
+                ),
+                name="ctf_event_public_registration_scoped",
+            ),
+        ]
+
+    # The workspace scope is the event's tenancy boundary (ADR-051): rebinding it
+    # would silently move the event, its participants, and every scoped
+    # communication into a different tenant, so it is frozen once set.
+    IMMUTABLE_FIELDS = ("workspace_id", "scope_kind", "account_id", "organization_id")
 
     def __str__(self) -> str:
         """Return event name."""
@@ -259,6 +322,8 @@ class CTFEvent(CTFBaseModel):
         self._validate_registration_deadline(errors)
         self._validate_team_settings(errors)
         self._validate_scoreboard_freeze_time(errors)
+        self._validate_public_registration(errors)
+        self.validate_immutable(errors)
         if errors:
             raise ValidationError(errors)
 
@@ -285,6 +350,17 @@ class CTFEvent(CTFBaseModel):
             errors.setdefault("scoreboard_freeze_at", []).append("Scoreboard freeze time must be after event start.")
         if self.event_end and self.scoreboard_freeze_at >= self.event_end:
             errors.setdefault("scoreboard_freeze_at", []).append("Scoreboard freeze time must be before event end.")
+
+    def _validate_public_registration(self, errors: dict[str, list[str]]) -> None:
+        """Fail closed when publication is enabled without a tenant scope."""
+        if (
+            self.public_registration_enabled
+            and self.workspace_id is None
+            and not (self.scope_kind == "account" and self.account_id is not None)
+        ):
+            errors.setdefault("public_registration_enabled", []).append(
+                "Public registration requires an event customer scope."
+            )
 
     @property
     def is_active(self) -> bool:
@@ -392,54 +468,6 @@ class CTFEvent(CTFBaseModel):
         return self.event_start - timedelta(minutes=self.range_spinup_minutes)
 
 
-class CTFEventStaff(CTFBaseModel):
-    """A delegated staff assignment on one event (CTF-607).
-
-    Grants a second organizer-tier user a bounded slice of event
-    management: moderators handle participants and announcements, judges
-    handle submissions review and awards. The owning organizer
-    (``CTFEvent.created_by``) always retains every capability; staff rows
-    never widen access to event configuration, challenges, or scoring.
-    """
-
-    event = models.ForeignKey(
-        CTFEvent,
-        on_delete=models.CASCADE,
-        related_name="staff",
-        help_text="Event this staff assignment is scoped to",
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="ctf_staff_roles",
-        help_text="Platform user holding the staff role",
-    )
-    role = models.CharField(
-        max_length=16,
-        choices=EventStaffRole.choices(),
-        help_text="Delegated role: moderator (participants, announcements) or judge (submissions, awards)",
-    )
-
-    class Meta:
-        """Django model metadata."""
-
-        db_table = "ctf_event_staff"
-        ordering = ["created_at"]
-        verbose_name = "CTF Event Staff"
-        verbose_name_plural = "CTF Event Staff"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["event", "user"],
-                condition=models.Q(deleted_at__isnull=True),
-                name="unique_active_ctf_event_staff_user",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        """Return the assignment as user@event with role."""
-        return f"{self.user_id}@{self.event_id}: {self.role}"
-
-
 # Reserved event-page slug carrying the per-event participant briefing (#1854).
 # Defined once so views, services, and serializers key behaviour on the slug
 # constant rather than the mutable display title; the existing conditional
@@ -453,47 +481,6 @@ RESERVED_BRIEFING_SLUG = "briefing"
 MAX_EVENT_PAGE_BODY_CHARS = 20_000
 MAX_EVENT_PAGES_PER_EVENT = 50
 
-
-class CTFEventPage(CTFBaseModel):
-    """One organizer-authored informational page for an event (CTF-1303)."""
-
-    event = models.ForeignKey(
-        CTFEvent,
-        on_delete=models.CASCADE,
-        related_name="pages",
-        help_text="Event this page belongs to",
-    )
-    title = models.CharField(
-        max_length=120,
-        help_text="Page title shown in the participant navigation",
-    )
-    slug = models.SlugField(
-        max_length=140,
-        help_text="URL-safe identifier, unique per event",
-    )
-    body = models.TextField(
-        help_text="Markdown content",
-    )
-    order = models.PositiveIntegerField(
-        default=0,
-        help_text="Display order in the participant navigation",
-    )
-
-    class Meta:
-        """Django model metadata."""
-
-        db_table = "ctf_event_page"
-        ordering = ["order", "title"]
-        verbose_name = "CTF Event Page"
-        verbose_name_plural = "CTF Event Pages"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["event", "slug"],
-                condition=models.Q(deleted_at__isnull=True),
-                name="unique_active_ctf_event_page_slug",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        """Return the page title with its event."""
-        return f"{self.title} ({self.event_id})"
+# ``CTFEventPage`` lives in ``ctf.models.event_page`` (python:S104 file-size
+# budget); the constants above stay here because other layers import them from
+# ``ctf.models.event``. Both are re-exported from ``ctf.models``.

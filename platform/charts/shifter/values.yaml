@@ -8,6 +8,12 @@ deployment:
   name: shifter
   profile: default
 
+# Empty in provider-neutral defaults. GCP deployment composition projects one
+# immutable versioned identity plus the participant envelope (#1816).
+capacityProfile:
+  id: ""
+  participants: 0
+
 # Provider bundles project their supported Kubernetes capabilities explicitly.
 # Templates gate optional provider resources on these switches and never infer
 # behavior from provider or profile names.
@@ -15,6 +21,10 @@ capabilities:
   gcpBackendConfig: false
   gcpManagedTls: false
   kubernetesJobLauncher: false
+  # Pin portal + guacd to the exclusive GCP access node pool (#1711). GCP
+  # profiles enable this; AWS/neutral profiles leave it false so no GCP node
+  # label/taint toleration leaks into their manifests.
+  gcpAccessNodePool: false
 
 namespaces:
   platform: shifter-platform
@@ -30,6 +40,9 @@ serviceAccounts:
   ctfScheduler:
     name: ctf-scheduler
     annotations: {}
+  migrator:
+    name: migrator
+    annotations: {}
   provisionerLauncher:
     name: provisioner-launcher
     annotations: {}
@@ -38,13 +51,8 @@ serviceAccounts:
     annotations: {}
 
 # Fleet-uniform non-secret runtime env rendered into the platform-runtime
-# ConfigMap that every deployment envFroms. RAES default-cutover selector
-# (#1310, ADR-031-R6): delivery seam prepared at the preserved-legacy posture;
-# the flip (native=true + a polaris=polaris-raes route) is a deferred, reviewed
-# change once the plugin system + Polaris adapter deliver a conformant pack.
-runtimeEnv:
-  SHIFTER_RAES_NATIVE_PROVISIONING: "false"
-  SHIFTER_RAES_CATALOG_CUTOVERS: ""
+# ConfigMap that every deployment envFroms.
+runtimeEnv: {}
 
 # The guacamole-runtime Kubernetes Secret is created out of band by the deploy
 # bootstrap (kubectl apply from the provider secret store), not by this chart.
@@ -52,6 +60,34 @@ runtimeEnv:
 # never be placed in chart values or Helm release history. See issue #1180.
 guacamoleRuntimeSecret:
   name: guacamole-runtime
+
+# S7 OpenFGA deployment contract. Disabled for this S2 slice: enabling the
+# server does not activate the S8 application cutover. Secret values are
+# provisioned out of band and never enter Helm values or release history.
+openfga:
+  enabled: false
+  image: "openfga/openfga@sha256:d53ce5c48413d01e75ecf375f3f74eb35c50f155fc028c41d03dbc7c9838fb38"
+  replicas: 2
+  hostname: openfga.shifter-platform.svc.cluster.local
+  storeId: ""
+  modelId: ""
+  runtimeSecretName: openfga-runtime
+  caConfigMapName: openfga-ca
+  databaseCidrs: []
+  databasePort: 5432
+  pools:
+    minOpen: 5
+    minIdle: 3
+    maxOpen: 20
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+      ephemeral-storage: 64Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 128Mi
 
 images:
   platform: "registry.example.invalid/shifter/platform@sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -77,6 +113,13 @@ runtime:
 
 portal:
   replicas: 2
+  terminationGracePeriodSeconds: 150
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 2
+    cpuUtilizationPercentage: 65
+    scaleDownStabilizationSeconds: 900
   resources:
     requests:
       cpu: 250m
@@ -132,27 +175,40 @@ workers:
         cpu: 500m
         memory: 512Mi
         ephemeral-storage: 256Mi
-  guacamolePrune:
+  ctfCommunicationWorker:
     replicas: 1
     resources:
       requests:
-        cpu: 50m
-        memory: 128Mi
+        cpu: 100m
+        memory: 256Mi
         ephemeral-storage: 128Mi
       limits:
-        cpu: 250m
+        cpu: 500m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
+  guacamolePrune:
+    replicas: 1
+    # Keep startup within the heartbeat window, including Django checks and
+    # dependency loading. Qualified with the standard worker budget in #1583.
+    resources:
+      requests:
+        cpu: 100m
         memory: 256Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
         ephemeral-storage: 256Mi
   raesOperationRecordPrune:
     replicas: 1
     resources:
       requests:
-        cpu: 50m
-        memory: 128Mi
+        cpu: 100m
+        memory: 256Mi
         ephemeral-storage: 128Mi
       limits:
-        cpu: 250m
-        memory: 256Mi
+        cpu: 500m
+        memory: 512Mi
         ephemeral-storage: 256Mi
   operationResultApplier:
     replicas: 1
@@ -181,13 +237,24 @@ workers:
     resources:
       requests:
         cpu: 100m
+        memory: 512Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 500m
+        memory: 2Gi
+        ephemeral-storage: 256Mi
+  reconciler:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
         memory: 256Mi
         ephemeral-storage: 128Mi
       limits:
         cpu: 500m
         memory: 512Mi
         ephemeral-storage: 256Mi
-  reconciler:
+  warmPoolReconciler:
     replicas: 1
     resources:
       requests:
@@ -201,6 +268,13 @@ workers:
 
 guacd:
   replicas: 1
+  terminationGracePeriodSeconds: 150
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 1
+    cpuUtilizationPercentage: 65
+    scaleDownStabilizationSeconds: 900
   freerdpConfigVolume:
     sizeLimit: 16Mi
   resources:
@@ -214,6 +288,8 @@ guacd:
       ephemeral-storage: 256Mi
 guacamoleClient:
   replicas: 1
+  terminationGracePeriodSeconds: 180
+  postgresqlAbsoluteMaxConnections: 10
   resources:
     requests:
       cpu: 250m
@@ -253,6 +329,9 @@ services:
       enabled: false
       name: portal-web
       securityPolicyName: ""
+      timeoutSec: 30
+      connectionDraining:
+        drainingTimeoutSec: 30
       healthCheck:
         type: HTTP
         requestPath: /health/
@@ -267,6 +346,9 @@ services:
       enabled: false
       name: guacamole-client
       securityPolicyName: ""
+      timeoutSec: 30
+      connectionDraining:
+        drainingTimeoutSec: 30
 
 network:
   enabled: true
@@ -311,3 +393,33 @@ edge:
       enabled: false
       certificateName: platform-managed-cert
       frontendConfigName: platform-frontend-config
+
+# M06 packages the M05 process contract; enable only with qualified listener images.
+modelBroker:
+  enabled: false
+  role_arn: ""
+  target_group_arn: ""
+  vpc_id: ""
+  endpoint_cidrs: []
+  health_check_cidrs: []
+  hostname: ""
+  vip: ""
+  admitted_subnets: []
+  global_access: false
+  tls_secret_name: ""
+  control_tls_secret_name: ""
+  trust_configmap_name: ""
+  gsa: ""
+  region: ""
+  control_env: {}
+  catalog_json: ""
+  catalog_digest: ""
+  identities_json: ""
+  providers_json: ""
+  enrollment_env: {}
+  provisioner_subject: ""
+  broker_subject_id: ""
+  provisioner_subject_id: ""
+  fingerprint_secret_name: ""
+  fingerprint_key_version: ""
+  fingerprint_previous_secret_name: ""

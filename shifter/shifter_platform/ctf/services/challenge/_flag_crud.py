@@ -14,9 +14,10 @@ from uuid import UUID
 
 from django.db import transaction
 
+from ctf.enums import EventCapability
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag
-from ctf.services.authorization import assert_actor_owns_event as _assert_actor_owns_event
+from ctf.services.authorization import assert_event_capability as _assert_event_capability
 from shared.log_sanitize import safe_log_value
 
 from ._flag_verify import _validate_programmable_config, hash_flag, validate_http_flag_config
@@ -65,21 +66,29 @@ def _flag_hash_for_payload(
     validator_config: dict[str, Any] | None,
 ) -> str:
     """Validate flag payload fields and return the value to store in flag_hash."""
-    if flag_type not in VALID_FLAG_TYPES:
+    from ctf.extensions import flag_validator_supports_server_context, get_flag_validator
+
+    custom_validator = get_flag_validator(flag_type)
+    if flag_type not in VALID_FLAG_TYPES and custom_validator is None:
         raise CTFValidationError(
             f"Invalid flag_type: {flag_type}",
             details={"flag_type": flag_type},
         )
 
     if flag_type in ("static", "regex"):
-        return _flag_hash_for_static_or_regex(flag_type, flag_data, case_sensitive=case_sensitive)
-
-    if flag_type == "programmable":
+        flag_hash = _flag_hash_for_static_or_regex(flag_type, flag_data, case_sensitive=case_sensitive)
+    elif flag_type == "programmable":
         _validate_programmable_config(validator_config)
-        return "programmable"
-
-    validate_http_flag_config(validator_config)
-    return "http"
+        flag_hash = "programmable"
+    elif flag_type == "http":
+        validate_http_flag_config(validator_config)
+        flag_hash = "http"
+    elif flag_validator_supports_server_context(flag_type):
+        validate_http_flag_config(validator_config)
+        flag_hash = "receipt-context"
+    else:
+        flag_hash = "extension"
+    return flag_hash
 
 
 def _reject_non_flag_live_edits(challenge: CTFChallenge, challenge_data: dict[str, Any]) -> None:
@@ -150,7 +159,7 @@ def add_flag(
             details={"challenge_id": str(challenge_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(challenge.event):
         raise CTFStateError(
@@ -162,6 +171,8 @@ def add_flag(
     case_sensitive = flag_data.get("case_sensitive", True)
     order = flag_data.get("order", 0)
     validator_config = flag_data.get("validator_config")
+    if flag_type == "http":
+        validator_config = validate_http_flag_config(validator_config)
     stored_value = _flag_hash_for_payload(
         flag_type,
         flag_data,
@@ -226,7 +237,7 @@ def update_flag(
         ) from None
 
     challenge = flag_obj.challenge
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(challenge.event):
         raise CTFStateError(
@@ -238,6 +249,8 @@ def update_flag(
     case_sensitive = flag_data.get("case_sensitive", flag_obj.case_sensitive)
     order = flag_data.get("order", flag_obj.order)
     validator_config = flag_data.get("validator_config", flag_obj.validator_config)
+    if flag_type == "http":
+        validator_config = validate_http_flag_config(validator_config)
     stored_value = _flag_hash_for_payload(
         flag_type,
         flag_data,
@@ -304,7 +317,7 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
             details={"flag_id": str(flag_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, flag_obj.challenge.event)
+    _assert_event_capability(actor_id, flag_obj.challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(flag_obj.challenge.event):
         raise CTFStateError(

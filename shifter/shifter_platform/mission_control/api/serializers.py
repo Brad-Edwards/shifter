@@ -6,6 +6,8 @@ from typing import Any
 
 from rest_framework import serializers
 
+from shared.api.closed_serializer import ClosedSerializer
+from shared.api.model_sources import ModelSourceSelectionField
 from shared.enums import ResourceStatus
 from shared.raes.projections import DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT
 
@@ -157,11 +159,14 @@ class RangePresentationSerializer(serializers.Serializer):
     is_ready = serializers.BooleanField()
     is_terminal = serializers.BooleanField()
     is_active = serializers.BooleanField()
+    pause_supported = serializers.BooleanField()
+    resume_supported = serializers.BooleanField()
 
 
-class LaunchRangeSerializer(serializers.Serializer):
+class LaunchRangeSerializer(ClosedSerializer):
     """Validate range launch requests."""
 
+    model_sources = ModelSourceSelectionField(required=False)
     agents = serializers.DictField(child=serializers.IntegerField(min_value=1), required=False)
     agent_id = serializers.IntegerField(required=False, allow_null=True)
     scenario = serializers.CharField(required=False, default="basic", allow_blank=False, trim_whitespace=True)
@@ -242,6 +247,33 @@ class LaunchRangeResponseSerializer(serializers.Serializer):
 
     success = serializers.BooleanField()
     range = RangePresentationSerializer()
+    # Retry-safe launch (#2086, ADR-063): present only when an Idempotency-Key was
+    # supplied. True when this response recovered a prior launch rather than
+    # dispatching a new one; additive optional field (ADR-040-R3).
+    recovered = serializers.BooleanField(required=False)
+
+
+class CleanupObligationSerializer(serializers.Serializer):
+    """One retained cleanup obligation (#2086, ADR-063-R4)."""
+
+    code = serializers.CharField()
+    detail = serializers.CharField()
+
+
+class RangeCleanupOutcomeResponseSerializer(serializers.Serializer):
+    """Truthful range cleanup-outcome projection (#2086, ADR-063-R4)."""
+
+    request_id = serializers.UUIDField()
+    found = serializers.BooleanField()
+    operation_status = serializers.CharField()
+    dispatch_status = serializers.CharField()
+    cancel_state = serializers.CharField()
+    # not_applicable | pending | unknown | verified_terminal
+    cleanup = serializers.CharField()
+    residual_obligations = CleanupObligationSerializer(many=True)
+    # Present only when scoped provider inventory/readback evidence exists.
+    verification_observed_at = serializers.DateTimeField(required=False, allow_null=True)
+    verification_scope = serializers.DictField(required=False, allow_null=True)
 
 
 class SuccessResponseSerializer(serializers.Serializer):
@@ -270,9 +302,15 @@ class AgentListItemSerializer(serializers.Serializer):
 
 
 class AgentListResponseSerializer(serializers.Serializer):
-    """Response body for ``AgentListView.get``."""
+    """Response body for ``AgentListView.get``.
+
+    ``max_file_size_bytes`` is the server-owned per-file upload ceiling (bytes)
+    the SPA reads to guard uploads before initiation, so the frontend limit
+    cannot drift from the value the backend enforces.
+    """
 
     agents = AgentListItemSerializer(many=True)
+    max_file_size_bytes = serializers.IntegerField()
 
 
 class ScenarioListItemSerializer(serializers.Serializer):
@@ -326,67 +364,6 @@ class RangeHistoryResponseSerializer(serializers.Serializer):
     """Response body for the range-history list endpoint."""
 
     ranges = RangeHistorySerializer(many=True)
-
-
-class UploadInitiateSerializer(serializers.Serializer):
-    """Validate agent-upload initiation requests."""
-
-    name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
-    filename = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
-    file_size = serializers.JSONField(required=False)
-    agent_type = serializers.CharField(required=False, allow_blank=True, default="xdr", trim_whitespace=True)
-
-    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        name = attrs.get("name", "")
-        filename = attrs.get("filename", "")
-        file_size = attrs.get("file_size", 0)
-        agent_type = attrs.get("agent_type", "xdr") or "xdr"
-
-        if not name:
-            raise serializers.ValidationError("Agent name is required")
-        if not filename:
-            raise serializers.ValidationError("Filename is required")
-        if not isinstance(file_size, int) or file_size <= 0:
-            raise serializers.ValidationError("Valid file size is required")
-        if agent_type not in AGENT_TYPE_CHOICES:
-            choices = ", ".join(AGENT_TYPE_CHOICES)
-            raise serializers.ValidationError(f"Invalid agent type. Must be one of: {choices}")
-
-        attrs["agent_type"] = agent_type
-        return attrs
-
-
-class UploadCompleteSerializer(serializers.Serializer):
-    """Validate agent-upload completion requests."""
-
-    upload_token = serializers.CharField(allow_blank=True, required=False, default="")
-
-
-class UploadCancelSerializer(serializers.Serializer):
-    """Validate agent-upload cancel requests."""
-
-    upload_token = serializers.CharField(allow_blank=False, required=True, trim_whitespace=True)
-
-
-class UploadInitiateResponseSerializer(serializers.Serializer):
-    """Response body for ``UploadInitiateView.post`` (``cms.services.initiate_upload``).
-
-    ``presigned_url`` is a short-lived, single-use S3 PUT URL — an existing
-    response field, typed here for the schema but never given a real example.
-    """
-
-    presigned_url = serializers.CharField()
-    s3_key = serializers.CharField()
-    upload_token = serializers.CharField()
-    expected_os = serializers.CharField(allow_null=True)
-
-
-class UploadCompleteResponseSerializer(serializers.Serializer):
-    """Response body for ``UploadCompleteView.post``."""
-
-    success = serializers.BooleanField()
-    agent_id = serializers.IntegerField()
-    message = serializers.CharField()
 
 
 class GuacamoleInstanceSerializer(serializers.Serializer):
@@ -455,7 +432,7 @@ class CredentialCreateSerializer(serializers.Serializer):
 
     def validate_credential_type(self, value: str) -> str:
         if value not in ("scm", "deployment_profile"):
-            raise serializers.ValidationError(f"Invalid credential type: {value}")
+            raise serializers.ValidationError("Invalid credential type.")
         return value
 
 

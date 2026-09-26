@@ -48,7 +48,20 @@ export default defineConfig({
       reportsDirectory: "./coverage",
       reporter: ["text", "lcov"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/api/schema.d.ts", "src/main.tsx"],
+      // Only tests, test support, and the generated OpenAPI projection are
+      // excluded. The first-party entrypoint (main.tsx) and composition root
+      // stay measured (#1526).
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/api/schema.d.ts"],
+      // Absolute non-regression floors, each one point under the measured
+      // baseline to absorb run-to-run variance (the #1529 convention in
+      // docs/dev/testing.md). Floors only stay level or rise; the SonarCloud
+      // `raes-strict` gate owns the complementary 80% changed-code ratchet.
+      thresholds: {
+        statements: 79,
+        branches: 70,
+        functions: 74,
+        lines: 81,
+      },
     },
   },
 });

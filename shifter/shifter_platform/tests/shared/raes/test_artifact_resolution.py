@@ -8,7 +8,7 @@ ADR-034-R8 non-realizability reasons.
 
 from __future__ import annotations
 
-from raes._source import (
+from raes.artifact_requirements import (
     ArtifactCandidate,
     ArtifactConstraint,
     ArtifactIdentity,
@@ -16,8 +16,8 @@ from raes._source import (
     ArtifactMechanismProfile,
     ArtifactRequirement,
     ArtifactSatisfactionRoute,
-    ExplicitnessClass,
 )
+from raes.explicitness import ExplicitnessClass
 from raes_contracts.apparatus import ApparatusIdentity
 from raes_contracts.contracts import (
     ArtifactAcquisitionTimingModel,
@@ -147,7 +147,7 @@ def test_exact_satisfied_by_its_authored_identity():
     route = _route("exact-artifact")
     result = _resolve(
         _exact_requirement([route]),
-        capabilities=[_capability("exact-artifact", ["exact"], [route])],
+        capabilities=[_capability("exact-artifact", ["source-artifact"], [route])],
         availability=_availability(available_artifact_digests=[_DIGEST_A], **_TRUST_FACTS),
     )
     assert result.status is ArtifactResolutionStatus.SATISFIED
@@ -162,7 +162,7 @@ def test_exact_unavailable_when_its_digest_is_not_in_inventory():
     route = _route("exact-artifact")
     result = _resolve(
         _exact_requirement([route]),
-        capabilities=[_capability("exact-artifact", ["exact"], [route])],
+        capabilities=[_capability("exact-artifact", ["source-artifact"], [route])],
         availability=_availability(available_artifact_digests=[_DIGEST_B]),
     )
     assert result.status is ArtifactResolutionStatus.UNRESOLVABLE
@@ -176,7 +176,7 @@ def test_exact_is_never_substituted_by_an_available_candidate():
     route = _route("exact-artifact")
     result = _resolve(
         _exact_requirement([route]),
-        capabilities=[_capability("exact-artifact", ["exact"], [route])],
+        capabilities=[_capability("exact-artifact", ["source-artifact"], [route])],
         availability=_availability(available_artifact_digests=[_DIGEST_B], available_candidate_ids=["cand-linux"]),
     )
     assert result.status is ArtifactResolutionStatus.UNRESOLVABLE
@@ -198,7 +198,7 @@ def test_exact_present_but_untrusted_is_not_admissibly_available():
     route = _route("exact-artifact")
     result = _resolve(
         _exact_requirement([route]),
-        capabilities=[_capability("exact-artifact", ["exact"], [route])],
+        capabilities=[_capability("exact-artifact", ["source-artifact"], [route])],
         availability=_availability(available_artifact_digests=[_DIGEST_A]),
     )
     assert result.status is ArtifactResolutionStatus.UNRESOLVABLE
@@ -211,7 +211,7 @@ def test_route_must_be_author_permitted_even_if_backend_offers_it():
     backend_route = _route("exact-artifact", acquisition="pull")
     result = _resolve(
         _exact_requirement([author_route]),
-        capabilities=[_capability("exact-artifact", ["exact"], [backend_route])],
+        capabilities=[_capability("exact-artifact", ["source-artifact"], [backend_route])],
         availability=_availability(available_artifact_digests=[_DIGEST_A]),
     )
     assert result.failure is ArtifactResolutionFailure.UNSUPPORTED_BACKEND_MECHANISM
@@ -224,7 +224,7 @@ def test_constrained_satisfied_by_conforming_available_candidate():
     route = _route("published-candidate")
     result = _resolve(
         _constrained_requirement([route]),
-        capabilities=[_capability("published-candidate", ["constrained"], [route])],
+        capabilities=[_capability("published-candidate", ["source-artifact"], [route])],
         availability=_availability(
             available_candidate_ids=["cand-linux"],
             satisfied_constraint_ids=["os-family"],
@@ -243,7 +243,7 @@ def test_constrained_fails_on_unsatisfied_constraint():
     route = _route("published-candidate")
     result = _resolve(
         _constrained_requirement([route]),
-        capabilities=[_capability("published-candidate", ["constrained"], [route])],
+        capabilities=[_capability("published-candidate", ["source-artifact"], [route])],
         availability=_availability(
             available_candidate_ids=["cand-linux"],
             satisfied_constraint_ids=[],
@@ -257,7 +257,7 @@ def test_constrained_fails_on_missing_locked_input():
     route = _route("published-candidate")
     result = _resolve(
         _constrained_requirement([route]),
-        capabilities=[_capability("published-candidate", ["constrained"], [route])],
+        capabilities=[_capability("published-candidate", ["source-artifact"], [route])],
         availability=_availability(
             available_candidate_ids=["cand-linux"],
             satisfied_constraint_ids=["os-family"],
@@ -271,7 +271,7 @@ def test_constrained_fails_when_no_candidate_is_available():
     route = _route("published-candidate")
     result = _resolve(
         _constrained_requirement([route]),
-        capabilities=[_capability("published-candidate", ["constrained"], [route])],
+        capabilities=[_capability("published-candidate", ["source-artifact"], [route])],
         availability=_availability(
             available_candidate_ids=[],
             satisfied_constraint_ids=["os-family"],
@@ -285,8 +285,8 @@ def test_constrained_unsupported_when_backend_lacks_the_kind():
     route = _route("published-candidate")
     result = _resolve(
         _constrained_requirement([route]),
-        # Backend supports the mechanism only for exact, not constrained.
-        capabilities=[_capability("published-candidate", ["exact"], [route])],
+        # A different compiled concern does not authorize a source artifact.
+        capabilities=[_capability("published-candidate", ["other-artifact"], [route])],
         availability=_availability(
             available_candidate_ids=["cand-linux"],
             satisfied_constraint_ids=["os-family"],
@@ -303,7 +303,7 @@ def test_open_is_delegated_to_a_declared_compatible_mechanism():
     route = _route("dynamic-composition", timing="realization")
     result = _resolve(
         _open_requirement([route]),
-        capabilities=[_capability("dynamic-composition", ["open"], [route])],
+        capabilities=[_capability("dynamic-composition", ["source-artifact"], [route])],
     )
     assert result.status is ArtifactResolutionStatus.DELEGATED
     assert result.route == route
@@ -353,7 +353,7 @@ def test_satisfied_requirement_produces_no_artifact_gap():
     route = _route("exact-artifact")
     gaps = resolve_artifact_gaps(
         {_ADDRESS: _exact_requirement([route])},
-        capabilities=[_capability("exact-artifact", ["exact"], [route])],
+        capabilities=[_capability("exact-artifact", ["source-artifact"], [route])],
         availability_by_address={
             _ADDRESS: _availability(
                 available_artifact_digests=[_DIGEST_A],

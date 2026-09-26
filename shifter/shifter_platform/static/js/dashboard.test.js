@@ -1,3 +1,6 @@
+require('./dashboard-connection.js');
+require('./dashboard-tiles.js');
+require('./dashboard-launch.js');
 require('./dashboard.js');
 
 describe('DashboardManager destroyRange', () => {

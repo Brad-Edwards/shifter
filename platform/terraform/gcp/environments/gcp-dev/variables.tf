@@ -3,6 +3,39 @@ variable "project_id" {
   type        = string
 }
 
+variable "dynamic_secret_project_id" {
+  description = "Pre-existing deployment-scoped GCP project that owns all provisioner-created range secrets. May equal project_id only during staged migration."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.dynamic_secret_project_id)) > 0
+    error_message = "dynamic_secret_project_id must identify the deployment's range-secret project."
+  }
+}
+
+variable "provisioner_static_secret_refs" {
+  description = "Closed runtime-key map of exact Secret Manager resources for operator-created GDC/Vertex inputs the provisioner reads."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for id in values(var.provisioner_static_secret_refs) : can(regex("^projects/[^/]+/secrets/[^/]+$", id))
+    ])
+    error_message = "Every provisioner_static_secret_refs value must be a full projects/<project>/secrets/<id> resource ID."
+  }
+
+  validation {
+    condition = length(setsubtract(toset(keys(var.provisioner_static_secret_refs)), toset([
+      "GDC_ACCESS_SECRET_ID",
+      "GDC_VM_IMAGE_GCS_SECRET_ID",
+      "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+      "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+    ]))) == 0
+    error_message = "provisioner_static_secret_refs contains an unsupported runtime key."
+  }
+}
+
 variable "environment" {
   description = "Environment name."
   type        = string
@@ -80,6 +113,12 @@ variable "provisioner_machine_type" {
   default     = "n2-standard-8"
 }
 
+variable "access_machine_type" {
+  description = "Machine type for the exclusive access node pool that hosts portal + guacd (#1711)."
+  type        = string
+  default     = "e2-standard-4"
+}
+
 variable "web_node_count" {
   description = "Desired size for the web node pool."
   type        = number
@@ -96,6 +135,29 @@ variable "provisioner_node_count" {
   description = "Desired size for the provisioner node pool."
   type        = number
   default     = 1
+}
+
+variable "access_node_count" {
+  description = "Desired size for the exclusive access node pool that hosts portal + guacd (#1711)."
+  type        = number
+  default     = 1
+}
+
+variable "access_node_max_count" {
+  description = "Autoscaling ceiling for the exclusive access node pool; the selected capacity profile owns this bound."
+  type        = number
+  default     = 2
+}
+
+variable "shared_service_capacity_profile" {
+  description = "Immutable shared-service event-capacity profile identity projected from shifter.yaml."
+  type        = string
+  default     = "gcp-shared-v1-p10"
+
+  validation {
+    condition     = can(regex("^gcp-shared-v[1-9][0-9]*-p(10|30|50|100)$", var.shared_service_capacity_profile))
+    error_message = "shared_service_capacity_profile must be a versioned authored GCP p10/p30/p50/p100 profile."
+  }
 }
 
 variable "cloud_sql_database_version" {
@@ -122,7 +184,7 @@ variable "cloud_sql_availability_type" {
 }
 
 variable "cloud_sql_disk_size_gb" {
-  description = "Cloud SQL disk size in GiB."
+  description = "Minimum Cloud SQL disk size in GiB; provider storage does not shrink."
   type        = number
   default     = 20
 }
@@ -137,6 +199,12 @@ variable "cloud_sql_user_name" {
   description = "Application PostgreSQL username for the control plane."
   type        = string
   default     = "shifter"
+}
+
+variable "cloud_sql_deletion_protection" {
+  description = "Enable Cloud SQL deletion protection on the platform instance. Default true. The gcp-dev-destroy workflow renders this false into an ephemeral tfvars so terraform destroy can delete the instance; without this variable being declared and wired to module.platform_core, that override is an undeclared-variable no-op and destroy fails with 'deletion_protection is set to true' (#2258)."
+  type        = bool
+  default     = true
 }
 
 variable "redis_tier" {
@@ -205,6 +273,15 @@ variable "identity_allowed_emails" {
   description = "Explicit non-domain email addresses allowed to self-register in Identity Platform."
   type        = list(string)
   default     = []
+}
+
+variable "enable_gcs_usage_log_delivery" {
+  type = bool
+  # This org's Domain Restricted Sharing policy (iam.allowedPolicyMemberDomains)
+  # forbids granting the google.com cloud-storage-analytics group, so GCS
+  # usage-log delivery is disabled here (the binding fails with Error 412). Cloud
+  # Audit Logs are unaffected (google_project_iam_audit_config).
+  default = false
 }
 
 variable "enable_identity_blocking_function" {
@@ -282,22 +359,10 @@ variable "ctf_content_bucket_name" {
   default     = ""
 }
 
-variable "enable_cicd_github_oidc" {
-  description = "Create the GitHub Actions -> GCP Workload Identity federation (pool, provider, packer build SA). Default true. Set false for tenants whose org blocks the GitHub OIDC issuer (constraints on iam.workloadIdentityPoolProviders) or that do not use GitHub Actions CI; the platform itself does not depend on it (#1723)."
-  type        = bool
-  default     = true
-}
-
-variable "github_org" {
-  description = "GitHub organization allowed to federate into the packer build service account."
-  type        = string
-  default     = "Brad-Edwards"
-}
-
-variable "github_repo" {
-  description = "GitHub repository allowed to federate into the packer build service account."
-  type        = string
-  default     = "shifter"
+variable "gdc_vm_runtime_image_readers" {
+  description = "Service accounts granted read on the GDC VM image bucket (GDC VM Runtime image-pull identity). Empty on the default GCE range backend, which never creates the GDC substrate SA; set to the baremetal-gcr SA only for a GDC deployment (--range-backend gdc), which is what creates that SA. A hardcoded baremetal-gcr entry breaks a fresh GCE apply because the SA does not exist (ADR: GDC plumbing must not be selected by default). Mirrors the optional-empty vmseries_bootstrap_bucket_name pattern."
+  type        = list(string)
+  default     = []
 }
 
 # ------------------------------------------------------------------------------

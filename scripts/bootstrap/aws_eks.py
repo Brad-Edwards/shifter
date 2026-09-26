@@ -24,7 +24,15 @@ if str(_SHIFTER_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SHIFTER_PACKAGE_ROOT))
 
 from installation.loader import load_root_config  # noqa: E402
-from installation.runtime_inventory import AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS  # noqa: E402
+from installation.render import (  # noqa: E402
+    render_mission_control_lease_env,
+    render_model_access_catalog,
+    render_model_access_env,
+)
+from installation.runtime_inventory import (  # noqa: E402
+    AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS,
+    AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS,
+)
 from installation.schema import RootConfig  # noqa: E402
 
 _LOWERCASE_HEX = frozenset("0123456789abcdef")
@@ -96,20 +104,9 @@ print(f"IRSA_OK:{identity}")
 # controllers directly (EKS add-on service_account_role_arn / Helm SA annotation),
 # not projected into the chart's identity.serviceAccountRoleArns.
 _WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner"})
-_RENDERER_OWNED_RUNTIME_ENV = frozenset(
-    {
-        "AUTH_PROVIDER",
-        "CLOUD_PROVIDER",
-        "DJANGO_ALLOWED_HOSTS",
-        "DJANGO_CSRF_TRUSTED_ORIGINS",
-        # ENGINE_TASK_IMAGE is generated here from the attested provisioner image
-        # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
-        # must not supply it.
-        "ENGINE_TASK_IMAGE",
-        "ENVIRONMENT",
-        "SITE_URL",
-    }
-)
+# Single source of truth in the installation package (installation.runtime_inventory_aws),
+# so the renderer and the backend bundle's generated-output projection cannot drift.
+_RENDERER_OWNED_RUNTIME_ENV = AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS
 _REQUIRED_TERRAFORM_INPUTS = frozenset(
     {
         "addon_versions",
@@ -195,8 +192,8 @@ def _runtime_environment(profile: str) -> str:
     return {"dev": "development", "prod": "production"}.get(profile, profile)
 
 
-def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str, str]:
-    """Build the complete canonical runtime environment for AWS EKS."""
+def _validated_runtime_env(outputs: Mapping[str, object]) -> dict[str, str]:
+    """Return validated Terraform-owned runtime variables."""
     raw = _output(outputs, "runtime_env")
     if not isinstance(raw, Mapping) or not all(
         isinstance(key, str) and isinstance(value, str) and value for key, value in raw.items()
@@ -208,14 +205,42 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
     missing = sorted(AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS.difference(raw))
     if missing:
         raise ValueError("runtime_env is missing required keys: " + ", ".join(missing))
+    return dict(raw)
+
+
+def _rendered_env_values(rendered: str) -> dict[str, str]:
+    """Parse newline-delimited key-value output from a trusted renderer."""
+    values = {}
+    for line in rendered.splitlines():
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
+
+
+def _aws_account_id(outputs: Mapping[str, object]) -> str:
+    """Extract the account identifier from the cluster access role ARN."""
+    access_role_arn = str(_output(outputs, "cluster_access_role_arn"))
+    arn_parts = access_role_arn.split(":")
+    if len(arn_parts) < 6 or arn_parts[0:3] != ["arn", "aws", "iam"] or not arn_parts[4]:
+        raise ValueError("cluster_access_role_arn must be an AWS IAM ARN with an account id")
+    return arn_parts[4]
+
+
+def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str, str]:
+    """Build the complete canonical runtime environment for AWS EKS."""
     domain = config.deployment.domain
     return {
-        **dict(raw),
+        **_validated_runtime_env(outputs),
+        "AUDIT_DEPLOYMENT_SCOPE": (
+            f"aws:{_aws_account_id(outputs)}:{config.settings['region']}:{config.deployment.profile}"
+        ),
         "AUTH_PROVIDER": "oidc",
         "CLOUD_PROVIDER": "aws",
         "DJANGO_ALLOWED_HOSTS": f"{domain},localhost,127.0.0.1",
         "DJANGO_CSRF_TRUSTED_ORIGINS": f"https://{domain}",
         "ENVIRONMENT": _runtime_environment(config.deployment.profile),
+        **_rendered_env_values(render_model_access_env(config)),
+        **_rendered_env_values(render_mission_control_lease_env(config)),
         "SITE_URL": f"https://{domain}",
     }
 
@@ -299,6 +324,10 @@ def _validate_terraform_inputs(
         raise ValueError("the protected EKS Terraform input region does not match shifter.yaml")
     if payload["domain_name"] != config.deployment.domain:
         raise ValueError("the protected EKS Terraform input domain does not match shifter.yaml")
+    from installation.aws_model_broker import AwsModelBrokerSettings, validate_aws_broker_intent
+
+    if AwsModelBrokerSettings.model_validate(payload.get("model_broker", {})) != validate_aws_broker_intent(config):
+        raise ValueError("protected Terraform broker input differs from shifter.yaml")
     return resolved
 
 
@@ -803,9 +832,30 @@ def render_aws_values(
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
+    from installation.aws_model_broker import project_aws_model_broker
+
+    broker = project_aws_model_broker(
+        terraform_outputs.get("model_broker", {}).get("value"),
+        config=config,
+        catalog_json=render_model_access_catalog(config),
+        model_access_env=render_model_access_env(config),
+        account_id=_aws_account_id(terraform_outputs),
+    )
+    if broker["enabled"] and broker["provisioner_subject"] != roles["provisioner"]:
+        raise ValueError("broker enrollment identity differs from the provisioner workload")
+    runtime_env.update(
+        {
+            "MODEL_BROKER_GUEST_URL": "",
+            "MODEL_BROKER_GUEST_CIDRS": "",
+            "MODEL_ENROLLMENT_CONTROL_URL": "",
+            "MODEL_ENROLLMENT_CA_PEM_B64": "",
+            **broker.get("enrollment_env", {}),
+        }
+    )
     edge_client_cidrs = _cidr_output(terraform_outputs, "edge_client_cidrs")
     return {
         "provider": {"name": "aws"},
+        "modelBroker": broker,
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
         "capabilities": {"kubernetesJobLauncher": True},
         "provisioner": {"taskRunner": "aws"},
@@ -842,7 +892,9 @@ def render_aws_values(
         "network": {
             "enabled": True,
             "ingressSourceCidrs": _cidr_output(terraform_outputs, "ingress_source_cidrs"),
-            "providerApiCidrs": _cidr_output(terraform_outputs, "provider_api_cidrs"),
+            "providerApiCidrs": sorted(
+                set(_cidr_output(terraform_outputs, "provider_api_cidrs") + broker.get("endpoint_cidrs", []))
+            ),
             "privateServiceCidrs": _cidr_output(terraform_outputs, "private_service_cidrs"),
             "kubernetesApiCidrs": _cidr_output(terraform_outputs, "kubernetes_api_cidrs"),
             "rangeClusterApiCidrs": [],
@@ -945,7 +997,9 @@ def deploy_eks(
     config = load_root_config(config_path)
     _validate_config(config)
     profile = config.deployment.profile
-    preflight_gate(Cloud.AWS, Mode.LOCAL, profile, headless=True)
+    # Select the EKS component so preflight validates the isolated EKS root's inputs, not the
+    # legacy core/range/portal defaults (#1828).
+    preflight_gate(Cloud.AWS, Mode.LOCAL, profile, component="eks", headless=True)
     root = eks_root(profile)
     allowed_roots = _protected_input_roots()
     backend_config = _required_file(

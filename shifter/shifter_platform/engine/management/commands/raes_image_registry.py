@@ -5,7 +5,7 @@ A headless surface for operators/automation to register, list, and disable
 converged declaratively (for example in a deploy hook) without the SPA. Every
 mutation delegates to the single validated write path in ``engine.services``
 (``upsert_raes_image_mapping`` / ``disable_raes_image_mapping``); this command
-owns only argument shape, the native-provisioning gate, and non-secret stdout
+owns only argument shape and non-secret stdout
 summaries. Bounded failures raise ``CommandError``.
 
 Examples::
@@ -17,8 +17,6 @@ Examples::
     manage.py raes_image_registry --action disable --provider gce \\
         --source-name alpine --source-version 3.19
 
-Gated by ``SHIFTER_RAES_NATIVE_PROVISIONING``: the command refuses when the flag
-is off, matching the rest of the native path.
 """
 
 from __future__ import annotations
@@ -27,7 +25,6 @@ import logging
 from argparse import ArgumentParser
 from typing import TYPE_CHECKING, Any
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from engine.services import (
@@ -67,6 +64,10 @@ class Command(BaseCommand):
         parser.add_argument("--machine-type", default="", help="Optional provider machine type.")
         parser.add_argument("--disk-size-gb", type=int, default=None, help="Optional boot disk size in GB.")
         parser.add_argument("--disk-type", default="", help="Optional provider disk type.")
+        parser.add_argument(
+            "--management-ssh-username", default="", help="Image management SSH login; blank uses the backend default."
+        )
+        parser.add_argument("--management-ssh-port", type=int, default=22, help="Image management SSH port.")
         parser.add_argument("--notes", default="", help="Optional free-text notes.")
         # Portable RAES artifact identity + admission evidence (#1580). Supply all
         # five to register a portable mapping that satisfies an authored artifact
@@ -94,8 +95,6 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Dispatch to the requested action, mapping domain errors to CommandError."""
-        if not getattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False):
-            raise CommandError("SHIFTER_RAES_NATIVE_PROVISIONING must be enabled to manage the RAES image registry")
         action = options["action"]
         if action == "register":
             self._register(options)
@@ -119,6 +118,8 @@ class Command(BaseCommand):
                     machine_type=options["machine_type"],
                     disk_size_gb=options["disk_size_gb"],
                     disk_type=options["disk_type"],
+                    management_ssh_port=options["management_ssh_port"],
+                    management_ssh_username=options["management_ssh_username"],
                     enabled=not options["disabled"],
                     notes=options["notes"],
                     artifact_id=options["artifact_id"],

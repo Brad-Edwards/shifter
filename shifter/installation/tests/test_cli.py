@@ -54,6 +54,145 @@ class TestValidateCommand:
         assert "shifter.yaml" in capsys.readouterr().err
 
 
+class TestRenderMissionControlLeaseEnvCommand:
+    def test_renders_configured_policy(self, tmp_path, capsys, aws_config):
+        aws_config["settings"]["mission_control_leases"] = {
+            "initial_days": 7,
+            "extension_days": 3,
+            "maximum_days": 90,
+            "extensions_enabled": False,
+        }
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+        rc = main(["render-mission-control-lease-env", str(cfg_path)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert out.startswith("MISSION_CONTROL_LEASE_POLICY_JSON=")
+        assert '"initial_days":7' in out
+        assert '"extensions_enabled":false' in out
+
+    def test_defaults_when_block_absent(self, tmp_path, capsys, aws_config):
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+        rc = main(["render-mission-control-lease-env", str(cfg_path)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert '"initial_days":30' in out
+        assert '"maximum_days":365' in out
+
+    def test_invalid_policy_exits_nonzero(self, tmp_path, capsys, aws_config):
+        aws_config["settings"]["mission_control_leases"] = {"initial_days": 100, "maximum_days": 30}
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+        rc = main(["render-mission-control-lease-env", str(cfg_path)])
+        assert rc == 1
+        assert "mission_control_leases" in capsys.readouterr().err
+
+
+class TestSiblingRenderEnvCommands:
+    """The lease render command mirrors the warm-pool and model-access render commands;
+    exercise all three env renderers through the CLI so the shared error and emit paths
+    stay covered."""
+
+    def test_render_warm_pool_env_emits_policy_line(self, tmp_path, capsys, aws_config):
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+        rc = main(["render-warm-pool-env", str(cfg_path)])
+        assert rc == 0
+        assert "WARM_POOL_POLICY_JSON=" in capsys.readouterr().out
+
+    def test_render_warm_pool_env_invalid_block_exits_nonzero(self, tmp_path, capsys, aws_config):
+        # Perturb only the warm_pool block from an otherwise-valid config, so the failure
+        # is attributable to warm_pool validation rather than an unrelated root-schema error.
+        aws_config["settings"]["warm_pool"] = {"enabled": "notbool"}
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+        rc = main(["render-warm-pool-env", str(cfg_path)])
+        assert rc == 1
+        assert "settings.warm_pool" in capsys.readouterr().err
+
+    def test_render_model_access_env_emits_activation_lines(self, tmp_path, capsys, aws_config):
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+        rc = main(["render-model-access-env", str(cfg_path)])
+        assert rc == 0
+        assert "MODEL_ACCESS_ENABLED=" in capsys.readouterr().out
+
+    def test_render_model_access_env_invalid_block_exits_nonzero(self, tmp_path, capsys, aws_config):
+        aws_config["settings"]["model_access"] = {"enabled": "notbool"}
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+        rc = main(["render-model-access-env", str(cfg_path)])
+        assert rc == 1
+        assert "settings.model_access" in capsys.readouterr().err
+
+
+class TestRenderCapacityCommand:
+    def test_renders_selected_desired_state(self, tmp_path, capsys, gcp_config):
+        gcp_config["settings"] = {
+            "project_id": "acme-shifter",
+            "dynamic_secret_project_id": "acme-range-secrets",
+            "region": "us-central1",
+            "shared_service_capacity_profile": "gcp-shared-v1-p30",
+        }
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, gcp_config)
+
+        rc = main(["render-capacity", str(cfg_path), "--projection", "desired-state"])
+
+        assert rc == 0
+        output = capsys.readouterr().out
+        assert '"profile_id":"gcp-shared-v1-p30"' in output
+        assert '"deployment/guacd.spec.replicas":2' in output
+
+    def test_default_projection_is_desired_state(self, tmp_path, capsys, gcp_config):
+        gcp_config["settings"] = {
+            "project_id": "acme-shifter",
+            "dynamic_secret_project_id": "acme-range-secrets",
+            "region": "us-central1",
+            "shared_service_capacity_profile": "gcp-shared-v1-p30",
+        }
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, gcp_config)
+
+        assert main(["render-capacity", str(cfg_path)]) == 0
+
+        output = capsys.readouterr().out
+        assert '"terraform"' in output
+        assert '"kubernetes"' in output
+
+    def test_renders_gate_projection_to_output_file(self, tmp_path, capsys, gcp_config):
+        gcp_config["settings"] = {
+            "project_id": "acme-shifter",
+            "dynamic_secret_project_id": "acme-range-secrets",
+            "region": "us-central1",
+            "shared_service_capacity_profile": "gcp-shared-v1-p30",
+        }
+        cfg_path = tmp_path / "shifter.yaml"
+        output_path = tmp_path / "gate.json"
+        _write_yaml(cfg_path, gcp_config)
+
+        rc = main(["render-capacity", str(cfg_path), "--projection", "gate", "--output", str(output_path)])
+
+        assert rc == 0
+        assert '"capacity_profile_id":"gcp-shared-v1-p30"' in output_path.read_text(encoding="utf-8")
+        assert '"concurrency":30' in output_path.read_text(encoding="utf-8")
+        assert capsys.readouterr().out == ""
+
+    def test_rejects_non_gcp_backend(self, tmp_path, capsys, aws_config):
+        cfg_path = tmp_path / "shifter.yaml"
+        _write_yaml(cfg_path, aws_config)
+
+        assert main(["render-capacity", str(cfg_path)]) == 1
+        assert "GCP only" in capsys.readouterr().err
+
+    def test_missing_config_exits_nonzero(self, tmp_path, capsys):
+        missing = tmp_path / "does-not-exist.yaml"
+
+        assert main(["render-capacity", str(missing)]) == 1
+        assert "does-not-exist.yaml" in capsys.readouterr().err
+
+
 class TestInitCommand:
     def test_scaffolds_the_selected_backend(self, tmp_path, capsys):
         dest = tmp_path / "shifter.yaml"

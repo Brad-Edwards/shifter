@@ -9,12 +9,14 @@ from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
-from engine.services import RangeOwnershipTransferBlocked
+from engine.services import RangeOwnershipTransferBlocked, RangeWorkspaceRebindOutcome
 
 from ._common import _validate_caller_user
-from ._range_create import _is_active_range_conflict
+from ._range_launch_common import _is_active_range_conflict
 
 if TYPE_CHECKING:
+    import uuid
+
     from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
@@ -40,11 +42,39 @@ def range_owner_reassignment_available(range_instance_pk: int) -> bool:
     return _cs.engine_range_owner_reassignment_available(instance.request.request_id)
 
 
-def _engine_rebind_range_workspace_call(request_id: Any, workspace_id: int) -> bool:  # NOSONAR
+def range_egress_compatible_with_event(
+    range_instance_pk: int, event_owner: User, event_workspace_id: int | None
+) -> bool:
+    """Compare a spare's pinned posture with the current authorized event policy."""
+    from cms.services._range_workspace import (
+        reauthorize_ctf_policy_workspace_locked,
+        resolve_effective_egress_mode_locked,
+    )
+    from engine.services import get_pinned_range_egress_mode_by_request
+
+    instance = RangeInstance.objects.select_related("request").filter(pk=range_instance_pk).first()
+    if instance is None or instance.request is None:
+        return False
+    if event_workspace_id is None:
+        # Personal-scope events have no separate event policy source.
+        return True
+    reauthorize_ctf_policy_workspace_locked(event_owner, event_workspace_id)
+    current_mode = resolve_effective_egress_mode_locked(event_workspace_id)
+    pinned_mode = get_pinned_range_egress_mode_by_request(instance.request.request_id)
+    return pinned_mode is not None and pinned_mode == current_mode
+
+
+def _engine_rebind_range_workspace_call(
+    request_id: uuid.UUID, *, expected_workspace_id: int, new_workspace_id: int
+) -> RangeWorkspaceRebindOutcome:  # NOSONAR
     """Late-bound call so test patches of cms.services.engine_rebind_range_workspace apply."""
     from cms import services as _cs
 
-    result: bool = _cs.engine_rebind_range_workspace(request_id, workspace_id)
+    result: RangeWorkspaceRebindOutcome = _cs.engine_rebind_range_workspace(
+        request_id,
+        expected_workspace_id=expected_workspace_id,
+        new_workspace_id=new_workspace_id,
+    )
     return result
 
 
@@ -99,14 +129,26 @@ def _rehome_to_new_owner_workspace(instance: RangeInstance, new_user: User) -> N
         raise CMSError(f"Range {instance.pk} has no associated request")
 
     target = resolve_personal_workspace(new_user).workspace_id
-    if instance.workspace_id == target:
+    source = instance.workspace_id
+    if source is None:
+        raise CMSError(f"Range {instance.pk} is not available for workspace rehoming")
+    if source == target:
         return
 
     instance.workspace_id = target
     instance.save(update_fields=["workspace_id"])
     request.workspace_id = target
     request.save(update_fields=["workspace_id"])
-    _engine_rebind_range_workspace_call(request.request_id, target)
+    outcome = _engine_rebind_range_workspace_call(
+        request.request_id, expected_workspace_id=source, new_workspace_id=target
+    )
+    if outcome not in (RangeWorkspaceRebindOutcome.UPDATED, RangeWorkspaceRebindOutcome.UNCHANGED):
+        # The engine range is missing or already carries a different scope than
+        # the CMS projection we just moved; refuse to leave the three bindings
+        # inconsistent rather than half-rehome the range (rolls back the txn).
+        raise CMSError(
+            f"Range {instance.pk} could not be rehomed: engine range scope is inconsistent ({outcome.value})."
+        )
     logger.info(
         "reassign_range_owner: rehomed range_instance_pk=%s to workspace_id=%s",
         instance.pk,

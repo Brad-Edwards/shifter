@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from workspaces.models import Workspace, WorkspaceMembership
-from workspaces.roles import WorkspaceRole, role_permits
+from workspaces.roles import WorkspaceRole, operation_requires_active_workspace, role_permits
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -45,6 +45,7 @@ class WorkspaceAuthorization:
     workspace_uuid: uuid.UUID
     organization_id: int
     role: str
+    organization_uuid: uuid.UUID | None = None
 
 
 def _deny(reason: str, **context: object) -> WorkspaceAuthorizationError:
@@ -60,6 +61,7 @@ def _authorization_from(membership: WorkspaceMembership) -> WorkspaceAuthorizati
         workspace_uuid=membership.workspace.uuid,
         organization_id=membership.workspace.organization_id,
         role=membership.role,
+        organization_uuid=membership.workspace.organization.uuid,
     )
 
 
@@ -73,6 +75,19 @@ def _check_operation(role: str, operation: object) -> None:
     operation_code = _operation_value(operation)
     if not role_permits(role, operation_code):
         raise _deny("operation_not_permitted", operation=operation_code, role=role)
+
+
+def _check_active_workspace(membership: WorkspaceMembership, operation: object) -> None:
+    """Raise when ``operation`` requires an active workspace but it is archived.
+
+    Scoped to the active-workspace operation set (ADR-051): existing operations
+    keep their prior behavior, so this cannot silently change unrelated callers.
+    The denial is the same opaque message as every other, so an archived
+    workspace is not distinguishable from a missing one or a role gap.
+    """
+    operation_code = _operation_value(operation)
+    if operation_requires_active_workspace(operation_code) and membership.workspace.archived_at is not None:
+        raise _deny("workspace_archived", operation=operation_code)
 
 
 def authorize_workspace(
@@ -104,6 +119,7 @@ def authorize_workspace(
     if membership is None:
         raise _deny("no_membership")
     _check_operation(membership.role, operation)
+    _check_active_workspace(membership, operation)
     return _authorization_from(membership)
 
 
@@ -136,6 +152,7 @@ def authorize_bound_workspace(
     if membership is None:
         raise _deny("no_membership")
     _check_operation(membership.role, operation)
+    _check_active_workspace(membership, operation)
     return _authorization_from(membership)
 
 
@@ -174,6 +191,7 @@ def authorize_launch_workspace_locked(
     if membership is None:
         raise _deny("no_membership")
     _check_operation(membership.role, operation)
+    _check_active_workspace(membership, operation)
     return _authorization_from(membership)
 
 

@@ -11,9 +11,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from installation.range_egress import RangeEgressMode
+
 from shared.range_instantiation_policy import (
     InstantiationPurpose,
-    evaluate_gcp_backend_admission,
+    assert_range_backend_egress_supported,
+    evaluate_range_backend_admission,
     normalize_gcp_range_backend,
 )
 
@@ -53,11 +56,13 @@ def backend_binding_fields(backend_admission: BackendAdmission | None) -> dict[s
     if backend_admission is None:
         return {}
     try:
-        backend = normalize_gcp_range_backend(backend_admission.backend)
+        backend = (
+            "ec2" if backend_admission.backend == "ec2" else normalize_gcp_range_backend(backend_admission.backend)
+        )
         purpose = InstantiationPurpose(backend_admission.purpose)
     except ValueError as exc:
         raise EngineError(f"Range backend binding is not a closed policy value: {exc}") from exc
-    admission = evaluate_gcp_backend_admission(backend, None, purpose)
+    admission = evaluate_range_backend_admission(backend, purpose)
     if not admission.admitted:
         raise EngineError(f"Range backend binding is not admitted by policy: {admission.reason}")
     return {"range_backend": backend, "instantiation_purpose": purpose.value}
@@ -84,6 +89,79 @@ def verify_existing_workspace_binding(
             f"Range workspace binding conflict for request {request_id}: persisted "
             f"workspace {existing_range.workspace_id} differs from requested workspace "
             f"{workspace_id} (ADR-046-R9 conflict; a scoped range is never silently reused)"
+        )
+
+
+# Range backends proven to realize the ADR-026 no-NAT ``none`` posture natively.
+# The AWS path carries no GCP ``range_backend`` (it is ``None``) and realizes
+# ``none`` through its Terraform route/NAT suppression; GCE realizes it by omitting
+# the range-owned Cloud NAT. GDC (ADR-030) is excluded. A backend outside this set
+# fails closed for a ``none`` launch rather than silently substituting its default
+# egress behavior (PLAT-238 backend egress-capability gate, ADR-026-R6).
+_EGRESS_NONE_CAPABLE_GCP_BACKENDS = frozenset({"gce", "ec2"})
+
+
+def assert_backend_supports_egress(range_backend: str | None, egress_mode: str) -> None:
+    """Reject unsupported backend egress, including the native no-NAT requirement.
+
+    Called in the Engine create transaction with the resolved backend binding, so a
+    zero-egress launch that landed on a backend that cannot prove no-NAT support is
+    rejected before dispatch rather than silently getting that backend's default
+    (possibly egress-capable) posture. ``None`` is the AWS path, which realizes
+    ``none`` via its Terraform route suppression and is always capable.
+    """
+    try:
+        assert_range_backend_egress_supported(range_backend, egress_mode)
+    except ValueError as exc:
+        raise EngineError(str(exc)) from exc
+    if egress_mode != RangeEgressMode.NONE.value:
+        return
+    if range_backend is None:
+        return
+    if range_backend not in _EGRESS_NONE_CAPABLE_GCP_BACKENDS:
+        raise EngineError(
+            f"Range backend {range_backend!r} does not support the zero-egress ('none') posture; "
+            "a backend must prove native no-NAT support before a none range is admitted (ADR-026-R6)"
+        )
+
+
+def egress_binding_fields(egress_mode: str) -> dict[str, str]:
+    """Validate the pinned effective egress mode against the canonical vocabulary (PLAT-238).
+
+    The mode is resolved and authorized by the CMS launch-admission seam under the
+    workspace mutex (ADR-017-R5); Engine re-validates it is a closed
+    ``RangeEgressMode`` value before persisting, so a fabricated or malformed mode
+    from a refactored in-process caller can never be pinned on a range. Engine never
+    resolves the workspace policy itself -- it only persists the value CMS decided.
+    """
+    try:
+        mode = RangeEgressMode(egress_mode)
+    except ValueError as exc:
+        raise EngineError(f"Range egress mode is not a closed policy value: {exc}") from exc
+    return {"egress_mode": mode.value}
+
+
+def verify_existing_egress_binding(
+    existing_range: Range,
+    request_id: UUID,
+    egress_mode: str,
+) -> None:
+    """Reject an idempotent create replay whose pinned egress mode differs (ADR-017-R5).
+
+    Engine create is idempotent on ``request_id``; a replay must carry the same
+    effective egress posture the range was pinned with. A replay that names a
+    *different* mode is a decision conflict -- silently reusing the first range would
+    let a re-resolved (and possibly weaker) posture attach to an already-provisioned
+    range -- so it is refused rather than reused, exactly as a conflicting
+    backend/workspace replay is. The pinned mode is authoritative; the deployment
+    baseline is never re-consulted here (anti-pattern: deployment ``RANGE_EGRESS_MODE``
+    must not override a pinned decision).
+    """
+    if existing_range.egress_mode != egress_mode:
+        raise EngineError(
+            f"Range egress binding conflict for request {request_id}: persisted "
+            f"{existing_range.egress_mode!r} differs from requested {egress_mode!r} "
+            f"(ADR-017-R5 conflict; a pinned egress decision is never silently re-resolved)"
         )
 
 

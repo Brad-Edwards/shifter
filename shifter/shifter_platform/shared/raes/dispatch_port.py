@@ -16,7 +16,7 @@ lets the realization side depend on the seam without pulling the SDL tooling
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -30,7 +30,8 @@ __all__ = [
 class ShifterDispatchResult:
     """Outcome of dispatching a serialized RAES plan for realization.
 
-    Carries IDs and status only -- never a raw plan, provider payload, or secret.
+    Carries IDs, status, and optional bounded completion evidence; never a raw
+    plan, provider payload, or secret.
     ``accepted`` is whether the range was accepted for provisioning (the receipt
     boundary); the realized/ready state converges asynchronously and is reported
     later through the operation-status/runtime-snapshot sidecar path.
@@ -41,6 +42,7 @@ class ShifterDispatchResult:
     status: str
     range_id: str | None = None
     detail: str | None = None
+    completion: Mapping[str, Any] | None = None
 
 
 @runtime_checkable
@@ -63,7 +65,7 @@ class ShifterProvisioningDispatchPort(Protocol):
         compiled_plan: dict[str, Any],
         participant_access: Sequence[Any] = (),
     ) -> ShifterDispatchResult:
-        """Persist + dispatch the serialized ``compiled_plan``; return IDs/status only.
+        """Persist + dispatch the serialized ``compiled_plan``; return a receipt and optional completed observations.
 
         ``participant_access`` is the #1710 bounded, non-secret
         ``ParticipantAccessBinding`` sidecar that rides *beside* the plan

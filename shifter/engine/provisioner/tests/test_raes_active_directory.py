@@ -68,7 +68,7 @@ def _domain_plan() -> RaesPlan:
         member_addresses=(member.address,),
     )
     return RaesPlan(
-        raes_version="2.0.0",
+        raes_version="3.5.0",
         nodes=(controller, member),
         networks=(RaesPlanNetwork(address="provision.network.lan", name="lan", cidr="10.70.0.0/24"),),
         accounts=(authority, service),

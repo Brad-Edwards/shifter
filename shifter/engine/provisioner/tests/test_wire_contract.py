@@ -5,9 +5,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from cyberscript import wire_constants as event_types
-from cyberscript import wire_spec_keys as spec_keys
-from cyberscript.enums import ResourceStatus
+from shared import wire_constants as event_types
+from shared import wire_spec_keys as spec_keys
+from shared.enums import ResourceStatus
 
 _TERRAFORM_VARS = Path(__file__).resolve().parents[1] / "terraform_vars.py"
 _SPEC_KEY_WALK_FUNCTIONS = frozenset(

@@ -26,6 +26,40 @@ def user(django_user_model):
     )
 
 
+def _seed_range(user, *, status="ready"):
+    """Seed a real Mission Control ``RangeInstance`` so ``get_active_range``
+    returns a real ``RangeContext`` for ``user``.
+
+    Drives the dashboard read through the real ``cms.services`` facade instead of
+    patching the first-party service to return an impossible shape (#995). A
+    malformed ``status`` exercises CMS's real projection-failure path at the
+    persistence boundary.
+    """
+    from uuid import uuid4
+
+    from cms.models import RangeInstance
+    from cms.models import Request as CMSRequest
+    from shared.enums import RangeSource, RequestType
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(user).workspace_id
+    request = CMSRequest.objects.create(
+        workspace_id=workspace_id,
+        request_id=uuid4(),
+        request_type=RequestType.RANGE.value,
+        user=user,
+    )
+    return RangeInstance.objects.create(
+        workspace_id=workspace_id,
+        request=request,
+        scenario_id="basic",
+        user_id=user.id,
+        status=status,
+        range_source=RangeSource.MISSION_CONTROL.value,
+        range_spec={"instances": [{"uuid": str(uuid4()), "name": "kali", "role": "attacker", "os_type": "kali"}]},
+    )
+
+
 def test_anonymous_is_401():
     assert APIClient().get(SUMMARY_URL).status_code == 401
 
@@ -50,12 +84,14 @@ def test_no_active_range_or_event_by_default(user):
 # --- Positive ("present"/true) branches ---------------------------------------
 
 
-def test_active_range_reported_when_present(user, monkeypatch):
-    monkeypatch.setattr("cms.services.get_active_range", lambda _u: SimpleNamespace(status="running"))
+def test_active_range_reported_when_present(user):
+    """A real ready range projects the bounded present/status summary, driven
+    through the real ``cms.services.get_active_range`` facade (#995)."""
+    _seed_range(user, status="ready")
     client = APIClient()
     client.force_authenticate(user=user)
     body = client.get(SUMMARY_URL).json()
-    assert body["active_range"] == {"present": True, "status": "running"}
+    assert body["active_range"] == {"present": True, "status": "ready"}
 
 
 def test_active_event_reported_when_present(user, monkeypatch):
@@ -72,11 +108,14 @@ def test_active_event_reported_when_present(user, monkeypatch):
 # --- Fail-closed (except) branches --------------------------------------------
 
 
-def test_active_range_fails_closed_on_error(user, monkeypatch):
-    def _boom(_u):
-        raise RuntimeError("range backend down")
+def test_active_range_fails_closed_on_error(user):
+    """A malformed persisted status makes real ``RangeContext`` construction
+    raise; the dashboard summary fails closed to the bounded empty shape.
 
-    monkeypatch.setattr("cms.services.get_active_range", _boom)
+    Driven at the real persistence boundary rather than by patching the
+    first-party ``get_active_range`` service (#995).
+    """
+    _seed_range(user, status="not-a-status")
     client = APIClient()
     client.force_authenticate(user=user)
     resp = client.get(SUMMARY_URL)

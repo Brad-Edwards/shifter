@@ -34,6 +34,11 @@ urlpatterns = [
         name="raes-runtime-snapshots",
     ),
     path(
+        "range/<uuid:request_id>/cleanup-outcome/",
+        views.RangeCleanupOutcomeView.as_view(),
+        name="range-cleanup-outcome",
+    ),
+    path(
         "range/<uuid:request_id>/raes/participant-implementations/",
         views.RaesParticipantImplementationListView.as_view(),
         name="raes-participant-implementations",

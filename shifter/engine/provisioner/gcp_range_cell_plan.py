@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from dataclasses import replace
 from typing import cast
 
 from shared.range_cells import RangeCellContractError, validate_gcp_vm_range_cell_request
@@ -16,17 +17,22 @@ from gcp_range_cell_naming import (
     _short_resource_name,
     _subnet_tag,
     _subnetwork_self_link,
+    range_router_nat_plan,
+    shared_router_nat_plan,
 )
 from gcp_range_cell_scenario import build_instance_plans, realize_range_spec
 from gcp_range_cell_types import (
+    DEFAULT_GCE_EGRESS_POLICY,
     ComputeResource,
     FirewallEntry,
     FirewallPlan,
+    GceEgressPolicy,
     InstancePlan,
     NetworkPlan,
     OpenVpnGatewayPlan,
     RangeCellPlan,
     ResourceDict,
+    RouterNatPlan,
     ScenarioInstance,
     SubnetPlan,
 )
@@ -230,17 +236,25 @@ def render_range_cell_plan(
     require_images: bool = True,
     vpn_gateway_pool_slot: int | None = None,
     range_host_pool_slot: int | None = None,
+    egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY,
 ) -> RangeCellPlan:
     """Render the deterministic GCE resources for one range cell.
 
     ``vpn_gateway_pool_slot`` is the range's reserved gateway SA pool slot
     (ADR-008-R7), threaded to the OpenVPN gateway plan; ``None`` for ranges
     without an OpenVPN capability.
+
+    ``egress_policy.model_broker`` is explicitly admitted, never inferred from
+    installation enablement. Its VIP is bound to ``config.model_broker_vip``.
     """
     validated_request = validate_gcp_vm_range_cell_request(variables)
     operation = validated_request["operation"]
     if operation["request_id"] != request_uuid:
         raise RangeCellContractError("range-cell request_id does not match the invoked operation")
+    # The pinned effective egress posture rides in the operation block (PLAT-238);
+    # it is authoritative over the caller default so apply and destroy realize and
+    # tear down the same firewall + range-owned NAT topology.
+    egress_policy = replace(egress_policy, mode=str(operation.get("egress_mode", egress_policy.mode)))
     resolved_config = config or load_gce_range_cell_config()
     realized_variables = realize_range_spec(
         validated_request,
@@ -309,8 +323,21 @@ def render_range_cell_plan(
             vpn_gateway,
             instance_plans=instance_plans,
             include_optional_cleanup=not require_images,
+            egress_policy=egress_policy,
         ),
     }
     if vpn_gateway is not None:
         plan["vpn_gateway"] = vpn_gateway
+    # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
+    # a `none` (zero-egress) range omits it so its subnets carry no NAT path
+    # (PLAT-238, ADR-026-R6), mirroring the RAES plan builder.
+    if egress_policy.mode.strip().lower() != "none":
+        if manage_network:
+            plan["router_nat"] = cast(
+                RouterNatPlan, range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
+            )
+        else:
+            plan["shared_nat"] = cast(
+                RouterNatPlan, shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
+            )
     return plan

@@ -9,25 +9,20 @@ consumed by ``management.api``.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
 from django.db.models import Q
 
-from management.services import USER_PK_REQUIRED_MSG, AuditContext
-from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log
-from shared.constants import USER_CANNOT_BE_NONE
-from shared.log_sanitize import safe_log_value
+from management.policy import require_principal_administration
+from shared.authorization import AuthorizationProvider
+from shared.credentials import CredentialContext
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from django.db.models import QuerySet
 
     from management.models import UserProfile
-
-logger = logging.getLogger(__name__)
 
 # Bounded length for the Administer user-search input (defence in depth; the API
 # query serializer also enforces it).
@@ -102,41 +97,22 @@ def list_admin_users(
     return queryset
 
 
-def set_user_active(user: User, *, active: bool, audit: AuditContext) -> None:
-    """Enable or disable a user's ability to authenticate (``User.is_active``).
-
-    Distinct from soft deletion, anonymization, and privilege revocation. The
-    field change and a strict, request-attributed audit row are written in one
-    atomic block; an audit-write failure rolls the change back so the account
-    state and the audit trail can never diverge.
-
-    Raises:
-        TypeError: If user is None
-        ValueError: If user has no primary key (unsaved)
-    """
-    if user is None:
-        raise TypeError(USER_CANNOT_BE_NONE)
-    if user.pk is None:
-        raise ValueError(USER_PK_REQUIRED_MSG)
-
-    previous_active = user.is_active
-    with transaction.atomic():
-        if previous_active != active:
-            user.is_active = active
-            user.save(update_fields=["is_active"])
-        audit_log(
-            AuditEvent(
-                entity_type=AuditEntityType.USER,
-                entity_id=user.id,
-                action=AuditAction.UPDATE,
-                actor_type=audit.actor_type,
-                actor_id=audit.actor_id,
-                previous_state={"is_active": previous_active},
-                new_state={"is_active": active},
-                request_id=audit.request_id,
-                source_ip=audit.source_ip,
-                user_agent=audit.user_agent,
-            ),
-            strict=True,
-        )
-    logger.info("Set is_active=%s for user %s", active, safe_log_value(user.email))
+def list_policy_admin_users(
+    actor: CredentialContext,
+    provider: AuthorizationProvider,
+    *,
+    search: str = "",
+    user_type: str = "",
+    is_active: bool | None = None,
+    account_origin: str = "",
+    include_deleted: bool = False,
+) -> QuerySet[User]:
+    """Authorize the global identity list before count, filtering, or paging."""
+    require_principal_administration(actor, provider)
+    return list_admin_users(
+        search=search,
+        user_type=user_type,
+        is_active=is_active,
+        account_origin=account_origin,
+        include_deleted=include_deleted,
+    )

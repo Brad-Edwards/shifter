@@ -7,11 +7,14 @@ import pytest
 from shared.operation_results import ResultStep
 
 from range_ops import get_range_instance_ids, run_range_pause, run_range_resume
+from range_ops._pause_resume import UnsupportedRangeLifecycleError
 
 _OPERATION_ID = "44444444-4444-4444-4444-444444444444"
 
 
-def _assert_terminal_failure_reported(mock_cursor, *, operation: str) -> None:
+def _assert_terminal_failure_reported(
+    mock_cursor, *, operation: str, reason_code: str = "cloud_operation_failed"
+) -> None:
     """Assert the operation reported a terminal failure to the result inbox.
 
     ADR-043 phase 4 (#1836): the applier is the authoritative writer, so a failed
@@ -31,7 +34,7 @@ def _assert_terminal_failure_reported(mock_cursor, *, operation: str) -> None:
     assert params[3] == operation
     assert params[6] == ResultStep.RANGE_TERMINAL_FAILED
     payload = json.loads(params[9])["payload"]
-    assert payload["reason_code"] == "cloud_operation_failed"
+    assert payload["reason_code"] == reason_code
 
 
 class TestRangeInstanceClassification:
@@ -115,7 +118,7 @@ class TestRangeInstanceClassification:
 
 
 class TestGcpRangeLifecycle:
-    """GCP pause/resume should fail closed until parity-safe lifecycle exists."""
+    """A range whose mix is not losslessly pausable (pod-backed) fails closed (#614)."""
 
     @patch("range_ops.update_range_status")
     @patch("range_ops.pause_ngfw_for_range")
@@ -149,7 +152,7 @@ class TestGcpRangeLifecycle:
             "instance_id": "range-42-vm-123",
             "provider_metadata": {"gcp": {"namespace": "range-42", "vm_name": "range-42-vm-123"}},
         }
-        mock_range_data.return_value = {"range_id": 42, "user_id": 7, "status": "ready"}
+        mock_range_data.return_value = {"range_id": 42, "user_id": 7, "status": "ready", "range_backend": "gdc"}
         mock_instances.return_value = [
             {
                 "uuid": "vm-instance-uuid-123",
@@ -185,7 +188,7 @@ class TestGcpRangeLifecycle:
             },
         ]
 
-        with pytest.raises(RuntimeError, match="Failed to pause 2/2 instances"):
+        with pytest.raises(UnsupportedRangeLifecycleError, match="cannot be paused without losing state"):
             run_range_pause(request_id, operation_id=_OPERATION_ID)
 
         mock_update_instances.assert_not_called()
@@ -194,7 +197,7 @@ class TestGcpRangeLifecycle:
         # failed status or enqueues its own event -- it reports a terminal
         # failure result and the applier performs both.
         mock_update_range.assert_not_called()
-        _assert_terminal_failure_reported(_cursor, operation="pause")
+        _assert_terminal_failure_reported(_cursor, operation="pause", reason_code="unsupported_capability")
 
     @patch("range_ops.update_range_status")
     @patch("range_ops.ensure_ngfw_running")
@@ -228,7 +231,7 @@ class TestGcpRangeLifecycle:
             "instance_id": "range-42-vm-123",
             "provider_metadata": {"gcp": {"namespace": "range-42", "vm_name": "range-42-vm-123"}},
         }
-        mock_range_data.return_value = {"range_id": 42, "user_id": 7, "status": "paused"}
+        mock_range_data.return_value = {"range_id": 42, "user_id": 7, "status": "paused", "range_backend": "gdc"}
         mock_instances.return_value = [
             {
                 "uuid": "vm-instance-uuid-123",
@@ -264,11 +267,13 @@ class TestGcpRangeLifecycle:
             },
         ]
 
-        with pytest.raises(RuntimeError, match="Failed to resume 2/2 instances"):
+        with pytest.raises(UnsupportedRangeLifecycleError, match="cannot be paused without losing state"):
             run_range_resume(request_id, operation_id=_OPERATION_ID)
 
-        assert mock_ensure_ngfw.call_args.args == (request_id,)
+        # Capability preflight now runs BEFORE the NGFW cascade, so an unsupported
+        # range never starts the shared NGFW (#614).
+        mock_ensure_ngfw.assert_not_called()
         mock_update_instances.assert_not_called()
         # ADR-043 phase 4 (#1836): reported, not written directly.
         mock_update_range.assert_not_called()
-        _assert_terminal_failure_reported(_cursor, operation="resume")
+        _assert_terminal_failure_reported(_cursor, operation="resume", reason_code="unsupported_capability")

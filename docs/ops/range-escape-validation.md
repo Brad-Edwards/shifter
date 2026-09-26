@@ -115,9 +115,9 @@ The probe runs in participant context through an adapter:
 
 - `--adapter native` (default) runs the probe over the participant SSH channel on
   a native range VM.
-- `--adapter polaris --container <name>` runs the probe inside a scenario
-  participant container on a Docker-host range, using the Polaris reference
-  adapter.
+- `--adapter container --container <name>` runs the probe inside a scenario
+  participant container on a Docker-host range. The container name is required;
+  there is no default target.
 
 ## Read the report
 
@@ -161,6 +161,20 @@ The static plan-leak checker
 range-cell plan for a cross-range or over-broad allow rule and reports the exact
 leaked boundary without any cloud call. It runs in the provisioner test suite and
 catches an intentionally misconfigured cross-range allow rule in a fixture.
+
+## Continuous monitoring seam (#2087)
+
+The report is also a runtime containment signal, not only a pre-event gate. Each
+`run_range_escape_validation` run hands the versioned, sanitized report to a
+containment sink through
+`shared.range_escape_monitoring.emit_containment_signal`. The default
+`LoggingContainmentSink` emits a bounded structured record (contract identity,
+range and request attribution, verdict, per-status boundary counts, and the
+failed boundary codes) that Cloud Logging ingests without a SIEM. #2087 implements
+`ContainmentSignalSink` to drive continuous monitoring and containment response
+and injects it at the call site. The emit is fail-safe: a sink error is logged and
+swallowed so a broken or slow monitor never breaks validation, and that logged
+failure is the signal #2087 alerts on for collector loss.
 
 ## Related
 

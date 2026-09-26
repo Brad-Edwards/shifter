@@ -9,16 +9,14 @@ domain validation (provider, natural key, disk size, soft disable) stays in the
 service. The provisioner resolves these rows read-only at realization and is not
 touched here (CQRS: the platform writes, the provisioner reads).
 
-The whole surface is inert unless ``SHIFTER_RAES_NATIVE_PROVISIONING`` is on:
-every endpoint 404s with the flag off, so registry management ships behind the
-same gate as native provisioning and never becomes a separate launch toggle.
+The surface is always available to authorized CMS readers/authors because RAES
+is the platform's only provisioning authority.
 """
 
 from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.permissions import BasePermission
@@ -39,8 +37,6 @@ from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
-_UNAVAILABLE = "RAES image registry management is not available"
-
 
 class RaesImageMappingViewSerializer(serializers.Serializer):
     """Allowlisted read projection shared by the register, list, and disable responses.
@@ -57,6 +53,14 @@ class RaesImageMappingViewSerializer(serializers.Serializer):
     machine_type = serializers.CharField(read_only=True, allow_blank=True)
     disk_size_gb = serializers.IntegerField(read_only=True, allow_null=True)
     disk_type = serializers.CharField(read_only=True, allow_blank=True)
+    management_ssh_username = serializers.CharField(read_only=True, allow_blank=True)
+    management_ssh_port = serializers.IntegerField(read_only=True)
+    image_kind = serializers.CharField(read_only=True)
+    bootstrap_capability = serializers.CharField(read_only=True)
+    participant_container_name = serializers.CharField(read_only=True, allow_blank=True)
+    participant_username = serializers.CharField(read_only=True, allow_blank=True)
+    participant_readiness_contract = serializers.CharField(read_only=True, allow_blank=True)
+    participant_readiness_manifest_sha256 = serializers.CharField(read_only=True, allow_blank=True)
     enabled = serializers.BooleanField(read_only=True)
     notes = serializers.CharField(read_only=True, allow_blank=True)
     artifact_id = serializers.CharField(read_only=True, allow_blank=True)
@@ -85,6 +89,16 @@ class RaesImageMappingRegisterSerializer(serializers.Serializer):
     machine_type = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     disk_size_gb = serializers.IntegerField(min_value=1, required=False, allow_null=True, default=None)
     disk_type = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    management_ssh_username = serializers.CharField(max_length=32, allow_blank=True, required=False, default="")
+    management_ssh_port = serializers.IntegerField(min_value=1, max_value=65535, required=False, default=22)
+    image_kind = serializers.ChoiceField(choices=("image", "machine-image"), required=False, default="image")
+    bootstrap_capability = serializers.CharField(max_length=64, required=False, default="standard")
+    participant_container_name = serializers.CharField(max_length=128, allow_blank=True, required=False, default="")
+    participant_username = serializers.CharField(max_length=32, allow_blank=True, required=False, default="")
+    participant_readiness_contract = serializers.CharField(max_length=64, allow_blank=True, required=False, default="")
+    participant_readiness_manifest_sha256 = serializers.CharField(
+        max_length=64, allow_blank=True, required=False, default=""
+    )
     enabled = serializers.BooleanField(required=False, default=True)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     # Portable RAES artifact identity + admission evidence (#1580); supply all five
@@ -112,26 +126,11 @@ class RaesImageMappingListQuerySerializer(serializers.Serializer):
     include_disabled = serializers.BooleanField(required=False, default=True)
 
 
-def _unavailable(request: Request) -> Response:
-    """Return the shared 404 envelope when native provisioning is disabled."""
-    return api_error_response(
-        code="not_found",
-        message=_UNAVAILABLE,
-        status_code=status.HTTP_404_NOT_FOUND,
-        request=request,
-    )
-
-
-def _native_provisioning_enabled() -> bool:
-    """Return whether the RAES native-provisioning gate is on for this tenant."""
-    return bool(getattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False))
-
-
 def _domain_error(request: Request, exc: RaesImageMappingError) -> Response:
     """Render an RAES registry domain-validation error as the shared 400 envelope."""
     return api_error_response(
         code="invalid",
-        message=str(exc),
+        message=exc.message,
         status_code=status.HTTP_400_BAD_REQUEST,
         request=request,
     )
@@ -154,8 +153,6 @@ class RaesImageMappingListCreateView(APIView):
     )
     def get(self, request: Request) -> Response:
         """Return registry rows as allowlisted DTOs (disabled rows included by default)."""
-        if not _native_provisioning_enabled():
-            return _unavailable(request)
         query = RaesImageMappingListQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         try:
@@ -170,8 +167,6 @@ class RaesImageMappingListCreateView(APIView):
     @extend_schema(request=RaesImageMappingRegisterSerializer, responses=RaesImageMappingViewSerializer)
     def post(self, request: Request) -> Response:
         """Register (create or update) a mapping through the single validated write path."""
-        if not _native_provisioning_enabled():
-            return _unavailable(request)
         body = RaesImageMappingRegisterSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         data = body.validated_data
@@ -185,6 +180,14 @@ class RaesImageMappingListCreateView(APIView):
                     machine_type=data["machine_type"],
                     disk_size_gb=data["disk_size_gb"],
                     disk_type=data["disk_type"],
+                    management_ssh_port=data["management_ssh_port"],
+                    management_ssh_username=data["management_ssh_username"],
+                    image_kind=data["image_kind"],
+                    bootstrap_capability=data["bootstrap_capability"],
+                    participant_container_name=data["participant_container_name"],
+                    participant_username=data["participant_username"],
+                    participant_readiness_contract=data["participant_readiness_contract"],
+                    participant_readiness_manifest_sha256=data["participant_readiness_manifest_sha256"],
                     enabled=data["enabled"],
                     notes=data["notes"],
                     artifact_id=data["artifact_id"],
@@ -214,8 +217,6 @@ class RaesImageMappingDisableView(APIView):
     @extend_schema(request=RaesImageMappingDisableSerializer, responses=RaesImageMappingViewSerializer)
     def post(self, request: Request) -> Response:
         """Disable an existing mapping without deleting it (preserves audit)."""
-        if not _native_provisioning_enabled():
-            return _unavailable(request)
         body = RaesImageMappingDisableSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         data = body.validated_data

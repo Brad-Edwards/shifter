@@ -118,18 +118,20 @@ def test_public_key_strategy_uses_account_specific_plan():
         orchestrator_factory=_Orchestrator,
     )
 
+    output = {"private_ip": execution.target, "public_key": "management-key"}
     result = install_instance_account_credentials(
         range_id=7,
         instance_key="node.web#0",
         platform="windows",
-        instance_output={"private_ip": execution.target},
-        accounts=(_account(auth_method="publickey"),),
+        instance_output=output,
+        accounts=(_account(auth_method="key"),),
         secret_ops=ops,
     )
 
-    # The publickey branch must retain its reference too (#1710); asserting it
+    # The key branch must retain its reference too (#1710); asserting it
     # only on the password path would leave this assignment uncovered.
     assert result == {"provision.account.alice": "projects/p/secrets/key"}
+    assert output["_verified_account_public_keys"] == {"provision.account.alice": "ssh-rsa PUBLIC"}
     calls.ensure_public_key.assert_called_once_with(7, "node.web#0", "alice")
     calls.ensure_password.assert_not_called()
     assert len(_Orchestrator.instances[0].calls) == 1
@@ -228,6 +230,23 @@ def test_management_channel_failure_is_coarse_and_execution_is_closed():
     execution.close.assert_called_once()
 
 
+def test_execution_builder_call_matches_real_builder_signature():
+    """The production execution_builder is executors.factory.build_guest_execution_context.
+
+    install_instance_account_credentials invokes it as
+    ``execution_builder(instance_output, os_type=..., role=...)``; tests mock it
+    with a permissive ``lambda *args, **kwargs`` that would hide an
+    unexpected-keyword TypeError (e.g. a stray ``provider=`` argument), so guard
+    the real signature is call-compatible.
+    """
+    import inspect
+
+    from executors.factory import build_guest_execution_context
+
+    # Must not raise TypeError; mirrors the real call arguments.
+    inspect.signature(build_guest_execution_context).bind({}, os_type="linux", role="raes-node")
+
+
 def test_missing_credential_verification_result_fails_closed():
     ops, _calls = _ops()
     execution = _Execution()
@@ -283,11 +302,11 @@ def test_unsupported_credential_strategy_fails_closed():
 
 def test_destroy_deletes_each_authored_account_secret():
     ops, calls = _ops()
-    accounts = (_account(), _account(username="bob", auth_method="publickey", disabled=True))
+    accounts = (_account(), _account(username="bob", auth_method="key", disabled=True))
 
     delete_instance_account_credentials(7, "node.web#0", accounts, ops)
 
     assert calls.delete.call_args_list == [
         call(7, "node.web#0", "alice", "password"),
-        call(7, "node.web#0", "bob", "publickey"),
+        call(7, "node.web#0", "bob", "key"),
     ]

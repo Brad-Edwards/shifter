@@ -1,16 +1,17 @@
 name: shifter-raes-validation
 description: >
   Minimal provisioning-only RAES scenario for the Shifter RAES-native cutover
-  validation (run_raes_backend_validation, #1264). One VM node on one network,
-  authored against raes 2.0.0.
+  validation (run_raes_backend_validation, #1264). One compute node on one network,
+  authored against raes 3.5.0, preserving the Alpine 3.19 and virtual-machine requirements.
 
 nodes:
   lan:
     type: Switch
   web:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: "alpine", version: "3.19"}
     resources: {ram: 512 mib, cpu: 1}
     features:
@@ -40,10 +41,17 @@ accounts:
   validation-user:
     username: raes-validator
     node: web
-    auth_method: publickey
+    auth_method: key
 
 content:
   validation-directory:
     type: directory
     target: web
     destination: /opt/raes-validation/content
+
+realization:
+  constraints:
+    - field_pointer: /nodes/web
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

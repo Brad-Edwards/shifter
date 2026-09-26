@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import logging
 from typing import Any, cast
-from uuid import UUID
 
 from django.contrib.auth.models import User
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from cms.services import (
     WorkspaceLaunchDenied,
+    WorkspaceLaunchQuotaExceeded,
     get_active_range,
     get_mission_control_range_lease,
     has_mission_control_openvpn_profile,
-    list_mission_control_range_history,
 )
 from cms.services import (
     create_range_dispatch as cms_create_range,
@@ -33,6 +33,9 @@ from cms.services import (
 from cms.services import (
     list_launchable_scenarios as cms_list_launchable_scenarios,
 )
+from cms.services import (
+    max_agent_file_size_bytes as cms_max_agent_file_size_bytes,
+)
 from mission_control.api._base import (
     MissionControlAPIView,
     MissionControlReadAPIView,
@@ -40,6 +43,7 @@ from mission_control.api._base import (
     _raw_request,
     _validated,
 )
+from mission_control.api._retry_launch import LaunchChoices, RetrySafeLaunchMixin
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
 from mission_control.api.rate_limit import RangeLaunchRateThrottle
 from mission_control.api.serializers import (
@@ -47,8 +51,6 @@ from mission_control.api.serializers import (
     CurrentRangeResponseSerializer,
     LaunchRangeResponseSerializer,
     LaunchRangeSerializer,
-    RangeHistoryResponseSerializer,
-    RangeHistorySerializer,
     RangeLeaseResponseSerializer,
     RangeLifecycleSerializer,
     ScenarioListResponseSerializer,
@@ -58,6 +60,7 @@ from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api.schema import ApiErrorSerializer
+from shared.api.strict_json import ModelSelectionJSONParser
 from shared.audit import AuditAction
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -154,8 +157,10 @@ class ExtendRangeLeaseView(MissionControlAPIView):
         return response
 
 
-class LaunchRangeView(MissionControlAPIView):
+class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
     """Launch a new cyber range."""
+
+    parser_classes = [ModelSelectionJSONParser, FormParser, MultiPartParser]
 
     permission_classes = [
         IsAuthenticatedSessionOrApiToken,
@@ -168,7 +173,31 @@ class LaunchRangeView(MissionControlAPIView):
 
     @extend_schema(
         request=LaunchRangeSerializer,
-        responses=LaunchRangeResponseSerializer,
+        parameters=[
+            OpenApiParameter(
+                name="Idempotency-Key",
+                type=str,
+                location=OpenApiParameter.HEADER,
+                required=False,
+                description=(
+                    "Optional caller retry key (max 200 characters; leading/trailing whitespace "
+                    "trimmed, empty treated as absent). When supplied the launch is idempotent: a "
+                    "retry with the same key and the same launch selections recovers the original "
+                    "range instead of dispatching a duplicate; the same key with different "
+                    "selections returns 409."
+                ),
+            )
+        ],
+        responses={
+            200: LaunchRangeResponseSerializer,
+            400: OpenApiResponse(ApiErrorSerializer, description="Request validation failed."),
+            403: OpenApiResponse(ApiErrorSerializer, description="Workspace or range launch access denied."),
+            409: OpenApiResponse(
+                ApiErrorSerializer,
+                description="Launch conflict, including workspace_range_quota_exceeded.",
+            ),
+            429: OpenApiResponse(ApiErrorSerializer, description="Request was throttled."),
+        },
         operation_id="api_v1_mission_control_range_launch",
     )
     def post(self, request: Request) -> Response:
@@ -177,11 +206,11 @@ class LaunchRangeView(MissionControlAPIView):
         if error is not None:
             return error
         assert data is not None
+        return self._dispatch_launch(request, self.actor_user(), data)
 
-        user = self.actor_user()
-        return self._launch_range(request, user, data)
-
-    def _launch_range(self, request: Request, user: User, data: dict[str, Any]) -> Response:
+    def _launch_range(
+        self, request: Request, user: User, data: dict[str, Any], caller_key: str | None = None
+    ) -> Response:
         """Launch a range once the request body has passed serializer checks."""
         scenario = str(data.get("scenario", "basic"))
         valid_scenarios = {s["id"] for s in cms_list_launchable_scenarios(user, "range_launch")}
@@ -192,7 +221,14 @@ class LaunchRangeView(MissionControlAPIView):
         if agents_error is not None:
             return agents_error
 
-        return self._create_range(request, user, scenario, agents_by_os, data.get("workspace_uuid"))
+        return self._create_range(
+            request,
+            user,
+            scenario,
+            agents_by_os,
+            caller_key,
+            LaunchChoices(data.get("workspace_uuid"), self._agents_selection(data), data.get("model_sources")),
+        )
 
     def _resolve_agents_by_os(self, user: User, data: dict[str, Any]) -> tuple[dict[str, int] | None, Response | None]:
         """Resolve either the explicit agent map or a legacy single agent id."""
@@ -218,29 +254,22 @@ class LaunchRangeView(MissionControlAPIView):
         user: User,
         scenario: str,
         agents_by_os: dict[str, int] | None,
-        workspace_uuid: UUID | None = None,
+        caller_key: str | None,
+        choices: LaunchChoices,
     ) -> Response:
         """Create a range and record the launch audit event."""
+        if caller_key is not None:
+            return self._create_range_first_use(request, user, scenario, agents_by_os, caller_key, choices)
+        source_kwargs: dict[str, Any] = {"model_sources": choices.model_sources} if choices.model_sources else {}
         try:
-            range_ctx = cms_create_range(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
-        except WorkspaceLaunchDenied:
-            # Authorized-shape UUID but an unavailable scope (unknown, non-member,
-            # or role-denied) is one opaque 403 (ADR-046-R9). The malformed-shape
-            # case is a 400 caught earlier by the serializer's UUIDField.
-            logger.info("Range launch workspace denied: user=%s scenario=%s", user.pk, safe_log_value(scenario))
-            return self.error_response(
-                code="workspace_not_available",
-                message="Selected workspace is not available.",
-                status_code=403,
+            range_ctx = cms_create_range(
+                user,
+                scenario,
+                workspace_uuid=choices.workspace_uuid,
+                **source_kwargs,
             )
         except CMSError as exc:
-            logger.exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
-            text = str(exc).lower()
-            if "already have" in text or "active range" in text:
-                response_msg = "You already have an active range"
-            else:
-                response_msg = classify_user_message(str(exc), default="Range could not be launched")
-            return self.bad_request(response_msg)
+            return self._launch_failure_response(exc, user, scenario)
 
         logger.info(
             "Range launched: user=%s request_id=%s agent=%s scenario=%s",
@@ -256,6 +285,35 @@ class LaunchRangeView(MissionControlAPIView):
             extra_state={"scenario": scenario, "agents": agents_by_os},
         )
         return Response({"success": True, "range": range_ctx.model_dump(mode="json")})
+
+    def _launch_failure_response(self, exc: CMSError, user: User, scenario: str) -> Response:
+        """Map a launch-time CMS failure to its bounded HTTP response.
+
+        Kept distinct from the generic 400: an unavailable workspace scope is an
+        opaque 403 (ADR-046-R9) and an enforcing concurrent-range quota is a 409
+        Conflict (ADR-046-R10), never a 403 or a request-rate 429.
+        """
+        if isinstance(exc, WorkspaceLaunchDenied):
+            logger.info("Range launch workspace denied: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            return self.error_response(
+                code="workspace_not_available",
+                message="Selected workspace is not available.",
+                status_code=403,
+            )
+        if isinstance(exc, WorkspaceLaunchQuotaExceeded):
+            logger.info("Range launch quota exhausted: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            return self.error_response(
+                code="workspace_range_quota_exceeded",
+                message="This workspace has reached its concurrent range limit.",
+                status_code=409,
+            )
+        logger.exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+        text = str(exc).lower()
+        if "already have" in text or "active range" in text:
+            response_msg = "You already have an active range"
+        else:
+            response_msg = classify_user_message(str(exc), default="Range could not be launched")
+        return self.bad_request(response_msg)
 
 
 class RangeLifecycleView(MissionControlAPIView):
@@ -395,7 +453,12 @@ class AgentListView(MissionControlReadAPIView):
     @extend_schema(responses=AgentListResponseSerializer, operation_id="api_v1_mission_control_agents_list")
     def get(self, request: Request) -> Response:
         """Return agents available to the authenticated actor."""
-        return Response({"agents": cms_list_agents(self.actor_user())})
+        return Response(
+            {
+                "agents": cms_list_agents(self.actor_user()),
+                "max_file_size_bytes": cms_max_agent_file_size_bytes(),
+            }
+        )
 
 
 class ScenarioListView(MissionControlReadAPIView):
@@ -406,45 +469,3 @@ class ScenarioListView(MissionControlReadAPIView):
         """Return scenarios available to the authenticated actor."""
         scenarios = cms_list_launchable_scenarios(self.actor_user(), "range_launch")
         return Response({"scenarios": scenarios})
-
-
-class RangeHistoryView(MissionControlReadAPIView):
-    """Return the authenticated user's range history (#1370).
-
-    Backed by ``cms.services.list_mission_control_range_history``, the
-    product-scoped history query: it reads through ``all_objects`` so
-    soft-deleted terminal ranges (DESTROYED/FAILED, the rows a history view
-    exists to show) are INCLUDED, and scopes to
-    ``range_source == MISSION_CONTROL`` so CTF-sourced ranges never leak into
-    this Mission Control surface. It returns raw ``RangeInstance`` rows
-    (newest first), which are projected into ``RangeHistorySerializer``
-    explicitly here rather than reusing ``RangePresentationSerializer`` — a
-    history row has no hydrated ``instances``/``agent_name``/computed-status
-    fields, only the durable identifiers, status, provenance, and timestamps.
-    """
-
-    @extend_schema(responses=RangeHistoryResponseSerializer, operation_id="api_v1_mission_control_ranges_list")
-    def get(self, request: Request) -> Response:
-        """Return the authenticated actor's Mission Control range history, newest first."""
-        ranges = list_mission_control_range_history(self.actor_user())
-        serializer = RangeHistorySerializer(
-            [
-                {
-                    # ``range_instance.request_id`` is the Django FK shadow
-                    # attribute (the related ``Request`` row's integer pk) —
-                    # NOT the durable UUID correlation key. That key lives on
-                    # the related row as ``Request.request_id``.
-                    "request_id": range_instance.request.request_id if range_instance.request else None,
-                    "range_id": range_instance.range_id,
-                    "scenario_id": range_instance.scenario_id,
-                    "status": range_instance.status,
-                    "range_source": range_instance.range_source,
-                    "created_at": range_instance.created_at,
-                    "updated_at": range_instance.updated_at,
-                    "deleted_at": range_instance.deleted_at,
-                }
-                for range_instance in ranges
-            ],
-            many=True,
-        )
-        return Response({"ranges": serializer.data})

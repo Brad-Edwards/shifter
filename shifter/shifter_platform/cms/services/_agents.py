@@ -311,3 +311,15 @@ def get_allowed_extensions() -> list[str]:
     from cms.assets.validation import get_allowed_extensions as _impl
 
     return _impl()
+
+
+def max_agent_file_size_bytes() -> int:
+    """Public facade for the per-file agent-upload ceiling in bytes.
+
+    Same policy helper the initiation/finalization enforcement uses, so the
+    value published to the SPA on the agent-list response cannot drift from what
+    the server actually enforces.
+    """
+    from cms.assets.validation import agent_max_file_size_bytes as _impl
+
+    return _impl()

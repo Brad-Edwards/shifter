@@ -71,8 +71,9 @@ than adding an exception hierarchy. It is closed and bounded on:
 
 - independent coordination contract version;
 - canonical UUID `operation_id` and `request_id`;
-- the existing `range` discriminator plus the action-appropriate `provision`
-  or `destroy` operation;
+- the existing `range` discriminator, or `raes-range` when that backend adapter
+  must realize open network intent, plus the action-appropriate `provision` or
+  `destroy` operation;
 - provider-neutral network identifier and canonical IPv4 network;
 - bounded requested subnet count and supported prefix lengths;
 - bounded, canonical provider-observed CIDRs; and

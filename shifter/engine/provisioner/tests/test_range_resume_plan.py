@@ -7,116 +7,24 @@ RangeResumePlan handles starting a single range instance using AWSExecutor:
 This plan uses AWSExecutor for AWS API calls, not bash scripts.
 """
 
-from unittest.mock import MagicMock
-
 import pytest
+
+from executors.aws_executor import AWSExecutor
 
 
 class TestRangeResumePlanSteps:
-    """Test RangeResumePlan step definitions."""
+    """The plan identifies itself and dispatches the lifecycle actions in order."""
 
-    def test_has_expected_steps(self):
-        """RangeResumePlan should have start and wait steps."""
+    def test_named_steps_dispatch_expected_actions_in_order(self):
         from plans.range_resume import RangeResumePlan
 
         plan = RangeResumePlan()
-        assert len(plan.steps) >= 2
 
-    def test_has_start_instance_step(self):
-        """Plan should include EC2 start step."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        step_names = [s.name for s in plan.steps]
-        assert any("start" in name.lower() for name in step_names)
-
-    def test_has_wait_running_step(self):
-        """Plan should include wait for running step."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        step_names = [s.name for s in plan.steps]
-        assert any("running" in name.lower() or "wait" in name.lower() for name in step_names)
-
-    def test_start_before_wait(self):
-        """Start must come before wait steps."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        step_names = [s.name for s in plan.steps]
-
-        start_idx = next(i for i, n in enumerate(step_names) if "start" in n.lower())
-        wait_idx = next(
-            i
-            for i, n in enumerate(step_names)
-            if "running" in n.lower() or ("wait" in n.lower() and "start" not in n.lower())
-        )
-        assert start_idx < wait_idx
-
-    def test_all_steps_have_names(self):
-        """All steps must have names."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        for step in plan.steps:
-            assert step.name, "Step must have a name"
-
-    def test_all_steps_have_action(self):
-        """All steps must have action attribute (AWSExecutor method name)."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        for step in plan.steps:
-            assert hasattr(step, "action"), f"Step {step.name} must have action attribute"
-            assert step.action, f"Step {step.name} must have non-empty action"
-
-    def test_all_steps_have_params(self):
-        """All steps must have params attribute (context keys to pass)."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        for step in plan.steps:
-            assert hasattr(step, "params"), f"Step {step.name} must have params attribute"
-
-
-class TestRangeResumePlanAWSExecutorActions:
-    """Test RangeResumePlan uses AWSExecutor method names."""
-
-    def test_start_step_uses_start_instance_action(self):
-        """Start step should use AWSExecutor.start_instance action."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        start_step = next(s for s in plan.steps if "start" in s.name.lower())
-
-        assert start_step.action == "start_instance"
-
-    def test_start_step_params_include_instance_id(self):
-        """Start step params should include instance_id."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        start_step = next(s for s in plan.steps if "start" in s.name.lower())
-
-        assert "instance_id" in start_step.params
-
-    def test_wait_step_uses_wait_for_running_action(self):
-        """Wait step should use AWSExecutor.wait_for_running action."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        wait_step = next(s for s in plan.steps if "running" in s.name.lower() or "wait" in s.name.lower())
-
-        assert wait_step.action == "wait_for_running"
-
-    def test_wait_step_params_include_instance_id(self):
-        """Wait step params should include instance_id."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        wait_step = next(s for s in plan.steps if "running" in s.name.lower() or "wait" in s.name.lower())
-
-        assert "instance_id" in wait_step.params
+        assert plan.name == "range_resume"
+        assert [(step.name, step.action) for step in plan.steps] == [
+            ("start_instance", "start_instance"),
+            ("wait_for_running", "wait_for_running"),
+        ]
 
 
 class TestRangeResumePlanContext:
@@ -151,77 +59,22 @@ class TestRangeResumePlanContext:
             plan.get_context(None)
 
 
-class TestRangeResumePlanInterface:
-    """Test RangeResumePlan interface compliance."""
-
-    def test_has_steps_attribute(self):
-        """RangeResumePlan should have steps attribute."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        assert hasattr(plan, "steps")
-        assert isinstance(plan.steps, list)
-
-    def test_has_name_attribute(self):
-        """RangeResumePlan should have name attribute."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        assert hasattr(plan, "name")
-        assert plan.name == "range_resume"
-
-    def test_has_get_context_method(self):
-        """RangeResumePlan should have get_context method."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        assert hasattr(plan, "get_context")
-        assert callable(plan.get_context)
-
-
 class TestRangeResumePlanExecution:
-    """Test RangeResumePlan can be executed with AWSExecutor."""
+    """Every plan step must be dispatchable through the action allowlist."""
 
-    def test_execute_start_step_calls_aws_executor(self):
-        """Execute start step should call AWSExecutor.start_instance."""
+    def test_steps_are_in_the_action_allowlist(self):
+        """Each step names an action the AWSExecutor allowlist recognizes.
+
+        ``execute_action`` returns an "Unknown action" result before any AWS
+        call, so this runs offline and fails if a plan names an action the
+        executor cannot dispatch (the allowlist is the single authority).
+        """
         from plans.range_resume import RangeResumePlan
 
-        plan = RangeResumePlan()
-        start_step = next(s for s in plan.steps if "start" in s.name.lower())
+        executor = AWSExecutor(region_name="us-east-2")
 
-        # Mock AWSExecutor
-        mock_executor = MagicMock()
-        mock_executor.start_instance.return_value = MagicMock(success=True, stdout="{}", stderr="")
-
-        # Build params from context
-        context = {"instance_id": "i-12345"}
-        params = {k: context[k] for k in start_step.params}
-
-        # Call the executor method
-        method = getattr(mock_executor, start_step.action)
-        result = method(**params)
-
-        mock_executor.start_instance.assert_called_once_with(instance_id="i-12345")
-        assert result.success is True
-
-    def test_execute_wait_step_calls_aws_executor(self):
-        """Execute wait step should call AWSExecutor.wait_for_running."""
-        from plans.range_resume import RangeResumePlan
-
-        plan = RangeResumePlan()
-        wait_step = next(s for s in plan.steps if "running" in s.name.lower() or "wait" in s.name.lower())
-
-        # Mock AWSExecutor
-        mock_executor = MagicMock()
-        mock_executor.wait_for_running.return_value = MagicMock(success=True, stdout="running", stderr="")
-
-        # Build params from context
-        context = {"instance_id": "i-12345"}
-        params = {k: context[k] for k in wait_step.params}
-
-        # Call the executor method
-        method = getattr(mock_executor, wait_step.action)
-        result = method(**params)
-
-        mock_executor.wait_for_running.assert_called_once_with(instance_id="i-12345")
-        assert result.success is True
+        for step in RangeResumePlan().steps:
+            result = executor.execute_action(step.action, {})
+            assert not result.stderr.startswith("Unknown action"), (
+                f"step {step.name!r} names action {step.action!r} which is not in the AWSExecutor allowlist"
+            )

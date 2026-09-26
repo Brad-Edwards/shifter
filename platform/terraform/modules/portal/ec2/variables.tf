@@ -102,7 +102,7 @@ variable "s3_bucket_arn" {
 }
 
 variable "raes_package_bucket_arn" {
-  description = "ARN of the S3 bucket holding object-backed RAES package archives (#1567). Grants the portal role read-only (GetObject + prefix-scoped ListBucket). Empty disables the grant."
+  description = "ARN of the S3 bucket holding object-backed RAES package archives (#1567). Grants the portal role prefix-scoped reads plus upload and cleanup under tenant-packs/. Empty disables the grant."
   type        = string
   default     = ""
 }

@@ -38,6 +38,9 @@ import type {
   CtfParticipantListResponse,
   CtfParticipantPasswordRequest,
   CtfParticipantPasswordResult,
+  CtfPublicRegistrationDispositionAction,
+  CtfPublicRegistrationDispositionResult,
+  CtfPublicRegistrationRequestListResponse,
   CtfParticipantRangeActionResult,
   CtfPrerequisiteListResponse,
   CtfPrerequisiteWrite,
@@ -316,6 +319,34 @@ export function useCtfParticipants(eventId: string, enabled = true) {
   });
 }
 
+export function useCtfPublicRegistrationRequests(eventId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.registrationRequests(eventId),
+    enabled: enabled && Boolean(eventId),
+    queryFn: ({ signal }) =>
+      apiFetch<CtfPublicRegistrationRequestListResponse>(
+        `${BASE}/events/${eventId}/registration-requests/`,
+        { signal },
+      ),
+  });
+}
+
+export function useDispositionCtfPublicRegistrationRequest(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, action }: { requestId: string; action: CtfPublicRegistrationDispositionAction }) =>
+      apiFetch<CtfPublicRegistrationDispositionResult>(
+        `${BASE}/registration-requests/${requestId}/disposition/`,
+        { method: "POST", body: { action } },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.registrationRequests(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participants(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
+    },
+  });
+}
+
 export function useCtfParticipant(participantId: string, enabled = true) {
   return useQuery({
     queryKey: ctfKeys.participant(participantId),
@@ -378,13 +409,7 @@ export function useRevokeCtfAward(participantId: string) {
   });
 }
 
-export function useResendCtfLoginInfo(participantId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch<unknown>(`${BASE}/participants/${participantId}/resend-invite/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) }),
-  });
-}
+
 
 export function useResetCtfParticipantPassword(participantId: string) {
   return useMutation({

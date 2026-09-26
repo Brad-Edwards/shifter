@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from ctf.models import CTFChallenge, CTFFlag
+    from shared.receipt_validation import ReceiptValidationContext, VerifiedReceiptEvidence
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +44,44 @@ class ScoringStrategyLike(Protocol):
 
 
 FlagValidator = Callable[["CTFFlag", str], bool]
+if TYPE_CHECKING:
+    ReceiptContextFlagValidator = Callable[
+        [CTFFlag, str, ReceiptValidationContext],
+        VerifiedReceiptEvidence | None,
+    ]
+else:
+    ReceiptContextFlagValidator = Callable[..., object]
 
-_flag_validators: dict[str, FlagValidator] = {}
+_flag_validators: dict[str, FlagValidator | ReceiptContextFlagValidator] = {}
+_server_context_flag_validators: set[str] = set()
 _scoring_strategies: dict[str, ScoringStrategyLike] = {}
 
 
-def register_flag_validator(flag_type: str, validator: FlagValidator) -> None:
-    """Register (or replace) the validator for a custom flag type."""
+def register_flag_validator(
+    flag_type: str,
+    validator: FlagValidator | ReceiptContextFlagValidator,
+    *,
+    supports_server_context: bool = False,
+) -> None:
+    """Register a custom validator with an explicit context capability."""
     if not callable(validator):
         raise TypeError("validator must be callable")
     _flag_validators[flag_type] = validator
+    if supports_server_context:
+        _server_context_flag_validators.add(flag_type)
+    else:
+        _server_context_flag_validators.discard(flag_type)
     logger.info("Registered CTF flag validator for type %r", flag_type)
 
 
-def get_flag_validator(flag_type: str) -> FlagValidator | None:
+def get_flag_validator(flag_type: str) -> FlagValidator | ReceiptContextFlagValidator | None:
     """Return the registered validator for a flag type, if any."""
     return _flag_validators.get(flag_type)
+
+
+def flag_validator_supports_server_context(flag_type: str) -> bool:
+    """Return the capability declared at registration; never infer signatures."""
+    return flag_type in _server_context_flag_validators and flag_type in _flag_validators
 
 
 def register_scoring_strategy(mode: str, strategy: ScoringStrategyLike) -> None:

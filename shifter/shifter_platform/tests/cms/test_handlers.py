@@ -220,6 +220,14 @@ class TestProcessRangeEventInvalidInputs:
         assert ri.status == ResourceStatus.PENDING.value
         assert ctf_signal == []
 
+    def test_handles_missing_new_status(self, user, ctf_signal):
+        """An event carrying no new_status is logged and dropped (range_events.py:164-165)."""
+        ri = _range_instance(user, range_id=6, status=ResourceStatus.PENDING.value)
+        process_range_event(_sns({"event_type": "range.status.updated", "range_id": 6, "user_id": user.id}))
+        ri.refresh_from_db()
+        assert ri.status == ResourceStatus.PENDING.value
+        assert ctf_signal == []
+
 
 # -----------------------------------------------------------------------------
 # process_range_event — request_id correlation

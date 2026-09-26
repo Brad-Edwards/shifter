@@ -7,34 +7,15 @@ import pytest
 from cms.assets.validation import (
     ALLOWED_FORMATS,
     ValidationError,
+    agent_max_file_size_bytes,
+    enforce_max_file_size_bytes,
     get_allowed_extensions,
-    get_file_extension,
     get_format_for_extension,
     validate_agent_file,
     validate_file_extension,
     validate_file_size,
     validate_magic_bytes,
 )
-
-
-class TestGetFileExtension:
-    def test_simple_extension(self):
-        assert get_file_extension("file.msi") == ".msi"
-
-    def test_compound_tar_gz(self):
-        assert get_file_extension("agent.tar.gz") == ".tar.gz"
-
-    def test_tgz(self):
-        assert get_file_extension("agent.tgz") == ".tgz"
-
-    def test_case_insensitive(self):
-        assert get_file_extension("FILE.MSI") == ".msi"
-
-    def test_no_extension(self):
-        assert get_file_extension("filename") == ""
-
-    def test_multiple_dots(self):
-        assert get_file_extension("file.name.deb") == ".deb"
 
 
 class TestGetFormatForExtension:
@@ -107,6 +88,21 @@ class TestValidateFileSize:
         file_obj = io.BytesIO(b"x" * 1000)
         # No size attribute
         validate_file_size(file_obj)  # Should not raise
+
+
+class TestEnforceMaxFileSizeBytes:
+    def test_agent_max_file_size_bytes_is_binary_mib(self, settings):
+        settings.AGENT_MAX_FILE_SIZE_MB = 2048
+        assert agent_max_file_size_bytes() == 2048 * 1024 * 1024
+
+    def test_accepts_exact_limit(self, settings):
+        settings.AGENT_MAX_FILE_SIZE_MB = 1
+        enforce_max_file_size_bytes(1 * 1024 * 1024)  # Should not raise
+
+    def test_rejects_one_byte_over(self, settings):
+        settings.AGENT_MAX_FILE_SIZE_MB = 1
+        with pytest.raises(ValidationError, match="exceeds maximum"):
+            enforce_max_file_size_bytes(1 * 1024 * 1024 + 1)
 
 
 class TestValidateFileExtension:

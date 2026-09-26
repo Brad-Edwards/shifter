@@ -25,7 +25,7 @@ Per-participant ranges are Shifter's core differentiator from CTFd. Each partici
 - IMPLEMENTS → CODE_FILE `ctf/management/commands/run_ctf_scheduler.py` (Scheduler command executing SPIN_UP_RANGES tasks at configurable time before event start)
 - IMPLEMENTS → CODE_FILE `ctf/views.py` (API endpoints for manual provisioning triggers and range status queries)
 - IMPLEMENTS → CODE_FILE `ctf/signals.py` (Signal handler syncing range_status (including failed) from CMS to CTFParticipant)
-- IMPLEMENTS → CODE_FILE `cyberscript/enums.py` (ResourceStatus enum defining PENDING, PROVISIONING, READY, FAILED states)
+- IMPLEMENTS → CODE_FILE `shared/enums.py` (ResourceStatus enum defining PENDING, PROVISIONING, READY, FAILED states)
 - IMPLEMENTS → CODE_FILE `ctf/bridges.py` (Bridge module for CMS range creation, status polling, and destruction)
 - IMPLEMENTS → CODE_FILE `cms/handlers.py` (CMS event handler propagating range status (including FAILED) via CTF signal bridge)
 - IMPLEMENTS → CODE_FILE `ctf/services/range.py` (Range provisioning service (per-participant and bulk provisioning, status tracking))

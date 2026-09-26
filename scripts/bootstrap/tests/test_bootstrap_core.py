@@ -57,7 +57,7 @@ class TestRunCmdSecretStdin:
 
 
 class TestConfirmAssumeYes:
-    """Non-interactive proceed for confirm() via --yes/assume-yes (issue #1639)."""
+    """Routine prompts proceed via --yes/assume-yes (issue #1639)."""
 
     @pytest.fixture(autouse=True)
     def _reset_assume_yes(self):
@@ -85,6 +85,18 @@ class TestConfirmAssumeYes:
         assert bootstrap_core.assume_yes_enabled() is True
         # --yes makes routine confirm() prompts proceed without a TTY instead of
         # auto-aborting on the default_yes=False fallback.
+        assert bootstrap_core.confirm("proceed?", default_yes=False) is True
+
+    def test_interactive_proceeds_without_prompt_under_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _prompt: pytest.fail("--yes must bypass interactive prompts"),
+        )
+        bootstrap_core.set_assume_yes(True)
+
         assert bootstrap_core.confirm("proceed?", default_yes=False) is True
 
 

@@ -5,6 +5,23 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+#: The contextual subset of the canonical range-egress vocabulary
+#: (``installation.range_egress.RangeEgressMode``) a workspace administrator may
+#: select (ADR-017-R5, PLAT-238). ``status-quo`` inherits the deployment baseline;
+#: ``none`` requests ADR-026 zero egress. The other canonical modes (``deny-all``,
+#: ``allowlist``) are deployment-baseline-only and are never a workspace selection.
+#: The values are the exact ``RangeEgressMode`` strings, kept as literals here so the
+#: workspaces domain model does not depend on the installation layer; the launch and
+#: provisioner layers (which legitimately import that layer) validate against the
+#: canonical enum, and the closed DB check constraint keeps this in lockstep.
+EGRESS_POLICY_STATUS_QUO = "status-quo"
+EGRESS_POLICY_NONE = "none"
+EGRESS_POLICY_CHOICES = (
+    (EGRESS_POLICY_STATUS_QUO, "Inherit deployment baseline"),
+    (EGRESS_POLICY_NONE, "Zero egress (no outbound NAT path)"),
+)
+WORKSPACE_EGRESS_POLICY_VALUES = frozenset(value for value, _ in EGRESS_POLICY_CHOICES)
+
 
 class Workspace(models.Model):
     """A scope inside an organization that holds members and owns range scope.
@@ -39,6 +56,7 @@ class Workspace(models.Model):
         related_name="workspaces",
         help_text="Owning organization (intra-domain FK; always set).",
     )
+    is_default = models.BooleanField(default=False)
     name = models.CharField(max_length=200, help_text="Display name, unique within the organization.")
     personal_for_user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -62,6 +80,18 @@ class Workspace(models.Model):
             "rehomes ranges bound to the workspace (#1940, PLAT-233)."
         ),
     )
+    egress_policy = models.CharField(
+        max_length=16,
+        choices=EGRESS_POLICY_CHOICES,
+        default=EGRESS_POLICY_STATUS_QUO,
+        help_text=(
+            "Workspace network egress selector (PLAT-238). The compatibility default "
+            "'status-quo' inherits the deployment baseline; 'none' requests the ADR-026 "
+            "zero-egress (no outbound NAT path) posture for newly provisioned ranges. This "
+            "is the contextual subset of the canonical installation.range_egress vocabulary; "
+            "the workspace never stores CIDRs or provider configuration (ADR-017-R5)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -74,8 +104,17 @@ class Workspace(models.Model):
         verbose_name_plural = "Workspaces"
         constraints = [
             models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(is_default=True),
+                name="uniq_default_workspace_per_organization",
+            ),
+            models.UniqueConstraint(
                 fields=["organization", "name"],
                 name="uniq_workspace_name_per_organization",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(egress_policy__in=WORKSPACE_EGRESS_POLICY_VALUES),
+                name="workspace_egress_policy_closed_vocabulary",
             ),
         ]
 

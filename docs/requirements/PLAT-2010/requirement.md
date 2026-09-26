@@ -17,4 +17,4 @@ Shifter shall implement the ACES Provisioner protocol (validate(plan)->diagnosti
 
 ## Rationale
 
-This replaces the #1262 passthrough (which discards ram/cpu/source/cidr/acls and depends on cyberscript scenarios) with a real RuntimeTarget backend mirroring the aces_backend_libvirt / APTL reference pattern, so a genuine ACES topology drives Shifter provisioning. The injected dispatch port preserves the ADR-024 import boundary; the receipt/snapshot make the backend conformance-observable.
+This replaces the #1262 passthrough (which discards ram/cpu/source/cidr/acls and depends on cyberscript scenarios) with a real RuntimeTarget backend mirroring the aces_backend_libvirt / LilRAE (formerly APTL) reference pattern, so a genuine ACES topology drives Shifter provisioning. The injected dispatch port preserves the ADR-024 import boundary; the receipt/snapshot make the backend conformance-observable.

@@ -45,6 +45,7 @@ def _make_fake_k8s_client() -> SimpleNamespace:
         V1Volume=lambda **kwargs: SimpleNamespace(**kwargs),
         V1VolumeMount=lambda **kwargs: SimpleNamespace(**kwargs),
         V1EmptyDirVolumeSource=lambda **kwargs: SimpleNamespace(**kwargs),
+        V1Toleration=lambda **kwargs: SimpleNamespace(**kwargs),
     )
 
 

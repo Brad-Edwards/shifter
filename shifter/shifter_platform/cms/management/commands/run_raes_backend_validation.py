@@ -9,8 +9,7 @@ receipt, a succeeded status, and a snapshot with at least one realized resource:
 failures to bounded, sanitized diagnostics.
 
 This is the RAES-cutover evidence path (ADR-031): run it in a deployed
-environment with ``SHIFTER_RAES_NATIVE_PROVISIONING=true`` against a registered
-RAES package to prove the native path end to end. Design source:
+environment against a registered RAES package to prove the path end to end. Design source:
 ``docs/adr/index.yaml``.
 """
 
@@ -23,7 +22,6 @@ from argparse import ArgumentParser
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.crypto import get_random_string
@@ -62,7 +60,6 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        self._assert_flag_enabled()
         scenario = str(options["scenario"]).strip()
         if not scenario:
             raise CommandError("--scenario (or SHIFTER_RAES_VALIDATION_SCENARIO) is required")
@@ -86,12 +83,6 @@ class Command(BaseCommand):
         if failure is not None:
             raise CommandError(safe_log_value(str(failure))) from failure
 
-    @staticmethod
-    def _assert_flag_enabled() -> None:
-        """Refuse to run unless the RAES-native provisioning flag is on."""
-        if not settings.RAES_NATIVE_PROVISIONING_ENABLED:
-            raise CommandError("SHIFTER_RAES_NATIVE_PROVISIONING must be enabled for RAES backend validation")
-
     def _load_validation_user(self) -> User:
         """Resolve or create the portal user that owns validation-provisioned ranges."""
         email = os.environ.get("SMOKE_TEST_USER_EMAIL", "").strip()
@@ -107,7 +98,7 @@ class Command(BaseCommand):
 
     def _launch(self, user: User, scenario: str) -> UUID:
         """Launch the RAES package through the product dispatch (routes to native)."""
-        context = cms_services.create_range_dispatch(user, scenario, {}, range_source=RangeSource.MISSION_CONTROL)
+        context = cms_services.create_range_dispatch(user, scenario, range_source=RangeSource.MISSION_CONTROL)
         if context.request_id is None:
             raise CommandError("launch returned no request_id")
         request_id = UUID(str(context.request_id))

@@ -21,3 +21,8 @@ Administrators of a shared deployment need to answer who changed what and when, 
 ## Traceability
 
 - IMPLEMENTS → GITHUB_ISSUE `1947`
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/api/audit.py` (Hardened `/api/v1/audit/` read API: typed query serializer, validated actor/entity/time/action filters, deterministic ordering, session-only authorization)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/frontend/src/features/administer/AuditPage.tsx` (Staff-facing `/administer/audit` activity-history surface with URL-backed filters and escaped detail disclosure)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/frontend/src/api/audit.ts` (Generated-type TanStack Query data layer over the audit read API)
+- TESTS → TEST `shifter/shifter_platform/tests/shared/test_audit_store.py` (Behavioral filter, authorization, validation, ordering, and read-only coverage over `/api/v1/audit/`)
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/administer/AuditPage.test.tsx` (SPA filter/URL-mapping, denied/invalid/error states, escaped-disclosure, and accessibility coverage)

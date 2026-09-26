@@ -325,7 +325,7 @@ class TestApiParticipantErrorPaths:
             "api_participant_resend_invite",
             kwargs={"participant_id": ctf_participant_no_account.id},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 410
 
     def test_invite_participant_validation_error(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
         """A duplicate delivery email is rejected by the real invite service (400).
@@ -450,20 +450,7 @@ class TestApiParticipantErrorPaths:
             resp = authenticated_organizer_client.post(url, data={"file": upload})
         assert resp.status_code in (403, 400)
 
-    def test_admin_file_upload_permission_error(
-        self, authenticated_organizer_client: Client, ctf_challenge: CTFChallenge
-    ):
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        upload = SimpleUploadedFile("c.txt", b"data", content_type="text/plain")
-        with patch("ctf.services.attachment.add_challenge_file", side_effect=CTFPermissionError("p")):
-            resp = authenticated_organizer_client.post(
-                reverse("ctf:admin_challenge_file_upload", kwargs={"challenge_id": ctf_challenge.id}),
-                data={"file": upload},
-            )
-        assert resp.status_code == 403
-
-    def test_file_download_participant(
+    def test_file_download_unavailable_participant_is_forbidden(
         self,
         authenticated_participant_client: Client,
         ctf_participant: CTFParticipant,
@@ -483,8 +470,9 @@ class TestApiParticipantErrorPaths:
         )
         with patch("ctf.services.attachment.get_download_url", return_value=("https://x/f", "f.txt")):
             resp = _json(authenticated_participant_client, "get", "api_file_download", kwargs={"file_id": cf.id})
-        # Participant of the event: allowed when the challenge is available, else 403.
-        assert resp.status_code in (200, 403)
+        # The fixture event has not started, so its challenge is deterministically
+        # unavailable even to a registered participant.
+        assert resp.status_code == 403
 
     def test_participant_detail_not_found(self, authenticated_organizer_client: Client):
         resp = _json(

@@ -19,3 +19,9 @@ class CtfConfig(AppConfig):
         from ctf.services.range.visibility import register_ctf_visibility_policy
 
         register_ctf_visibility_policy()
+        from ctf.services.range.aggregate import register_ctf_range_aggregate_guard
+
+        register_ctf_range_aggregate_guard()
+        from ctf.services.authorization_inventory import register_authorization_event_inventory
+
+        register_authorization_event_inventory()

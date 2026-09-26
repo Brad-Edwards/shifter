@@ -61,13 +61,13 @@ class TestArtifactRequirementRealizability:
 
     @staticmethod
     def _unsupported_exact_requirement():
-        from raes._source import (
+        from raes.artifact_requirements import (
             ArtifactIdentity,
             ArtifactMechanismProfile,
             ArtifactRequirement,
             ArtifactSatisfactionRoute,
-            ExplicitnessClass,
         )
+        from raes.explicitness import ExplicitnessClass
 
         route = ArtifactSatisfactionRoute(
             mechanism=ArtifactMechanismProfile(

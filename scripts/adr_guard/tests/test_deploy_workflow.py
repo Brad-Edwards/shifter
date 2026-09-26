@@ -26,6 +26,7 @@ caught. See ``docs/architecture/workflow-gating-test-suite-preflight-921.md``.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -72,8 +73,7 @@ class TestRunnerExposure(unittest.TestCase):
                 )
                 self.assertTrue(
                     ADR_GUARD._dw_evaluate_if(expr, event_name="push"),
-                    f"{rel}:{jid} never runs on push; its PR-denial assertion "
-                    f"would be vacuous. if: {expr}",
+                    f"{rel}:{jid} never runs on push; its PR-denial assertion would be vacuous. if: {expr}",
                 )
         self.assertGreater(checked, 0, "no self-hosted deploy jobs were found")
 
@@ -92,9 +92,7 @@ class TestRunnerExposure(unittest.TestCase):
         self.assertTrue(ADR_GUARD._dw_job_denied_on_pull_request(guarded))
         # A guard living only in a YAML comment never reaches the `if:` value,
         # so an empty / unguarded expression is reachable (the #935 intent).
-        self.assertFalse(
-            ADR_GUARD._dw_job_denied_on_pull_request("inputs.apply_changes")
-        )
+        self.assertFalse(ADR_GUARD._dw_job_denied_on_pull_request("inputs.apply_changes"))
 
 
 class TestSelfHostedClassLabels(unittest.TestCase):
@@ -114,6 +112,11 @@ class TestSelfHostedClassLabels(unittest.TestCase):
         self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": "gcp-dev"}))
         self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": ["gcp-dev"]}))
 
+    def test_dynamic_gcp_tenant_label_is_recognized_as_self_hosted_class(self):
+        selector = "${{ inputs.environment }}"
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": selector}))
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": [selector]}))
+
     def test_github_hosted_label_is_not_self_hosted(self):
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": "ubuntu-latest"}))
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": ["ubuntu-latest"]}))
@@ -131,11 +134,7 @@ class TestExpressionOperandCoverage(unittest.TestCase):
 
     def test_wrapped_expressions_are_unwrapped_before_evaluation(self):
         self.assertTrue(ADR_GUARD._dw_evaluate_if("${{ always() }}"))
-        self.assertFalse(
-            ADR_GUARD._dw_evaluate_if(
-                "${{ github.event_name == 'pull_request' }}", event_name="push"
-            )
-        )
+        self.assertFalse(ADR_GUARD._dw_evaluate_if("${{ github.event_name == 'pull_request' }}", event_name="push"))
 
     def test_repository_identity_is_resolvable(self):
         expr = "github.repository == 'Brad-Edwards/shifter'"
@@ -191,18 +190,12 @@ class TestUpstreamGating(unittest.TestCase):
             "(needs.shifter-engine.result != 'cancelled') && "
             "(needs.quality.result == 'success' || needs.quality.result == 'skipped')"
         )
-        self.assertIn(
-            "shifter-engine", ADR_GUARD._dw_result_guarded_upstreams(buggy_if)
-        )
+        self.assertIn("shifter-engine", ADR_GUARD._dw_result_guarded_upstreams(buggy_if))
         self.assertFalse(
-            ADR_GUARD._dw_job_denied_when_upstream(
-                buggy_if, "shifter-engine", "failure"
-            ),
+            ADR_GUARD._dw_job_denied_when_upstream(buggy_if, "shifter-engine", "failure"),
             "`!= 'cancelled'` must be caught as fail-open on a `failure` result",
         )
-        fake_wf = {
-            "jobs": {"shifter_platform": {"if": buggy_if, "needs": ["shifter-engine"]}}
-        }
+        fake_wf = {"jobs": {"shifter_platform": {"if": buggy_if, "needs": ["shifter-engine"]}}}
         self.assertEqual(
             ADR_GUARD._dw_upstream_gating_violations(fake_wf, ["shifter_platform"]),
             [("shifter_platform", "shifter-engine", "failure")],
@@ -212,9 +205,7 @@ class TestUpstreamGating(unittest.TestCase):
     def test_negative_fixture_failure_form_is_rejected(self):
         # `!= 'failure'` blocks `failure` but is fail-open on `cancelled`.
         buggy_if = "always() && (needs.core.result != 'failure')"
-        self.assertTrue(
-            ADR_GUARD._dw_job_denied_when_upstream(buggy_if, "core", "failure")
-        )
+        self.assertTrue(ADR_GUARD._dw_job_denied_when_upstream(buggy_if, "core", "failure"))
         self.assertFalse(
             ADR_GUARD._dw_job_denied_when_upstream(buggy_if, "core", "cancelled"),
             "`!= 'failure'` must be caught as fail-open on a `cancelled` result",
@@ -226,16 +217,21 @@ class TestManualDeployDispatch(unittest.TestCase):
     environment). push and pull_request run validation only, and no branch name
     selects a deployment target."""
 
-    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev"}
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev", "nazgul", "orthanc", "sauron", "balrog"}
 
     @classmethod
     def setUpClass(cls):
         cls.deploy = _load("deploy.yml")
+        cls.gcp = _load("_gcp-dev.yml")
         cls.script = ADR_GUARD._dw_extract_set_environment_script(cls.deploy)
 
-    def env(self, event_name, ref="", base_ref=""):
+    def env(self, event_name, ref="", base_ref="", environment_input=""):
         return ADR_GUARD._dw_evaluate_env(
-            self.script, event_name, ref=ref, base_ref=base_ref
+            self.script,
+            event_name,
+            ref=ref,
+            base_ref=base_ref,
+            environment_input=environment_input,
         )
 
     def test_push_never_deploys(self):
@@ -276,6 +272,43 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertEqual(env_input["type"], "choice")
         self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
 
+    def test_gcp_dispatches_route_to_their_terraform_and_github_environments(self):
+        for environment in ("gcp-dev", "nazgul", "orthanc", "sauron", "balrog"):
+            with self.subTest(environment=environment):
+                out = self.env(
+                    "workflow_dispatch",
+                    ref=f"refs/heads/{environment}",
+                    environment_input=environment,
+                )
+
+                self.assertEqual(out["gcp_environment"], environment)
+                self.assertEqual(out["gcp_github_environment"], environment)
+                expected_scan_environment = f"gcp-release-scan-{environment.removeprefix('gcp-')}"
+                self.assertEqual(
+                    out["gcp_release_scan_github_environment"],
+                    expected_scan_environment,
+                )
+                self.assertEqual(out["run_gcp"], "true")
+                self.assertEqual(out["deploy_gcp"], "true")
+
+    def test_gcp_reusable_workflow_uses_selected_scanner_environment(self):
+        call = self.deploy["jobs"]["gcp-dev"]["with"]
+        self.assertEqual(
+            call["release_scan_github_environment"],
+            "${{ needs.changes.outputs.gcp_release_scan_github_environment }}",
+        )
+        self.assertEqual(
+            self.gcp["jobs"]["release_scan"]["environment"],
+            "${{ inputs.release_scan_github_environment }}",
+        )
+
+    def test_gcp_identity_jobs_accept_inventory_variable_bindings(self):
+        for job_id in ("prepare", "release_scan", "deploy", "post-deploy-smoke"):
+            with self.subTest(job=job_id):
+                rendered = str(self.gcp["jobs"][job_id])
+                self.assertIn("vars.GCP_WIF_PROVIDER", rendered)
+                self.assertIn("vars.GCP_SERVICE_ACCOUNT", rendered)
+
     def test_deploy_jobs_stay_pull_request_denied(self):
         # Unchanged trust invariant: no deploy job runs on a pull_request event.
         jobs = ADR_GUARD._dw_jobs(self.deploy, "deploy.yml")
@@ -292,9 +325,7 @@ class TestChangeFilterCoverage(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.filters = ADR_GUARD._dw_parse_paths_filter(
-            _load("deploy.yml"), "changes", "filter"
-        )
+        cls.filters = ADR_GUARD._dw_parse_paths_filter(_load("deploy.yml"), "changes", "filter")
 
     def assertPathInFilter(self, path, filter_name):
         self.assertIn(filter_name, self.filters, f"filter '{filter_name}' missing")
@@ -312,7 +343,6 @@ class TestChangeFilterCoverage(unittest.TestCase):
     def test_app_code_triggers_portal_image(self):
         for path in (
             "shifter/shifter_platform/views.py",
-            "shifter/cyberscript/index.ts",
             "shifter/installation/setup.sh",
             "shifter/.dockerignore",
         ):
@@ -321,20 +351,13 @@ class TestChangeFilterCoverage(unittest.TestCase):
     def test_portal_app_code_does_not_trigger_terraform_filter(self):
         # #913 deliberately split app-image routing from the Terraform-only
         # `shifter_platform` filter; do not collapse them.
-        self.assertPathNotInFilter(
-            "shifter/shifter_platform/views.py", "shifter_platform"
-        )
-        self.assertPathNotInFilter("shifter/cyberscript/index.ts", "shifter_platform")
+        self.assertPathNotInFilter("shifter/shifter_platform/views.py", "shifter_platform")
 
     def test_terraform_paths_trigger_their_plan_filters(self):
-        self.assertPathInFilter(
-            "platform/terraform/modules/portal/ec2/main.tf", "shifter_platform"
-        )
+        self.assertPathInFilter("platform/terraform/modules/portal/ec2/main.tf", "shifter_platform")
         self.assertPathInFilter("platform/terraform/modules/range/main.tf", "range")
         self.assertPathInFilter("platform/terraform/modules/ecr/main.tf", "core")
-        self.assertPathInFilter(
-            "platform/terraform/modules/engine-provisioner/iam.tf", "shifter_engine"
-        )
+        self.assertPathInFilter("platform/terraform/modules/engine-provisioner/iam.tf", "shifter_engine")
         self.assertPathInFilter("platform/terraform/environments/dev/main.tf", "core")
 
     def test_guardrail_scripts_route_to_quality_only(self):
@@ -368,14 +391,8 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
         cls.filters = {unit["id"]: unit["paths"] for unit in raw["quality_units"]}
 
     def test_shared_framework_path_uses_normal_platform_quality_jobs(self):
-        framework_path = (
-            "shifter/shifter_platform/shared/scenario_verification/__init__.py"
-        )
-        self.assertTrue(
-            ADR_GUARD._dw_path_matches_any(
-                framework_path, self.filters["shifter_platform"]
-            )
-        )
+        framework_path = "shifter/shifter_adapter_sdk/verification/__init__.py"
+        self.assertTrue(ADR_GUARD._dw_path_matches_any(framework_path, self.filters["shifter_platform"]))
         for job_id in (
             "shifter-platform-lint",
             "shifter-platform-sast",
@@ -388,24 +405,11 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
                 f"{job_id} must remain on normal shifter-platform routing",
             )
 
-    def test_surviving_polaris_tests_keep_neutral_quality_route(self):
-        polaris_test_path = "scenario-dev/polaris/tests/isolation-smoketest.sh"
-        self.assertTrue(
-            ADR_GUARD._dw_path_matches_any(
-                polaris_test_path, self.filters["polaris_tests"]
-            )
-        )
-        path_outputs = self.jobs["paths"].get("outputs", {})
-        self.assertIn("polaris_tests", path_outputs)
-        job = self.jobs["polaris-tests"]
-        self.assertIn(
-            "needs.paths.outputs.polaris_tests", ADR_GUARD._dw_job_if(job)
-        )
-        run_steps = "\n".join(
-            str(step.get("run", "")) for step in job.get("steps", [])
-        )
-        self.assertIn("python3 -m compileall", run_steps)
-        self.assertIn('bash -n "$script"', run_steps)
+    def test_quality_jobs_do_not_execute_pack_owned_scenario_tests(self):
+        for job in self.jobs.values():
+            run_steps = "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
+            self.assertNotIn("find scenario-dev/", run_steps)
+            self.assertNotIn("compileall -q scenario-dev/", run_steps)
 
     def test_adapter_specific_quality_route_is_removed(self):
         self.assertNotIn("scenario_smoketest", self.filters)
@@ -421,11 +425,7 @@ class TestTflintPluginAuthentication(unittest.TestCase):
         quality = _load("_quality.yml")
         jobs = ADR_GUARD._dw_jobs(quality, "_quality.yml")
         terraform_lint = jobs["terraform-lint"]
-        init_step = next(
-            step
-            for step in terraform_lint.get("steps", [])
-            if step.get("name") == "Init TFLint"
-        )
+        init_step = next(step for step in terraform_lint.get("steps", []) if step.get("name") == "Init TFLint")
         self.assertEqual(
             init_step.get("env", {}).get("GITHUB_TOKEN"),
             "${{ github.token }}",
@@ -471,17 +471,13 @@ class TestSonarScannerIdentity(unittest.TestCase):
     def setUpClass(cls):
         jobs = ADR_GUARD._dw_jobs(_load("_quality.yml"), "_quality.yml")
         cls.scan_step = next(
-            step
-            for step in ADR_GUARD._dw_job_steps(jobs["sonarcloud"])
-            if step.get("name") == "SonarQube Cloud scan"
+            step for step in ADR_GUARD._dw_job_steps(jobs["sonarcloud"]) if step.get("name") == "SonarQube Cloud scan"
         )
         cls.scan_if = cls.scan_step.get("if", "")
         cls.args = str(cls.scan_step.get("with", {}).get("args", ""))
         cls.property_keys = {
             line.split("=", 1)[0].strip()
-            for line in (REPO_ROOT / "sonar-project.properties")
-            .read_text(encoding="utf-8")
-            .splitlines()
+            for line in (REPO_ROOT / "sonar-project.properties").read_text(encoding="utf-8").splitlines()
             if "=" in line and not line.lstrip().startswith("#")
         }
 
@@ -507,9 +503,7 @@ class TestSonarScannerIdentity(unittest.TestCase):
 
     def test_canonical_repository_always_attempts_the_scan(self):
         self.assertTrue(
-            ADR_GUARD._dw_evaluate_if(
-                self.scan_if, repository=self.CANONICAL_REPOSITORY
-            ),
+            ADR_GUARD._dw_evaluate_if(self.scan_if, repository=self.CANONICAL_REPOSITORY),
             "the canonical repository must always attempt the Sonar scan",
         )
 
@@ -546,8 +540,7 @@ class TestSonarScannerIdentity(unittest.TestCase):
                 event_name="pull_request",
                 fork_pr=True,
             ),
-            "a fork-origin pull request must skip the scan, not fail on a "
-            "secret it can never be given",
+            "a fork-origin pull request must skip the scan, not fail on a secret it can never be given",
         )
 
     def test_same_repository_pull_requests_still_scan(self):
@@ -572,9 +565,338 @@ class TestSonarScannerIdentity(unittest.TestCase):
             "the analysis token must never reach the scanner's argv",
         )
 
-    def test_pull_request_quality_gate_wait_survives(self):
+    def test_every_analysis_waits_for_the_quality_gate(self):
         self.assertIn("-Dsonar.qualitygate.wait=true", self.args)
-        self.assertIn("github.event_name == 'pull_request'", self.args)
+        self.assertNotIn(
+            "github.event_name == 'pull_request'",
+            self.args,
+            "push and manually dispatched release analysis must wait for the quality-gate verdict too (#2084)",
+        )
+
+    def test_manual_deploy_analysis_uses_selected_branch(self):
+        self.assertIn(
+            "${{ github.event_name == 'workflow_dispatch' && "
+            "format('-Dsonar.branch.name={0}', github.ref_name) || '' }}",
+            self.args,
+        )
+        self.assertNotIn("sonar.branch.name", self.property_keys)
+
+
+class TestGcpReleaseSecurityClosure(unittest.TestCase):
+    """#2084: release security checks fail closed and preserve exact evidence."""
+
+    def assert_hcl_assignment(self, text, name, value):
+        """Compare exact assignment values without depending on terraform fmt spacing."""
+        pattern = rf"(?m)^\s*{re.escape(name)}\s*=\s*{re.escape(value)}\s*(?:#.*)?$"
+        self.assertTrue(re.search(pattern, text), f"Expected HCL assignment {name} = {value}")
+
+    def test_codeql_analysis_is_not_advisory(self):
+        workflow = _load("codeql-analysis.yml")
+        jobs = ADR_GUARD._dw_jobs(workflow, "codeql-analysis.yml")
+        analyze = jobs["analyze"]
+        step = next(item for item in ADR_GUARD._dw_job_steps(analyze) if item.get("name") == "Perform CodeQL Analysis")
+        self.assertNotIn("continue-on-error", step)
+
+    def test_osv_scans_every_owned_lockfile_and_fails_on_findings(self):
+        workflow = _load("_quality.yml")
+        jobs = ADR_GUARD._dw_jobs(workflow, "_quality.yml")
+        job = jobs["security-osv-advisory"]
+        run = "\n".join(str(step.get("run", "")) for step in job["steps"])
+        self.assertIn("find . -name package-lock.json", run)
+        self.assertIn("find . -name uv.lock", run)
+        self.assertNotIn("|| true", run)
+
+    def test_dependabot_owns_every_python_package_root(self):
+        config = yaml.safe_load((REPO_ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
+        configured = {
+            update["directory"].lstrip("/") or "."
+            for update in config["updates"]
+            if update["package-ecosystem"] == "uv"
+        }
+        discovered = {
+            path.parent.relative_to(REPO_ROOT).as_posix()
+            for path in REPO_ROOT.rglob("pyproject.toml")
+            if ".venv" not in path.parts
+        }
+        self.assertEqual(configured, discovered)
+
+    def test_gcp_deploy_scans_each_exact_oci_digest(self):
+        path = REPO_ROOT / ".github/workflows/_gcp-dev.yml"
+        workflow = path.read_text(encoding="utf-8")
+        jobs = ADR_GUARD._dw_jobs(yaml.safe_load(path.read_text()), "_gcp-dev.yml")
+        scanner = jobs["release_scan"]
+        deploy = jobs["deploy"]
+        self.assertIn("Scan exact release image digests", workflow)
+        for digest in (
+            "PORTAL_IMAGE_DIGEST",
+            "PROVISIONER_IMAGE_DIGEST",
+            "GUACD_IMAGE_DIGEST",
+            "GUACAMOLE_CLIENT_IMAGE_DIGEST",
+        ):
+            self.assertIn(digest, workflow)
+        self.assertIn("--exit-code 1", workflow)
+        self.assertIn("--severity HIGH,CRITICAL", workflow)
+        self.assertEqual(scanner["environment"], "${{ inputs.release_scan_github_environment }}")
+        self.assertIn("release_scan", deploy["needs"])
+        scan_env = "\n".join(str(step.get("env", "")) for step in scanner["steps"])
+        self.assertNotIn("GCP_DEPLOY_SERVICE_ACCOUNT", scan_env)
+        self.assertNotIn("GCP_BOOTSTRAP_ADMIN_PASSWORD", scan_env)
+        self.assertIn("TRIVY_ARCHIVE_SHA256", workflow)
+
+    def test_gcp_mutating_jobs_run_on_the_requested_tenant(self):
+        jobs = ADR_GUARD._dw_jobs(_load("_gcp-dev.yml"), "_gcp-dev.yml")
+        for job_id in ("prepare", "deploy", "post-deploy-smoke"):
+            self.assertEqual(jobs[job_id]["runs-on"], "${{ inputs.environment }}")
+
+    def test_raw_release_evidence_is_not_uploaded_as_an_actions_artifact(self):
+        for workflow_name in (
+            "_gcp-dev.yml",
+            "packer-gcp.yml",
+            "packer-gcp-validate.yml",
+        ):
+            workflow = _load(workflow_name)
+            jobs = ADR_GUARD._dw_jobs(workflow, workflow_name)
+            upload_paths = [
+                str(step.get("with", {}).get("path", ""))
+                for job in jobs.values()
+                for step in ADR_GUARD._dw_job_steps(job)
+                if "actions/upload-artifact@" in str(step.get("uses", ""))
+            ]
+            joined = "\n".join(upload_paths)
+            self.assertNotIn("gce-build-evidence.json", joined)
+            self.assertNotIn("guest-sbom.spdx.json", joined)
+            self.assertNotIn("running-image-ids.json", joined)
+            self.assertNotIn("portal-trivy.json", joined)
+        identity = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text()
+        self.assertIn('resource "google_storage_bucket" "release_evidence"', identity)
+        self.assert_hcl_assignment(identity, "role", '"roles/storage.objectCreator"')
+        self.assert_hcl_assignment(identity, "role", '"roles/storage.objectViewer"')
+        self.assert_hcl_assignment(identity, 'public_access_prevention', '"enforced"')
+        self.assert_hcl_assignment(identity, 'uniform_bucket_level_access', 'true')
+        self.assert_hcl_assignment(identity, 'retention_period', '"7776000"')
+        self.assert_hcl_assignment(identity, 'is_locked', 'true')
+
+    def test_gcp_guest_build_and_sbom_evidence_cross_trust_boundaries(self):
+        build = (REPO_ROOT / ".github/workflows/packer-gcp.yml").read_text(encoding="utf-8")
+        validate = (REPO_ROOT / ".github/workflows/packer-gcp-validate.yml").read_text(encoding="utf-8")
+        verifier = (REPO_ROOT / "shifter/packer/gcp/scripts/validate/verify-build-evidence.sh").read_text(
+            encoding="utf-8"
+        )
+        scanner = (REPO_ROOT / "shifter/packer/gcp/scripts/validate/scan-attached-disk.sh").read_text(encoding="utf-8")
+
+        self.assertIn("PKR_VAR_source_revision=${GITHUB_SHA}", build)
+        self.assertIn("Store immutable build-source evidence", build)
+        self.assertIn("packer-builds/${BUILT_IMAGE_ID}/build-evidence.json", build)
+        self.assertIn("packer-builds/${CANDIDATE_IMAGE_ID}/build-evidence.json", validate)
+        self.assertIn('EXPECTED_SOURCE_REVISION="${GITHUB_SHA}"', validate)
+        self.assertIn(".source_revision", verifier)
+        self.assertIn("SYFT_ARCHIVE_SHA256", validate)
+        self.assertNotIn("checksums.txt", validate)
+        self.assertIn("--mode=ro", validate)
+        self.assertIn("external-read-only-disk", validate)
+        self.assertIn('blockdev --getro "${device}"', scanner)
+        self.assertIn("ro,nosuid,nodev,noexec", scanner)
+        self.assertNotIn("validator@${VALIDATION_VM}:/tmp/syft", validate)
+
+    def test_gcp_base_image_publish_uses_gce_native_contract_and_protected_ref_gate(self):
+        """#2309: GHCR base images are digest-pinned GCE-native disk tarballs (kali/ubuntu/dc)."""
+        build = (REPO_ROOT / ".github/workflows/packer-gcp.yml").read_text(encoding="utf-8")
+
+        self.assertIn("packages: write", build)
+        self.assertIn("Publish GCE base image to GHCR", build)
+        self.assertIn("inputs.publish_target == 'ghcr'", build)
+        # The reusable DC base is the pre-promoted dc-prebaked image (the generic
+        # sysprepped 'dc' needs runtime promotion, which is disabled), published
+        # under the 'dc' role.
+        self.assertIn(
+            "inputs.image_type == 'kali' || inputs.image_type == 'ubuntu' || inputs.image_type == 'dc-prebaked'",
+            build,
+        )
+        self.assertIn("oras-project/setup-oras@", build)
+        self.assertIn("application/vnd.shifter.gce-image.tar.gz", build)
+        self.assertIn("application/vnd.shifter.gce-image.v1", build)
+        self.assertIn("ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shifter-gce-${IMAGE_TYPE}", build)
+        self.assertIn("oci://${PACKAGE}@${DIGEST}", build)
+        # Provenance annotations bind the artifact to its protected build.
+        self.assertIn("org.opencontainers.image.revision=${GITHUB_SHA}", build)
+        # F2: the export object is keyed on BUILT_IMAGE_ID (exported to GITHUB_ENV),
+        # not the build-step-local IMAGE_ID which would expand empty here. The role
+        # names the object (dc-prebaked maps to the 'dc' role).
+        self.assertIn("${ROLE}-${BUILT_IMAGE_ID}.tar.gz", build)
+        self.assertNotIn("${IMAGE_TYPE}-${IMAGE_ID}.tar.gz", build)
+        # The retired GDC VM Runtime qcow2 publish contract is gone.
+        self.assertNotIn("application/vnd.shifter.vm-disk", build)
+        self.assertNotIn("shifter-vm-${IMAGE_TYPE}", build)
+        self.assertNotIn("GDC_${IMAGE_TYPE^^}_IMAGE_URL", build)
+
+    def test_release_evidence_iam_is_purpose_and_prefix_scoped(self):
+        identity = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text(encoding="utf-8")
+        expected_resources = {
+            "packer_build_evidence_writer": ("objectCreator", "packer-builds"),
+            "validate_build_evidence_reader": ("objectViewer", "packer-builds"),
+            "validate_evidence_writer": ("objectCreator", "packer-validation"),
+            "release_scan_evidence_writer": ("objectCreator", "release-scans"),
+            "deploy_evidence_writer": ("objectCreator", "deployments"),
+            "promotion_evidence_reader": ("objectViewer", "packer-validation"),
+        }
+        for resource_name, (role, prefix) in expected_resources.items():
+            marker = f'resource "google_storage_bucket_iam_member" "{resource_name}"'
+            start = identity.index(marker)
+            end = identity.find('\nresource "google_storage_bucket_iam_member"', start + 1)
+            block = identity[start : end if end != -1 else None]
+            self.assert_hcl_assignment(block, "role", f'"roles/storage.{role}"')
+            self.assertIn(f"/objects/{prefix}/", block)
+            self.assertIn("resource.name.startsWith", block)
+
+    def test_platform_lifecycle_roles_cannot_mutate_release_images_or_evidence(self):
+        identity_dir = REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity"
+        variables = (identity_dir / "variables.tf").read_text(encoding="utf-8")
+        identity = (identity_dir / "main.tf").read_text(encoding="utf-8")
+        for marker in ('variable "deploy_roles"', 'variable "destroy_roles"'):
+            start = variables.index(marker)
+            end = variables.index("\n}", start) + 2
+            block = variables[start:end]
+            self.assertNotIn('"roles/compute.admin"', block)
+            self.assertNotIn('"roles/compute.instanceAdmin.v1"', block)
+            self.assertNotIn('"roles/storage.admin"', block)
+            self.assertIn('"roles/compute.networkAdmin"', block)
+            self.assertIn('"roles/compute.securityAdmin"', block)
+        self.assertIn("platform_storage_bucket_names", identity)
+        self.assertIn("platform_storage_condition", identity)
+        self.assertIn('resource "google_project_iam_custom_role" "deploy_storage"', identity)
+        self.assertIn('resource "google_project_iam_custom_role" "destroy_storage"', identity)
+        self.assertIn('resource "google_storage_bucket_iam_member" "deploy_bucket_iam_admin"', identity)
+        self.assertIn('resource "google_storage_bucket_iam_member" "destroy_bucket_iam_admin"', identity)
+        self.assert_hcl_assignment(identity, "role", '"roles/storage.legacyBucketOwner"')
+        self.assertIn("platform_external_bucket_names", identity)
+        condition_start = identity.index("platform_storage_bucket_names")
+        condition_end = identity.index("\n}", condition_start)
+        self.assertNotIn("release-evidence", identity[condition_start:condition_end])
+
+    def test_gcp_deploy_records_running_workload_image_ids(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        verifier = (REPO_ROOT / "scripts/gcp/verify_running_image_ids.py").read_text(encoding="utf-8")
+        self.assertIn("Record running workload image IDs", workflow)
+        self.assertIn("scripts/gcp/verify_running_image_ids.py", workflow)
+        self.assertEqual(workflow.count("--expected-image"), 3)
+        self.assertIn("_RELEASE_CONTAINERS", verifier)
+        self.assertIn("_RELEASE_DEPLOYMENTS", verifier)
+        self.assertIn("--list-deployments", workflow)
+        self.assertIn('"initContainers"', verifier)
+        self.assertIn("initContainerStatuses", verifier)
+        self.assertIn('"containerStatuses",', verifier)
+        self.assertIn('"ephemeralContainers"', verifier)
+        self.assertIn("ephemeralContainerStatuses", verifier)
+        self.assertIn('container.get("imageID", "")', verifier)
+        self.assertIn("declared_image != exact_reference", verifier)
+        self.assertIn("runtime_image != exact_reference", verifier)
+        self.assertIn("unexpected Shifter workload component", verifier)
+        self.assertIn("_require_closed_names", verifier)
+        self.assertIn("unexpected {kind} containers", verifier)
+        self.assertIn("${RUNNER_TEMP}/gcp-release-security/running-pods.json", workflow)
+        self.assertIn("Remove ephemeral deployment evidence", workflow)
+
+    def test_gcp_deploy_waits_for_superseded_pods_before_image_evidence(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+
+        wait = "select(.metadata.deletionTimestamp != null)"
+        record = "Record running workload image IDs"
+        self.assertIn(wait, workflow)
+        self.assertLess(workflow.index(wait), workflow.index(record))
+
+    def test_gcp_promotion_authenticates_redacted_verdict_before_private_evidence(self):
+        validate = (REPO_ROOT / ".github/workflows/packer-gcp-validate.yml").read_text(encoding="utf-8")
+        promote = (REPO_ROOT / ".github/workflows/packer-gcp-promote.yml").read_text(encoding="utf-8")
+        verifier = (REPO_ROOT / "shifter/packer/gcp/scripts/validate/verify-promotion-evidence.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("candidate_binding_sha256", validate)
+        self.assertIn("steps.upload_verdict.outputs.artifact-id", validate)
+        self.assertIn("validated-verdict-id", validate)
+        self.assertIn("actions/artifacts/${VALIDATED_VERDICT_ID}", promote)
+        self.assertLess(
+            promote.index("actions/artifacts/${VALIDATED_VERDICT_ID}"),
+            promote.index("gcloud storage cp --quiet"),
+        )
+        for marker in (
+            "VERDICT_FILE",
+            "ARTIFACT_FILE",
+            "candidate_binding_sha",
+            "validation verdict artifact run",
+            "verdict evidence digest",
+        ):
+            self.assertIn(marker, verifier)
+
+    def test_gcp_workflows_keep_sensitive_tfvars_out_of_the_checkout(self):
+        for name in ("_gcp-dev.yml", "gcp-dev-destroy.yml"):
+            workflow = (REPO_ROOT / f".github/workflows/{name}").read_text(encoding="utf-8")
+            self.assertNotIn("${TF_DIR}/local.auto.tfvars", workflow)
+            self.assertNotIn("${TF_DIR}/range_egress.auto.tfvars", workflow)
+            self.assertIn("${RUNNER_TEMP}", workflow)
+            self.assertIn("os.O_EXCL", workflow)
+            self.assertIn("umask 077", workflow)
+            self.assertIn("chmod 600", workflow)
+            self.assertIn("-var-file=", workflow)
+
+        destroy = yaml.safe_load((REPO_ROOT / ".github/workflows/gcp-dev-destroy.yml").read_text(encoding="utf-8"))
+        destroy_env = destroy["jobs"]["destroy"]["env"]
+        # The teardown workflow is parameterized over the GCP tenant: the TF root,
+        # state prefix, and destroy Environment all derive from the dispatch input
+        # rather than being hardcoded to gcp-dev.
+        self.assertEqual(destroy_env["GCP_ENVIRONMENT"], "${{ inputs.environment }}")
+        self.assertEqual(
+            destroy_env["TF_DIR"],
+            "platform/terraform/gcp/environments/${{ inputs.environment }}",
+        )
+        self.assertEqual(
+            destroy_env["TF_BACKEND_PREFIX"],
+            "shifter/${{ inputs.environment }}/platform-core",
+        )
+        self.assertEqual(
+            destroy["jobs"]["destroy"]["environment"],
+            "${{ inputs.environment }}-destroy",
+        )
+        # A single upfront preflight fails with the full list of any secrets
+        # missing from the selected <environment>-destroy Environment before
+        # checkout/auth, rather than one render step at a time.
+        destroy_text = (REPO_ROOT / ".github/workflows/gcp-dev-destroy.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Preflight - required destroy secrets present", destroy_text)
+        self.assertIn(
+            "-destroy' Environment is missing required secret(s)", destroy_text
+        )
+
+    def test_gcp_bootstrap_secrets_never_reach_process_argv(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        self.assertNotIn("--from-literal", workflow)
+        self.assertIn("--from-env-file", workflow)
+
+    def test_gcp_checkov_decisions_are_resource_scoped(self):
+        config = (REPO_ROOT / "platform/terraform/.checkov.yaml").read_text(encoding="utf-8")
+        self.assertNotIn("- CKV_GCP_", config)
+        self.assertNotIn("- CKV2_GCP_", config)
+
+        gcp_root = REPO_ROOT / "platform/terraform/gcp/modules/portal"
+        sources = "\n".join(path.read_text(encoding="utf-8") for path in sorted(gcp_root.rglob("*.tf")))
+        for finding in (
+            "CKV_GCP_6",
+            "CKV_GCP_12",
+            "CKV_GCP_21",
+            "CKV_GCP_62",
+            "CKV_GCP_65",
+            "CKV_GCP_79",
+            "CKV_GCP_83",
+            "CKV_GCP_107",
+            "CKV_GCP_109",
+            "CKV_GCP_111",
+            "CKV_GCP_124",
+            "CKV2_GCP_10",
+        ):
+            self.assertIn(f"checkov:skip={finding}", sources)
+
+        self.assertIn("group:cloud-storage-analytics@google.com", sources)
+        self.assertIn('role   = "roles/storage.objectCreator"', sources)
 
 
 class TestGithubEnvironmentBinding(unittest.TestCase):
@@ -585,7 +907,7 @@ class TestGithubEnvironmentBinding(unittest.TestCase):
         "_range.yml": ("apply",),
         "_shifter-engine.yml": ("build", "deploy"),
         "_shifter-platform.yml": ("push-guacamole-images", "apply", "build", "deploy"),
-        "_gcp-dev.yml": ("deploy",),
+        "_gcp-dev.yml": ("prepare", "deploy"),
     }
 
     def test_mutating_jobs_bind_github_environment(self):
@@ -605,16 +927,34 @@ class TestGcpPrivateControlPlaneAccess(unittest.TestCase):
     """#1850: every GCP deploy credential refresh stays on Connect Gateway."""
 
     def test_gcp_deploy_never_reverts_to_direct_endpoint_credentials(self):
-        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(
-            encoding="utf-8"
-        )
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
         self.assertNotIn("google-github-actions/get-gke-credentials@", workflow)
         self.assertGreaterEqual(
             workflow.count("gcloud container fleet memberships get-credentials"),
             2,
-            "GCP deploy must configure Connect Gateway before bootstrap work and "
-            "refresh it before applying workloads",
+            "GCP deploy must configure Connect Gateway before bootstrap work and refresh it before applying workloads",
         )
+
+
+class TestGcpDeployPreflightInputs(unittest.TestCase):
+    """#2083: the shared preflight receives every required deployment input."""
+
+    def test_shifter_config_secret_reaches_the_preflight_step(self):
+        workflow = _load("_gcp-dev.yml")
+        jobs = ADR_GUARD._dw_jobs(workflow, "_gcp-dev.yml")
+        step = next(
+            item for item in jobs["prepare"]["steps"] if item.get("name") == "Preflight - validate deploy prerequisites"
+        )
+        self.assertEqual(
+            step.get("env", {}).get("SHIFTER_CONFIG_GCP_DEV"),
+            "${{ secrets.SHIFTER_CONFIG_GCP_DEV }}",
+        )
+        self.assertIn("--component deploy", step.get("run", ""))
+
+    def test_non_secret_overlay_reaches_every_ephemeral_config_consumer(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}"), 3)
+        self.assertEqual(workflow.count("python scripts/gcp/apply_shifter_config_overlay.py --config"), 3)
 
 
 class TestRangePlacementSingleSource(unittest.TestCase):
@@ -680,9 +1020,7 @@ class TestProvisionerDeployTestGate(unittest.TestCase):
             "uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml",
         )
         for command in expected_commands:
-            matching_steps = [
-                step for step in steps if command in str(step.get("run", ""))
-            ]
+            matching_steps = [step for step in steps if command in str(step.get("run", ""))]
             self.assertTrue(matching_steps, f"test job missing `{command}`")
             for step in matching_steps:
                 self.assertEqual(
@@ -734,13 +1072,11 @@ class TestEngineValidateRunnerPlacement(unittest.TestCase):
         expr = ADR_GUARD._dw_job_if(self.validate)
         self.assertTrue(
             ADR_GUARD._dw_job_denied_on_pull_request(expr),
-            f"`validate` is self-hosted and must fail closed on pull_request "
-            f"(ADR-003-R5). if: {expr}",
+            f"`validate` is self-hosted and must fail closed on pull_request (ADR-003-R5). if: {expr}",
         )
         self.assertTrue(
             ADR_GUARD._dw_evaluate_if(expr, event_name="push"),
-            f"`validate` must still run on push or its PR-denial is vacuous. "
-            f"if: {expr}",
+            f"`validate` must still run on push or its PR-denial is vacuous. if: {expr}",
         )
 
     def test_validate_depends_on_provisioner_test_gate(self):
@@ -785,23 +1121,15 @@ class TestEngineImageDigest(unittest.TestCase):
         )
 
     def test_engine_terraform_uses_explicit_digest_without_ecr_tag_lookup(self):
-        engine_main = self._read(
-            "platform/terraform/modules/engine-provisioner/main.tf"
-        )
-        engine_task = self._read(
-            "platform/terraform/modules/engine-provisioner/task_definition.tf"
-        )
-        engine_vars = self._read(
-            "platform/terraform/modules/engine-provisioner/variables.tf"
-        )
+        engine_main = self._read("platform/terraform/modules/engine-provisioner/main.tf")
+        engine_task = self._read("platform/terraform/modules/engine-provisioner/task_definition.tf")
+        engine_vars = self._read("platform/terraform/modules/engine-provisioner/variables.tf")
         platform_wf = self._active_text(".github/workflows/_shifter-platform.yml")
         deploy_wf = self._active_text(".github/workflows/deploy.yml")
 
         self.assertNotIn('data "aws_ecr_image"', engine_main)
         self.assertIn('variable "container_image_digest"', engine_vars)
-        self.assertIn(
-            "${var.ecr_repository_url}@${var.container_image_digest}", engine_task
-        )
+        self.assertIn("${var.ecr_repository_url}@${var.container_image_digest}", engine_task)
         self.assertIn("engine_image_digest:", platform_wf)
         self.assertIn('engine_container_image_digest = "%s"', platform_wf)
         self.assertIn(
@@ -820,9 +1148,7 @@ class TestWorkflowShapeContract(unittest.TestCase):
 
     def test_missing_workflow_raises(self):
         with self.assertRaises(ADR_GUARD._DwShapeError):
-            ADR_GUARD._dw_load_workflow(
-                REPO_ROOT, ".github/workflows/does-not-exist.yml"
-            )
+            ADR_GUARD._dw_load_workflow(REPO_ROOT, ".github/workflows/does-not-exist.yml")
 
     def test_missing_jobs_raises(self):
         with self.assertRaises(ADR_GUARD._DwShapeError):
@@ -830,9 +1156,7 @@ class TestWorkflowShapeContract(unittest.TestCase):
 
     def test_missing_paths_filter_step_raises(self):
         with self.assertRaises(ADR_GUARD._DwShapeError):
-            ADR_GUARD._dw_parse_paths_filter(
-                {"jobs": {"changes": {"steps": []}}}, "changes", "filter"
-            )
+            ADR_GUARD._dw_parse_paths_filter({"jobs": {"changes": {"steps": []}}}, "changes", "filter")
 
 
 class TestWorkflowActionShaPinning(unittest.TestCase):
@@ -857,9 +1181,7 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
         (wf_dir / name).write_text(content, encoding="utf-8")
 
     def test_check_passes_on_real_workflows(self):
-        self.assertEqual(
-            ADR_GUARD.check_workflow_action_sha_pinning(REPO_ROOT, None), []
-        )
+        self.assertEqual(ADR_GUARD.check_workflow_action_sha_pinning(REPO_ROOT, None), [])
 
     def test_mutable_ref_in_credentialed_workflow_is_flagged(self):
         wf = (
@@ -879,9 +1201,7 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
             violations = ADR_GUARD.check_workflow_action_sha_pinning(root, None)
             self.assertTrue(violations)
             self.assertTrue(all(v.rule_id == self.RULE for v in violations))
-            self.assertTrue(
-                any("actions/checkout" in v.message for v in violations)
-            )
+            self.assertTrue(any("actions/checkout" in v.message for v in violations))
 
     def test_sha_pinned_ref_in_credentialed_workflow_passes(self):
         wf = (
@@ -896,9 +1216,7 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._write_wf(root, "cred.yml", wf)
-            self.assertEqual(
-                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
-            )
+            self.assertEqual(ADR_GUARD.check_workflow_action_sha_pinning(root, None), [])
 
     def test_cloud_auth_action_marks_workflow_credentialed(self):
         wf = (
@@ -930,9 +1248,7 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._write_wf(root, "lint.yml", wf)
-            self.assertEqual(
-                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
-            )
+            self.assertEqual(ADR_GUARD.check_workflow_action_sha_pinning(root, None), [])
 
     def test_local_reusable_workflow_ref_is_allowed(self):
         wf = (
@@ -947,9 +1263,7 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._write_wf(root, "orch.yml", wf)
-            self.assertEqual(
-                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
-            )
+            self.assertEqual(ADR_GUARD.check_workflow_action_sha_pinning(root, None), [])
 
     def test_mutable_docker_action_in_credentialed_workflow_is_flagged(self):
         wf = (
@@ -986,9 +1300,7 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._write_wf(root, "cred.yml", wf)
-            self.assertEqual(
-                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
-            )
+            self.assertEqual(ADR_GUARD.check_workflow_action_sha_pinning(root, None), [])
 
     def test_unparseable_workflow_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1002,9 +1314,7 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
         # With an explicit changed-file set that touches no workflow and not the
         # adr_guard script, the check is a no-op (path-gated like its siblings).
         self.assertEqual(
-            ADR_GUARD.check_workflow_action_sha_pinning(
-                REPO_ROOT, ["shifter/shifter_platform/README.md"]
-            ),
+            ADR_GUARD.check_workflow_action_sha_pinning(REPO_ROOT, ["shifter/shifter_platform/README.md"]),
             [],
         )
 
@@ -1023,21 +1333,27 @@ class CloudCredentialClassificationTests(unittest.TestCase):
     DW = ADR_GUARD.deploy_workflow
 
     def test_static_env_secret_makes_job_credentialed(self):
-        job = {"runs-on": "ubuntu-latest", "env": {"AWS_SECRET_ACCESS_KEY": "${{ secrets.AWS_SECRET }}"}}
+        job = {
+            "runs-on": "ubuntu-latest",
+            "env": {"AWS_SECRET_ACCESS_KEY": "${{ secrets.AWS_SECRET }}"},
+        }
         self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
 
     def test_secret_passed_to_step_with_makes_job_credentialed(self):
         job = {
             "runs-on": "ubuntu-latest",
-            "steps": [{"uses": "some/action@v1", "with": {"token": "${{ secrets.DEPLOY_TOKEN }}"}}],
+            "steps": [
+                {
+                    "uses": "some/action@v1",
+                    "with": {"token": "${{ secrets.DEPLOY_TOKEN }}"},
+                }
+            ],
         }
         self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
 
     def test_secrets_inherit_makes_job_credentialed(self):
         self.assertTrue(
-            self.DW._dw_job_is_cloud_credentialed(
-                {"uses": "./.github/workflows/reusable.yml", "secrets": "inherit"}
-            )
+            self.DW._dw_job_is_cloud_credentialed({"uses": "./.github/workflows/reusable.yml", "secrets": "inherit"})
         )
 
     def test_secrets_mapping_makes_job_credentialed(self):

@@ -387,7 +387,8 @@ class TestProvisionRoutesFromBinding:
         # The range has no authored subnets, so reservation short-circuits and
         # needs no stand-in. Nothing writes realized CIDRs back to the scenario
         # any more (ADR-043-R6), so there is no persistence flag to thread.
-        assert build_variables.call_args.kwargs["backend"] == "gce"
+        # backend (and the pinned egress posture) ride the per-operation context.
+        assert build_variables.call_args.args[4].backend == "gce"
         apply.assert_called_once_with(
             "req-1",
             build_variables.return_value,

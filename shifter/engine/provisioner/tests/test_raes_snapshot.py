@@ -23,7 +23,7 @@ def _plan() -> RaesPlan:
         address="provision.node.web", name="web", os_family="linux", count=1, network_addresses=("net.a",)
     )
     network = RaesPlanNetwork(address="provision.network.a", name="a", cidr="10.0.0.0/24")
-    return RaesPlan(raes_version="2.0.0", nodes=(node,), networks=(network,))
+    return RaesPlan(raes_version="3.5.0", nodes=(node,), networks=(network,))
 
 
 def test_reduces_to_bounded_address_type_status():
@@ -41,7 +41,7 @@ def test_carries_no_infrastructure_detail():
 
 
 def test_empty_plan_yields_no_resources():
-    assert snapshot_resources(RaesPlan(raes_version="2.0.0", nodes=(), networks=())) == []
+    assert snapshot_resources(RaesPlan(raes_version="3.5.0", nodes=(), networks=())) == []
 
 
 def _composition_plan() -> RaesPlan:

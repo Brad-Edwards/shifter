@@ -97,6 +97,7 @@ STUB_EMAIL=stack-smoke-oidc@example.test
 read -r -d '' SMOKE_WORKER_SPECS_DEFAULT <<'SPECS' || true
 worker-cms|/tmp/worker-cms-heartbeat|python manage.py run_worker --queue cms --wait-time 1
 ctf-scheduler|/tmp/ctf-scheduler-heartbeat|python manage.py run_ctf_scheduler --poll-interval 1
+ctf-communication-worker|/tmp/ctf-communication-worker-heartbeat|python manage.py drain_ctf_communication_deliveries --loop --interval 1
 guacamole-bootstrap-prune|/tmp/guacamole-bootstrap-prune-heartbeat|python manage.py run_guacamole_bootstrap_prune --poll-interval 1
 raes-operation-record-prune|/tmp/raes-operation-record-prune-heartbeat|python manage.py run_raes_operation_record_prune --poll-interval 1
 SPECS

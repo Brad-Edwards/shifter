@@ -19,6 +19,9 @@ Submodule layout:
 * ``rating``       — ``CTFChallengeRating``.
 * ``hint``         — ``CTFHint``, ``CTFHintUsage``.
 * ``notification`` — ``CTFNotification``, ``CTFEmailTemplate``, ``CTFScheduledTask``.
+* ``communication``— ``CommunicationCampaign``, ``CommunicationTargetEvent``,
+  ``MessageRevision``, ``CommunicationIntent``, ``RecipientSnapshot``,
+  ``DeliveryAttempt``, ``ParticipantReceipt`` (ADR-051, #2048).
 * ``recovery``     — ``CTFRangeRecovery``.
 * ``spare_range``  — ``CTFSpareRange``.
 """
@@ -34,15 +37,29 @@ from django.utils import timezone
 
 from ._base import CTFBaseModel, SoftDeleteManager
 from .challenge import CTFChallenge
+from .cohort import CTFCohort
+from .communication import (
+    CommunicationCampaign,
+    CommunicationIntent,
+    CommunicationTargetEvent,
+    MessageRevision,
+    RecipientSnapshot,
+)
+from .communication_cutover import CommunicationCutover, LegacyCommunication
+from .communication_delivery import DeliveryAttempt, ParticipantReceipt
 from .content_hydration import CTFContentHydrationReceipt
-from .event import CTFEvent, CTFEventPage, CTFEventStaff
+from .event import CTFEvent
+from .event_page import CTFEventPage
+from .event_staff import CTFEventStaff
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
-from .notification import CTFEmailTemplate, CTFNotification, CTFScheduledTask, CTFWebhook
+from .notification import CTFEmailTemplate, CTFNotification, CTFWebhook
+from .public_registration import CTFPublicRegistrationRequest
 from .rating import CTFChallengeRating
 from .recovery import CTFRangeRecovery
+from .scheduled_task import CTFScheduledTask
 from .spare_range import CTFSpareRange
-from .submission import CTFAward, CTFSubmission
+from .submission import CTFAward, CTFReceiptConsumption, CTFSubmission
 from .taxonomy import (
     CTFChallengeFile,
     CTFChallengePrerequisite,
@@ -60,6 +77,7 @@ __all__ = [
     "CTFChallengePrerequisite",
     "CTFChallengeRating",
     "CTFChallengeTag",
+    "CTFCohort",
     "CTFContentHydrationReceipt",
     "CTFEmailTemplate",
     "CTFEvent",
@@ -70,13 +88,24 @@ __all__ = [
     "CTFHintUsage",
     "CTFNotification",
     "CTFParticipant",
+    "CTFPublicRegistrationRequest",
     "CTFRangeRecovery",
+    "CTFReceiptConsumption",
     "CTFScheduledTask",
     "CTFSpareRange",
     "CTFSubmission",
     "CTFTeam",
     "CTFTopic",
     "CTFWebhook",
+    "CommunicationCampaign",
+    "CommunicationCutover",
+    "CommunicationIntent",
+    "CommunicationTargetEvent",
+    "DeliveryAttempt",
+    "LegacyCommunication",
+    "MessageRevision",
+    "ParticipantReceipt",
+    "RecipientSnapshot",
     "SoftDeleteManager",
     "timezone",
 ]

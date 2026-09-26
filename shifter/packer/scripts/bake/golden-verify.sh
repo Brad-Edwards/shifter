@@ -102,10 +102,8 @@ done
 # counting running containers is not sufficient behavioral proof. Fail on any
 # unhealthy/exited/dead container and confirm the scenario's flag-bearing
 # services (REQUIRED_CONTAINERS, optional space/comma list) are present. The
-# canonical scripts/polaris-aws-range/check_range_health.py is deliberately NOT
-# reused here: it asserts per-range runtime state (splice-watcher service,
-# Bedrock shard, IMDS drop rule, per-range STS identity) that PolarisRangeBootstrapPlan
-# installs at range launch and that a fresh-boot bake AMI does not yet have.
+# range-specific runtime checks belong to the separately installed adapter;
+# a fresh-boot image has no runtime enrollment yet.
 REQUIRED_CONTAINERS="${REQUIRED_CONTAINERS:-}"
 required_list="$(printf '%s' "$REQUIRED_CONTAINERS" | tr ',' ' ')"
 read -r -d '' HEALTH_PROBE <<RSCRIPT || true

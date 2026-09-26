@@ -273,7 +273,8 @@ def _handle_event_force_delete_post(request: HttpRequest, event: CTFEvent, event
 
     messages.success(
         request,
-        f"Event '{result['event_name']}' has been permanently deleted. Ranges destroyed: {result['ranges_destroyed']}.",
+        f"Event '{result['event_name']}' has been permanently deleted. "
+        f"Range teardowns dispatched: {result['ranges_destroyed']}.",
     )
     return redirect("ctf:admin_event_list")
 

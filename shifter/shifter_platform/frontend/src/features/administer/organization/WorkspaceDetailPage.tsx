@@ -16,11 +16,12 @@ import {
   useArchiveWorkspace,
   useRenameWorkspace,
   useRestoreWorkspace,
+  useSetWorkspaceEgressPolicy,
   useTransferWorkspaceOwnership,
   useWorkspace,
 } from "@/api/workspaces";
 import { ApiError, describeMutationError } from "@/api/errors";
-import type { Workspace } from "@/api/types";
+import type { Workspace, WorkspaceEgressPolicy } from "@/api/types";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -29,7 +30,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+
+const EGRESS_POLICY_OPTIONS: ReadonlyArray<{ value: WorkspaceEgressPolicy; label: string; hint: string }> = [
+  { value: "status-quo", label: "Inherit deployment baseline", hint: "Ranges keep the deployment's default network egress." },
+  { value: "none", label: "Zero egress (no outbound NAT path)", hint: "New ranges provision with no outbound internet path." },
+];
 
 import { formatTimestamp } from "../format";
 
@@ -65,6 +72,7 @@ function WorkspaceDetail({ uuid, workspace }: Readonly<{ uuid: string; workspace
       <PageHeader title={workspace.name} description={`Workspace in ${workspace.organization_name}`} />
       <OverviewCard workspace={workspace} />
       <RenameCard uuid={uuid} workspace={workspace} />
+      <EgressPolicyCard uuid={uuid} workspace={workspace} />
       <LifecycleCard uuid={uuid} workspace={workspace} />
       <TransferOwnershipCard uuid={uuid} />
     </div>
@@ -85,6 +93,7 @@ function OverviewCard({ workspace }: Readonly<{ workspace: Workspace }>) {
           </dd>
         </div>
         <Detail label="Archived" value={formatTimestamp(workspace.archived_at)} />
+        <Detail label="Network egress" value={egressPolicyLabel(workspace.egress_policy)} />
         <Detail label="Created" value={formatTimestamp(workspace.created_at)} />
         <Detail label="Updated" value={formatTimestamp(workspace.updated_at)} />
       </dl>
@@ -149,6 +158,83 @@ function RenameCard({ uuid, workspace }: Readonly<{ uuid: string; workspace: Wor
 
         <Button type="submit" disabled={mutation.isPending || name.trim().length === 0 || name.trim() === workspace.name}>
           {mutation.isPending ? "Saving…" : "Rename"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function egressPolicyLabel(policy: WorkspaceEgressPolicy): string {
+  return EGRESS_POLICY_OPTIONS.find((option) => option.value === policy)?.label ?? policy;
+}
+
+/**
+ * Set the workspace network egress policy (#1945, PLAT-238). The server
+ * (`PUT /api/v1/workspaces/{uuid}/egress-policy/`) authorizes the owner/admin
+ * role, re-validates the closed choice, and is the audit boundary; this control
+ * only presents the current value and posts the change. The change applies to
+ * newly provisioned ranges and never mutates a running range.
+ */
+function EgressPolicyCard({ uuid, workspace }: Readonly<{ uuid: string; workspace: Workspace }>) {
+  const [policy, setPolicy] = useState<WorkspaceEgressPolicy>(workspace.egress_policy);
+  const [saved, setSaved] = useState(false);
+  const mutation = useSetWorkspaceEgressPolicy(uuid);
+
+  useEffect(() => {
+    setPolicy(workspace.egress_policy);
+  }, [workspace.egress_policy]);
+
+  const topLevelError = describeMutationError(mutation.error, "The egress policy could not be updated.");
+  const selected = EGRESS_POLICY_OPTIONS.find((option) => option.value === policy);
+
+  function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setSaved(false);
+    mutation.mutate(policy, { onSuccess: () => setSaved(true) });
+  }
+
+  return (
+    <Card className="max-w-2xl p-6">
+      <form className="space-y-4" onSubmit={onSubmit} aria-label="Set network egress policy">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium">Network egress policy</h2>
+          <p className="text-sm text-muted-foreground">
+            Controls outbound network access for ranges launched in this workspace. Applies to newly provisioned ranges;
+            existing ranges are unchanged.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="workspace-egress-policy">Policy</Label>
+          <Select
+            value={policy}
+            onValueChange={(value) => {
+              setPolicy(value as WorkspaceEgressPolicy);
+              setSaved(false);
+            }}
+          >
+            <SelectTrigger id="workspace-egress-policy" className="w-[320px]" aria-label="Network egress policy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EGRESS_POLICY_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selected ? <p className="text-sm text-muted-foreground">{selected.hint}</p> : null}
+        </div>
+
+        {mutation.isError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{topLevelError}</AlertDescription>
+          </Alert>
+        ) : null}
+        {saved && !mutation.isPending ? <output className="text-sm text-muted-foreground">Saved.</output> : null}
+
+        <Button type="submit" disabled={mutation.isPending || policy === workspace.egress_policy}>
+          {mutation.isPending ? "Saving…" : "Save egress policy"}
         </Button>
       </form>
     </Card>

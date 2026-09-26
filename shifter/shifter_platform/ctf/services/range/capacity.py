@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from ctf.models import CTFEvent
 from shared.log_sanitize import safe_log_value
+from shared.model_access.admission import EventModelDemand
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -42,6 +43,13 @@ def build_event_capacity_signal(event: CTFEvent) -> dict[str, Any]:
     # scenario hydration) so the engine never re-parses scenario content or
     # builds a parallel AMI mapping. Server-derived, never organizer-supplied.
     resource_hints["images"] = _project_images(event.scenario_id)
+    # PLAT-202: typed organizer model demand, validated into the CTF-908
+    # declaration rather than a parallel event contract. Best-effort here (a bad
+    # hint never blocks provisioning); required-model admission is enforced
+    # separately and fails closed.
+    model_demand = [demand.model_dump(mode="json") for demand in parse_event_model_demand(event)]
+    if model_demand:
+        resource_hints["model_demand"] = model_demand
     organizer_hints = event.capacity_hints or {}
     if organizer_hints:
         resource_hints["organizer"] = organizer_hints
@@ -54,6 +62,27 @@ def build_event_capacity_signal(event: CTFEvent) -> dict[str, Any]:
         "window_end": event.get_cleanup_time(),
         "resource_hints": resource_hints,
     }
+
+
+def parse_event_model_demand(event: CTFEvent) -> tuple[EventModelDemand, ...]:
+    """Validate the organizer's typed model demand into ``EventModelDemand`` DTOs.
+
+    Never raises: a malformed entry is dropped and logged rather than trusted,
+    consistent with the best-effort declaration path. Returns one DTO per valid
+    workload-role demand entry.
+    """
+    from pydantic import ValidationError
+
+    raw = event.model_demand or []
+    if not isinstance(raw, list):
+        return ()
+    demands = []
+    for entry in raw:
+        try:
+            demands.append(EventModelDemand.model_validate(entry))
+        except ValidationError:
+            logger.warning("capacity: dropping malformed model demand entry")
+    return tuple(demands)
 
 
 def _project_images(scenario_id: str) -> dict[str, Any]:

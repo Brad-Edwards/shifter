@@ -39,7 +39,7 @@ COMPOSITION_RESOURCE_TYPES: frozenset[str] = frozenset(
 #: Canonical login methods Shifter can genuinely realize on both supported
 #: guest dialects. ``raes`` intentionally leaves ``auth_method`` open, so
 #: this backend-owned value policy must fail closed before dispatch.
-SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "publickey"})
+SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "key"})
 SUPPORTED_PASSWORD_STRENGTHS: frozenset[str] = frozenset({"weak", "medium", "strong", "none"})
 _RESERVED_ACCOUNT_USERNAMES: frozenset[str] = frozenset({"raes"})
 #: Feature-binding shapes with implemented, independently verified guest effects.

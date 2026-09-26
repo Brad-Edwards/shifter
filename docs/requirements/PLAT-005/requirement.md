@@ -46,3 +46,7 @@ Externalized, per-deployment configuration is what makes the same application co
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#784` (ci: AWS platform deploy applies the example.com baseline instead of real per-deployment tfvars)
 - IMPLEMENTS → CONFIG `.github/workflows/_shifter-engine.yml` (Engine deploy workflow, fails fast with a clear error when the required ECS task-definition family is missing; gated first_deploy per-deployment bootstrap input)
 - IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/deploy_workflow.py` (adr_guard check aws-platform-renders-deploy-tfvars (ADR-011-R7), check_platform_renders_deploy_tfvars)
+- IMPLEMENTS → CODE_FILE `scripts/check_tf_gcp_wif_trust/_resolved_plan.py` (Resolved identity trust and impersonation verification)
+- IMPLEMENTS → CONFIG `platform/terraform/gcp/modules/cicd-oidc-identity/main.tf` (Generic per-deployment purpose identities in one deployment project)
+- TESTS → TEST `scripts/check_tf_gcp_wif_trust/test_resolved_plan.py` (Rejected trust widening, unknown authority, missing bindings and identity replacement)
+- TESTS → TEST `platform/terraform/gcp/global/cicd-oidc/tests/inventory.tftest.hcl` (Native unseen-deployment and first-plan purpose coverage)

@@ -18,8 +18,9 @@ from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from workspaces.models import Organization, OrganizationMembership, Workspace, WorkspaceMembership
 from workspaces.roles import OrganizationRole, WorkspaceRole
+from workspaces.services import create_account
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("personal_token_use_grant")]
 
 _COLLECTION = "/api/v1/workspaces/"
 
@@ -195,6 +196,18 @@ def test_bare_member_cannot_rename(organization, admin, django_user_model):
 # ---------------------------------------------------------------------------
 
 
+def test_account_default_workspace_archive_returns_conflict(django_user_model):
+    actor = _user(django_user_model, "default-owner")
+    account = create_account(kind="team", name="Customer")
+    workspace = Workspace.objects.get(organization__account_id=account.id, is_default=True)
+    WorkspaceMembership.objects.create(workspace=workspace, user=actor, role=WorkspaceRole.OWNER.value)
+
+    response = _client(actor).post(_detail(workspace.uuid) + "archive/")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "default_workspace"
+
+
 def test_archive_then_restore_round_trips(organization, admin):
     workspace = _make_workspace(admin, organization)
 
@@ -245,4 +258,74 @@ def test_unknown_workspace_uuid_is_an_opaque_denial(admin):
     response = _client(admin).get(_detail(uuid.uuid4()))
 
     # A workspace the actor cannot see and one that does not exist look identical.
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# egress policy (PLAT-238, #1945)
+# ---------------------------------------------------------------------------
+
+
+def _egress(workspace_uuid) -> str:
+    return _detail(workspace_uuid) + "egress-policy/"
+
+
+def test_detail_exposes_the_egress_policy(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    body = _client(admin).get(_detail(workspace.uuid)).json()
+
+    assert body["egress_policy"] == "status-quo"
+
+
+def test_owner_sets_egress_policy_via_put(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    response = _client(admin).put(_egress(workspace.uuid), {"egress_policy": "none"}, format="json")
+
+    assert response.status_code == 200
+    assert response.json()["egress_policy"] == "none"
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "none"
+
+
+def test_bare_member_cannot_set_egress_policy(organization, admin, django_user_model):
+    workspace = _make_workspace(admin, organization)
+    member = _user(django_user_model, "egress-member")
+    WorkspaceMembership.objects.create(workspace=workspace, user=member, role=WorkspaceRole.MEMBER.value)
+
+    response = _client(member).put(_egress(workspace.uuid), {"egress_policy": "none"}, format="json")
+
+    assert response.status_code == 403
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "status-quo"
+
+
+def test_set_egress_policy_rejects_a_deployment_only_mode(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    response = _client(admin).put(_egress(workspace.uuid), {"egress_policy": "deny-all"}, format="json")
+
+    assert response.status_code == 400
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "status-quo"
+
+
+def test_set_egress_policy_rejects_an_unknown_field(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    response = _client(admin).put(
+        _egress(workspace.uuid),
+        {"egress_policy": "none", "allowed_cidrs": ["10.0.0.0/8"]},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "status-quo"
+
+
+def test_set_egress_policy_on_unknown_workspace_is_opaque(admin):
+    response = _client(admin).put(_egress(uuid.uuid4()), {"egress_policy": "none"}, format="json")
+
     assert response.status_code == 403

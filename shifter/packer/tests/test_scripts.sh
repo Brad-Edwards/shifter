@@ -1,5 +1,6 @@
 #!/bin/bash
-# Test suite for Packer shell scripts
+# Lint-only gate for Packer scripts and template syntax.
+# This does not execute provisioning logic or qualify a built image.
 # Run with: ./shifter/packer/tests/test_scripts.sh
 set -uo pipefail
 
@@ -31,7 +32,7 @@ log_skip() {
     echo -e "${YELLOW}⊘${NC} $1 (skipped)"
 }
 
-echo "=== Packer Script Tests ==="
+echo "=== Packer Script Lint ==="
 echo ""
 
 # ------------------------------------------------------------------------------
@@ -103,21 +104,21 @@ if command -v packer &> /dev/null; then
         packer init . 2>/dev/null || true
     fi
 
-    for template in "$PACKER_DIR"/*.pkr.hcl; do
-        [[ -f "$template" ]] || continue
-        template_name=$(basename "$template")
-
-        # Skip variables file
-        if [[ "$template_name" == "variables.pkr.hcl" ]]; then
-            continue
-        fi
-
-        if packer validate "$template" 2>/dev/null; then
-            log_pass "$template_name is valid"
-        else
-            log_fail "$template_name validation failed"
-        fi
-    done
+    # Packer treats the directory as one configuration: required_plugins and
+    # variable declarations are intentionally shared across the source files.
+    # Validating files one at a time reports false "unsupported attribute"
+    # failures because their sibling declarations are absent.
+    if packer validate \
+        -var 'aws_region=us-east-1' \
+        -var 'instance_type=t3.large' \
+        -var 'ami_prefix=validation' \
+        -var 'vpc_id=' \
+        -var 'subnet_id=' \
+        "$PACKER_DIR"; then
+        log_pass "Packer directory configuration is valid"
+    else
+        log_fail "Packer directory configuration validation failed"
+    fi
 else
     log_skip "packer not installed"
 fi
@@ -176,9 +177,9 @@ echo -e "Failed: ${RED}$FAILED${NC}"
 echo ""
 
 if [[ "$FAILED" -gt 0 ]]; then
-    echo -e "${RED}Tests failed!${NC}"
+    echo -e "${RED}Lint failed!${NC}"
     exit 1
 else
-    echo -e "${GREEN}All tests passed!${NC}"
+    echo -e "${GREEN}All lint checks passed!${NC}"
     exit 0
 fi

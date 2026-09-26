@@ -21,7 +21,7 @@ Banning handles disruptive behavior, suspected cheating, or unauthorized access 
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums.py` (ParticipantStatus enum with DISQUALIFIED status)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums_registration.py` (ParticipantStatus enum with BANNED and DISQUALIFIED states)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant.py` (disqualify_participant() service function)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/submission.py` (submit_flag() - missing banned participant check)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/__init__.py` (CTF services public API - exports disqualify_participant, no unban)

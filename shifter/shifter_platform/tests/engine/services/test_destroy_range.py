@@ -13,8 +13,9 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth import get_user_model
 
-from engine import create_range, destroy_range, destroy_range_by_request
+from engine import destroy_range, destroy_range_by_request
 from engine.models import ProvisionerLaunchIntent, Range
+from engine.services import create_raes_range
 from shared.enums import ResourceStatus
 from shared.raes.runtime_target import RAES_PROVISIONING_PLAN_KIND
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
@@ -65,6 +66,16 @@ def _request_spec(user_id):
     )
 
 
+def create_range(spec, *, workspace_id):
+    """Persist through the authoritative RAES engine seam."""
+    return create_raes_range(
+        request_id=spec.request_id,
+        user_id=spec.user_id,
+        compiled_plan={"kind": RAES_PROVISIONING_PLAN_KIND, "raes_version": "2.0", "resources": {}},
+        workspace_id=workspace_id,
+    )
+
+
 class TestDestroyRange:
     def test_rejects_non_rangeref(self):
         with pytest.raises(TypeError, match="must be RangeRef"):
@@ -84,6 +95,7 @@ class TestDestroyRange:
         create_range(spec, workspace_id=_WORKSPACE_ID)
         range_obj = Range.objects.get()
         Range.objects.filter(id=range_obj.id).update(status=Range.Status.READY)
+        range_obj.refresh_from_db()
         provisioning_arn = range_obj.provisioning_task_arn
         assert provisioning_arn.startswith("test-cluster/pulumi-provisioner-")
         provisioning_intent = ProvisionerLaunchIntent.objects.get()
@@ -155,6 +167,7 @@ class TestDestroyRangeByRequest:
         create_range(spec, workspace_id=_WORKSPACE_ID)
         range_obj = Range.objects.get(request__request_id=spec.request_id)
         Range.objects.filter(id=range_obj.id).update(status=Range.Status.READY)
+        range_obj.refresh_from_db()
         provisioning_arn = range_obj.provisioning_task_arn
         assert provisioning_arn.startswith("test-cluster/pulumi-provisioner-")
         provisioning_intent = ProvisionerLaunchIntent.objects.get()
@@ -187,20 +200,6 @@ class TestDestroyRangeByRequest:
 
     def test_returns_false_when_request_not_found(self, db):
         assert destroy_range_by_request(uuid4()) is False
-
-    def test_legacy_range_enqueues_legacy_teardown(self, user, ecs_dispatch):
-        """A cyberscript range enqueues the legacy 'range destroy' launch intent (#1310).
-
-        Driven through the real teardown; the resource is asserted from the
-        persisted ProvisionerLaunchIntent payload, not a mocked internal call.
-        """
-        spec = _request_spec(user.id)
-        create_range(spec, workspace_id=_WORKSPACE_ID)
-        provision_intent = ProvisionerLaunchIntent.objects.get()
-        assert destroy_range_by_request(spec.request_id) is True
-        teardown = ProvisionerLaunchIntent.objects.exclude(pk=provision_intent.pk).get()
-        assert teardown.payload["resource"] == "range"
-        assert teardown.payload["operation"] == "destroy"
 
     def test_raes_range_enqueues_raes_teardown(self, user, ecs_dispatch):
         """A persisted RAES plan enqueues the 'raes-range destroy' intent, not legacy (#1310)."""

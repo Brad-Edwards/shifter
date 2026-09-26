@@ -31,7 +31,7 @@ from shared.audit import (
 from shared.enums import WebSocketCloseCode
 
 if TYPE_CHECKING:
-    from shared.remote_access import TerminalConnection
+    from shared.remote_access import TerminalConnection, TerminalConnectionFactory
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,19 @@ class SSHConsumer(AsyncWebsocketConsumer):
     URL pattern: ws/terminal/<instance_uuid>/
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        connection_factory: TerminalConnectionFactory | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
+        # Injected terminal transport factory (issue #993). ``None`` (the
+        # production default from ``routing.py``) lets Engine build a real
+        # SSHConnection; a test supplies a fake via
+        # ``SSHConsumer.as_asgi(connection_factory=...)`` without bypassing the
+        # MC -> CMS -> Engine authorization path.
+        self._connection_factory = connection_factory
         self.instance_uuid: str | None = None
         self.ssh_conn: TerminalConnection | None = None
         self._read_task: asyncio.Task[None] | None = None
@@ -144,7 +155,12 @@ class SSHConsumer(AsyncWebsocketConsumer):
         try:
             # Run blocking connect (DB + Secrets Manager) on the dedicated
             # terminal executor so it cannot block page renders (#929).
-            ssh_conn = await run_terminal_sync(connect_range_terminal, user, instance_uuid)
+            ssh_conn = await run_terminal_sync(
+                connect_range_terminal,
+                user,
+                instance_uuid,
+                connection_factory=self._connection_factory,
+            )
             self.ssh_conn = ssh_conn
             await ssh_conn.connect()
             return True
@@ -255,6 +271,28 @@ class SSHConsumer(AsyncWebsocketConsumer):
             self._session_acquired = False
             await _session_registry.release(self._user_id)
 
+    async def _disconnect_ssh_best_effort(self) -> None:
+        """Close the SSH transport once, tolerating transport teardown errors."""
+        if self.ssh_conn:
+            try:
+                await self.ssh_conn.disconnect()
+            except Exception:
+                logger.exception("Error closing SSH connection: uuid=%s", self.instance_uuid)
+            finally:
+                self.ssh_conn = None
+
+    async def _close_websocket_best_effort(self) -> None:
+        """Close the WebSocket unless ASGI has already completed the close path."""
+        try:
+            await self.close()
+        except RuntimeError as exc:
+            if "websocket.close" not in str(exc):
+                raise
+            logger.debug(
+                "Terminal WebSocket was already closed: uuid=%s",
+                self.instance_uuid,
+            )
+
     async def _read_ssh_output(self) -> None:
         """Background task: forward SSH output to the WebSocket.
 
@@ -313,7 +351,13 @@ class SSHConsumer(AsyncWebsocketConsumer):
             logger.exception("Error reading SSH output: uuid=%s", self.instance_uuid)
             self._close_reason = "error"
         finally:
-            await self.close()
+            # The client may already have disconnected by the time the read loop
+            # exits. Release scarce terminal resources before asking ASGI to
+            # close the socket so a close-race cannot strand a process-local
+            # session slot and pin the user at the per-worker cap.
+            await self._disconnect_ssh_best_effort()
+            await self._release_session_slot()
+            await self._close_websocket_best_effort()
 
     async def disconnect(self, close_code: int) -> None:
         """Handle WebSocket disconnection - cleanup SSH connection."""
@@ -330,11 +374,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
                 await self._read_task
 
         # Close SSH connection
-        if self.ssh_conn:
-            try:
-                await self.ssh_conn.disconnect()
-            except Exception:
-                logger.exception("Error closing SSH connection: uuid=%s", self.instance_uuid)
+        await self._disconnect_ssh_best_effort()
 
         # Free the session slot now that this session's resources are released.
         await self._release_session_slot()
