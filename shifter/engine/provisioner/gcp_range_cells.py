@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import logging
-import time
 from collections.abc import Callable
 
 from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig, load_gce_range_cell_config
@@ -22,7 +20,7 @@ from gcp_range_cell_host_binding import (
     _assert_preconfigured_host_binding,
     _host_public_key_from_instance,
 )
-from gcp_range_cell_ops import _get_or_none, _wait_for_operation
+from gcp_range_cell_ops import _get_or_none, _wait_for_operation, insert_instance_with_machine_image_retry
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, range_cell_result, subnet_outputs
 from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_resources import (
@@ -55,17 +53,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-# GCE limits clone operations against one source machine image. A transient
-# per-source 403 is not a permanent range failure; spread bounded retries so
-# event-sized waves do not immediately collide again.
-_MACHINE_IMAGE_RATE_RETRY_DELAYS = (15, 30, 60, 120, 180, 240)
-
-
-def _machine_image_retry_jitter(name: str, attempt: int, delay: int) -> int:
-    """Spread retries for one source image without exposing the instance name."""
-    digest = hashlib.sha256(f"{name}:{attempt}".encode()).digest()
-    return int.from_bytes(digest[:2], "big") % (min(30, delay) + 1)
 
 
 def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> bool:
@@ -214,50 +201,26 @@ def _insert_instance(
         "instance_resource": instance_body,
     }
     machine_image = instance["profile"].source_machine_image
-    if machine_image:
-        # The generated Compute client does not expose source_machine_image as
-        # a flattened keyword. It is accepted only through InsertInstanceRequest.
-        insert_request = {**insert_kwargs, "source_machine_image": machine_image}
-        for attempt in range(len(_MACHINE_IMAGE_RATE_RETRY_DELAYS) + 1):
-            try:
-                operation = clients.instances.insert(request=insert_request)
-                _wait_for_operation(plan, clients, operation, "zone")
-                break
-            except Exception as exc:
-                if "RESOURCE_OPERATION_RATE_EXCEEDED" not in str(exc):
-                    raise
-                # A failed operation can race a successful retry/observation.
-                # Re-read the deterministic name before issuing another insert.
-                existing = _get_or_none(
-                    clients.instances.get,
-                    clients.google_exceptions,
-                    project=plan["project_id"],
-                    zone=plan["zone"],
-                    instance=instance["resource_name"],
-                )
-                if existing is not None:
-                    _assert_instance_image_binding(existing, instance)
-                    _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], existing)
-                    return
-                if attempt == len(_MACHINE_IMAGE_RATE_RETRY_DELAYS):
-                    raise
-                delay = _MACHINE_IMAGE_RATE_RETRY_DELAYS[attempt]
-                logger.warning(
-                    "GCE machine-image clone rate limited; retrying instance name_fp=%s attempt=%d",
-                    safe_log_fingerprint(instance["resource_name"]),
-                    attempt + 1,
-                )
-                time.sleep(delay + _machine_image_retry_jitter(instance["resource_name"], attempt, delay))
-    else:
+    if not machine_image:
         operation = clients.instances.insert(**insert_kwargs)
         _wait_for_operation(plan, clients, operation, "zone")
-    if machine_image:
-        created = clients.instances.get(
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=instance["resource_name"],
-        )
-        _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], created)
+        return
+    # The generated Compute client does not expose source_machine_image as a
+    # flattened keyword. It is accepted only through InsertInstanceRequest.
+    insert_request = {**insert_kwargs, "source_machine_image": machine_image}
+    raced = insert_instance_with_machine_image_retry(plan, clients, insert_request, instance["resource_name"])
+    if raced is not None:
+        # A rate-limited operation raced a successful one; finalize the instance a
+        # prior attempt created instead of issuing a duplicate insert.
+        _assert_instance_image_binding(raced, instance)
+        _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], raced)
+        return
+    created = clients.instances.get(
+        project=plan["project_id"],
+        zone=plan["zone"],
+        instance=instance["resource_name"],
+    )
+    _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], created)
 
 
 def _ensure_instance(

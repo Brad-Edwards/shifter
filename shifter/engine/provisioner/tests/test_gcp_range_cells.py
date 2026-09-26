@@ -1059,9 +1059,9 @@ def test_machine_image_clone_retries_only_source_operation_rate_limit(monkeypatc
     clients.instances.get.side_effect = [NotFound(), SimpleNamespace(disks=[])]
     wait = MagicMock(side_effect=[RuntimeError("RESOURCE_OPERATION_RATE_EXCEEDED"), None])
     sleep = MagicMock()
-    monkeypatch.setattr("gcp_range_cells._wait_for_operation", wait)
-    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
-    monkeypatch.setattr("gcp_range_cells._machine_image_retry_jitter", lambda _name, _attempt, _delay: 0)
+    monkeypatch.setattr("gcp_range_cell_ops._wait_for_operation", wait)
+    monkeypatch.setattr("gcp_range_cell_ops.time.sleep", sleep)
+    monkeypatch.setattr("gcp_range_cell_ops._machine_image_retry_jitter", lambda _name, _attempt, _delay: 0)
 
     _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
 
@@ -1080,7 +1080,7 @@ def test_machine_image_clone_does_not_retry_other_forbidden_errors(monkeypatch):
     clients = _mock_clients(exists=False)
     clients.instances.insert.side_effect = RuntimeError("permission denied")
     sleep = MagicMock()
-    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
+    monkeypatch.setattr("gcp_range_cell_ops.time.sleep", sleep)
 
     with pytest.raises(RuntimeError, match="permission denied"):
         _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
@@ -1102,8 +1102,8 @@ def test_machine_image_rate_limit_reconciles_created_instance_without_duplicate_
     clients.instances.get.return_value = SimpleNamespace(disks=[])
     wait = MagicMock(side_effect=RuntimeError("RESOURCE_OPERATION_RATE_EXCEEDED"))
     sleep = MagicMock()
-    monkeypatch.setattr("gcp_range_cells._wait_for_operation", wait)
-    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
+    monkeypatch.setattr("gcp_range_cell_ops._wait_for_operation", wait)
+    monkeypatch.setattr("gcp_range_cell_ops.time.sleep", sleep)
 
     _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
 
@@ -1122,10 +1122,10 @@ def test_machine_image_rate_limit_exhaustion_keeps_failure_closed(monkeypatch):
     clients.instances.get.side_effect = NotFound()
     wait = MagicMock(side_effect=RuntimeError("RESOURCE_OPERATION_RATE_EXCEEDED"))
     sleep = MagicMock()
-    monkeypatch.setattr("gcp_range_cells._wait_for_operation", wait)
-    monkeypatch.setattr("gcp_range_cells._MACHINE_IMAGE_RATE_RETRY_DELAYS", (0,))
-    monkeypatch.setattr("gcp_range_cells.time.sleep", sleep)
-    monkeypatch.setattr("gcp_range_cells._machine_image_retry_jitter", lambda _name, _attempt, _delay: 0)
+    monkeypatch.setattr("gcp_range_cell_ops._wait_for_operation", wait)
+    monkeypatch.setattr("gcp_range_cell_ops._MACHINE_IMAGE_RATE_RETRY_DELAYS", (0,))
+    monkeypatch.setattr("gcp_range_cell_ops.time.sleep", sleep)
+    monkeypatch.setattr("gcp_range_cell_ops._machine_image_retry_jitter", lambda _name, _attempt, _delay: 0)
 
     with pytest.raises(RuntimeError, match="RESOURCE_OPERATION_RATE_EXCEEDED"):
         _insert_instance(plan, clients, instance, {"name": instance["resource_name"]})
