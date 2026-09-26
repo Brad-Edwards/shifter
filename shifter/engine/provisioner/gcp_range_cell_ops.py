@@ -176,3 +176,6 @@ def insert_instance_with_machine_image_retry(
                 attempt + 1,
             )
             time.sleep(delay + _machine_image_retry_jitter(resource_name, attempt, delay))
+    # The final attempt either returns or raises, so this is unreachable; it
+    # exists only to satisfy the type checker for the loop's normal exit.
+    return None
