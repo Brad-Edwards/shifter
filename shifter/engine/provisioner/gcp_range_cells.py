@@ -20,7 +20,7 @@ from gcp_range_cell_host_binding import (
     _assert_preconfigured_host_binding,
     _host_public_key_from_instance,
 )
-from gcp_range_cell_ops import _get_or_none, _wait_for_operation
+from gcp_range_cell_ops import _get_or_none, _wait_for_operation, insert_instance_with_machine_image_retry
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, range_cell_result, subnet_outputs
 from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_resources import (
@@ -200,25 +200,27 @@ def _insert_instance(
         "zone": plan["zone"],
         "instance_resource": instance_body,
     }
-    if instance["profile"].source_machine_image:
-        # The generated Compute client does not expose source_machine_image as
-        # a flattened keyword. It is accepted only through InsertInstanceRequest.
-        operation = clients.instances.insert(
-            request={
-                **insert_kwargs,
-                "source_machine_image": instance["profile"].source_machine_image,
-            }
-        )
-    else:
+    machine_image = instance["profile"].source_machine_image
+    if not machine_image:
         operation = clients.instances.insert(**insert_kwargs)
-    _wait_for_operation(plan, clients, operation, "zone")
-    if instance["profile"].source_machine_image:
-        created = clients.instances.get(
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=instance["resource_name"],
-        )
-        _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], created)
+        _wait_for_operation(plan, clients, operation, "zone")
+        return
+    # The generated Compute client does not expose source_machine_image as a
+    # flattened keyword. It is accepted only through InsertInstanceRequest.
+    insert_request = {**insert_kwargs, "source_machine_image": machine_image}
+    raced = insert_instance_with_machine_image_retry(plan, clients, insert_request, instance["resource_name"])
+    if raced is not None:
+        # A rate-limited operation raced a successful one; finalize the instance a
+        # prior attempt created instead of issuing a duplicate insert.
+        _assert_instance_image_binding(raced, instance)
+        _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], raced)
+        return
+    created = clients.instances.get(
+        project=plan["project_id"],
+        zone=plan["zone"],
+        instance=instance["resource_name"],
+    )
+    _ensure_attached_disks_auto_delete(plan, clients, instance["resource_name"], created)
 
 
 def _ensure_instance(
