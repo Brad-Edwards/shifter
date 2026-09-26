@@ -20,6 +20,7 @@ import json
 import os
 import subprocess  # nosec B404
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -489,7 +490,7 @@ def _poll_ssm_command_status(
     *,
     timeout: int,
     poll: int = _READINESS_POLL_SECONDS,
-    sleep=time.sleep,
+    sleep: Callable[[float], object] = time.sleep,
 ) -> str:
     """Poll get-command-invocation until the command is terminal, or timeout.
 
@@ -549,7 +550,7 @@ def wait_for_ssm_online(
     *,
     timeout: int = SSM_ONLINE_TIMEOUT,
     poll: int = _READINESS_POLL_SECONDS,
-    sleep=time.sleep,
+    sleep: Callable[[float], object] = time.sleep,
 ) -> bool:
     """Poll until the instance registers with SSM and reports PingStatus Online."""
     deadline = time.monotonic() + timeout
