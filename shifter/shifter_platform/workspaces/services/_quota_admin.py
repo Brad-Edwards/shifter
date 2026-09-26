@@ -130,6 +130,7 @@ def _write_policy_audit(
             action=AuditAction.UPDATE,
             actor_type=audit.actor_type or "system",
             actor_id=audit.actor_id,
+            actor_principal_uuid=audit.actor_principal_uuid,
             previous_state=previous,
             new_state={
                 "workspace_id": workspace.pk,
@@ -181,13 +182,28 @@ def set_workspace_quota_policy(
     """
     if not getattr(actor, "is_superuser", False):
         raise _error("quota_policy_forbidden", "Only a platform superuser may set workspace quota policy")
+    return _set_quota_policy_unchecked(
+        workspace_uuid, resource, limit, mode, audit=audit, actor_id=getattr(actor, "pk", None)
+    )
+
+
+def _set_quota_policy_unchecked(
+    workspace_uuid: str | UUID,
+    resource: str,
+    limit: int,
+    mode: str,
+    *,
+    audit: WorkspaceQuotaAuditContext,
+    actor_id: int | None,
+) -> WorkspaceResourceUsage:
+    """Apply an already-authorized quota command under the workspace lock."""
     resource_value = _validate_resource(resource)
     mode_value = _validate_mode(mode)
     limit_value = _validate_limit(limit)
     parsed = _parse_workspace_uuid(workspace_uuid)
     with transaction.atomic():
         workspace = Workspace.objects.select_for_update().filter(uuid=parsed).first()
-        if workspace is None:
+        if workspace is None or workspace.archived_at is not None:
             raise _error("quota_workspace_not_found", "Workspace not found")
         policy = (
             WorkspaceQuotaPolicy.objects.select_for_update()
@@ -218,7 +234,7 @@ def set_workspace_quota_policy(
             resource_value,
             limit_value,
             mode_value,
-            getattr(actor, "pk", None),
+            actor_id,
         )
         return _usage_for(workspace.pk, resource_value, policy)
 

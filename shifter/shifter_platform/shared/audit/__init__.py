@@ -46,6 +46,7 @@ from shared.audit.port import (
     get_audit_writer,
     reset_audit_writer,
 )
+from shared.audit.query import AuditReadDenied, authorized_audit_events
 from shared.audit.vocabulary import (
     API_KEY_LABEL,
     AuditAction,
@@ -60,6 +61,7 @@ __all__ = [
     "AuditEntityType",
     "AuditEvent",
     "AuditHealthSnapshot",
+    "AuditReadDenied",
     "AuditTarget",
     "AuditWriter",
     "AuditWriterBindingError",
@@ -73,6 +75,7 @@ __all__ = [
     "audit_log_system_event",
     "audit_role_sync",
     "audit_session_event",
+    "authorized_audit_events",
     "bind_audit_writer",
     "get_actor_from_request",
     "get_audit_health_snapshot",
