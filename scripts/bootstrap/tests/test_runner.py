@@ -646,6 +646,47 @@ class TestReadinessGate:
         monkeypatch.setattr(runner, "wait_for_runner_installed", lambda *a, **k: True)
         runner.wait_for_runner_ready(_cfg(), _target())  # no raise
 
+    def test_poll_returns_terminal_status(self, mock_deploy):
+        from runner import _poll_ssm_command_status
+
+        mock_deploy.run_cmd.return_value = MagicMock(stdout="Success\n")
+        status = _poll_ssm_command_status("cmd-1", _target(), _cfg(), timeout=30)
+        assert status == "Success"
+
+    def test_poll_times_out_on_non_terminal(self, mock_deploy):
+        from runner import _poll_ssm_command_status
+
+        # A never-terminal status must NOT be read as Success, and must not rely on
+        # the ~100s `ssm wait` cap (this was the false-negative bug). timeout=0
+        # returns the last-seen status after one check with no sleep.
+        mock_deploy.run_cmd.return_value = MagicMock(stdout="InProgress\n")
+        called = {"sleep": 0}
+
+        def _no_sleep(_s):
+            called["sleep"] += 1
+
+        status = _poll_ssm_command_status("cmd-1", _target(), _cfg(), timeout=0, sleep=_no_sleep)
+        assert status == "InProgress"
+        assert called["sleep"] == 0
+        # get-command-invocation was used; the capped `ssm wait` waiter was not.
+        all_args = [a for call in mock_deploy.run_cmd.call_args_list for a in call[0][0]]
+        assert "get-command-invocation" in all_args
+        assert "wait" not in all_args
+
+    def test_runner_installed_false_when_probe_never_terminal(self, mock_deploy):
+        from runner import wait_for_runner_installed
+
+        def _fake(cmd, **kwargs):
+            joined = " ".join(cmd)
+            if "send-command" in joined:
+                return MagicMock(stdout="cmd-ready\n")
+            if "get-command-invocation" in joined:
+                return MagicMock(stdout="InProgress\n")
+            return MagicMock(stdout="")
+
+        mock_deploy.run_cmd.side_effect = _fake
+        assert wait_for_runner_installed(_cfg(), _target(), timeout=0) is False
+
 
 class TestMintErrors:
     """mint fails closed when the API returns no token."""
