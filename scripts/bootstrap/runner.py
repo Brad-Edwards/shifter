@@ -56,7 +56,11 @@ DEFAULT_RUNNER_WORK_FOLDER = "shifter"
 # on a host that has not finished first boot.
 SSM_ONLINE_TIMEOUT = 600
 RUNNER_INSTALL_TIMEOUT = 900
+REGISTRATION_TIMEOUT = 300
 _READINESS_POLL_SECONDS = 15
+
+# SSM RunCommand invocation states that will not change further.
+_SSM_TERMINAL_STATES = frozenset({"Success", "Failed", "Cancelled", "TimedOut"})
 
 
 @dataclass
@@ -448,30 +452,14 @@ def register_runner(config: RunnerConfig, target: RunnerTarget, *, dry_run: bool
     return command_id
 
 
-def _await_ssm_command_status(command_id: str, target: RunnerTarget, config: RunnerConfig) -> str:
-    """Wait for an SSM command to reach a terminal state; return its status.
+def _ssm_command_status(command_id: str, target: RunnerTarget, config: RunnerConfig) -> str:
+    """Return the current SSM RunCommand invocation Status ('' when not yet visible).
 
     Only the Status field is queried (never StandardOutputContent), so no command
-    output is pulled back locally. Messaging is left to the caller so this can back
-    both the registration wait and the readiness probe.
+    output is pulled back locally. Returns '' while the invocation has not
+    registered yet (get-command-invocation errors briefly right after send).
     """
-    run_cmd(
-        [
-            "aws",
-            "ssm",
-            "wait",
-            "command-executed",
-            "--command-id",
-            command_id,
-            "--instance-id",
-            target.instance_id,
-            "--region",
-            target.region,
-        ],
-        check=False,
-        profile=config.aws_profile,
-    )
-    status_result = run_cmd(
+    result = run_cmd(
         [
             "aws",
             "ssm",
@@ -491,12 +479,38 @@ def _await_ssm_command_status(command_id: str, target: RunnerTarget, config: Run
         check=False,
         profile=config.aws_profile,
     )
-    return (status_result.stdout or "").strip() if status_result else ""
+    return (result.stdout or "").strip() if result else ""
+
+
+def _poll_ssm_command_status(
+    command_id: str,
+    target: RunnerTarget,
+    config: RunnerConfig,
+    *,
+    timeout: int,
+    poll: int = _READINESS_POLL_SECONDS,
+    sleep=time.sleep,
+) -> str:
+    """Poll get-command-invocation until the command is terminal, or timeout.
+
+    Deliberately does NOT use ``aws ssm wait command-executed``: that CLI waiter
+    caps at 20 attempts x 5s = ~100s and returns while a longer on-host command is
+    still ``InProgress``, which previously produced a false-negative readiness
+    failure. Returns the terminal status, or the last-seen status on timeout.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        status = _ssm_command_status(command_id, target, config)
+        if status in _SSM_TERMINAL_STATES:
+            return status
+        if time.monotonic() >= deadline:
+            return status or "TimedOut"
+        sleep(poll)
 
 
 def wait_for_ssm_command(command_id: str, target: RunnerTarget, config: RunnerConfig) -> str:
     """Wait for the registration SSM command and report its terminal status."""
-    status = _await_ssm_command_status(command_id, target, config)
+    status = _poll_ssm_command_status(command_id, target, config, timeout=REGISTRATION_TIMEOUT)
     if status == "Success":
         success(f"Runner {target.runner_name} registered (SSM {status})")
     else:
@@ -587,7 +601,7 @@ def wait_for_runner_installed(
     command_id = (result.stdout or "").strip() if result else ""
     if not command_id or command_id == "None":
         return False
-    return _await_ssm_command_status(command_id, target, config) == "Success"
+    return _poll_ssm_command_status(command_id, target, config, timeout=timeout) == "Success"
 
 
 def wait_for_runner_ready(config: RunnerConfig, target: RunnerTarget) -> None:
