@@ -99,6 +99,26 @@ class TestConfirmAssumeYes:
 
         assert bootstrap_core.confirm("proceed?", default_yes=False) is True
 
+    def test_confirm_or_manual_returns_manual_non_tty_without_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: False)
+        # Without --yes, a non-TTY confirm_or_manual falls back to the manual path.
+        assert bootstrap_core.confirm_or_manual("automate?") == "manual"
+
+    def test_confirm_or_manual_proceeds_yes_under_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: False)
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _prompt: pytest.fail("--yes must bypass interactive prompts"),
+        )
+        bootstrap_core.set_assume_yes(True)
+        # --yes takes the automated 'yes' path so headless bootstrap sets secrets
+        # and writes backend configs rather than silently skipping them (#1639).
+        assert bootstrap_core.confirm_or_manual("automate?") == "yes"
+
 
 class TestSubprocessPagerSuppression:
     """run_cmd forces AWS_PAGER="" so aws v2 never blocks on its pager (issue #1639)."""
