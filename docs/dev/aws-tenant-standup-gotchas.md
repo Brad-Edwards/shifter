@@ -25,18 +25,18 @@ Bootstrap-owned (rewritten by `deploy.py bootstrap --env <env>`):
 - `AWS_ROLE_ARN_<ENV>`
 - `TF_INFRA_STATE_BUCKET_<ENV>`
 
-Operator-owned, account-specific — must be regenerated/repointed for the new
+Operator-owned, account-specific; must be regenerated/repointed for the new
 account:
 
-- `TF_VARS_<ENV>_CORE`, `TF_VARS_<ENV>_PORTAL`, `TF_VARS_<ENV>_RANGE` — carry
+- `TF_VARS_<ENV>_CORE`, `TF_VARS_<ENV>_PORTAL`, `TF_VARS_<ENV>_RANGE`: these carry
   account-suffixed bucket names, domains, alarm email, `vm_series_ami_id`, etc.
   Regenerate from local `local.auto.tfvars` overlays with
   `scripts/sync-deploy-secrets.sh --env <env>`.
-- `SHIFTER_CONFIG_<ENV>_RANGE` — the deployment `shifter.yaml`.
-- `AWS_IMAGE_ROLE_ARN_<ENV>` — from the new account's
+- `SHIFTER_CONFIG_<ENV>_RANGE`: the deployment `shifter.yaml`.
+- `AWS_IMAGE_ROLE_ARN_<ENV>`: from the new account's
   `platform/terraform/global/iam` output `github_actions_image_role_arn`.
 - Repository **variables** `PACKER_BUILD_{VPC,SUBNET}_ID_<ENV>` and
-  `PACKER_VERIFY_{SUBNET,SG,INSTANCE_PROFILE}_<ENV>` — VPC/subnet/SG IDs are
+  `PACKER_VERIFY_{SUBNET,SG,INSTANCE_PROFILE}_<ENV>`: VPC/subnet/SG IDs are
   account-specific. The verify instance profile name is deterministic
   (`shifter-<env>-range-range-instance`) but must exist in the new account after
   the range apply.
