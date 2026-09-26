@@ -33,6 +33,15 @@ From **CTF Admin → Events → Create**, set the core parameters:
 | Auto cleanup / cleanup delay | Whether ranges are torn down after the event |
 | Publish public registration page | Opt-in public event details and request form; off by default |
 
+The event's workspace supplies the egress policy for new participant and
+recovery-spare ranges. Each range still belongs to its participant or managed
+spare account; selecting a shared event workspace does not give other workspace
+members access to those ranges. Set the workspace policy before provisioning:
+changes are audited and apply to later launches, not ranges already running.
+If the policy changes after a spare is prepared, an incompatible spare cannot
+replace a participant range. For large GCP events, include both participants
+and spares in the [shared-VPC NAT capacity check](../dev/gcp-range-cell-deploy.md#shared-vpc-nat-capacity-and-event-egress).
+
 ### Optional public registration
 
 Enable **Publish public registration page** only when you want an unauthenticated

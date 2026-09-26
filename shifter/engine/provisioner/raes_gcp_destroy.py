@@ -23,6 +23,7 @@ from gcp_range_cell_destroy import _mark_disks_auto_delete
 from gcp_range_cell_firewall import public_web_firewall_name
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _delete_resource
+from gcp_range_cell_shared_nat import remove_shared_nat
 from gcp_range_cell_types import InstancePlan, RangeCellPlan
 from raes_account_credentials import (
     RaesAccountCredentialOps,
@@ -157,6 +158,7 @@ def _instance_accounts(raes_plan: RaesPlan, instance: InstancePlan) -> tuple[Rae
 
 def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None:
     """Delete the range-owned router/NAT, firewalls, subnets, and an owned network in order."""
+    remove_shared_nat(plan, clients)
     # The range-owned Cloud Router (carrying the Cloud NAT) references this range's
     # subnets, so it is torn down before them (PLAT-238). Absent for a `none` range.
     router_nat = plan.get("router_nat")
