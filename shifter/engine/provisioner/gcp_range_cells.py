@@ -121,11 +121,13 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
     element and therefore no NAT path. Idempotent: an existing router of the same
     name is left in place (the NAT config is deterministic from the plan).
     """
-    if plan.get("shared_nat") is not None:
+    shared_nat = plan.get("shared_nat")
+    if shared_nat is not None:
         ensure_shared_nat(plan, clients)
-        return False
     router_nat = plan.get("router_nat")
-    if router_nat is None:
+    # A shared-NAT range delegates egress to the shared router; a zero-egress
+    # range carries no router_nat. Neither owns a range-scoped router here.
+    if shared_nat is not None or router_nat is None:
         return False
     name = router_nat["router_name"]
     existing = _get_or_none(
