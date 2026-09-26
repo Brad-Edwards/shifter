@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_destroy import _mark_disks_auto_delete
+from gcp_range_cell_firewall import public_web_firewall_name
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _delete_resource
 from gcp_range_cell_types import InstancePlan, RangeCellPlan
@@ -113,6 +115,7 @@ def _destroy_instances(
 ) -> None:
     """Delete instances, addresses, and their deterministic guest secrets."""
     for instance in reversed(plan["instances"]):
+        _mark_disks_auto_delete(plan, runtime.clients, instance["resource_name"])
         _delete_resource(
             plan,
             runtime.clients,
@@ -169,7 +172,10 @@ def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None
             router=router_nat["router_name"],
         )
 
-    firewall_names = {rule["name"] for rule in plan["firewalls"]} | {broker_firewall_name(plan["range_id"])}
+    firewall_names = {rule["name"] for rule in plan["firewalls"]} | {
+        broker_firewall_name(plan["range_id"]),
+        public_web_firewall_name(plan["range_id"]),
+    }
     for firewall_name in sorted(firewall_names, reverse=True):
         _delete_resource(
             plan,

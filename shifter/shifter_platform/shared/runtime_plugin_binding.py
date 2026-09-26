@@ -42,6 +42,7 @@ class RuntimeTargetImageProfile(ClosedModel):
     machine_type: Annotated[str, Field(max_length=100)] = ""
     disk_size_gb: Annotated[int, Field(strict=True, ge=1, le=16_384)] | None = None
     disk_type: Annotated[str, Field(max_length=100)] = ""
+    allow_public_web_egress: bool = Field(default=False, strict=True)
     bootstrap_capability: Annotated[str, Field(max_length=64)] = "standard"
     management_ssh_username: Annotated[str, Field(max_length=32)] = ""
     management_ssh_port: Annotated[int, Field(strict=True, ge=1, le=65_535)] = 22
@@ -94,17 +95,41 @@ def _validate_aws_image_profile(profile: RuntimeTargetImageProfile) -> None:
         raise ValueError("AWS image profiles do not support machine-host fields")
     if profile.disk_type and profile.disk_type not in {"gp2", "gp3"}:
         raise ValueError("AWS image profile disk type is unsupported")
+    if profile.allow_public_web_egress:
+        raise ValueError("AWS image profiles do not support public web egress")
 
 
 def _validate_gcp_image_profile(profile: RuntimeTargetImageProfile) -> None:
     """Validate the selected GCP boot or machine-host image profile."""
     participant = _participant_profile(profile)
     domain = _domain_profile(profile)
-    if profile.image_kind == "image":
+    if profile.image_kind == "image" and profile.bootstrap_capability != "preconfigured-machine-host":
         _validate_gcp_boot_image_profile(profile, participant, domain)
         return
-    if not _GCE_MACHINE_IMAGE_REF.fullmatch(profile.image_ref):
+    _validate_gcp_preconfigured_source(profile)
+    _validate_gcp_preconfigured_readiness(profile, participant, domain)
+
+
+def _validate_gcp_preconfigured_source(profile: RuntimeTargetImageProfile) -> None:
+    """Require an exact GCP host source and supported custom-image disk type."""
+    if profile.image_kind == "machine-image" and not _GCE_MACHINE_IMAGE_REF.fullmatch(profile.image_ref):
         raise ValueError("GCP machine image profiles require an exact machine-image resource")
+    if profile.image_kind == "image" and not _GCE_IMAGE_REF.fullmatch(profile.image_ref):
+        raise ValueError("GCP preconfigured host profiles require an exact custom-image resource")
+    if (
+        profile.image_kind == "image"
+        and profile.disk_type
+        and profile.disk_type not in {"pd-standard", "pd-balanced", "pd-ssd", "pd-extreme", "hyperdisk-balanced"}
+    ):
+        raise ValueError("GCP image profile disk type is unsupported")
+
+
+def _validate_gcp_preconfigured_readiness(
+    profile: RuntimeTargetImageProfile,
+    participant: tuple[str, str, str, str],
+    domain: tuple[str, str],
+) -> None:
+    """Require a complete participant access and readiness contract."""
     if profile.bootstrap_capability != "preconfigured-machine-host":
         raise ValueError("GCP machine images require the preconfigured-machine-host capability")
     if any(domain):
@@ -128,7 +153,7 @@ def _validate_gcp_boot_image_profile(
     if not _GCE_IMAGE_REF.fullmatch(profile.image_ref):
         raise ValueError("GCP image profiles require an exact Compute Engine image resource")
     if any(participant):
-        raise ValueError("participant host fields require a GCP machine image")
+        raise ValueError("participant host fields require a GCP preconfigured host")
     if profile.bootstrap_capability == "standard" and any(domain):
         raise ValueError("standard GCP boot images do not accept domain fields")
     if profile.bootstrap_capability == "prepromoted-domain-controller" and not all(domain):

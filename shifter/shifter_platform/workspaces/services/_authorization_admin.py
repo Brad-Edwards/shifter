@@ -80,16 +80,22 @@ def _authorize(
     scope: ResourceScope,
     provider: AuthorizationProvider,
 ) -> None:
-    """Require an active principal and current exact-workspace management authority."""
+    """Require current management authority at the exact metadata scope."""
     try:
         resolve_principal(actor)
         resolve_resource_scope(scope)
-        if scope.workspace_uuid is None:
-            raise AuthorizationAdminError("authorization scope unavailable")
+        if scope.workspace_uuid is not None:
+            target = TargetRef("workspace", scope.workspace_uuid)
+        elif scope.organization_uuid is not None:
+            target = TargetRef("organization", scope.organization_uuid)
+        elif scope.account_uuid is not None:
+            target = TargetRef("account", scope.account_uuid)
+        else:
+            target = TargetRef("installation")
         request = AuthorizationRequest(
             actor,
-            "workspace.manage_authorization",
-            TargetRef("workspace", scope.workspace_uuid),
+            f"{target.type}.manage_authorization",
+            target,
             scope,
             credential,
         )

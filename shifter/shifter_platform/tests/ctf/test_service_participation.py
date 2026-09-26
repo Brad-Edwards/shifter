@@ -41,10 +41,13 @@ def test_service_participation_is_independent_and_obeys_live_event(
     ctf_event_active, monkeypatch, django_user_model, ineligible
 ):
     from ctf.services import admit_service_participant, participant_for_credential
+    from management.services import principal_for_user
     from shared.authorization import port
     from workspaces.services import create_account
 
-    account = create_account(kind="team", name="Synthetic QA account")
+    account = create_account(
+        kind="individual", name="Synthetic QA account", owner=principal_for_user(ctf_event_active.created_by)
+    )
     from ctf.models import CTFEvent
 
     ctf_event_active = CTFEvent.objects.create(
@@ -70,6 +73,15 @@ def test_service_participation_is_independent_and_obeys_live_event(
         "_provider_factory",
         lambda: SimpleNamespace(check=lambda request: AuthorizationDecision(DecisionKind.ALLOWED, "policy_allowed")),
     )
+    administrator_with_play_ceiling = CredentialContext(
+        operator,
+        "service",
+        uuid4(),
+        CredentialCeiling(frozenset({"event.manage_participants", "event.participate"})),
+        frozenset(),
+    )
+    with pytest.raises(ValueError, match="Participation denied"):
+        participant_for_credential(administrator_with_play_ceiling, ctf_event_active.pk)
     humans = django_user_model.objects.count()
     participant = admit_service_participant(actor, ctf_event_active.pk, service, name="QA participant")
     from shared.models import AuditLog
@@ -82,7 +94,25 @@ def test_service_participation_is_independent_and_obeys_live_event(
     assert participant.principal_uuid == service.uuid
     assert django_user_model.objects.count() == humans
     assert participant_for_credential(credential, ctf_event_active.pk).pk == participant.pk
-    with pytest.raises(ValueError):
+    monkeypatch.setattr(
+        port,
+        "_provider_factory",
+        lambda: SimpleNamespace(
+            check=lambda request: AuthorizationDecision(DecisionKind.EVALUATOR_ERROR, "evaluator_unavailable")
+        ),
+    )
+    from ctf.exceptions import CTFError
+
+    with pytest.raises(CTFError, match="authority unavailable"):
+        participant_for_credential(credential, ctf_event_active.pk)
+    monkeypatch.setattr(
+        port,
+        "_provider_factory",
+        lambda: SimpleNamespace(check=lambda request: AuthorizationDecision(DecisionKind.ALLOWED, "policy_allowed")),
+    )
+    from ctf.exceptions import CTFPermissionError
+
+    with pytest.raises(CTFPermissionError):
         participant_for_credential(credential, uuid4())
     for field, value in ineligible.items():
         setattr(participant, field, value)
@@ -101,10 +131,13 @@ def test_native_service_can_be_admitted_and_read_its_participant_projection_via_
     from ctf.models import CTFEvent, CTFParticipant
     from management import services
     from management.models import Principal, ProviderBinding, ServiceCredentialAdmission
+    from management.services import principal_for_user
     from shared.authorization import port
     from workspaces.services import create_account
 
-    account = create_account(kind="team", name="QA account")
+    account = create_account(
+        kind="individual", name="QA account", owner=principal_for_user(ctf_event_active.created_by)
+    )
     event = CTFEvent.objects.create(
         name="QA event",
         created_by=ctf_event_active.created_by,
@@ -170,6 +203,19 @@ def test_native_service_can_be_admitted_and_read_its_participant_projection_via_
     allowed = False
     assert client.get(path).status_code == 403
     allowed = True
+    monkeypatch.setattr(
+        port,
+        "_provider_factory",
+        lambda: SimpleNamespace(
+            check=lambda request: AuthorizationDecision(DecisionKind.EVALUATOR_ERROR, "evaluator_unavailable")
+        ),
+    )
+    assert client.get(path).status_code == 503
+    monkeypatch.setattr(
+        port,
+        "_provider_factory",
+        lambda: SimpleNamespace(check=lambda request: AuthorizationDecision(DecisionKind.ALLOWED, "policy_allowed")),
+    )
     participant = CTFParticipant.objects.get(pk=participant_id)
     participant.registered_at = None
     participant.save(update_fields=["registered_at"])

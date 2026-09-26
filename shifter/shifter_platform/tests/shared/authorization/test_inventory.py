@@ -3,11 +3,14 @@ from uuid import UUID
 import pytest
 
 from shared.authorization import AuthorizationDescendantResolutionError, TargetRef, inventory
+from shared.identity_scope import ResourceScope
 
 
 @pytest.fixture(autouse=True)
 def isolated_resolvers(monkeypatch):
     monkeypatch.setattr(inventory, "_resolvers", {})
+    monkeypatch.setattr(inventory, "_event_scope_resolver", None)
+    monkeypatch.setattr(inventory, "_nonworkspace_event_resolver", None)
 
 
 def test_inventory_combines_owning_domain_results_with_one_bound() -> None:
@@ -53,3 +56,15 @@ def test_inventory_rejects_a_target_owned_by_another_domain() -> None:
 
     with pytest.raises(AuthorizationDescendantResolutionError, match="invalid"):
         inventory.resolve_authorization_descendants((7,), 1)
+
+
+def test_account_event_inventory_rejects_sibling_scope_and_incomplete_page() -> None:
+    account = ResourceScope("account", UUID("11111111-1111-1111-1111-111111111111"))
+    sibling = ResourceScope("account", UUID("22222222-2222-2222-2222-222222222222"))
+    event = TargetRef("event", UUID("33333333-3333-3333-3333-333333333333"))
+    inventory.bind_authorization_event_inventory(lambda _uuid: sibling, lambda _parent, _limit: ((event, sibling),))
+
+    with pytest.raises(AuthorizationDescendantResolutionError, match="invalid"):
+        inventory.resolve_authorization_nonworkspace_events(account, 1)
+    with pytest.raises(AuthorizationDescendantResolutionError, match="invalid"):
+        inventory.resolve_authorization_nonworkspace_events(ResourceScope("installation"), 0)

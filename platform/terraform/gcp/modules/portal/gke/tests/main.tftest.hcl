@@ -59,7 +59,7 @@ run "untrusted_plugin_sandbox_pool" {
 
   assert {
     condition = (
-      google_container_node_pool.runtime_plugins.node_config[0].sandbox_config[0].sandbox_type == "gvisor" &&
+      google_container_node_pool.runtime_plugins.node_config[0].sandbox_config[0].type == "GVISOR" &&
       google_container_node_pool.runtime_plugins.node_config[0].image_type == "COS_CONTAINERD" &&
       google_container_node_pool.runtime_plugins.node_config[0].labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
       anytrue([for taint in google_container_node_pool.runtime_plugins.node_config[0].taint :

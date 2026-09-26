@@ -27,6 +27,12 @@ _GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"  # NOSONAR
 
 _UNIVERSAL_IPV4_CIDR = "0.0.0.0/0"
 
+
+def public_web_firewall_name(range_id: int) -> str:
+    """Return the stable optional web-lane name for reconstructive cleanup."""
+    return _short_resource_name("shifter-r", range_id, "egress-web")
+
+
 # IANA special-use IPv4 space (RFC 6890 and friends) subtracted from the
 # universal range to compute the public-internet complement used as the VPN
 # ingress source list. These are protocol constants by definition; the S1313
@@ -299,7 +305,7 @@ def _egress_rules(
         # of rule precedence against the default deny.
         rules.append(
             {
-                "name": _short_resource_name("shifter-r", range_id, "egress-web"),
+                "name": public_web_firewall_name(range_id),
                 "direction": "EGRESS",
                 "priority": 1200,
                 "target_tags": [range_tag],

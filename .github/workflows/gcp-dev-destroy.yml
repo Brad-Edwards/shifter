@@ -280,15 +280,18 @@ jobs:
 
       - name: Terraform destroy
         working-directory: ${{ env.TF_DIR }}
-        # Cloud SQL, Memorystore, and GKE can report deletion complete before
-        # Service Networking and load-balancer dependencies observe the release.
-        # Re-running destroy is idempotent and lets those provider-side links
-        # converge without requiring out-of-band resource deletion.
+        # GKE and load-balancer dependencies can report deletion complete before
+        # dependent resources observe the release. Re-running destroy is
+        # idempotent and lets those provider-side links converge without
+        # out-of-band resource deletion. The Service Networking connection is
+        # not handled by this loop: its producer-held peering is released by
+        # deletion_policy = "REMOVE_PEERING" in modules/portal/vpc, because
+        # retrying the default delete keeps failing after Cloud SQL and
+        # Memorystore are gone.
         run: |
           set -euo pipefail
-          # Five backoff intervals (1+2+3+4+5 minutes) cover the observed
-          # Service Networking producer-detachment window without retrying
-          # indefinitely.
+          # Five backoff intervals (1+2+3+4+5 minutes) bound the retries for
+          # transient dependency convergence without retrying indefinitely.
           max_attempts=6
           for attempt in $(seq 1 "${max_attempts}"); do
             if terraform destroy -auto-approve; then

@@ -59,22 +59,29 @@ def _validate_host_fields(candidate: dict[str, Any], field: str) -> None:
     """Require a complete host contract only for a machine-image candidate."""
     image_kind = candidate.get("image_kind", "image")
     bootstrap = candidate.get("bootstrap_capability", "standard")
+    if image_kind not in {"image", "machine-image"}:
+        raise RaesOperationInputError(f"{field} image_kind is invalid")
+    if not isinstance(bootstrap, str) or not bootstrap:
+        raise RaesOperationInputError(f"{field} bootstrap_capability is invalid")
+    _validate_participant_host_fields(candidate, field, bootstrap)
+    if image_kind == "machine-image" and bootstrap != "preconfigured-machine-host":
+        raise RaesOperationInputError(f"{field} machine-image requires a preconfigured host")
+
+
+def _validate_participant_host_fields(candidate: dict[str, Any], field: str, bootstrap: str) -> None:
+    """Validate the participant-facing portion of a candidate host contract."""
     participant_fields = (
         candidate.get("participant_container_name", ""),
         candidate.get("participant_username", ""),
         candidate.get("participant_readiness_contract", ""),
         candidate.get("participant_readiness_manifest_sha256", ""),
     )
-    if image_kind not in {"image", "machine-image"}:
-        raise RaesOperationInputError(f"{field} image_kind is invalid")
-    if not isinstance(bootstrap, str) or not bootstrap:
-        raise RaesOperationInputError(f"{field} bootstrap_capability is invalid")
     if not all(isinstance(value, str) for value in participant_fields):
         raise RaesOperationInputError(f"{field} participant host fields are invalid")
-    if image_kind == "image" and any(participant_fields):
-        raise RaesOperationInputError(f"{field} participant host fields require a machine-image")
-    if image_kind == "machine-image" and not all(participant_fields):
-        raise RaesOperationInputError(f"{field} machine-image participant host fields are incomplete")
+    if bootstrap == "preconfigured-machine-host" and not all(participant_fields):
+        raise RaesOperationInputError(f"{field} preconfigured host fields are incomplete")
+    if bootstrap != "preconfigured-machine-host" and any(participant_fields):
+        raise RaesOperationInputError(f"{field} participant host fields require a preconfigured host")
 
 
 def _validated_candidate(raw: object, field: str) -> dict[str, Any]:

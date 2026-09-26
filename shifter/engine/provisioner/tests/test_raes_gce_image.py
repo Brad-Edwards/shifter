@@ -42,6 +42,40 @@ def _candidate(version: str, image_ref: str, **extra) -> dict:
 
 
 class TestRegistryResolution:
+    @pytest.mark.parametrize("image_ref", ["family/nested-host", "projects/example/global/images/family/nested-host"])
+    def test_adapter_custom_host_requires_exact_image(self, image_ref):
+        with pytest.raises(ValueError, match="exact custom-image"):
+            RuntimeTargetImageProfile(
+                provider="gcp",
+                image_kind="image",
+                image_ref=image_ref,
+                bootstrap_capability="preconfigured-machine-host",
+                management_ssh_username="host-admin",
+                participant_container_name="participant-desktop",
+                participant_username="student",
+                participant_readiness_contract="participant-readiness/v1",
+                participant_readiness_manifest_sha256="a" * 64,
+            )
+
+    def test_adapter_target_preconfigured_custom_image_is_retained(self):
+        runtime = RuntimeTargetImageProfile(
+            provider="gcp",
+            image_kind="image",
+            image_ref="projects/example/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability="preconfigured-machine-host",
+            management_ssh_username="host-admin",
+            participant_container_name="participant-desktop",
+            participant_username="student",
+            participant_readiness_contract="participant-readiness/v1",
+            participant_readiness_manifest_sha256="a" * 64,
+        )
+        profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
+        assert profile.source_image == runtime.image_ref
+        assert profile.source_machine_image == ""
+        assert profile.bootstrap_capability == "preconfigured-machine-host"
+
     def test_adapter_target_profile_is_a_first_class_image_source(self):
         runtime = RuntimeTargetImageProfile(
             provider="gcp",
@@ -54,10 +88,36 @@ class TestRegistryResolution:
             participant_username="student",
             participant_readiness_contract="participant-readiness/v1",
             participant_readiness_manifest_sha256="a" * 64,
+            allow_public_web_egress=True,
         )
         profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
         assert profile.source_machine_image == runtime.image_ref
         assert profile.machine_type == "e2-standard-8"
+        assert profile.allow_public_web_egress is True
+
+    def test_adapter_target_profile_defaults_to_no_public_web_egress(self):
+        runtime = RuntimeTargetImageProfile(
+            provider="gcp",
+            image_ref="projects/example/global/images/desktop-v1",
+        )
+        profile = resolve_gce_image_from_runtime_profile(_node(), runtime)
+        assert profile.allow_public_web_egress is False
+
+    def test_aws_adapter_profile_cannot_enable_gcp_public_web_egress(self):
+        with pytest.raises(ValueError, match="AWS image profiles do not support public web egress"):
+            RuntimeTargetImageProfile(
+                provider="aws",
+                image_ref="ami-0123456789abcdef0",
+                allow_public_web_egress=True,
+            )
+
+    def test_adapter_profile_requires_a_boolean_public_web_choice(self):
+        with pytest.raises(ValueError):
+            RuntimeTargetImageProfile(
+                provider="gcp",
+                image_ref="projects/example/global/images/desktop-v1",
+                allow_public_web_egress="true",
+            )
 
     def test_adapter_target_profile_preserves_prepromoted_directory_contract(self):
         runtime = RuntimeTargetImageProfile(

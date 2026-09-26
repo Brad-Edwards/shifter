@@ -673,7 +673,7 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assert_hcl_assignment(identity, "role", '"roles/storage.objectViewer"')
         self.assert_hcl_assignment(identity, 'public_access_prevention', '"enforced"')
         self.assert_hcl_assignment(identity, 'uniform_bucket_level_access', 'true')
-        self.assert_hcl_assignment(identity, 'retention_period', '7776000')
+        self.assert_hcl_assignment(identity, 'retention_period', '"7776000"')
         self.assert_hcl_assignment(identity, 'is_locked', 'true')
 
     def test_gcp_guest_build_and_sbom_evidence_cross_trust_boundaries(self):

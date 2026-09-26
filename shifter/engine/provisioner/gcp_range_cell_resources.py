@@ -227,12 +227,11 @@ def instance_resource(
         "deletion_protection": False,
         "can_ip_forward": False,
     }
-    if profile.source_machine_image:
-        # The machine image supplies every captured disk. Network, metadata,
-        # identity, labels, tags, machine type, and external-IP posture are all
-        # explicitly replaced by the body above.
+    if profile.bootstrap_capability == "preconfigured-machine-host":
         body["advanced_machine_features"] = {"enable_nested_virtualization": True}
-    else:
+    # A machine image supplies its captured disks; a custom image needs an
+    # explicitly owned boot disk with the same host hardening.
+    if not profile.source_machine_image:
         body["disks"] = [
             {
                 "boot": True,
@@ -259,9 +258,8 @@ def instance_resource(
                 "scopes": list(config.service_account_scopes),
             }
         ]
-    elif profile.source_machine_image:
-        # An omitted field inherits the captured machine-image identity. Send an
-        # explicit empty list when this range node has no authorized runtime
-        # identity so the bake-time service account is never attached.
+    elif profile.source_machine_image or profile.bootstrap_capability == "preconfigured-machine-host":
+        # Do not inherit a bake-time machine-image identity. An explicit empty
+        # list also records the administrator's choice for a custom-image host.
         body["service_accounts"] = []
     return body

@@ -50,6 +50,39 @@ def test_action_catalog_has_unique_codes_and_equivalent_principal_coverage() -> 
     assert len(PREDEFINED_POLICIES) == len({item.code for item in PREDEFINED_POLICIES})
 
 
+@pytest.mark.parametrize(
+    ("action", "target_type"),
+    [
+        ("account.create_event", "account"),
+        ("organization.create_event", "organization"),
+        ("workspace.create_event", "workspace"),
+        ("event.manage_config", "event"),
+        ("event.manage_teams", "event"),
+        ("event.manage_ranges", "event"),
+        ("event.manage_scoring", "event"),
+        ("event.manage_awards", "event"),
+        ("event.manage_submissions", "event"),
+        ("event.manage_content", "event"),
+        ("event.manage_lifecycle", "event"),
+        ("event.delete", "event"),
+        ("event.manage_staff", "event"),
+        ("event.transfer_ownership", "event"),
+    ],
+)
+def test_ctf_administrative_actions_are_registered_for_humans_and_services(action, target_type) -> None:
+    definition = action_definition(action)
+    assert definition.target_type == target_type
+    assert definition.principal_kinds == frozenset({"human", "service"})
+    assert action in APPLICATION_ADMINISTRATOR_ACTIONS
+
+
+def test_event_authority_topology_actions_require_administrator_and_cannot_be_delegated() -> None:
+    for action in ("event.manage_staff", "event.transfer_ownership"):
+        definition = action_definition(action)
+        assert definition.requires_administrator
+        assert not definition.delegable
+
+
 def test_unknown_action_fails_closed() -> None:
     with pytest.raises(AuthorizationContractError, match="Unknown authorization action"):
         action_definition("workspace.not_registered")

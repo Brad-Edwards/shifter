@@ -409,32 +409,90 @@ class TestCleanupEventSpares:
 
     @pytest.mark.django_db
     def test_a_single_spares_destroy_failure_is_counted_without_aborting_the_others(
-        self, event_with_scenario, organizer_user
+        self, event_with_scenario, organizer_user, monkeypatch
     ):
-        """One spare's underlying ``RangeInstance`` is hard-deleted out from under it
-        (a real, unmocked way to make ``cms_destroy_range`` genuinely raise
-        ``CMSError`` -- "range not found" -- for that spare only), so the loop's
-        ``except Exception`` branch is exercised for real. The other spare must
-        still be destroyed and both managed users still cleaned up.
-        """
+        """A transient CMS dispatch failure retains its owner for retry."""
+        from ctf import bridges
+
         provision_event_spares(event_with_scenario.pk, 2, operator=organizer_user)
         spares = list(CTFSpareRange.objects.filter(event=event_with_scenario))
         owner_ids = [s.owner_user_id for s in spares]
-        doomed_range_id = spares[0].range_instance_id
-        RangeInstance.all_objects.filter(pk=doomed_range_id).delete()
+        retry_range_id = spares[0].range_instance_id
+        original_destroy = bridges.cms_destroy_range
+        failed_once = False
+
+        def transient_destroy(user, range_instance_id):
+            nonlocal failed_once
+            if range_instance_id == retry_range_id and not failed_once:
+                failed_once = True
+                raise RuntimeError("transient dispatch failure")
+            original_destroy(user, range_instance_id)
+
+        monkeypatch.setattr(bridges, "cms_destroy_range", transient_destroy)
 
         result = cleanup_event_spares(event_with_scenario.pk)
 
         assert result["destroyed"] == 1
         assert result["failed"] == 1
-        # Both managed users are freed regardless of whether their range's
-        # destroy call succeeded.
-        assert result["users_deleted"] == 2
-        for owner_id in owner_ids:
-            assert not User.objects.filter(pk=owner_id).exists()
-        for spare in CTFSpareRange.objects.filter(event=event_with_scenario):
-            assert spare.status == SpareRangeStatus.FAILED.value
-            assert spare.owner_user_id is None
+        assert result["users_deleted"] == 1
+        retry_spare = CTFSpareRange.objects.get(range_instance_id=retry_range_id)
+        assert retry_spare.status == SpareRangeStatus.PROVISIONING.value
+        assert retry_spare.owner_user_id == owner_ids[0]
+        assert User.objects.filter(pk=owner_ids[0]).exists()
+        assert not User.objects.filter(pk=owner_ids[1]).exists()
+
+        retried = cleanup_event_spares(event_with_scenario.pk)
+        assert retried["destroyed"] == 1
+        assert retried["failed"] == 0
+        assert retried["users_deleted"] == 1
+        retry_spare.refresh_from_db()
+        assert retry_spare.status == SpareRangeStatus.FAILED.value
+        assert retry_spare.owner_user_id is None
+        assert not User.objects.filter(pk=owner_ids[0]).exists()
+
+    @pytest.mark.django_db
+    def test_resolves_late_range_instance_before_destroy(self, event_with_scenario, organizer_user):
+        provision_event_spares(event_with_scenario.pk, 1, operator=organizer_user)
+        spare = CTFSpareRange.objects.get(event=event_with_scenario)
+        range_id = spare.range_instance_id
+        spare.range_instance_id = None
+        spare.save(update_fields=["range_instance_id", "updated_at"])
+
+        result = cleanup_event_spares(event_with_scenario.pk)
+
+        assert result["destroyed"] == 1
+        spare.refresh_from_db()
+        assert spare.range_instance_id == range_id
+        assert spare.owner_user_id is None
+
+    @pytest.mark.django_db
+    def test_unresolved_range_retains_owner_until_retry(self, event_with_scenario, organizer_user, monkeypatch):
+        from ctf import bridges
+
+        provision_event_spares(event_with_scenario.pk, 1, operator=organizer_user)
+        spare = CTFSpareRange.objects.get(event=event_with_scenario)
+        owner_id = spare.owner_user_id
+        spare.range_instance_id = None
+        spare.save(update_fields=["range_instance_id", "updated_at"])
+        original_find = bridges.cms_find_range_instance_id
+        monkeypatch.setattr(bridges, "cms_find_range_instance_id", lambda _request_id: None)
+
+        deferred = cleanup_event_spares(event_with_scenario.pk)
+
+        assert deferred["destroyed"] == 0
+        assert deferred["failed"] == 1
+        spare.refresh_from_db()
+        assert spare.status == SpareRangeStatus.PROVISIONING.value
+        assert spare.owner_user_id == owner_id
+        assert User.objects.filter(pk=owner_id).exists()
+
+        monkeypatch.setattr(bridges, "cms_find_range_instance_id", original_find)
+        retried = cleanup_event_spares(event_with_scenario.pk)
+        assert retried["destroyed"] == 1
+        assert retried["failed"] == 0
+        spare.refresh_from_db()
+        assert spare.status == SpareRangeStatus.FAILED.value
+        assert spare.owner_user_id is None
 
     @pytest.mark.django_db
     def test_leaves_consumed_spares_alone(self, event_with_scenario, organizer_user, participant_user):

@@ -33,7 +33,7 @@ resource "google_container_node_pool" "runtime_plugins" {
     tags            = ["shifter", "gke", "runtime-plugin"]
 
     sandbox_config {
-      sandbox_type = "gvisor"
+      type = "GVISOR"
     }
 
     taint {
