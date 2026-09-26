@@ -72,6 +72,7 @@ class WorkspaceQuotaAuditContext:
 
     actor_type: str
     actor_id: int | None
+    actor_principal_uuid: UUID | None = None
     source_ip: str | None = None
     user_agent: str = ""
     request_id: str = ""
