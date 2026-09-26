@@ -42,6 +42,7 @@ from gcp_range_cell_naming import (
     _subnet_tag,
     _subnetwork_self_link,
     range_router_nat_plan,
+    shared_router_nat_plan,
 )
 from gcp_range_cell_plan import _range_labels
 from gcp_range_cell_types import (
@@ -194,10 +195,14 @@ def build_raes_range_cell_plan(
     # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
     # a `none` (zero-egress) range omits it so its subnets carry no NAT path.
     if (resolved_options.egress_policy.mode or "status-quo").strip().lower() != "none":
-        plan["router_nat"] = cast(
-            RouterNatPlan,
-            range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans]),
-        )
+        if manage_network:
+            plan["router_nat"] = cast(
+                RouterNatPlan, range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans])
+            )
+        else:
+            plan["shared_nat"] = cast(
+                RouterNatPlan, shared_router_nat_plan(network_name, [subnet["self_link"] for subnet in subnet_plans])
+            )
     return plan
 
 

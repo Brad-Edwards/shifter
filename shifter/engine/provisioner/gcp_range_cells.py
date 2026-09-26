@@ -33,6 +33,7 @@ from gcp_range_cell_resources import (
     router_nat_resource,
     subnetwork_resource,
 )
+from gcp_range_cell_shared_nat import assert_shared_nat_capacity, ensure_shared_nat
 from gcp_range_cell_types import (
     FirewallPlan,
     InstancePlan,
@@ -120,8 +121,13 @@ def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> bool:
     element and therefore no NAT path. Idempotent: an existing router of the same
     name is left in place (the NAT config is deterministic from the plan).
     """
+    shared_nat = plan.get("shared_nat")
+    if shared_nat is not None:
+        ensure_shared_nat(plan, clients)
     router_nat = plan.get("router_nat")
-    if router_nat is None:
+    # A shared-NAT range delegates egress to the shared router; a zero-egress
+    # range carries no router_nat. Neither owns a range-scoped router here.
+    if shared_nat is not None or router_nat is None:
         return False
     name = router_nat["router_name"]
     existing = _get_or_none(
@@ -307,6 +313,7 @@ def _provision_range_resources(
     shared-vpc mode the pre-existing platform-peered VPC is reused and only the
     per-range subnets/firewalls/instances are created here.
     """
+    assert_shared_nat_capacity(plan, clients)
     if plan["manage_network"]:
         _ensure_network(plan, clients)
     for subnet in plan["subnets"]:

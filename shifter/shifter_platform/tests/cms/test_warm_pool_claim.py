@@ -71,6 +71,16 @@ class TestDecisionGates:
         # Enabled + gce supported, but no bucket serves this scenario.
         assert attempt_warm_claim(_request("gce", "some-other-scenario")) is None
 
+    def test_event_policy_workspace_never_claims_unpinned_generation(self, monkeypatch):
+        from dataclasses import replace
+
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "WARM_POOL_POLICY", _ENABLED_GCE, raising=False)
+        request = replace(_request("gce", "example"), range_source=RangeSource.CTF, policy_workspace_id=2)
+
+        assert attempt_warm_claim(request) is None
+
     def test_narrowed_policy_excludes_an_unauthorized_candidate(self, monkeypatch):
         from django.conf import settings
 

@@ -145,6 +145,7 @@ class RangeCellPlan(TypedDict):
     # A `none` (zero-egress) range omits it entirely, so its subnets carry no NAT
     # path at all -- a firewall deny alone is not that guarantee.
     router_nat: NotRequired[RouterNatPlan]
+    shared_nat: NotRequired[RouterNatPlan]
 
 
 class RouterNatPlan(TypedDict):

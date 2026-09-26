@@ -36,6 +36,7 @@ from gcp_range_cell_host_binding import GCEInstanceBindingError
 from gcp_range_cell_ops import _get_or_none
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
+from gcp_range_cell_shared_nat import assert_shared_nat_capacity
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cells import (
     _assert_preconfigured_host_binding,
@@ -210,6 +211,7 @@ def _provision_raes_resources(
     authored account credential installed and verified on the guest, so a
     declared endpoint never appears with a credential that was never realized.
     """
+    assert_shared_nat_capacity(plan, runtime.clients)
     if plan["manage_network"]:
         _record_created(created, "network", plan["network"]["name"], _ensure_network(plan, runtime.clients))
     for subnet in plan["subnets"]:
