@@ -6,6 +6,25 @@ override_data {
   }
 }
 
+# Portal data plane discovered by name for the portal<->EKS peering
+# (portal_network.tf). Under mock_provider these resolve to unknowns, which would
+# break the peering precondition's cidrhost() math and the aws_route for_each, so
+# pin concrete disjoint values (portal 10.0.0.0/16 vs eks 10.42.0.0/16, range 10.50.0.0/16).
+override_data {
+  target = data.aws_vpc.portal
+  values = {
+    id         = "vpc-mock-portal"
+    cidr_block = "10.0.0.0/16"
+  }
+}
+
+override_data {
+  target = data.aws_route_tables.portal_private
+  values = {
+    ids = ["rtb-mock-portal-a", "rtb-mock-portal-b"]
+  }
+}
+
 mock_provider "aws" {}
 
 override_resource {
@@ -481,11 +500,17 @@ run "enabled_broker_routes" {
     error_message = "Every private EKS route table must return admitted guest traffic over the owned direct peering."
   }
   assert {
+    condition = alltrue([for table in aws_route_table.private :
+      length([for route in table.route : route if route.cidr_block == data.aws_vpc.portal.cidr_block && route.vpc_peering_connection_id == aws_vpc_peering_connection.portal.id]) == 1
+    ])
+    error_message = "Every private EKS route table must reach the portal data plane (RDS/Redis) over the portal peering."
+  }
+  assert {
     condition = alltrue(flatten([for table in aws_route_table.private : [
       for route in table.route :
-      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16"
+      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16" || route.cidr_block == data.aws_vpc.portal.cidr_block
     ]]))
-    error_message = "Peering routes must stay bounded to the range CIDR; the default route uses NAT."
+    error_message = "Peering routes must stay bounded to the range + portal CIDRs; the default route uses NAT."
   }
   assert {
     condition = (

@@ -2,10 +2,10 @@
 
 Forwards the runtime env-var contract that ephemeral provisioner Jobs need. On
 GCP the values ride ``_GCP_PROVISIONER_ENV_KEYS``; on AWS (#1826) the provisioner
-now runs as a Kubernetes Job on EKS instead of an ECS task, so the contract that
-used to be baked into the ECS task definition
-(``platform/terraform/modules/engine-provisioner/task_definition.tf``) is
-forwarded here as ``_AWS_PROVISIONER_ENV_KEYS`` from the platform runtime env.
+now runs as a Kubernetes Job on EKS instead of an ECS task, so the provisioner
+environment contract (assembled by the ``portal/eks-provisioner-env`` Terraform
+module) is forwarded here as ``_AWS_PROVISIONER_ENV_KEYS`` from the platform
+runtime env.
 Sensitive keys are separated into Secret-backed ``secretKeyRef`` env by the
 neutral Job manifest builder via ``shared.cloud.sensitive_env`` — this module
 only assembles the flat forwarded dict. Split out of the former single-module

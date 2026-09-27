@@ -107,8 +107,9 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
 # the Django platform), so the set is declared here as data; a platform-side
 # parity test (``tests/shared/cloud/test_aws_runtime_role_parity.py``) fails if it
 # drifts from the authoritative forwarding list ``engine.ecs._AWS_PROVISIONER_ENV_KEYS``.
-# It mirrors the environment the AWS provisioner previously received from its ECS
-# task definition (``platform/terraform/modules/engine-provisioner/task_definition.tf``).
+# It mirrors the environment the AWS provisioner receives; on EKS that environment
+# is assembled by the ``portal/eks-provisioner-env`` Terraform module and forwarded
+# through the Kubernetes Job's runtimeEnv.
 AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "MODEL_BROKER_GUEST_URL",

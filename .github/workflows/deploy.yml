@@ -121,17 +121,12 @@ jobs:
               - 'shifter/engine/provisioner/**'
               # Retired in #1311; its removal changes the engine image context.
               - 'shifter/cyberscript/**'
-              # NB: module is `engine-provisioner`, not the historical
-              # `pulumi-provisioner` name; the latter was a stale typo
-              # the path filter inherited from before the rename.
-              - 'platform/terraform/modules/engine-provisioner/**'
               - 'platform/terraform/modules/ecr/**'
               - 'platform/terraform/environments/*/*.tf'
               - '.github/workflows/_shifter-engine.yml'
               - '.github/workflows/deploy.yml'
             shifter_platform:
               - 'platform/terraform/modules/portal/**'
-              - 'platform/terraform/modules/guacamole/**'
               - 'platform/terraform/environments/*/portal/**'
               - '.github/workflows/_shifter-platform.yml'
             # Portal image build/deploy trigger (#913). Mirrors the
@@ -203,7 +198,7 @@ jobs:
               # so an installation change must rebuild both GCP consumers.
               - 'shifter/installation/**'
               - 'shifter/shifter_platform/config/settings.py'
-              - 'shifter/shifter_platform/engine/ecs.py'
+              - 'shifter/shifter_platform/engine/ecs/**'
               - 'shifter/shifter_platform/entrypoint.sh'
               - 'shifter/shifter_platform/entrypoint-lib.sh'
               - 'shifter/shifter_platform/shared/management/commands/run_worker.py'
@@ -633,9 +628,9 @@ jobs:
   shifter-engine:
     name: Shifter Engine
     needs: [changes, quality, core]
-    # `_shifter-engine.yml::build` + `deploy` request `id-token: write`
-    # (AWS OIDC for ECR + ECS task push) and `attestations: write` (SBOM +
-    # provenance attestation, ADR-037-R5/R6).
+    # `_shifter-engine.yml::build` + `verify-provisioner-image` request
+    # `id-token: write` (AWS OIDC for ECR push) and `attestations: write`
+    # (SBOM + provenance attestation, ADR-037-R5/R6).
     permissions:
       contents: read
       id-token: write

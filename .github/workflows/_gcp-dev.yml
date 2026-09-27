@@ -177,6 +177,42 @@ jobs:
         with:
           terraform_version: "1.16.1"
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Ensure Identity Platform is provisioned
+        # Enabling identitytoolkit.googleapis.com (done by the platform Terraform)
+        # does NOT create the Google Cloud Identity Platform config singleton: on a
+        # fresh project it must be initialized once (the Console "Enable Identity
+        # Platform" action). Until then Terraform's google_identity_platform_config
+        # fails with 404 CONFIGURATION_NOT_FOUND (surfacing as 403
+        # INSUFFICIENT_PERMISSION for the deploy service account). initializeAuth is
+        # the programmatic equivalent; firebaseauth.configs.create /.get in
+        # roles/identityplatform.admin authorize it. initializeAuth is NOT
+        # idempotent (it returns 400 "already been enabled" once provisioned), so
+        # gate it on a GET of the config: initialize only when the config is absent.
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          gcloud services enable identitytoolkit.googleapis.com --project "${GCP_PROJECT_ID}"
+          access_token="$(gcloud auth print-access-token)"
+          api="https://identitytoolkit.googleapis.com"
+          get_code="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${access_token}" \
+            "${api}/admin/v2/projects/${GCP_PROJECT_ID}/config")"
+          if [ "${get_code}" = "200" ]; then
+            echo "Identity Platform already provisioned for ${GCP_PROJECT_ID}."
+          else
+            echo "Identity Platform config absent (GET ${get_code}); initializing."
+            init_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+              -H "Authorization: Bearer ${access_token}" \
+              -H "Content-Type: application/json" \
+              "${api}/v2/projects/${GCP_PROJECT_ID}/identityPlatform:initializeAuth" \
+              -d '{}')"
+            if [ "${init_code}" != "200" ]; then
+              echo "::error::Identity Platform initializeAuth failed for ${GCP_PROJECT_ID} (config GET ${get_code}, initializeAuth ${init_code})."
+              exit 1
+            fi
+            echo "Identity Platform initialized for ${GCP_PROJECT_ID}."
+          fi
       - name: Reconcile foundation image-build network
         if: inputs.reconcile_foundation_image_network && github.event_name == 'workflow_dispatch'
         env:
@@ -384,6 +420,28 @@ jobs:
           zones = [z.strip() for z in os.environ.get("RANGE_NETWORK_ZONES", "").split(",") if z.strip()]
           print("TF_VAR_range_network_zones=" + json.dumps(zones))
           PY
+      - name: Adopt pre-provisioned Identity Platform config
+        # The earlier "Ensure Identity Platform is provisioned" step initializes
+        # Identity Platform, which creates the config singleton. Terraform's
+        # google_identity_platform_config cannot *create* an already-enabled config
+        # (googleapi 400 "Identity Platform has already been enabled"), so it must
+        # adopt the existing one. Import it into state when absent; skipped once the
+        # resource is already tracked. Idempotent and safe for existing tenants.
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          addr='module.platform_core.module.portal_identity_platform.google_identity_platform_config.platform'
+          if terraform state show "${addr}" >/dev/null 2>&1; then
+            echo "Identity Platform config already managed by Terraform; skipping import."
+          else
+            echo "Importing pre-provisioned Identity Platform config for ${GCP_PROJECT_ID}."
+            terraform import -input=false \
+              -var-file="${TF_VARS_FILE}" \
+              -var-file="${RANGE_EGRESS_TFVARS_FILE}" \
+              "${addr}" "${GCP_PROJECT_ID}"
+          fi
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
