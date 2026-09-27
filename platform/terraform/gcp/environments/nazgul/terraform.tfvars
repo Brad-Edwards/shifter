@@ -23,9 +23,12 @@ gke_master_ipv4_cidr = "172.16.0.0/28"
 gke_master_authorized_cidrs = []
 range_network_cidr          = "10.50.0.0/16"
 
-web_machine_type         = "e2-standard-4"
-worker_machine_type      = "e2-standard-4"
-provisioner_machine_type = "n2-standard-8"
+web_machine_type    = "e2-standard-4"
+worker_machine_type = "e2-standard-4"
+# e2-standard-8 (not n2-standard-8): us-central1-c persistently lacks n2-standard-8
+# capacity for this project (ZONE_RESOURCE_POOL_EXHAUSTED on the regional pool's
+# third zone). e2-standard-8 is the same 8 vCPU / 32 GB and has capacity in all zones.
+provisioner_machine_type = "e2-standard-8"
 access_machine_type      = "e2-standard-4"
 
 web_node_count         = 1
