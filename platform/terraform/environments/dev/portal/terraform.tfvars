@@ -159,7 +159,7 @@ enable_log_aggregation = true
 # Phase 5: Additional Log Sources
 # ------------------------------------------------------------------------------
 
-enable_alb_access_logs = true
+enable_alb_access_logs = false
 enable_vpc_flow_logs   = true
 enable_rds_log_exports = true
 enable_waf_logging     = true
