@@ -24,3 +24,32 @@ variable "subnet_id" {
   type        = string
   description = "Subnet ID to launch builder in (use empty string for default)"
 }
+
+// dc-prebaked.pkr.hcl only. These carry defaults (unlike the core build vars
+// above) so `packer build -only='*.<kali|ubuntu|windows>'` does not require them;
+// packer validates every declared variable for the whole directory regardless of
+// the -only target.
+
+variable "dc_domain_name" {
+  type        = string
+  description = "AD forest domain for the pre-promoted DC (dc-prebaked)"
+  default     = "internal.shifter"
+}
+
+variable "dc_netbios_name" {
+  type        = string
+  description = "NetBIOS name for the pre-promoted DC domain (dc-prebaked)"
+  default     = "INTSHIFTER"
+}
+
+variable "dc_dsrm_password" {
+  type        = string
+  sensitive   = true
+  description = <<-EOT
+    DSRM (Directory Services Restore Mode) password baked into the promoted DC
+    forest. Generated per build and injected as PKR_VAR_dc_dsrm_password; never
+    committed. Defaults empty and promote-bake.ps1 fails closed when empty, so a
+    dc-prebaked build without an injected secret refuses to promote.
+  EOT
+  default     = ""
+}

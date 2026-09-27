@@ -145,6 +145,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 21600
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -232,6 +233,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 21600
 
       - name: Login to Amazon ECR
         id: login-ecr
