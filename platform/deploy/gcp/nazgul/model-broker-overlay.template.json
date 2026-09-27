@@ -6,7 +6,7 @@
           {
             "account_ref": "deployment-concurrency",
             "authority_source": "deployment_catalog",
-            "ceiling": 4,
+            "ceiling": 1000000,
             "currency": null,
             "definition_revision": 1,
             "dimension": "concurrency",
@@ -19,7 +19,7 @@
           {
             "account_ref": "deployment-rate",
             "authority_source": "deployment_catalog",
-            "ceiling": 120,
+            "ceiling": 1000000000,
             "currency": null,
             "definition_revision": 1,
             "dimension": "rate",
@@ -32,7 +32,7 @@
           {
             "account_ref": "deployment-spend",
             "authority_source": "deployment_catalog",
-            "ceiling": 50000000,
+            "ceiling": 1000000000000000,
             "currency": "USD",
             "definition_revision": 1,
             "dimension": "spend",
@@ -130,13 +130,13 @@
             ],
             "limits": {
               "currency": "USD",
-              "max_concurrent_requests": 4,
+              "max_concurrent_requests": 1000000,
               "max_input_tokens": 200000,
               "max_output_tokens": 8192,
               "max_request_bytes": 2000000,
               "max_request_seconds": 300,
-              "max_requests_per_window": 120,
-              "max_spend_micro_units": 50000000,
+              "max_requests_per_window": 1000000000,
+              "max_spend_micro_units": 1000000000000000,
               "request_window_seconds": 60
             },
             "profile_id": "coding"
@@ -154,7 +154,7 @@
         "quota_pools": [
           {
             "dimension": "input_tokens",
-            "limit": 1500000,
+            "limit": 1000000000000,
             "provider_adapter_id": "vertex-v1",
             "provider_quota_identity": "project:__GCP_PROJECT_ID__/region:us-east5/model:claude-sonnet-4-6",
             "quota_pool_id": "vertex-main-tokens-us",
@@ -162,7 +162,7 @@
           },
           {
             "dimension": "input_tokens",
-            "limit": 1500000,
+            "limit": 1000000000000,
             "provider_adapter_id": "vertex-v1",
             "provider_quota_identity": "project:__GCP_PROJECT_ID__/region:us-east5/model:claude-haiku-4-5",
             "quota_pool_id": "vertex-small-tokens-us",
