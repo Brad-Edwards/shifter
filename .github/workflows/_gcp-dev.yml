@@ -184,24 +184,35 @@ jobs:
         # Platform" action). Until then Terraform's google_identity_platform_config
         # fails with 404 CONFIGURATION_NOT_FOUND (surfacing as 403
         # INSUFFICIENT_PERMISSION for the deploy service account). initializeAuth is
-        # the idempotent programmatic equivalent (a no-op once provisioned);
-        # firebaseauth.configs.create in roles/identityplatform.admin authorizes it.
+        # the programmatic equivalent; firebaseauth.configs.create /.get in
+        # roles/identityplatform.admin authorize it. initializeAuth is NOT
+        # idempotent (it returns 400 "already been enabled" once provisioned), so
+        # gate it on a GET of the config: initialize only when the config is absent.
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           set -euo pipefail
           gcloud services enable identitytoolkit.googleapis.com --project "${GCP_PROJECT_ID}"
           access_token="$(gcloud auth print-access-token)"
-          http_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+          api="https://identitytoolkit.googleapis.com"
+          get_code="$(curl -sS -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${access_token}" \
-            -H "Content-Type: application/json" \
-            "https://identitytoolkit.googleapis.com/v2/projects/${GCP_PROJECT_ID}/identityPlatform:initializeAuth" \
-            -d '{}')"
-          if [ "${http_code}" != "200" ] && [ "${http_code}" != "409" ]; then
-            echo "::error::Identity Platform initializeAuth failed for ${GCP_PROJECT_ID} (HTTP ${http_code})."
-            exit 1
+            "${api}/admin/v2/projects/${GCP_PROJECT_ID}/config")"
+          if [ "${get_code}" = "200" ]; then
+            echo "Identity Platform already provisioned for ${GCP_PROJECT_ID}."
+          else
+            echo "Identity Platform config absent (GET ${get_code}); initializing."
+            init_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+              -H "Authorization: Bearer ${access_token}" \
+              -H "Content-Type: application/json" \
+              "${api}/v2/projects/${GCP_PROJECT_ID}/identityPlatform:initializeAuth" \
+              -d '{}')"
+            if [ "${init_code}" != "200" ]; then
+              echo "::error::Identity Platform initializeAuth failed for ${GCP_PROJECT_ID} (config GET ${get_code}, initializeAuth ${init_code})."
+              exit 1
+            fi
+            echo "Identity Platform initialized for ${GCP_PROJECT_ID}."
           fi
-          echo "Identity Platform provisioned for ${GCP_PROJECT_ID} (HTTP ${http_code})."
       - name: Reconcile foundation image-build network
         if: inputs.reconcile_foundation_image_network && github.event_name == 'workflow_dispatch'
         env:
