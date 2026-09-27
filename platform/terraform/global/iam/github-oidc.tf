@@ -1109,7 +1109,13 @@ resource "aws_iam_policy" "security" {
           "secretsmanager:RotateSecret",
           "secretsmanager:CancelRotateSecret"
         ]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*"
+        Resource = [
+          # Dash-namespaced portal/range secrets (shifter-<env>-portal-*, etc.).
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*",
+          # Slash-namespaced EKS workload secrets read by the eks root's
+          # data.aws_secretsmanager_secret (shifter/<env>/eks/{database,django,redis}).
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter/*"
+        ]
       },
       {
         Sid      = "SecretsManagerRandom"
@@ -1299,6 +1305,9 @@ resource "aws_iam_policy" "management" {
           "ssm:PutParameter",
           "ssm:GetParameter",
           "ssm:GetParameters",
+          # The EKS provisioner-env + range peering read the range topology
+          # contract at /shifter/<env>/range/ with a by-path lookup (ADR-044-R6).
+          "ssm:GetParametersByPath",
           "ssm:DeleteParameter",
           "ssm:DescribeParameters",
           "ssm:AddTagsToResource",
