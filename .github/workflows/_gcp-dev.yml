@@ -409,6 +409,28 @@ jobs:
           zones = [z.strip() for z in os.environ.get("RANGE_NETWORK_ZONES", "").split(",") if z.strip()]
           print("TF_VAR_range_network_zones=" + json.dumps(zones))
           PY
+      - name: Adopt pre-provisioned Identity Platform config
+        # The earlier "Ensure Identity Platform is provisioned" step initializes
+        # Identity Platform, which creates the config singleton. Terraform's
+        # google_identity_platform_config cannot *create* an already-enabled config
+        # (googleapi 400 "Identity Platform has already been enabled"), so it must
+        # adopt the existing one. Import it into state when absent; skipped once the
+        # resource is already tracked. Idempotent and safe for existing tenants.
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          addr='module.platform_core.module.portal_identity_platform.google_identity_platform_config.platform'
+          if terraform state show "${addr}" >/dev/null 2>&1; then
+            echo "Identity Platform config already managed by Terraform; skipping import."
+          else
+            echo "Importing pre-provisioned Identity Platform config for ${GCP_PROJECT_ID}."
+            terraform import -input=false \
+              -var-file="${TF_VARS_FILE}" \
+              -var-file="${RANGE_EGRESS_TFVARS_FILE}" \
+              "${addr}" "${GCP_PROJECT_ID}"
+          fi
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
