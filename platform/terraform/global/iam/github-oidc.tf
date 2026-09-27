@@ -1262,9 +1262,27 @@ resource "aws_iam_policy" "eks" {
         Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-eks-*"
         Condition = {
           StringEquals = {
-            "iam:PassedToService" = "eks.amazonaws.com"
+            # Cluster role -> eks.amazonaws.com; managed node-group node role ->
+            # eks-nodegroup.amazonaws.com (checked by EKS on CreateNodegroup).
+            "iam:PassedToService" = [
+              "eks.amazonaws.com",
+              "eks-nodegroup.amazonaws.com"
+            ]
           }
         }
+      },
+      {
+        # EKS creates/validates its service-linked roles on cluster + node-group
+        # creation (e.g. AWSServiceRoleForAmazonEKSNodegroup): CreateNodegroup
+        # calls iam:GetRole on the SLR, and CreateCluster/CreateNodegroup create
+        # the SLR when absent. Scoped to the aws-service-role EKS namespace only.
+        Sid    = "EksServiceLinkedRoles"
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:CreateServiceLinkedRole"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/eks*.amazonaws.com/AWSServiceRoleForAmazonEKS*"
       }
     ]
   })
