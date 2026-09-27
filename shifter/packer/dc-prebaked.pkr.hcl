@@ -1,0 +1,124 @@
+// dc-prebaked: a PRE-PROMOTED Windows Server 2022 domain controller AMI for AWS.
+// Promotion runs at bake time (not first boot) so every range boots an
+// already-promoted DC with no per-range ~15-20 min promotion, which would
+// otherwise dominate time-to-serve (runtime DC promotion is disabled in the
+// provisioner: state_helpers._should_promote_dc_at_runtime always returns false).
+//
+// This is the AWS counterpart to gcp/dc-prebaked.pkr.hcl. The domain and NetBIOS
+// name are variables so one template bakes any domain; dev bakes the standard
+// internal.shifter / INTSHIFTER DC that /shifter/ami/dc points at.
+//
+// Captured UN-SYSPREPPED on purpose: sysprep cannot generalize a promoted DC
+// (and the existing dc.pkr.hcl feature-only image is explicitly NOT a valid
+// /shifter/ami/dc for the same reason). The built-in Administrator becomes the
+// domain Administrator across the promotion reboot with the same password, so
+// packer's WinRM reconnect after windows-restart authenticates unchanged.
+source "amazon-ebs" "dc-prebaked" {
+  ami_name        = "${var.ami_prefix}-dc-prebaked-{{timestamp}}"
+  ami_description = "Pre-promoted ${var.dc_domain_name} DC (AWS, un-sysprepped) for /shifter/ami/dc"
+  instance_type   = var.instance_type
+  region          = var.aws_region
+
+  // Windows Server 2022 Datacenter from Amazon.
+  source_ami_filter {
+    filters = {
+      name                = "Windows_Server-2022-English-Full-Base-*"
+      root-device-type    = "ebs"
+      virtualization-type = "hvm"
+    }
+    most_recent = true
+    owners      = ["amazon"]
+  }
+
+  // WinRM communicator; packer retrieves the auto-generated Administrator
+  // password and reuses it across the promotion reboot.
+  communicator   = "winrm"
+  winrm_username = "Administrator"
+  winrm_use_ssl  = false
+  winrm_insecure = true
+  winrm_timeout  = "30m"
+
+  user_data = <<-EOF
+    <powershell>
+    Set-ExecutionPolicy Unrestricted -Force
+    winrm quickconfig -quiet
+    winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+    winrm set winrm/config/service/auth '@{Basic="true"}'
+    winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="1024"}'
+    netsh advfirewall firewall add rule name="WinRM HTTP" dir=in action=allow protocol=TCP localport=5985
+    Restart-Service WinRM
+    </powershell>
+  EOF
+
+  vpc_id    = var.vpc_id != "" ? var.vpc_id : null
+  subnet_id = var.subnet_id != "" ? var.subnet_id : null
+
+  associate_public_ip_address = true
+  pause_before_connecting     = "1m"
+
+  tags = {
+    Name      = "${var.ami_prefix}-dc-prebaked"
+    Project   = "shifter"
+    ManagedBy = "packer"
+    ImageType = "dc-prebaked"
+    Domain    = var.dc_domain_name
+    BuildDate = "{{timestamp}}"
+  }
+
+  run_tags = {
+    Name = "packer-builder-dc-prebaked"
+  }
+}
+
+build {
+  sources = ["source.amazon-ebs.dc-prebaked"]
+
+  // Base system configuration (RDP, firewall, WinRM) in the dc role.
+  provisioner "powershell" {
+    environment_vars = ["PACKER_ROLE=dc"]
+    script           = "scripts/windows/base.ps1"
+  }
+
+  // OpenSSH (harmless; useful for operator access to the DC).
+  provisioner "powershell" {
+    elevated_user     = "Administrator"
+    elevated_password = build.Password
+    environment_vars  = ["PACKER_ROLE=dc"]
+    script            = "scripts/windows/services.ps1"
+  }
+
+  // Install AD DS/DNS, disable the firewall, and Install-ADDSForest for the
+  // profile's domain with the reboot deferred to the windows-restart below.
+  provisioner "powershell" {
+    elevated_user     = "Administrator"
+    elevated_password = build.Password
+    environment_vars = [
+      "DC_DOMAIN_NAME=${var.dc_domain_name}",
+      "DC_NETBIOS_NAME=${var.dc_netbios_name}",
+      // Build-only DSRM secret, generated per build and injected as a sensitive
+      // var (never committed). promote-bake.ps1 refuses to promote without it.
+      "DC_DSRM_PASSWORD=${var.dc_dsrm_password}",
+    ]
+    script = "scripts/dc-prebaked/promote-bake.ps1"
+  }
+
+  // Apply the deferred promotion reboot; packer reconnects over WinRM as the
+  // domain Administrator (same password) once the DC is back up.
+  provisioner "windows-restart" {
+    restart_timeout = "20m"
+  }
+
+  // MUST BE LAST (before the un-sysprepped capture): wait for AD DS, pin the DNS
+  // forwarder to AmazonProvidedDNS, run any staged content seed, and strip build
+  // artifacts.
+  provisioner "powershell" {
+    elevated_user     = "Administrator"
+    elevated_password = build.Password
+    script            = "scripts/dc-prebaked/finalize.ps1"
+  }
+
+  post-processor "manifest" {
+    output     = "dc-prebaked-manifest.json"
+    strip_path = true
+  }
+}
