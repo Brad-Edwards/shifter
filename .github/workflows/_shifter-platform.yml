@@ -165,6 +165,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "1.13.3"
@@ -399,6 +400,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
@@ -550,6 +552,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "1.13.3"
@@ -901,6 +904,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
@@ -1002,6 +1006,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
 
       - name: Render isolated EKS backend and protected inputs
         env:
@@ -1158,6 +1163,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -1656,6 +1662,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
 
       - name: Render Terraform backend configs
         working-directory: ${{ github.workspace }}
@@ -1746,6 +1753,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
 
       - name: Render Terraform backend configs
         env:

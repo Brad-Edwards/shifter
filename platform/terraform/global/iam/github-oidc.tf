@@ -44,6 +44,11 @@ resource "aws_iam_openid_connect_provider" "github" {
 resource "aws_iam_role" "github_actions" {
   name = "github-actions-shifter-${var.environment}"
 
+  # Deploy applies (Portal RDS + ACM validation wait + ASG instance refresh) can
+  # run well past the 1h default assumed-role session; a mid-apply RequestExpired
+  # aborts the deploy. Allow up to 6h (workflows request role-duration-seconds).
+  max_session_duration = 21600
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -104,6 +109,12 @@ resource "aws_iam_role" "github_actions" {
 # ------------------------------------------------------------------------------
 resource "aws_iam_role" "github_actions_image" {
   name = "github-actions-shifter-${var.environment}-image"
+
+  # Base-image builds (packer build + the #1633 fresh-boot verify gate) can take
+  # well over the 1h default assumed-role session (e.g. Kali + verify ~1h40m); a
+  # mid-build RequestExpired loses the build. Allow up to 6h (packer.yml requests
+  # role-duration-seconds).
+  max_session_duration = 21600
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
