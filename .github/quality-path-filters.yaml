@@ -383,8 +383,6 @@ exclusions:
       - scripts/check_tf_gcp_wif_trust/**
       - scripts/check_gcp_tf_modules/**
       - scripts/check_checkov_invocation_parity/**
-      - scripts/portal_deploy/**
-      - scripts/portal-deploy/**
       - scripts/post_deploy_smoke/**
       - scripts/terraform/**
       - scripts/ctf-scenario/**
@@ -402,7 +400,6 @@ exclusions:
       - scripts/fix_resume.py
       - scripts/get-devbox-password.sh
       - scripts/iam-deploy.sh
-      - scripts/local-provisioner-env.sh
       - scripts/runner-deploy.sh
       - scripts/setup-worktree.sh
       - scripts/shifter-django-admin-tunnel.sh
