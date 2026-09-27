@@ -111,3 +111,61 @@ iterating apply time Terraform errors through CI is slow. For the debug/converge
 phase, run the identical `terraform apply` locally against the same S3 backend
 and rendered overlays (what `_range.yml` / `deploy.py terraform` run), fix each
 error, then validate the full chain with one CI `deploy.yml` dispatch.
+
+## The active AWS portal runtime is EKS, not ECS/EC2
+
+The legacy ECS/EC2 portal container rollout is retired: in `_shifter-platform.yml`
+the `deploy` job is gated `environment == '__legacy-disabled__'` (never runs) and
+`post-deploy-smoke` `needs: eks-deploy`. So on a fresh account the ECS/EC2 portal
+Terraform applies (RDS/Cognito/SQS/SNS/S3/ALB) but the portal ALB just 502s (no
+container rollout, no DB migration) and the range smoke never runs unless EKS is
+enabled. To stand up a working tenant, enable EKS:
+
+- Repository variable `AWS_EKS_<ENV>_ENABLED = true` (drives `deploy.yml`'s
+  `eks_enabled`, which gates `eks-deploy` and thus `post-deploy-smoke`).
+- Secret `TF_VARS_<ENV>_EKS` = the full EKS root var-file JSON (see below).
+
+The ECS/EC2 portal stack is still applied and is **not** dead: EKS reuses its
+Cognito/SQS/SNS/S3/RDS. EKS runs the containers (portal/guacamole/provisioner as
+pods) pointed at those resources via `runtime_env`.
+
+## Building `TF_VARS_<ENV>_EKS`
+
+The `eks-deploy` job feeds this JSON to the `environments/<env>/eks` root verbatim
+(only injecting `deployment_role_arn`), so it must carry every required input.
+There is no example file; construct it from the applied ECS/EC2 portal stack and
+`aws eks`:
+
+- `runtime_env` (map): the 12 keys in
+  `shifter/installation/runtime_inventory_aws.py::AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS`.
+  The provisioner topology keys (`RANGE_*`, `*_AMI_ID`, `NGFW_*`, ...) are NOT
+  supplied here; the `eks-provisioner-env` module derives them from the range SSM
+  export. Sources for the 12:
+  - `AWS_REGION` = the region.
+  - `OIDC_AUTH_DOMAIN` / `OIDC_ISSUER_URL` / `OIDC_RP_CLIENT_ID` = portal outputs
+    `cognito_domain` / `cognito_issuer_url` / `cognito_client_id`.
+  - `OIDC_SECRET_ID` = SSM `/shifter/<env>/portal/cognito-secret-arn`.
+  - `QUEUE_{CMS,ENGINE,MC}_{CONSUMER,PUBLISHER}_ID` = SSM
+    `/shifter/<env>/portal/sqs-{cms,engine,mc}-url` (consumer and publisher share
+    the one queue URL).
+  - `RANGE_EVENTS_TOPIC_ID` = SSM `/shifter/<env>/portal/range-events-topic-id`
+    (SNS ARN).
+  - `STORAGE_BUCKET_NAME` = SSM `/shifter/<env>/portal/s3-bucket`.
+- `addon_versions` (object: vpc_cni, ebs_csi, efs_csi, coredns, kube_proxy,
+  secrets_store_csi), from `aws eks describe-addon-versions --kubernetes-version
+  <ver>`. The secrets-store add-on name is `aws-secrets-store-csi-driver-provider`
+  (not `aws-secrets-store-csi-driver`).
+- `domain_name` = the public hostname.
+- `edge_client_cidrs` / `provider_api_cidrs`: each requires >=1 CIDR.
+  `edge_client_cidrs` is the public HTTPS-ingress source allowlist (the portal is
+  Cognito-gated). `provider_api_cidrs` is the pod-egress NetworkPolicy allowlist to
+  AWS APIs; the correct value is the AWS region's public API ranges, but that is a
+  large, drift-prone list, so a dev tenant may start with a broad CIDR and tighten
+  later (a real hardening follow-up, not a permanent value).
+
+Validate the whole thing before a CI cycle with a local
+`terraform plan -var-file=<eks.tfvars.json>` (add `deployment_role_arn`) against
+the `environments/<env>/eks` root using the rendered EKS backend config.
+
+Apply `platform/terraform/global/iam` before enabling EKS so the deploy role can
+manage the scoped EKS/OIDC resources and pass the `shifter-<env>-eks-*` roles.
