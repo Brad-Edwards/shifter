@@ -117,7 +117,7 @@ error, then validate the full chain with one CI `deploy.yml` dispatch.
 The legacy ECS/EC2 portal container rollout is retired: in `_shifter-platform.yml`
 the `deploy` job is gated `environment == '__legacy-disabled__'` (never runs) and
 `post-deploy-smoke` `needs: eks-deploy`. So on a fresh account the ECS/EC2 portal
-Terraform applies (RDS/Cognito/SQS/SNS/S3/ALB) but the portal ALB just 502s (no
+Terraform applies (RDS/Cognito/SQS/SNS/S3/ALB) but the portal ALB just returns HTTP 502 (no
 container rollout, no DB migration) and the range smoke never runs unless EKS is
 enabled. To stand up a working tenant, enable EKS:
 
