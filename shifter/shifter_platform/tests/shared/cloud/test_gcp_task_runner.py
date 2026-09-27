@@ -481,25 +481,6 @@ class TestGCPTaskRunnerProvisionerContract:
             "GCP task_runner must re-export the cloud-neutral constant, not redefine it"
         )
 
-    def test_provisioner_container_name_matches_ecs_task_definition(self) -> None:
-        """The ECS task definition under platform/terraform/modules/engine-provisioner
-        also has to carry the provisioner's container name. Terraform can't import the
-        Python constant, so we lock in alignment with a structural assertion: the .tf
-        file MUST contain `name = "<PROVISIONER_CONTAINER_NAME>"`. A future Python-side
-        rename without a matching .tf update would fail this test."""
-        from pathlib import Path
-
-        from shared.cloud.gcp.task_runner import PROVISIONER_CONTAINER_NAME
-
-        repo_root = Path(__file__).resolve().parents[5]
-        tf_path = repo_root / "platform" / "terraform" / "modules" / "engine-provisioner" / "task_definition.tf"
-        source = tf_path.read_text(encoding="utf-8")
-        assert re.search(rf'\bname\s*=\s*"{re.escape(PROVISIONER_CONTAINER_NAME)}"', source), (
-            f"task_definition.tf must reference the provisioner container name "
-            f"{PROVISIONER_CONTAINER_NAME!r} that the GCP task runner gates hardening on; "
-            "renaming one without the other would silently break ECS↔GCP alignment"
-        )
-
     def test_provisioner_container_name_is_used_at_engine_dispatch_sites(self) -> None:
         """The hardening gate inside `_is_provisioner_task` keys on the cloud-neutral
         ``PROVISIONER_CONTAINER_NAME`` constant, and the engine dispatch sites in

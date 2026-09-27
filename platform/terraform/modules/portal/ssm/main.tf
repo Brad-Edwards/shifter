@@ -311,9 +311,8 @@ resource "aws_ssm_parameter" "ctfd_platform_url" {
 # ------------------------------------------------------------------------------
 # Parameter Store - Portal Runtime Capacity Tunables (#930)
 # ------------------------------------------------------------------------------
-# Non-secret integers read by both container hydration paths (user_data.sh on
-# first boot, scripts/portal-deploy/deploy_portal.sh on SSM redeploy) and mapped
-# 1:1 onto the matching Docker env var. Updating a value retunes the running
+# Non-secret integers hydrated into the portal container's runtime env and mapped
+# 1:1 onto the matching Docker/pod env var. Updating a value retunes the running
 # fleet on the next converge/restart, with no image rebuild. Caps are
 # process-local: per-instance cap = portal_web_workers * terminal_max_sessions.
 
@@ -371,10 +370,9 @@ resource "aws_ssm_parameter" "terminal_read_poll_seconds" {
   tags = local.common_tags
 }
 
-# Portal web capacity metrics (#940). Read by both the first-boot user_data and
-# the SSM-redeploy deploy_portal.sh hydration paths, like the #930 terminal
-# tunables, so an operator can toggle the emitter or retune the busy-ratio
-# denominator on a running fleet without an image rebuild.
+# Portal web capacity metrics (#940). Hydrated into the portal runtime env like
+# the #930 terminal tunables, so an operator can toggle the emitter or retune the
+# busy-ratio denominator on a running fleet without an image rebuild.
 resource "aws_ssm_parameter" "portal_capacity_metrics_enabled" {
   name        = "${local.ps_prefix}/portal-capacity-metrics-enabled"
   description = "Enable the per-worker Shifter/PortalCapacity metrics emitter (PORTAL_CAPACITY_METRICS_ENABLED): true|false"

@@ -262,8 +262,6 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertIn("inputs.engine_image_digest", rendered)
         self.assertIn("provisioner:$provisioner", rendered)
         self.assertNotIn("github.ref", rendered)
-        self.assertIn("__legacy-disabled__", platform["jobs"]["plan"]["if"])
-        self.assertIn("__legacy-disabled__", platform["jobs"]["deploy"]["if"])
         self.assertNotIn("GITHUB_REF#refs/heads/", self.script)
         self.assertNotIn("aws-prod", self.script)
 
@@ -354,10 +352,10 @@ class TestChangeFilterCoverage(unittest.TestCase):
         self.assertPathNotInFilter("shifter/shifter_platform/views.py", "shifter_platform")
 
     def test_terraform_paths_trigger_their_plan_filters(self):
-        self.assertPathInFilter("platform/terraform/modules/portal/ec2/main.tf", "shifter_platform")
+        self.assertPathInFilter("platform/terraform/modules/portal/rds/main.tf", "shifter_platform")
         self.assertPathInFilter("platform/terraform/modules/range/main.tf", "range")
         self.assertPathInFilter("platform/terraform/modules/ecr/main.tf", "core")
-        self.assertPathInFilter("platform/terraform/modules/engine-provisioner/iam.tf", "shifter_engine")
+        self.assertPathInFilter("platform/terraform/modules/ecr/main.tf", "shifter_engine")
         self.assertPathInFilter("platform/terraform/environments/dev/main.tf", "core")
 
     def test_guardrail_scripts_route_to_quality_only(self):
@@ -905,8 +903,8 @@ class TestGithubEnvironmentBinding(unittest.TestCase):
     EXPECTED = {
         "_core.yml": ("apply",),
         "_range.yml": ("apply",),
-        "_shifter-engine.yml": ("build", "deploy"),
-        "_shifter-platform.yml": ("push-guacamole-images", "apply", "build", "deploy"),
+        "_shifter-engine.yml": ("build", "verify-provisioner-image"),
+        "_shifter-platform.yml": ("push-guacamole-images", "apply", "build", "eks-deploy"),
         "_gcp-dev.yml": ("prepare", "deploy"),
     }
 
@@ -1030,7 +1028,7 @@ class TestProvisionerDeployTestGate(unittest.TestCase):
                 )
 
     def test_engine_build_and_deploy_depend_on_provisioner_tests(self):
-        for job_id in ("validate", "build", "deploy"):
+        for job_id in ("validate", "build", "verify-provisioner-image"):
             self.assertIn(
                 job_id,
                 self.jobs,
@@ -1118,23 +1116,6 @@ class TestEngineImageDigest(unittest.TestCase):
             stripped
             for line in self._read(rel).splitlines()
             if (stripped := line.strip()) and not stripped.startswith("#")
-        )
-
-    def test_engine_terraform_uses_explicit_digest_without_ecr_tag_lookup(self):
-        engine_main = self._read("platform/terraform/modules/engine-provisioner/main.tf")
-        engine_task = self._read("platform/terraform/modules/engine-provisioner/task_definition.tf")
-        engine_vars = self._read("platform/terraform/modules/engine-provisioner/variables.tf")
-        platform_wf = self._active_text(".github/workflows/_shifter-platform.yml")
-        deploy_wf = self._active_text(".github/workflows/deploy.yml")
-
-        self.assertNotIn('data "aws_ecr_image"', engine_main)
-        self.assertIn('variable "container_image_digest"', engine_vars)
-        self.assertIn("${var.ecr_repository_url}@${var.container_image_digest}", engine_task)
-        self.assertIn("engine_image_digest:", platform_wf)
-        self.assertIn('engine_container_image_digest = "%s"', platform_wf)
-        self.assertIn(
-            "engine_image_digest: ${{ needs.shifter-engine.outputs.image_digest }}",
-            deploy_wf,
         )
 
 

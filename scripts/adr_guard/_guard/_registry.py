@@ -17,12 +17,10 @@ from .checks.complexity import (
 )
 from .checks.deploy_workflow import (
     check_deploy_runner_exposure,
-    check_deploy_verification_fail_loud,
     check_deploy_workflow_plan_scope,
     check_github_oidc_no_admin_access,
     check_global_iam_drift_check,
     check_platform_renders_deploy_tfvars,
-    check_portal_deploy_mode_source_of_truth,
     check_workflow_action_sha_pinning,
 )
 from .checks.documentation import (
@@ -79,9 +77,7 @@ CHECKS = {
     "boundary-mock-policy": check_boundary_mock_policy,
     "python-complexity-gate": check_python_complexity_gate,
     "deploy-workflow-plan-scope": check_deploy_workflow_plan_scope,
-    "portal-deploy-mode-source-of-truth": check_portal_deploy_mode_source_of_truth,
     "aws-platform-renders-deploy-tfvars": check_platform_renders_deploy_tfvars,
-    "deploy-verification-fail-loud": check_deploy_verification_fail_loud,
     "deploy-workflow-runner-exposure": check_deploy_runner_exposure,
     "workflow-action-sha-pinning": check_workflow_action_sha_pinning,
     "no-live-cloud-identifiers": check_no_live_cloud_identifiers,
@@ -113,9 +109,7 @@ CHECK_LEVELS = {
         "boundary-mock-policy",
         "python-complexity-gate",
         "deploy-workflow-plan-scope",
-        "portal-deploy-mode-source-of-truth",
         "aws-platform-renders-deploy-tfvars",
-        "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
         "workflow-action-sha-pinning",
         "no-live-cloud-identifiers",
@@ -147,9 +141,7 @@ CHECK_LEVELS = {
         "boundary-mock-policy",
         "python-complexity-gate",
         "deploy-workflow-plan-scope",
-        "portal-deploy-mode-source-of-truth",
         "aws-platform-renders-deploy-tfvars",
-        "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
         "workflow-action-sha-pinning",
         "no-live-cloud-identifiers",
