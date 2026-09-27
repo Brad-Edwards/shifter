@@ -89,7 +89,7 @@ ctfd_ssh_allowed_cidrs = {}
 # ------------------------------------------------------------------------------
 
 # TODO: Update with your dev domain
-domain_name       = "dev.shifter.example.com"
+domain_name = "dev.shifter.example.com"
 # ------------------------------------------------------------------------------
 # Cognito
 # ------------------------------------------------------------------------------
@@ -125,8 +125,8 @@ user_storage_bucket = "shifter-dev-user-storage-REPLACE_WITH_ACCOUNT_ID"
 # the PortalCapacity/CPU alarms + dashboard are not created; the ALB latency/5xx/
 # rejected/unhealthy observability alarms still are. The app emitter is enabled
 # in ASG-mode environments where the capacity alarms exist, so it stays off here.
-portal_capacity_metrics_enabled              = false
-portal_worker_soft_concurrency               = 6
+portal_capacity_metrics_enabled = false
+portal_worker_soft_concurrency  = 6
 # Channel-layer backend (ADR-018, #849), decoupled from autoscaling above.
 # The committed OSS baseline is single-instance and uses the in-memory channel
 # layer. Event-sized deployments override this to true in local.auto.tfvars.

@@ -489,7 +489,6 @@ class TestGCPTaskRunnerProvisionerContract:
         silently disable the issue #1103 hardening for production traffic. The engine
         layer imports from ``shared.cloud`` (cloud-neutral) — NOT from
         ``shared.cloud.gcp.*`` — to keep AWS dispatch decoupled from GCP modules."""
-        import re
         from pathlib import Path
 
         from shared.cloud import PROVISIONER_CONTAINER_NAME

@@ -258,4 +258,3 @@ jobs:
           IMAGE_REF="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}@${IMAGE_DIGEST}"
           echo "Verifying provenance for ${ECR_REPOSITORY}@${IMAGE_DIGEST}"
           gh attestation verify "oci://${IMAGE_REF}" --repo Brad-Edwards/shifter
-

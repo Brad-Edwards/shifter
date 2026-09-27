@@ -309,12 +309,12 @@ module "vpc" {
 module "rds" {
   source = "../../../modules/portal/rds"
 
-  name_prefix                = local.name_prefix
-  iam_name_prefix            = local.iam_name_prefix
-  permissions_boundary_arn   = local.ci_role_permissions_boundary_arn
-  secrets_kms_key_arn        = aws_kms_key.secrets_manager.arn
-  vpc_id              = module.vpc.vpc_id
-  subnet_ids          = module.vpc.private_subnet_ids
+  name_prefix              = local.name_prefix
+  iam_name_prefix          = local.iam_name_prefix
+  permissions_boundary_arn = local.ci_role_permissions_boundary_arn
+  secrets_kms_key_arn      = aws_kms_key.secrets_manager.arn
+  vpc_id                   = module.vpc.vpc_id
+  subnet_ids               = module.vpc.private_subnet_ids
   # Portal RDS is reached by the EKS control plane across the portal<->EKS VPC
   # peering (the portal app + provisioner run as pods in the EKS VPC). The legacy
   # ECS/EC2 runtime that lived in the portal VPC was retired, so ingress is
@@ -348,17 +348,17 @@ module "rds" {
 module "redis" {
   source = "../../../modules/portal/redis"
 
-  name_prefix = local.name_prefix
+  name_prefix     = local.name_prefix
   iam_name_prefix = local.iam_name_prefix
-  vpc_id      = module.vpc.vpc_id
-  subnet_ids  = module.vpc.private_subnet_ids
+  vpc_id          = module.vpc.vpc_id
+  subnet_ids      = module.vpc.private_subnet_ids
   # Reached by the EKS control plane over the portal<->EKS VPC peering; scoped to
   # the peered EKS VPC CIDR (see the RDS module note above).
   allowed_cidr_blocks = [var.eks_vpc_cidr]
-  node_type          = var.redis_node_type
-  engine_version     = var.redis_engine_version
-  enable_replication = var.redis_enable_replication
-  apply_immediately  = var.redis_apply_immediately
+  node_type           = var.redis_node_type
+  engine_version      = var.redis_engine_version
+  enable_replication  = var.redis_enable_replication
+  apply_immediately   = var.redis_apply_immediately
 
   # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
   # the portal CMK. is_active_channel_backend rejects a live channel layer on

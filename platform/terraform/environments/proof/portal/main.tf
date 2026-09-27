@@ -309,13 +309,13 @@ module "vpc" {
 module "rds" {
   source = "../../../modules/portal/rds"
 
-  name_prefix                = local.name_prefix
-  iam_name_prefix            = local.iam_name_prefix
-  permissions_boundary_arn   = local.ci_role_permissions_boundary_arn
-  secrets_kms_key_arn        = aws_kms_key.secrets_manager.arn
-  vpc_id                     = module.vpc.vpc_id
-  subnet_ids                 = module.vpc.private_subnet_ids
-  allowed_cidr_blocks        = [var.eks_vpc_cidr]
+  name_prefix              = local.name_prefix
+  iam_name_prefix          = local.iam_name_prefix
+  permissions_boundary_arn = local.ci_role_permissions_boundary_arn
+  secrets_kms_key_arn      = aws_kms_key.secrets_manager.arn
+  vpc_id                   = module.vpc.vpc_id
+  subnet_ids               = module.vpc.private_subnet_ids
+  allowed_cidr_blocks      = [var.eks_vpc_cidr]
 
   db_name               = var.db_name
   db_username           = var.db_username
@@ -348,15 +348,15 @@ module "rds" {
 module "redis" {
   source = "../../../modules/portal/redis"
 
-  name_prefix                = local.name_prefix
-  iam_name_prefix            = local.iam_name_prefix
-  vpc_id                     = module.vpc.vpc_id
-  subnet_ids                 = module.vpc.private_subnet_ids
-  allowed_cidr_blocks        = [var.eks_vpc_cidr]
-  node_type                  = var.redis_node_type
-  engine_version             = var.redis_engine_version
-  enable_replication         = var.redis_enable_replication
-  apply_immediately          = var.redis_apply_immediately
+  name_prefix         = local.name_prefix
+  iam_name_prefix     = local.iam_name_prefix
+  vpc_id              = module.vpc.vpc_id
+  subnet_ids          = module.vpc.private_subnet_ids
+  allowed_cidr_blocks = [var.eks_vpc_cidr]
+  node_type           = var.redis_node_type
+  engine_version      = var.redis_engine_version
+  enable_replication  = var.redis_enable_replication
+  apply_immediately   = var.redis_apply_immediately
 
   # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
   # the portal CMK. is_active_channel_backend rejects a live channel layer on
@@ -495,9 +495,9 @@ module "ssm" {
   ecr_repository_name = split("/", data.terraform_remote_state.foundation.outputs.portal_ecr_url)[1]
 
   # Secrets Manager ARNs
-  db_secret_arn                 = module.rds.db_credentials_secret_arn
-  app_secret_arn                = aws_secretsmanager_secret.app.arn
-  cognito_secret_arn            = module.cognito.cognito_secret_arn
+  db_secret_arn      = module.rds.db_credentials_secret_arn
+  app_secret_arn     = aws_secretsmanager_secret.app.arn
+  cognito_secret_arn = module.cognito.cognito_secret_arn
 
   # Application configuration
   domain_name       = var.domain_name

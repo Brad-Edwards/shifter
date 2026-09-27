@@ -22,12 +22,12 @@ tags = {
 # VPC
 # ------------------------------------------------------------------------------
 
-vpc_cidr           = "10.0.0.0/16"
+vpc_cidr = "10.0.0.0/16"
 
 # CIDR of the EKS control-plane VPC (must match the eks root vpc_cidr; disjoint
 # from vpc_cidr + range). Portal app/provisioner run as EKS pods reaching RDS/Redis
 # over the portal<->EKS peering.
-eks_vpc_cidr = "10.80.0.0/16"
+eks_vpc_cidr       = "10.80.0.0/16"
 az_count           = 2
 enable_nat_gateway = true
 
@@ -78,7 +78,7 @@ ctfd_ssh_allowed_cidrs = {}
 # ------------------------------------------------------------------------------
 
 # TODO: Update with your proof domain
-domain_name       = "proof.shifter.example.com"
+domain_name = "proof.shifter.example.com"
 # ------------------------------------------------------------------------------
 # Cognito
 # ------------------------------------------------------------------------------

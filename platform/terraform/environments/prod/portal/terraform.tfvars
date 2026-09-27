@@ -23,12 +23,12 @@ tags = {
 # VPC
 # ------------------------------------------------------------------------------
 
-vpc_cidr           = "10.0.0.0/16"
+vpc_cidr = "10.0.0.0/16"
 
 # CIDR of the EKS control-plane VPC (must match the eks root vpc_cidr; disjoint
 # from vpc_cidr + range). Portal app/provisioner run as EKS pods reaching RDS/Redis
 # over the portal<->EKS peering.
-eks_vpc_cidr = "10.80.0.0/16"
+eks_vpc_cidr       = "10.80.0.0/16"
 az_count           = 2
 enable_nat_gateway = true
 
@@ -68,7 +68,7 @@ terminal_read_poll_seconds     = 30
 # ALB
 # ------------------------------------------------------------------------------
 
-domain_name       = "shifter.example.com"
+domain_name = "shifter.example.com"
 # ------------------------------------------------------------------------------
 # Cognito
 # ------------------------------------------------------------------------------
@@ -103,8 +103,8 @@ user_storage_bucket = "shifter-user-storage-REPLACE_WITH_ACCOUNT_ID"
 # TargetResponseTime) and the additive worker-busy-ratio scale-out; the app
 # emitter is enabled so the PortalCapacity alarms/dashboard have a live series.
 # portal_web_workers = 4 here, so soft concurrency 8 ~ 2x the ~4-request baseline.
-portal_capacity_metrics_enabled              = true
-portal_worker_soft_concurrency               = 8
+portal_capacity_metrics_enabled = true
+portal_worker_soft_concurrency  = 8
 # Channel-layer backend (ADR-018, #849), decoupled from autoscaling above.
 # Prod runs the portal on Redis (CHANNEL_LAYER_BACKEND=redis), as before.
 enable_redis = true

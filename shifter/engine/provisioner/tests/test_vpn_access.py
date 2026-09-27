@@ -227,7 +227,6 @@ def test_aws_gateway_stays_pending_until_service_and_policy_probe():
     assert 'self.request.sendall(b"ready\\n")' in bootstrap
 
 
-
 def test_aws_gateway_bootstrap_uses_the_baked_runtime_without_package_egress():
     module = Path(__file__).parents[1] / "terraform" / "modules" / "range"
     bootstrap = (module / "templates" / "openvpn_gateway_aws.py.tpl").read_text(encoding="utf-8")
