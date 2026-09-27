@@ -646,7 +646,7 @@ class TestAwsGuestDns:
     def test_windows_dns_not_applied_to_promoted_dc_or_gcp(self):
         # A promoted DC owns its own DNS (points at itself, forwards); the
         # reset-to-DHCP task must not touch it.
-        for f in ("dc.pkr.hcl",):
+        for f in ("dc.pkr.hcl", "dc-prebaked.pkr.hcl"):
             assert "windows-ec2launch-dns.ps1" not in (PACKER_DIR / f).read_text(), (
                 f"victim DNS task must not be applied to {f}"
             )
@@ -977,3 +977,42 @@ class TestDcAmiProvenance:
         assert run("feature-x") != 0
         assert run("dev | evil") != 0
         assert run("refs/tags/dev") != 0
+
+
+class TestDcPrebaked:
+    """Issue: AWS pre-promoted DC bake (dc-prebaked.pkr.hcl).
+
+    The runtime DC pointer /shifter/ami/dc must be an already-promoted DC
+    (state_helpers._should_promote_dc_at_runtime is disabled). The plain
+    dc.pkr.hcl is a generalized, sysprepped, feature-only image and is NOT a
+    valid DC; dc-prebaked promotes at bake time and is captured un-sysprepped.
+    """
+
+    @pytest.fixture
+    def template(self):
+        return (PACKER_DIR / "dc-prebaked.pkr.hcl").read_text()
+
+    def test_template_exists(self):
+        assert (PACKER_DIR / "dc-prebaked.pkr.hcl").exists()
+
+    def test_promotes_at_bake_time(self, template):
+        assert "scripts/dc-prebaked/promote-bake.ps1" in template
+        assert "windows-restart" in template
+        assert "scripts/dc-prebaked/finalize.ps1" in template
+
+    def test_captured_un_sysprepped(self, template):
+        # Sysprep cannot generalize a promoted DC; the capture must be un-sysprepped.
+        assert "sysprep.ps1" not in template
+
+    def test_dsrm_secret_is_injected_not_defaulted(self):
+        variables = (PACKER_DIR / "variables.pkr.hcl").read_text()
+        assert "dc_dsrm_password" in variables
+        assert "sensitive   = true" in variables
+        promote = (PACKER_DIR / "scripts" / "dc-prebaked" / "promote-bake.ps1").read_text()
+        # Fail closed rather than bake a default DSRM secret into the forest.
+        assert "DC_DSRM_PASSWORD is required" in promote
+
+    def test_finalize_pins_amazon_provided_dns(self):
+        finalize = (PACKER_DIR / "scripts" / "dc-prebaked" / "finalize.ps1").read_text()
+        assert "169.254.169.253" in finalize
+        assert "Set-DnsServerForwarder" in finalize
