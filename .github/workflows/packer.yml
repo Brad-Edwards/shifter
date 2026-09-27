@@ -154,6 +154,10 @@ jobs:
           # calls to this run/attempt (design note #1656).
           role-session-name: image-build-${{ inputs.ami_type }}-${{ github.run_id }}-${{ github.run_attempt }}
           aws-region: us-east-2
+          # A base-image build plus the #1633 fresh-boot verify gate can run well
+          # past the 1h default session (Kali + verify ~1h40m), and a mid-build
+          # RequestExpired loses the whole build. Request the role's 6h max.
+          role-duration-seconds: 21600
 
       - name: Initialize Packer
         run: packer init .
