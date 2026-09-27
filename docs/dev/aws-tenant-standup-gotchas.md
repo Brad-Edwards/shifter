@@ -58,8 +58,8 @@ always needs its own `--sweep`.
 `deploy.py runners --env <env> --profile <p>` (the standalone path, not `full`)
 does not thread the bootstrap state bucket, so it resolves it from the
 `TF_INFRA_STATE_BUCKET` environment variable. Export it to the bootstrap bucket
-before running, or the runner apply fails closed with "Set TF_INFRA_STATE_BUCKET
-or pass the bootstrap bucket name". (The `full` path threads it automatically.)
+before running, or the runner apply fails closed with `Set TF_INFRA_STATE_BUCKET
+or pass the bootstrap bucket name`. (The `full` path threads it automatically.)
 
 ## First-deploy AMI ordering (Core → Range → seed AMIs → Portal)
 
@@ -79,7 +79,7 @@ After the Range stack applies, set the fresh-boot verify-gate variables from it:
 - `PACKER_VERIFY_INSTANCE_PROFILE_<ENV>` = range output
   `range_instance_profile_name` (`shifter-<env>-range-range-instance`).
 - `PACKER_VERIFY_SUBNET_ID_<ENV>` = the range VPC's `ssm-endpoints` subnet (or
-  any range-VPC subnet — the ssm/ssmmessages/ec2messages interface endpoints have
+  any range-VPC subnet; the ssm/ssmmessages/ec2messages interface endpoints have
   private DNS and are reached VPC-locally, and the endpoint SG allows 443 from the
   whole VPC CIDR).
 - `PACKER_VERIFY_SG_<ENV>` = a **no-inbound, egress-all** security group. The
@@ -104,10 +104,10 @@ DC AMI. Real fix: implement a pre-promoted DC bake for AWS (port GCP's
 never launches a DC) meanwhile, seed `/shifter/ami/dc` with a placeholder AMI so
 the Portal plan's data source resolves; repoint it once a real DC is baked.
 
-## Debugging apply-time Terraform bugs
+## Debugging apply time Terraform bugs
 
 The deploy workflow re-runs the ~25-min Quality gate on every dispatch, so
-iterating apply-time Terraform errors through CI is slow. For the debug/converge
+iterating apply time Terraform errors through CI is slow. For the debug/converge
 phase, run the identical `terraform apply` locally against the same S3 backend
 and rendered overlays (what `_range.yml` / `deploy.py terraform` run), fix each
 error, then validate the full chain with one CI `deploy.yml` dispatch.
