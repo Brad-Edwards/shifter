@@ -406,6 +406,23 @@ def _install_load_balancer_controller(cluster_name: str, role_arn: str, vpc_id: 
             "10m",
         ]
     )
+    # Restart the controller so the webhook pods serve the cert that matches the
+    # caBundle Helm just wrote. The chart's genSignedCert regenerates the
+    # aws-load-balancer-tls Secret and the webhook caBundle on every upgrade, but
+    # already-running pods keep serving the previous cert from memory. That leaves a
+    # window where webhook calls fail TLS ("x509: certificate signed by unknown
+    # authority"), which breaks the very next chart install that creates Services or
+    # an Ingress. A restart makes the serving cert and the caBundle consistent.
+    run_cmd(
+        [
+            "kubectl",
+            "rollout",
+            "restart",
+            "deployment/aws-load-balancer-controller",
+            "--namespace",
+            "kube-system",
+        ]
+    )
     run_cmd(
         [
             "kubectl",
