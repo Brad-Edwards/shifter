@@ -193,18 +193,28 @@ def _runtime_environment(profile: str) -> str:
 
 
 def _validated_runtime_env(outputs: Mapping[str, object]) -> dict[str, str]:
-    """Return validated Terraform-owned runtime variables."""
+    """Return validated Terraform-owned runtime variables.
+
+    Values must be strings but MAY be empty: the Terraform contract emits empty
+    strings for optional runtime keys that are off for this environment (e.g.
+    DC_DOMAIN_NAME when no Windows DC scenario is deployed, and absent range
+    exports that eks-provisioner-env defaults to ""). Only the required keys must
+    be present and non-empty.
+    """
     raw = _output(outputs, "runtime_env")
     if not isinstance(raw, Mapping) or not all(
-        isinstance(key, str) and isinstance(value, str) and value for key, value in raw.items()
+        isinstance(key, str) and isinstance(value, str) for key, value in raw.items()
     ):
-        raise ValueError("runtime_env must map canonical runtime keys to non-empty string values")
+        raise ValueError("runtime_env must map string keys to string values")
     conflicting = sorted(_RENDERER_OWNED_RUNTIME_ENV.intersection(raw))
     if conflicting:
         raise ValueError("runtime_env must not override renderer-owned keys: " + ", ".join(conflicting))
     missing = sorted(AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS.difference(raw))
     if missing:
         raise ValueError("runtime_env is missing required keys: " + ", ".join(missing))
+    empty_required = sorted(key for key in AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS if not raw[key])
+    if empty_required:
+        raise ValueError("required runtime_env keys must be non-empty: " + ", ".join(empty_required))
     return dict(raw)
 
 

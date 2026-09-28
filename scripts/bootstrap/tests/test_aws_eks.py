@@ -777,3 +777,19 @@ def test_aws_eks_module_import_does_not_depend_on_caller_cwd(monkeypatch, tmp_pa
     monkeypatch.syspath_prepend(str(Path(aws_eks.__file__).parent))
     sys.modules.pop("aws_eks", None)
     __import__("aws_eks")
+
+
+def test_validated_runtime_env_allows_empty_optional_but_rejects_empty_required():
+    # Optional keys (e.g. DC_DOMAIN_NAME with no Windows DC scenario) may be empty
+    # by the Terraform contract; required keys must be present and non-empty.
+    from installation.runtime_inventory_aws import AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS
+
+    base = {key: f"value-for-{key}" for key in AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS}
+
+    ok = {**base, "DC_DOMAIN_NAME": ""}
+    result = aws_eks._validated_runtime_env({"runtime_env": {"value": ok}})
+    assert result["DC_DOMAIN_NAME"] == ""
+
+    bad = {**base, "AWS_REGION": ""}
+    with pytest.raises(ValueError, match="must be non-empty"):
+        aws_eks._validated_runtime_env({"runtime_env": {"value": bad}})
