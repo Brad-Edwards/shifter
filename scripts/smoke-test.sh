@@ -38,8 +38,46 @@ if [[ -z "${SMOKE_TEST_USER_EMAIL:-}" ]]; then
   exit 1
 fi
 
-# Point kubectl at the target EKS cluster (idempotent).
-aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}"
+# Point kubectl at the private EKS API. The endpoint is private-only and its
+# Route 53 zone is service-owned (cannot associate the runner VPC), so the runner
+# cannot resolve the endpoint hostname. Connect by the control-plane ENI IP,
+# reached over the runner<->EKS peering, with tls-server-name set to the endpoint
+# host so the presented server certificate still validates. The runner's deploy
+# role holds cluster-admin access, so `aws eks get-token` authenticates directly.
+ENDPOINT="$(aws eks describe-cluster --name "${CLUSTER_NAME}" --region "${AWS_REGION}" --query 'cluster.endpoint' --output text)"
+ENDPOINT_HOST="${ENDPOINT#https://}"
+ENDPOINT_HOST="${ENDPOINT_HOST%%/*}"
+CA_DATA="$(aws eks describe-cluster --name "${CLUSTER_NAME}" --region "${AWS_REGION}" --query 'cluster.certificateAuthority.data' --output text)"
+API_IP="$(aws ec2 describe-network-interfaces --region "${AWS_REGION}" \
+  --filters "Name=description,Values=Amazon EKS ${CLUSTER_NAME}" "Name=status,Values=in-use" \
+  --query 'NetworkInterfaces[0].PrivateIpAddress' --output text)"
+if [[ -z "${API_IP}" || "${API_IP}" == "None" ]]; then
+  echo "::error::No in-use EKS control-plane ENI found for ${CLUSTER_NAME}" >&2
+  exit 1
+fi
+KUBECONFIG="$(mktemp)"
+export KUBECONFIG
+cat > "${KUBECONFIG}" <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+  - name: ${CLUSTER_NAME}
+    cluster:
+      server: https://${API_IP}:443
+      tls-server-name: ${ENDPOINT_HOST}
+      certificate-authority-data: ${CA_DATA}
+contexts:
+  - name: ${CLUSTER_NAME}
+    context: {cluster: ${CLUSTER_NAME}, user: ${CLUSTER_NAME}}
+current-context: ${CLUSTER_NAME}
+users:
+  - name: ${CLUSTER_NAME}
+    user:
+      exec:
+        apiVersion: client.authentication.k8s.io/v1beta1
+        command: aws
+        args: [--region, ${AWS_REGION}, eks, get-token, --cluster-name, ${CLUSTER_NAME}, --output, json]
+EOF
 
 # The manage command runs inside the portal pod via `kubectl exec`, which does
 # not inherit this job's environment. Forward the smoke user identity explicitly
