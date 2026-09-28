@@ -31,6 +31,7 @@ def _terraform_outputs() -> dict[str, object]:
         "cluster_name": {"value": "shifter-dev-eks"},
         "cluster_access_role_arn": {"value": "arn:aws:iam::123456789012:role/shifter-dev-eks-deployer"},
         "cluster_ca_certificate": {"value": "TFMwdExTMHRMUzFDUlVkSlRpQkRSVkpVU1VaSlEwRlVSUzB0TFMwdENn"},
+        "bundle_outputs": {"value": {"vpc_id": "vpc-" + "0" * 17}},
         "certificate_arn": {"value": "arn:aws:acm:us-east-2:123456789012:certificate/example"},
         "waf_acl_arn": {"value": "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/example/id"},
         "workload_role_arns": {

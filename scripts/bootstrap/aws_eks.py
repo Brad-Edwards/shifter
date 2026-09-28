@@ -355,8 +355,16 @@ def _apply_platform_namespaces() -> None:
             run_cmd(["kubectl", "apply", "-f", str(manifest_path)])
 
 
-def _install_load_balancer_controller(cluster_name: str, role_arn: str) -> None:
-    """Install the AWS load-balancer controller bound to its exact IRSA role."""
+def _install_load_balancer_controller(cluster_name: str, role_arn: str, vpc_id: str, region: str) -> None:
+    """Install the AWS load-balancer controller bound to its exact IRSA role.
+
+    vpcId and region are passed explicitly so the controller never queries IMDS:
+    the node launch template pins http_put_response_hop_limit = 1, which blocks
+    pod access to IMDS (a deliberate hardening that forces IRSA and stops a
+    compromised pod from reading node-role credentials). Without these, the
+    controller's IMDS-based VPC discovery times out and it CrashLoops. AWS auth is
+    still via the IRSA role annotation below.
+    """
     run_cmd(["helm", "repo", "add", "eks", "https://aws.github.io/eks-charts", "--force-update"])
     run_cmd(["helm", "repo", "update", "eks"])
     run_cmd(
@@ -372,6 +380,10 @@ def _install_load_balancer_controller(cluster_name: str, role_arn: str) -> None:
             _LOAD_BALANCER_CONTROLLER_CHART_VERSION,
             "--set-string",
             f"clusterName={cluster_name}",
+            "--set-string",
+            f"vpcId={vpc_id}",
+            "--set-string",
+            f"region={region}",
             "--set",
             "serviceAccount.create=true",
             "--set-string",
@@ -464,8 +476,11 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
     if not isinstance(roles.get("cluster-autoscaler"), str):
         raise ValueError("workload_role_arns must include the cluster-autoscaler role")
     cluster_name = str(_output(outputs, "cluster_name"))
+    bundle = _output(outputs, "bundle_outputs")
+    if not isinstance(bundle, Mapping) or not isinstance(bundle.get("vpc_id"), str):
+        raise ValueError("bundle_outputs must include the cluster vpc_id")
     _apply_platform_namespaces()
-    _install_load_balancer_controller(cluster_name, str(roles["ingress"]))
+    _install_load_balancer_controller(cluster_name, str(roles["ingress"]), str(bundle["vpc_id"]), region)
     _install_cluster_autoscaler(cluster_name, region, str(roles["cluster-autoscaler"]))
 
 
