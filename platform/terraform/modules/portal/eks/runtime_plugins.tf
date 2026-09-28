@@ -92,8 +92,14 @@ resource "aws_eks_node_group" "runtime_plugins" {
   }
   update_config { max_unavailable = 1 }
   lifecycle { ignore_changes = [scaling_config[0].desired_size] }
-  depends_on = [aws_iam_role_policy_attachment.node]
-  tags       = merge(var.tags, { Name = "${var.cluster_name}-runtime-plugins" })
+  # Like the platform node group, these nodes cannot reach Ready until the vpc-cni
+  # and kube-proxy addons exist, so order them after both addons.
+  depends_on = [
+    aws_iam_role_policy_attachment.node,
+    aws_eks_addon.vpc_cni,
+    aws_eks_addon.kube_proxy,
+  ]
+  tags = merge(var.tags, { Name = "${var.cluster_name}-runtime-plugins" })
 }
 
 resource "aws_autoscaling_group_tag" "runtime_plugins_enabled" {

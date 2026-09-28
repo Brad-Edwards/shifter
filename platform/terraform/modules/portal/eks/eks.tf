@@ -99,7 +99,18 @@ resource "aws_eks_node_group" "this" {
     ignore_changes = [scaling_config[0].desired_size]
   }
 
-  depends_on = [aws_iam_role_policy_attachment.node]
+  # Nodes cannot reach Ready until the CNI (vpc-cni) and kube-proxy DaemonSets
+  # are installed, so the vpc-cni and kube-proxy managed addons must exist before
+  # the node group is created. Both addons reach ACTIVE with zero desired pods on
+  # an empty cluster, then their DaemonSets schedule onto these nodes as they come
+  # up. Ordering the addons after the node group instead deadlocks: the node group
+  # never becomes ACTIVE without a CNI, so the CNI addon is never created
+  # (NodeCreationFailure: "Instances failed to join the kubernetes cluster").
+  depends_on = [
+    aws_iam_role_policy_attachment.node,
+    aws_eks_addon.vpc_cni,
+    aws_eks_addon.kube_proxy,
+  ]
 
   tags = merge(var.tags, {
     Name = "${var.cluster_name}-platform"
@@ -189,7 +200,12 @@ resource "aws_eks_addon" "vpc_cni" {
     }
   })
 
-  depends_on = [aws_eks_node_group.this]
+  # Created before the node group so a working CNI exists when nodes join. Adopt
+  # any self-managed aws-node the cluster bootstrapped rather than failing on it.
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_iam_role_policy_attachment.workload]
 
   tags = var.tags
 }
@@ -221,6 +237,11 @@ resource "aws_eks_addon" "core_dns" {
   addon_name    = "coredns"
   addon_version = var.addon_versions.coredns
 
+  # coredns is a Deployment that needs schedulable nodes to become healthy, so it
+  # is created after the node group. Adopt any self-managed coredns on create.
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
   depends_on = [aws_eks_node_group.this]
 
   tags = var.tags
@@ -231,7 +252,10 @@ resource "aws_eks_addon" "kube_proxy" {
   addon_name    = "kube-proxy"
   addon_version = var.addon_versions.kube_proxy
 
-  depends_on = [aws_eks_node_group.this]
+  # Created before the node group (alongside vpc-cni) so nodes can reach Ready.
+  # Adopt any self-managed kube-proxy the cluster bootstrapped.
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
 
   tags = var.tags
 }
