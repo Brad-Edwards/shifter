@@ -984,6 +984,119 @@ def _apply_eks_terraform(
     run_cmd(["terraform", f"-chdir={root}", "apply", plan_name], dry_run=dry_run, profile=aws_profile)
 
 
+def _write_private_api_kubeconfig(
+    outputs: Mapping[str, object],
+    *,
+    alias: str,
+    region: str,
+    aws_profile: str | None,
+) -> Path:
+    """Point kubectl/helm at the private EKS API by control-plane ENI IP.
+
+    The cluster endpoint is private-only (endpoint_public_access = false) and its
+    Route 53 hosted zone is service-owned, so it cannot be associated with the
+    self-hosted runner VPC and the runner cannot resolve the endpoint hostname
+    (see modules/portal/eks/runner_network.tf). ``aws eks update-kubeconfig`` would
+    write that unresolvable hostname. Instead connect by the control-plane ENI IP,
+    reached over the runner<->EKS peering, with ``tls-server-name`` set to the
+    endpoint host so the presented server certificate still validates. The ENIs
+    are resolved fresh on every deploy, so control-plane ENI churn is picked up
+    automatically. Auth is unchanged: the bounded cluster-access role via
+    ``aws eks get-token``.
+    """
+    cluster_name = str(_output(outputs, "cluster_name"))
+    role_arn = str(_output(outputs, "cluster_access_role_arn"))
+    ca_data = str(_output(outputs, "cluster_ca_certificate"))
+
+    described = run_cmd(
+        [
+            "aws",
+            "eks",
+            "describe-cluster",
+            "--name",
+            cluster_name,
+            "--region",
+            region,
+            "--query",
+            "cluster.endpoint",
+            "--output",
+            "text",
+        ],
+        capture=True,
+        profile=aws_profile,
+    )
+    endpoint_host = str(described.stdout).strip().removeprefix("https://").split("/")[0]
+
+    enis = run_cmd(
+        [
+            "aws",
+            "ec2",
+            "describe-network-interfaces",
+            "--region",
+            region,
+            "--filters",
+            f"Name=description,Values=Amazon EKS {cluster_name}",
+            "Name=status,Values=in-use",
+            "--query",
+            "NetworkInterfaces[].PrivateIpAddress",
+            "--output",
+            "text",
+        ],
+        capture=True,
+        profile=aws_profile,
+    )
+    control_plane_ips = str(enis.stdout).split()
+    if not control_plane_ips:
+        raise SystemExit("No in-use EKS control-plane ENIs found; cannot reach the private API by IP.")
+
+    kubeconfig = {
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [
+            {
+                "name": cluster_name,
+                "cluster": {
+                    "server": f"https://{control_plane_ips[0]}:443",
+                    "tls-server-name": endpoint_host,
+                    "certificate-authority-data": ca_data,
+                },
+            }
+        ],
+        "contexts": [{"name": alias, "context": {"cluster": cluster_name, "user": cluster_name}}],
+        "current-context": alias,
+        "users": [
+            {
+                "name": cluster_name,
+                "user": {
+                    "exec": {
+                        "apiVersion": "client.authentication.k8s.io/v1beta1",
+                        "command": "aws",
+                        "args": [
+                            "--region",
+                            region,
+                            "eks",
+                            "get-token",
+                            "--cluster-name",
+                            cluster_name,
+                            "--role-arn",
+                            role_arn,
+                            "--output",
+                            "json",
+                        ],
+                    }
+                },
+            }
+        ],
+    }
+
+    path = Path(tempfile.gettempdir()) / f"{alias}.kubeconfig"
+    # kubeconfig is JSON, which kubectl/helm read as YAML; avoids a YAML dependency.
+    path.write_text(json.dumps(kubeconfig), encoding="utf-8")
+    path.chmod(0o600)
+    os.environ["KUBECONFIG"] = str(path)
+    return path
+
+
 def deploy_eks(
     config_path: str | Path,
     images_path: str | Path,
@@ -1024,21 +1137,11 @@ def deploy_eks(
         return {"backend": "aws", "profile": profile, "health_url": health_url}
 
     outputs = _terraform_outputs(root, aws_profile=aws_profile)
-    run_cmd(
-        [
-            "aws",
-            "eks",
-            "update-kubeconfig",
-            "--name",
-            str(_output(outputs, "cluster_name")),
-            "--region",
-            str(config.settings["region"]),
-            "--role-arn",
-            str(_output(outputs, "cluster_access_role_arn")),
-            "--alias",
-            f"shifter-{profile}",
-        ],
-        profile=aws_profile,
+    _write_private_api_kubeconfig(
+        outputs,
+        alias=f"shifter-{profile}",
+        region=str(config.settings["region"]),
+        aws_profile=aws_profile,
     )
     _wait_for_managed_addons(str(_output(outputs, "cluster_name")), aws_profile=aws_profile)
     _bootstrap_cluster(outputs, str(config.settings["region"]))

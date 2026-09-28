@@ -25,6 +25,23 @@ override_data {
   }
 }
 
+# GitHub Actions runner VPC discovered by name for the runner<->EKS peering
+# (runner_network.tf). Disjoint from portal/eks/range CIDRs.
+override_data {
+  target = data.aws_vpc.runner
+  values = {
+    id         = "vpc-mock-runner"
+    cidr_block = "10.20.0.0/24"
+  }
+}
+
+override_data {
+  target = data.aws_route_tables.runner
+  values = {
+    ids = ["rtb-mock-runner"]
+  }
+}
+
 mock_provider "aws" {}
 
 override_resource {
@@ -516,11 +533,17 @@ run "enabled_broker_routes" {
     error_message = "Every private EKS route table must reach the portal data plane (RDS/Redis) over the portal peering."
   }
   assert {
+    condition = alltrue([for table in aws_route_table.private :
+      length([for route in table.route : route if route.cidr_block == data.aws_vpc.runner.cidr_block && route.vpc_peering_connection_id == aws_vpc_peering_connection.runner.id]) == 1
+    ])
+    error_message = "Every private EKS route table must return eks-deploy/smoke traffic to the runner VPC over the runner peering."
+  }
+  assert {
     condition = alltrue(flatten([for table in aws_route_table.private : [
       for route in table.route :
-      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16" || route.cidr_block == data.aws_vpc.portal.cidr_block
+      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16" || route.cidr_block == data.aws_vpc.portal.cidr_block || route.cidr_block == data.aws_vpc.runner.cidr_block
     ]]))
-    error_message = "Peering routes must stay bounded to the range + portal CIDRs; the default route uses NAT."
+    error_message = "Peering routes must stay bounded to the range + portal + runner CIDRs; the default route uses NAT."
   }
   assert {
     condition = (

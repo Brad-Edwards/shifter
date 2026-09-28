@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,6 +30,7 @@ def _terraform_outputs() -> dict[str, object]:
     return {
         "cluster_name": {"value": "shifter-dev-eks"},
         "cluster_access_role_arn": {"value": "arn:aws:iam::123456789012:role/shifter-dev-eks-deployer"},
+        "cluster_ca_certificate": {"value": "TFMwdExTMHRMUzFDUlVkSlRpQkRSVkpVU1VaSlEwRlVSUzB0TFMwdENn"},
         "certificate_arn": {"value": "arn:aws:acm:us-east-2:123456789012:certificate/example"},
         "waf_acl_arn": {"value": "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/example/id"},
         "workload_role_arns": {
@@ -513,7 +515,20 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         "-out=shifter-eks.tfplan",
     ] in calls
     assert ["terraform", f"-chdir={terraform_root}", "apply", "shifter-eks.tfplan"] in calls
-    assert any(cmd[:3] == ["aws", "eks", "update-kubeconfig"] and "--role-arn" in cmd for cmd in calls)
+    # The private API endpoint is unresolvable from the runner VPC (service-owned
+    # hosted zone), so the deploy reaches it by control-plane ENI IP over the
+    # runner<->EKS peering, with tls-server-name preserving cert validation and the
+    # bounded cluster-access role for auth (no public ingress).
+    assert any(cmd[:3] == ["aws", "ec2", "describe-network-interfaces"] for cmd in calls)
+    kubeconfig_path = os.environ.get("KUBECONFIG")
+    assert kubeconfig_path is not None
+    built = json.loads(Path(kubeconfig_path).read_text())
+    built_cluster = built["clusters"][0]["cluster"]
+    assert built_cluster["server"].startswith("https://") and built_cluster["server"].endswith(":443")
+    assert built_cluster["tls-server-name"]
+    assert built_cluster["certificate-authority-data"]
+    exec_args = built["users"][0]["user"]["exec"]["args"]
+    assert "get-token" in exec_args and "--role-arn" in exec_args
     expected_addons = {
         "vpc-cni",
         "aws-ebs-csi-driver",
