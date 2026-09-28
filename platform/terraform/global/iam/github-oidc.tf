@@ -1109,13 +1109,8 @@ resource "aws_iam_policy" "security" {
           "secretsmanager:RotateSecret",
           "secretsmanager:CancelRotateSecret"
         ]
-        Resource = [
-          # Dash-namespaced portal/range secrets (shifter-<env>-portal-*, etc.).
-          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*",
-          # Slash-namespaced EKS workload secrets read by the eks root's
-          # data.aws_secretsmanager_secret (shifter/<env>/eks/{database,django,redis}).
-          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter/*"
-        ]
+        # Dash-namespaced secrets; slash-namespaced shifter/* live in eks policy.
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*"
       },
       {
         Sid      = "SecretsManagerRandom"
@@ -1283,6 +1278,26 @@ resource "aws_iam_policy" "eks" {
           "iam:CreateServiceLinkedRole"
         ]
         Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/eks*.amazonaws.com/AWSServiceRoleForAmazonEKS*"
+      },
+      {
+        # Slash-namespaced deploy secrets on the EKS path: the eks root creates
+        # and manages shifter/<env>/eks/* (modules/portal/eks/kms_secrets.tf) and
+        # the deploy reads shifter/<env>/{app,cognito}. Kept in this category, not
+        # security, which is at the AWS managed-policy size ceiling (#254).
+        Sid    = "ManageEksDeploySecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:TagResource",
+          "secretsmanager:UntagResource",
+          "secretsmanager:GetResourcePolicy"
+        ]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter/*"
       }
     ]
   })
