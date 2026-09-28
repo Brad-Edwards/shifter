@@ -193,10 +193,19 @@ resource "aws_eks_addon" "vpc_cni" {
   # default-deny + scoped-allow policies for both clouds, but on EKS they are
   # inert unless the VPC CNI network-policy agent is enabled — this closes the
   # "rendered but not enforced" gap so NetworkPolicy parity with GKE is real.
+  #
+  # Mode is "standard", not "strict": standard enforces every NetworkPolicy that
+  # selects a pod (the chart's shifter-namespace default-deny still fully applies)
+  # while leaving pods that no policy selects — coredns, the CSI drivers, and the
+  # rest of kube-system — reachable. "strict" default-denies ALL pod traffic until
+  # an allow-policy exists, which has no kube-system policies to satisfy it and so
+  # severs coredns/CSI from the API server and DNS cluster-wide. GKE's Dataplane V2
+  # (the parity target) likewise default-allows pods no policy selects, so standard
+  # is the faithful parity setting, not a relaxation.
   configuration_values = jsonencode({
     enableNetworkPolicy = "true"
     env = {
-      NETWORK_POLICY_ENFORCING_MODE = "strict"
+      NETWORK_POLICY_ENFORCING_MODE = "standard"
     }
   })
 
