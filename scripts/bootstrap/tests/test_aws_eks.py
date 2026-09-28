@@ -527,8 +527,12 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     assert built_cluster["server"].startswith("https://") and built_cluster["server"].endswith(":443")
     assert built_cluster["tls-server-name"]
     assert built_cluster["certificate-authority-data"]
+    # Auth is the deploy role directly (it holds the cluster's ClusterAdmin access
+    # entry). No --role-arn: passing the deploy role there self-assumes and fails
+    # with AssumeRole AccessDenied.
     exec_args = built["users"][0]["user"]["exec"]["args"]
-    assert "get-token" in exec_args and "--role-arn" in exec_args
+    assert "get-token" in exec_args and "--cluster-name" in exec_args
+    assert "--role-arn" not in exec_args
     expected_addons = {
         "vpc-cni",
         "aws-ebs-csi-driver",

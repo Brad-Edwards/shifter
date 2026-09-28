@@ -1001,11 +1001,13 @@ def _write_private_api_kubeconfig(
     reached over the runner<->EKS peering, with ``tls-server-name`` set to the
     endpoint host so the presented server certificate still validates. The ENIs
     are resolved fresh on every deploy, so control-plane ENI churn is picked up
-    automatically. Auth is unchanged: the bounded cluster-access role via
-    ``aws eks get-token``.
+    automatically. Auth uses ``aws eks get-token`` as the deploy role directly:
+    that role holds the cluster's AmazonEKSClusterAdminPolicy access entry
+    (aws_eks_access_entry.deployment), so no ``--role-arn`` is passed. Passing the
+    deployment role there would make the deploy role assume itself, which fails
+    with AssumeRole AccessDenied.
     """
     cluster_name = str(_output(outputs, "cluster_name"))
-    role_arn = str(_output(outputs, "cluster_access_role_arn"))
     ca_data = str(_output(outputs, "cluster_ca_certificate"))
 
     described = run_cmd(
@@ -1078,8 +1080,6 @@ def _write_private_api_kubeconfig(
                             "get-token",
                             "--cluster-name",
                             cluster_name,
-                            "--role-arn",
-                            role_arn,
                             "--output",
                             "json",
                         ],
