@@ -70,7 +70,12 @@ def _catalog(*, enabled=True):
             {
                 "price_schedule_id": "vertex-2026-09",
                 "currency": "USD",
-                "valid_until": "2026-10-01T00:00:00Z",
+                # Far-future so the price never expires inside a launch window. A
+                # near-term literal here rots: the CTF launch path derives the
+                # allocation window from the event schedule (spin-up + duration +
+                # cleanup), which as real time approaches the date exceeds it and
+                # makes the price read as expired (allocation.price_unavailable).
+                "valid_until": "2099-01-01T00:00:00Z",
                 "prices": [{"component": "input_tokens", "unit_denominator": 1000000, "price_micro_units": 3000000}],
             }
         ],
