@@ -29,6 +29,7 @@ locals {
 }
 
 resource "aws_launch_template" "runtime_plugins" {
+  count                  = var.enable_runtime_plugins ? 1 : 0
   name_prefix            = "${var.cluster_name}-runtime-plugins-"
   update_default_version = true
   user_data = base64encode(templatefile("${path.module}/runtime-plugins-userdata.tftpl", {
@@ -65,6 +66,7 @@ resource "aws_launch_template" "runtime_plugins" {
 }
 
 resource "aws_eks_node_group" "runtime_plugins" {
+  count           = var.enable_runtime_plugins ? 1 : 0
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "runtime-plugins"
   node_role_arn   = aws_iam_role.node.arn
@@ -80,8 +82,8 @@ resource "aws_eks_node_group" "runtime_plugins" {
     effect = "NO_SCHEDULE"
   }
   launch_template {
-    id      = aws_launch_template.runtime_plugins.id
-    version = aws_launch_template.runtime_plugins.latest_version
+    id      = aws_launch_template.runtime_plugins[0].id
+    version = aws_launch_template.runtime_plugins[0].latest_version
   }
   # Keep a sandbox ready: cold EC2 bootstrap exceeds the installation probe's
   # deadline. Autoscaling never removes the final warm node.
@@ -103,7 +105,8 @@ resource "aws_eks_node_group" "runtime_plugins" {
 }
 
 resource "aws_autoscaling_group_tag" "runtime_plugins_enabled" {
-  autoscaling_group_name = aws_eks_node_group.runtime_plugins.resources[0].autoscaling_groups[0].name
+  count                  = var.enable_runtime_plugins ? 1 : 0
+  autoscaling_group_name = aws_eks_node_group.runtime_plugins[0].resources[0].autoscaling_groups[0].name
   tag {
     key                 = "k8s.io/cluster-autoscaler/enabled"
     value               = "true"
@@ -112,7 +115,8 @@ resource "aws_autoscaling_group_tag" "runtime_plugins_enabled" {
 }
 
 resource "aws_autoscaling_group_tag" "runtime_plugins_owned" {
-  autoscaling_group_name = aws_eks_node_group.runtime_plugins.resources[0].autoscaling_groups[0].name
+  count                  = var.enable_runtime_plugins ? 1 : 0
+  autoscaling_group_name = aws_eks_node_group.runtime_plugins[0].resources[0].autoscaling_groups[0].name
   tag {
     key                 = "k8s.io/cluster-autoscaler/${var.cluster_name}"
     value               = "owned"

@@ -206,3 +206,17 @@ variable "tags" {
   description = "Common tags."
   type        = map(string)
 }
+
+variable "enable_runtime_plugins" {
+  description = <<-EOT
+    Create the exclusive gVisor runtime-plugin node group. Default false on EKS:
+    the pool identity keys on the node-restriction.kubernetes.io/shifter-pool
+    label, which NodeRestriction forbids a kubelet from self-registering. EKS
+    applies managed-node-group labels through the kubelet (unlike GKE, whose
+    control plane applies them via a trusted path), so the node fails to join
+    with that label. Enabling it requires a trusted node-labeler for EKS parity
+    with GKE (tracked follow-up). Keep false until that lands.
+  EOT
+  type        = bool
+  default     = false
+}

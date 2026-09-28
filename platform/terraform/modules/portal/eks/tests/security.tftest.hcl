@@ -162,14 +162,14 @@ override_resource {
 }
 
 override_resource {
-  target = aws_eks_node_group.runtime_plugins
+  target = aws_eks_node_group.runtime_plugins[0]
   values = {
     resources = [{ autoscaling_groups = [{ name = "eks-shifter-test-plugins-asg" }] }]
   }
 }
 
 override_resource {
-  target = aws_launch_template.runtime_plugins
+  target = aws_launch_template.runtime_plugins[0]
   values = {
     id             = "lt-22222222222222222"
     latest_version = 1
@@ -242,6 +242,10 @@ variables {
     "database",
     "django",
   ]
+  # Validate the runtime-plugin sandbox pool contract even though it defaults off
+  # on EKS (see variables.tf: needs a trusted node-labeler for the restricted
+  # pool label before it can join).
+  enable_runtime_plugins = true
   tags = {
     Environment = "test"
     Project     = "shifter"
@@ -253,30 +257,30 @@ run "security_contract" {
 
   assert {
     condition = (
-      aws_eks_node_group.runtime_plugins.ami_type == "AL2023_x86_64_STANDARD" &&
-      aws_eks_node_group.runtime_plugins.labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
-      one(aws_eks_node_group.runtime_plugins.taint).key == "shifter.dev/runtime-plugin" &&
-      one(aws_eks_node_group.runtime_plugins.taint).effect == "NO_SCHEDULE" &&
-      aws_eks_node_group.runtime_plugins.scaling_config[0].min_size == 1
+      aws_eks_node_group.runtime_plugins[0].ami_type == "AL2023_x86_64_STANDARD" &&
+      aws_eks_node_group.runtime_plugins[0].labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins[0].taint).key == "shifter.dev/runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins[0].taint).effect == "NO_SCHEDULE" &&
+      aws_eks_node_group.runtime_plugins[0].scaling_config[0].min_size == 1
     )
     error_message = "Tenant runtime plugins require a warm, exclusive AL2023 sandbox pool."
   }
 
   assert {
     condition = (
-      aws_launch_template.runtime_plugins.metadata_options[0].http_tokens == "required" &&
-      aws_launch_template.runtime_plugins.metadata_options[0].http_put_response_hop_limit == 1 &&
-      aws_launch_template.runtime_plugins.block_device_mappings[0].ebs[0].encrypted
+      aws_launch_template.runtime_plugins[0].metadata_options[0].http_tokens == "required" &&
+      aws_launch_template.runtime_plugins[0].metadata_options[0].http_put_response_hop_limit == 1 &&
+      aws_launch_template.runtime_plugins[0].block_device_mappings[0].ebs[0].encrypted
     )
     error_message = "Sandbox node storage and metadata must preserve the hardened node boundary."
   }
 
   assert {
     condition = (
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "sha512sum --check --status") &&
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "release/20260914.0/") &&
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "io.containerd.runsc.v1") &&
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "node.eks.aws/v1alpha1")
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "sha512sum --check --status") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "release/20260914.0/") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "io.containerd.runsc.v1") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "node.eks.aws/v1alpha1")
     )
     error_message = "Node bootstrap must verify the pinned gVisor archive and configure the runtime through nodeadm."
   }
@@ -393,10 +397,16 @@ run "security_contract" {
   }
 
   # The VPC CNI network-policy agent must be enabled so the chart's default-deny
-  # NetworkPolicies are actually enforced on EKS, not merely rendered.
+  # NetworkPolicies are actually enforced on EKS, not merely rendered. Mode is
+  # "standard", not "strict": standard enforces every policy that selects a pod
+  # (the chart's shifter-namespace default-deny applies in full) while leaving
+  # unselected kube-system pods (coredns, CSI) reachable. strict default-denies
+  # ALL pod traffic until an allow-policy exists, which severs coredns/CSI from
+  # the API server and DNS cluster-wide. GKE Dataplane V2 parity likewise
+  # default-allows pods no policy selects.
   assert {
-    condition     = strcontains(aws_eks_addon.vpc_cni.configuration_values, "enableNetworkPolicy") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "NETWORK_POLICY_ENFORCING_MODE") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "strict")
-    error_message = "The vpc-cni add-on must enable the NetworkPolicy agent in strict startup mode."
+    condition     = strcontains(aws_eks_addon.vpc_cni.configuration_values, "enableNetworkPolicy") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "NETWORK_POLICY_ENFORCING_MODE") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "standard")
+    error_message = "The vpc-cni add-on must enable the NetworkPolicy agent in standard enforcement mode."
   }
 
   assert {
