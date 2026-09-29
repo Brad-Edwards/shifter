@@ -162,6 +162,11 @@ variable "workload_identities" {
     policy_arns      = optional(set(string), [])
     secret_names     = optional(set(string), [])
     object_read_arns = optional(set(string), [])
+    # Postgres role this workload assumes for its long-running RDS IAM-auth
+    # connection (entrypoint.sh switches DB_USER to it after migrations). When
+    # set, the IRSA role is granted rds-db:connect for exactly that dbuser so the
+    # process can mint a short-lived auth token; empty means no RDS IAM access.
+    rds_iam_db_user = optional(string, "")
   }))
 
   validation {

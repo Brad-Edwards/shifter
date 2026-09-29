@@ -18,6 +18,18 @@ locals {
     identity_name => identity.object_read_arns
     if length(identity.object_read_arns) > 0
   }
+  workload_rds_iam_access = {
+    for identity_name, identity in var.workload_identities :
+    identity_name => identity.rds_iam_db_user
+    if identity.rds_iam_db_user != ""
+  }
+}
+
+# The shared portal RDS instance is created by the portal core stack and read by
+# stable name (ADR-044-R6: "${environment}-portal-*"); its DbiResourceId anchors
+# the rds-db:connect ARN below.
+data "aws_db_instance" "portal" {
+  db_instance_identifier = "${var.environment}-portal-db"
 }
 
 resource "aws_iam_role" "cluster" {
@@ -173,6 +185,24 @@ resource "aws_iam_role_policy" "workload_object_read" {
       Effect   = "Allow"
       Action   = ["s3:GetObject"]
       Resource = sort(tolist(each.value))
+    }]
+  })
+}
+
+# rds-db:connect for the workload's long-running RDS IAM-auth identity. Scoped to
+# the exact dbuser (never wildcarded) so a workload can mint an auth token only
+# for the Postgres role its entrypoint switches to, and for no other user.
+resource "aws_iam_role_policy" "workload_rds_iam" {
+  for_each = local.workload_rds_iam_access
+
+  name = "rds-iam-auth"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "rds-db:connect"
+      Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${data.aws_db_instance.portal.resource_id}/${each.value}"
     }]
   })
 }

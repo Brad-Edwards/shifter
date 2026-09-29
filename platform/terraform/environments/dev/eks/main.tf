@@ -67,6 +67,7 @@ module "eks" {
       service_account = "portal"
       policy_arns     = []
       secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
       object_read_arns = (
         var.ctf_content_bucket_arn == ""
         ? []
@@ -78,12 +79,14 @@ module "eks" {
       service_account = "workers"
       policy_arns     = []
       secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
     }
     ctfScheduler = {
       namespace       = "shifter-platform"
       service_account = "ctf-scheduler"
       policy_arns     = []
       secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
     }
     # Dedicated provisioner Job launcher + the privileged provisioner Job (#1826).
     # The provisioner's range-provisioning permission set is attached separately
@@ -94,6 +97,7 @@ module "eks" {
       service_account = "provisioner-launcher"
       policy_arns     = []
       secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
     }
     provisioner = {
       namespace       = "shifter-jobs"
