@@ -853,6 +853,28 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
     _run_networkpolicy_readiness_probes(*probes)
 
 
+def _workload_secret_arns(terraform_outputs: Mapping[str, object]) -> dict[str, str]:
+    """Return the eks-owned workload secret ARNs (role-readable) keyed by name.
+
+    The portal role can read only shifter/<env>/eks/* (kms_secrets.tf + iam.tf), so
+    the portal/worker secret references and _populate_eks_workload_secrets both key
+    off these ARNs from the eks module's secret_arns output.
+    """
+    bundle = _output(terraform_outputs, "bundle_outputs")
+    if not isinstance(bundle, Mapping):
+        raise ValueError("bundle_outputs must be a mapping")
+    secret_arns = bundle.get("secret_arns")
+    if not isinstance(secret_arns, Mapping):
+        raise ValueError("bundle_outputs.secret_arns must map eks workload secret names to ARNs")
+    resolved: dict[str, str] = {}
+    for name in ("database", "django", "cognito"):
+        arn = secret_arns.get(name)
+        if not isinstance(arn, str) or not arn:
+            raise ValueError(f"bundle_outputs.secret_arns is missing the '{name}' workload secret ARN")
+        resolved[name] = arn
+    return resolved
+
+
 def render_aws_values(
     config: RootConfig,
     terraform_outputs: Mapping[str, object],
@@ -869,18 +891,11 @@ def render_aws_values(
     validated_images = _validated_images(images)
     if "provisioner" not in validated_images:
         raise ValueError("images must include a digest-pinned 'provisioner' identity for the Kubernetes Job launcher")
-    # The portal/worker entrypoints hydrate the DB and app secrets from Secrets
-    # Manager using the portal workload IRSA role, which is granted read only on
-    # the eks-owned shifter/<env>/eks/* secrets (modules/portal/eks/kms_secrets.tf
-    # + iam.tf). Reference those ARNs so the role can read them; _populate_eks_workload_secrets
+    # The portal/worker entrypoints hydrate the DB, app and OIDC secrets using the
+    # portal workload IRSA role, which can read only the eks-owned shifter/<env>/eks/*
+    # secrets. Reference those ARNs so the role can read them; _populate_eks_workload_secrets
     # fills them from the portal's canonical credential secrets before Helm runs.
-    bundle_outputs = _output(terraform_outputs, "bundle_outputs")
-    if not isinstance(bundle_outputs, Mapping) or not isinstance(bundle_outputs.get("secret_arns"), Mapping):
-        raise ValueError("bundle_outputs.secret_arns must map eks workload secret names to ARNs")
-    secret_arns = bundle_outputs["secret_arns"]
-    for required in ("database", "django", "cognito"):
-        if not isinstance(secret_arns.get(required), str) or not secret_arns[required]:
-            raise ValueError(f"bundle_outputs.secret_arns is missing the '{required}' workload secret ARN")
+    secret_arns = _workload_secret_arns(terraform_outputs)
     # ENGINE_TASK_IMAGE is the provisioner Job image; the launcher resolves it
     # from the runtime env. It is renderer-generated from the attested digest,
     # mirroring GCP's render_runtime_env.py.
@@ -1072,14 +1087,9 @@ def _populate_eks_workload_secrets(
     through a 0600 temp file (put-secret-value --secret-string file://...) so it
     never lands on argv or in the operator log (run_cmd logs only the command).
     """
-    bundle = _output(outputs, "bundle_outputs")
-    if not isinstance(bundle, Mapping) or not isinstance(bundle.get("secret_arns"), Mapping):
-        raise ValueError("bundle_outputs.secret_arns must map eks workload secret names to ARNs")
-    secret_arns = bundle["secret_arns"]
+    secret_arns = _workload_secret_arns(outputs)
     for name, source_template in _EKS_WORKLOAD_SECRET_SOURCES.items():
-        target_arn = secret_arns.get(name)
-        if not isinstance(target_arn, str) or not target_arn:
-            raise ValueError(f"bundle_outputs.secret_arns is missing the '{name}' workload secret ARN")
+        target_arn = secret_arns[name]
         source = source_template.format(environment=environment)
         fetched = run_cmd(
             [
