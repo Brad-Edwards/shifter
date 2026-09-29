@@ -70,8 +70,8 @@ output "provider_api_cidrs" {
 }
 
 output "private_service_cidrs" {
-  description = "Private EKS VPC CIDRs consumed by chart network policy."
-  value       = [var.vpc_cidr]
+  description = "Portal VPC CIDR(s) hosting the shared RDS/Redis data plane, consumed by chart network policy (ADR-044-R6)."
+  value       = [module.eks.portal_vpc_cidr]
 }
 
 output "kubernetes_api_cidrs" {

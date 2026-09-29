@@ -50,6 +50,11 @@ output "vpc_id" {
   value       = aws_vpc.this.id
 }
 
+output "portal_vpc_cidr" {
+  description = "CIDR of the peered portal VPC that hosts the shared RDS/Redis data plane (ADR-044-R6)."
+  value       = data.aws_vpc.portal.cidr_block
+}
+
 output "private_subnet_ids" {
   description = "Private node and pod subnet IDs."
   value       = [for subnet in aws_subnet.private : subnet.id]
