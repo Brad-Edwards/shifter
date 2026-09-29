@@ -869,11 +869,29 @@ def render_aws_values(
     validated_images = _validated_images(images)
     if "provisioner" not in validated_images:
         raise ValueError("images must include a digest-pinned 'provisioner' identity for the Kubernetes Job launcher")
+    # The portal/worker entrypoints hydrate the DB and app secrets from Secrets
+    # Manager using the portal workload IRSA role, which is granted read only on
+    # the eks-owned shifter/<env>/eks/* secrets (modules/portal/eks/kms_secrets.tf
+    # + iam.tf). Reference those ARNs so the role can read them; _populate_eks_workload_secrets
+    # fills them from the portal's canonical credential secrets before Helm runs.
+    bundle_outputs = _output(terraform_outputs, "bundle_outputs")
+    if not isinstance(bundle_outputs, Mapping) or not isinstance(bundle_outputs.get("secret_arns"), Mapping):
+        raise ValueError("bundle_outputs.secret_arns must map eks workload secret names to ARNs")
+    secret_arns = bundle_outputs["secret_arns"]
+    for required in ("database", "django", "cognito"):
+        if not isinstance(secret_arns.get(required), str) or not secret_arns[required]:
+            raise ValueError(f"bundle_outputs.secret_arns is missing the '{required}' workload secret ARN")
     # ENGINE_TASK_IMAGE is the provisioner Job image; the launcher resolves it
     # from the runtime env. It is renderer-generated from the attested digest,
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
+    # OIDC is hydrated by the portal/workers, whose role can read only the
+    # eks-owned shifter/<env>/eks/* secrets. Terraform's OIDC_SECRET_ID points at
+    # the portal-owned cognito secret the role cannot read, so repoint it at the
+    # eks-owned copy that _populate_eks_workload_secrets fills. Not forwarded to the
+    # provisioner Job (it uses RDS IAM auth), so this is portal/worker-scoped.
+    runtime_env["OIDC_SECRET_ID"] = secret_arns["cognito"]
     from installation.aws_model_broker import project_aws_model_broker
 
     broker = project_aws_model_broker(
@@ -950,8 +968,8 @@ def render_aws_values(
             # References only. entrypoint.sh hydrates values from Secrets Manager
             # in-process; raw values never enter Helm history, ConfigMaps, or argv.
             "secretReferences": {
-                "app": config.secrets["django_secret_key"],
-                "database": config.secrets["db_password"],
+                "app": secret_arns["django"],
+                "database": secret_arns["database"],
             }
         },
         "images": validated_images,
@@ -1024,6 +1042,85 @@ def _apply_eks_terraform(
         profile=aws_profile,
     )
     run_cmd(["terraform", f"-chdir={root}", "apply", plan_name], dry_run=dry_run, profile=aws_profile)
+
+
+_EKS_WORKLOAD_SECRET_SOURCES: dict[str, str] = {
+    # eks workload secret name (shifter/<env>/eks/<name>) -> portal-owned source.
+    # DB creds ({host,port,dbname,username,password,engine}) come from the RDS
+    # module's credential secret; the app bundle ({django_secret_key,
+    # field_encryption_key}) from the portal app secret. Both are env-suffixed.
+    "database": "shifter-{environment}-portal-db-credentials",
+    "django": "shifter-{environment}-portal-app",
+    # OIDC client bundle ({client_id,client_secret,issuer_url,domain,user_pool_id}).
+    "cognito": "shifter-{environment}-portal-cognito",
+}
+
+
+def _populate_eks_workload_secrets(
+    outputs: Mapping[str, object],
+    *,
+    environment: str,
+    region: str,
+    aws_profile: str | None,
+) -> None:
+    """Fill the empty eks-owned workload secrets from the portal's canonical ones.
+
+    modules/portal/eks/kms_secrets.tf creates shifter/<env>/eks/{database,django,...}
+    as empty containers that only the portal IRSA role may read; the real values
+    live in the portal RDS/app secrets. Copy them in before Helm so the portal and
+    worker entrypoints can hydrate DB_SECRET_ID/APP_SECRET_ID. Each value moves
+    through a 0600 temp file (put-secret-value --secret-string file://...) so it
+    never lands on argv or in the operator log (run_cmd logs only the command).
+    """
+    bundle = _output(outputs, "bundle_outputs")
+    if not isinstance(bundle, Mapping) or not isinstance(bundle.get("secret_arns"), Mapping):
+        raise ValueError("bundle_outputs.secret_arns must map eks workload secret names to ARNs")
+    secret_arns = bundle["secret_arns"]
+    for name, source_template in _EKS_WORKLOAD_SECRET_SOURCES.items():
+        target_arn = secret_arns.get(name)
+        if not isinstance(target_arn, str) or not target_arn:
+            raise ValueError(f"bundle_outputs.secret_arns is missing the '{name}' workload secret ARN")
+        source = source_template.format(environment=environment)
+        fetched = run_cmd(
+            [
+                "aws",
+                "secretsmanager",
+                "get-secret-value",
+                "--secret-id",
+                source,
+                "--region",
+                region,
+                "--query",
+                "SecretString",
+                "--output",
+                "text",
+            ],
+            capture=True,
+            profile=aws_profile,
+        )
+        payload = str(fetched.stdout).rstrip("\n")
+        handle, path = tempfile.mkstemp(suffix=f"-{name}.json")
+        os.close(handle)
+        try:
+            secret_file = Path(path)
+            secret_file.chmod(0o600)
+            secret_file.write_text(payload, encoding="utf-8")
+            run_cmd(
+                [
+                    "aws",
+                    "secretsmanager",
+                    "put-secret-value",
+                    "--secret-id",
+                    target_arn,
+                    "--region",
+                    region,
+                    "--secret-string",
+                    f"file://{path}",
+                ],
+                profile=aws_profile,
+            )
+        finally:
+            Path(path).unlink(missing_ok=True)
 
 
 def _write_private_api_kubeconfig(
@@ -1186,6 +1283,12 @@ def deploy_eks(
         aws_profile=aws_profile,
     )
     _wait_for_managed_addons(str(_output(outputs, "cluster_name")), aws_profile=aws_profile)
+    _populate_eks_workload_secrets(
+        outputs,
+        environment=profile,
+        region=str(config.settings["region"]),
+        aws_profile=aws_profile,
+    )
     _bootstrap_cluster(outputs, str(config.settings["region"]))
     values = render_aws_values(
         config,

@@ -18,7 +18,7 @@ data "aws_caller_identity" "current" {}
 locals {
   environment  = "dev"
   cluster_name = "shifter-${local.environment}-eks"
-  secret_names = toset(["database", "django", "redis"])
+  secret_names = toset(["database", "django", "redis", "cognito"])
 
   # The EKS control plane composes over the existing portal data plane
   # (ADR-044-R6): portal resources are named "${environment}-portal-*".

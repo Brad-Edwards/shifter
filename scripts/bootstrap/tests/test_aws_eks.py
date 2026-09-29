@@ -31,7 +31,17 @@ def _terraform_outputs() -> dict[str, object]:
         "cluster_name": {"value": "shifter-dev-eks"},
         "cluster_access_role_arn": {"value": "arn:aws:iam::123456789012:role/shifter-dev-eks-deployer"},
         "cluster_ca_certificate": {"value": "TFMwdExTMHRMUzFDUlVkSlRpQkRSVkpVU1VaSlEwRlVSUzB0TFMwdENn"},
-        "bundle_outputs": {"value": {"vpc_id": "vpc-" + "0" * 17}},
+        "bundle_outputs": {
+            "value": {
+                "vpc_id": "vpc-" + "0" * 17,
+                "secret_arns": {
+                    "database": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/database-ab",
+                    "django": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/django-cd",
+                    "redis": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/redis-ef",
+                    "cognito": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/cognito-gh",
+                },
+            }
+        },
         "certificate_arn": {"value": "arn:aws:acm:us-east-2:123456789012:certificate/example"},
         "waf_acl_arn": {"value": "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/example/id"},
         "workload_role_arns": {
@@ -139,10 +149,18 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     # Provisioner env assembled by Terraform flows through the merged output.
     assert values["runtimeEnv"]["RANGE_VPC_ID"] == "vpc-xxxxxxxxxxxxxxxxx"
     assert values["runtimeEnv"]["QUEUE_ENGINE_CONSUMER_ID"].endswith("/engine")
-    assert values["runtimeEnv"]["OIDC_SECRET_ID"] == "shifter/dev/cognito"
+    # OIDC_SECRET_ID is repointed from the portal-owned cognito secret to the
+    # eks-owned copy the portal role can read (populated before Helm).
+    assert (
+        values["runtimeEnv"]["OIDC_SECRET_ID"]
+        == "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/cognito-gh"
+    )
+    # secretReferences come from the eks module's secret_arns (which the portal
+    # IRSA role can read), not the deploy config, so the empty eks-owned secrets
+    # are what the portal hydrates once _populate_eks_workload_secrets fills them.
     assert values["runtime"]["secretReferences"] == {
-        "app": "shifter/dev/app",
-        "database": "shifter/dev/db",
+        "app": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/django-cd",
+        "database": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/database-ab",
     }
     rendered = json.dumps(values)
     assert "@sha256:" in rendered
@@ -793,3 +811,30 @@ def test_validated_runtime_env_allows_empty_optional_but_rejects_empty_required(
     bad = {**base, "AWS_REGION": ""}
     with pytest.raises(ValueError, match="must be non-empty"):
         aws_eks._validated_runtime_env({"runtime_env": {"value": bad}})
+
+
+def test_populate_eks_workload_secrets_copies_sources_via_file(monkeypatch):
+    # Copies the portal DB/app secrets into the empty eks-owned workload secrets,
+    # moving values through file:// so the raw secret never lands on argv.
+    calls: list[list[str]] = []
+
+    def runner(cmd, **kwargs):
+        calls.append(cmd)
+        if "get-secret-value" in cmd:
+            return SimpleNamespace(stdout='{"password":"supersecretvalue12345"}\n')
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(aws_eks, "run_cmd", runner)
+    aws_eks._populate_eks_workload_secrets(
+        _terraform_outputs(), environment="dev", region="us-east-2", aws_profile=None
+    )
+
+    gets = [c for c in calls if "get-secret-value" in c]
+    puts = [c for c in calls if "put-secret-value" in c]
+    assert any("shifter-dev-portal-db-credentials" in c for c in gets)
+    assert any("shifter-dev-portal-app" in c for c in gets)
+    assert any("shifter-dev-portal-cognito" in c for c in gets)
+    assert len(puts) == 3
+    for cmd in puts:
+        assert any(isinstance(a, str) and a.startswith("file://") for a in cmd)
+        assert not any("supersecretvalue12345" in a for a in cmd)
