@@ -163,6 +163,15 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
         "provider_api_cidrs": {"value": ["10.42.0.0/16"]},
         "private_service_cidrs": {"value": ["10.42.0.0/16"]},
         "kubernetes_api_cidrs": {"value": ["172.20.0.0/16"]},
+        "bundle_outputs": {
+            "value": {
+                "secret_arns": {
+                    "database": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/database-ab",
+                    "django": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/django-cd",
+                    "cognito": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/cognito-gh",
+                }
+            }
+        },
     }
     config = SimpleNamespace(
         backend="aws",
