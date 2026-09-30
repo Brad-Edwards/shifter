@@ -39,7 +39,11 @@ def _terraform_outputs() -> dict[str, object]:
                     "django": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/django-cd",
                     "redis": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/redis-ef",
                     "cognito": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/cognito-gh",
+                    "guacamole-db": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/guacamole-db-ij",
+                    "guacamole-json-auth": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/guacamole-json-auth-kl",
                 },
+                "portal_db_address": "dev-portal-db.abcdef.us-east-2.rds.amazonaws.com",
+                "portal_db_port": 5432,
             }
         },
         "certificate_arn": {"value": "arn:aws:acm:us-east-2:123456789012:certificate/example"},
@@ -55,6 +59,7 @@ def _terraform_outputs() -> dict[str, object]:
                 "efs-csi": "arn:aws:iam::123456789012:role/shifter-dev-efs-csi",
                 "provisionerLauncher": "arn:aws:iam::123456789012:role/shifter-dev-provisioner-launcher",
                 "provisioner": "arn:aws:iam::123456789012:role/shifter-dev-provisioner",
+                "guacamoleProvisioner": "arn:aws:iam::123456789012:role/shifter-dev-guacamole-db-provisioner",
                 "cluster-autoscaler": "arn:aws:iam::123456789012:role/shifter-dev-cluster-autoscaler",
             }
         },
@@ -279,7 +284,7 @@ def test_effective_irsa_probe_uses_exact_service_accounts_and_cleans_up(monkeypa
         environment = {entry["name"]: entry["value"] for entry in spec["containers"][0]["env"]}
         assert environment["SHIFTER_EXPECTED_ROLE_ARN"] == roles[identity]
         assert json.loads(environment["SHIFTER_SIBLING_ROLE_ARNS"]) == [
-            roles[name] for name in sorted(roles) if name != identity
+            roles[name] for name in sorted(aws_eks._IRSA_PROBE_IDENTITIES) if name != identity
         ]
         rendered = json.dumps(manifest)
         assert "with open(token_path" in rendered
@@ -486,8 +491,21 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     terraform_inputs_path.write_text(json.dumps(_terraform_inputs()))
     calls: list[list[str]] = []
     secret_stdin_calls: list[tuple[list[str], str]] = []
-    result = SimpleNamespace(stdout=json.dumps(_terraform_outputs()))
-    runner = Mock(side_effect=lambda cmd, **kwargs: calls.append(cmd) or result)
+    outputs_json = json.dumps(_terraform_outputs())
+
+    def _runner(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[:3] == ["aws", "secretsmanager", "get-secret-value"]:
+            secret_id = cmd[cmd.index("--secret-id") + 1]
+            if "guacamole-json-auth" in secret_id:
+                return SimpleNamespace(stdout="deadbeef" * 8 + "\n", returncode=0)
+            if "guacamole-db" in secret_id:
+                payload = {"username": "guacamole_admin", "password": "guac-pw", "dbname": "guacamole"}
+                return SimpleNamespace(stdout=json.dumps(payload) + "\n", returncode=0)
+            return SimpleNamespace(stdout="{}\n", returncode=0)
+        return SimpleNamespace(stdout=outputs_json, returncode=0)
+
+    runner = Mock(side_effect=_runner)
     monkeypatch.setattr(aws_eks, "load_root_config", lambda _path: _config())
     monkeypatch.setattr(aws_eks, "run_cmd", runner)
     monkeypatch.setattr(
@@ -566,7 +584,20 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         if cmd[:3] == ["aws", "eks", "wait"] and "--addon-name" in cmd
     }
     assert waited_addons == expected_addons
-    assert sum(cmd[:3] == ["kubectl", "apply", "-f"] for cmd in calls) == 2
+    # Two platform-namespace manifests plus three guacamole manifests (the
+    # guacamole-runtime Secret, the provisioner ServiceAccount, and the provisioner
+    # Job) are applied before the chart install.
+    assert sum(cmd[:3] == ["kubectl", "apply", "-f"] for cmd in calls) == 5
+    # Guacamole provisioning: the guacamole-db + json-auth secrets are read, and the
+    # provisioner Job is awaited to completion before Helm runs.
+    read_secret_ids = [
+        cmd[cmd.index("--secret-id") + 1]
+        for cmd in calls
+        if cmd[:3] == ["aws", "secretsmanager", "get-secret-value"] and "--secret-id" in cmd
+    ]
+    assert any("guacamole-db" in sid for sid in read_secret_ids)
+    assert any("guacamole-json-auth" in sid for sid in read_secret_ids)
+    assert any(cmd[:2] == ["kubectl", "wait"] and "job/guacamole-db-provision" in cmd for cmd in calls)
     assert any(
         cmd[:4] == ["helm", "upgrade", "--install", "aws-load-balancer-controller"]
         and "--version" in cmd

@@ -86,6 +86,15 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # must not supply it.
         "ENGINE_TASK_IMAGE",
         "ENVIRONMENT",
+        # Guacamole data-plane wiring (aws_eks.render_aws_values): the PostgreSQL
+        # host/port come from the shared portal RDS bundle output, the database
+        # name is the dedicated guacamole database, and GUACAMOLE_SECRET_ID points
+        # at the eks-owned guacamole-json-auth container the portal entrypoint
+        # hydrates into GUACAMOLE_JSON_AUTH_SECRET.
+        "GUACAMOLE_POSTGRESQL_DATABASE",
+        "GUACAMOLE_POSTGRESQL_HOSTNAME",
+        "GUACAMOLE_POSTGRESQL_PORT",
+        "GUACAMOLE_SECRET_ID",
         # Mission Control lease policy (#27): rendered from the validated
         # settings.mission_control_leases block, not the Terraform runtime_env.
         "MISSION_CONTROL_LEASE_POLICY_JSON",

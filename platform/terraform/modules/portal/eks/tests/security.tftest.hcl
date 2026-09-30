@@ -258,6 +258,8 @@ variables {
   secret_names = [
     "database",
     "django",
+    "guacamole-db",
+    "guacamole-json-auth",
   ]
   # Validate the runtime-plugin sandbox pool contract even though it defaults off
   # on EKS (see variables.tf: needs a trusted node-labeler for the restricted

@@ -55,6 +55,16 @@ output "portal_vpc_cidr" {
   value       = data.aws_vpc.portal.cidr_block
 }
 
+output "portal_db_address" {
+  description = "Endpoint address of the shared portal RDS instance (guacamole PostgreSQL host)."
+  value       = data.aws_db_instance.portal.address
+}
+
+output "portal_db_port" {
+  description = "Endpoint port of the shared portal RDS instance."
+  value       = data.aws_db_instance.portal.port
+}
+
 output "private_subnet_ids" {
   description = "Private node and pod subnet IDs."
   value       = [for subnet in aws_subnet.private : subnet.id]

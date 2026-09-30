@@ -17,7 +17,7 @@ data "aws_caller_identity" "current" {}
 locals {
   environment  = "prod"
   cluster_name = "shifter-${local.environment}-eks"
-  secret_names = toset(["database", "django", "redis"])
+  secret_names = toset(["database", "django", "redis", "guacamole-db", "guacamole-json-auth"])
 
   # The EKS control plane composes over the existing portal data plane
   # (ADR-044-R6): portal resources are named "${environment}-portal-*".
@@ -99,6 +99,19 @@ module "eks" {
       service_account = "provisioner"
       policy_arns     = []
       secret_names    = local.secret_names
+    }
+    # One-shot guacamole database/role provisioner (AWS EKS parity with the GCP
+    # cloud-sql module). RDS has no native terraform user/database resource and the
+    # deploy runner cannot reach RDS, so aws_eks.py runs provision_guacamole_database
+    # as a Job under this exact-subject identity before the chart install; it reads
+    # the master (database), app (django) and guacamole-db secrets to create the
+    # guacamole_admin role + guacamole database. It connects as the RDS master via
+    # password, so it needs no rds_iam_db_user grant.
+    guacamoleProvisioner = {
+      namespace       = "shifter-platform"
+      service_account = "guacamole-db-provisioner"
+      policy_arns     = []
+      secret_names    = toset(["database", "django", "guacamole-db"])
     }
     # EKS add-on controller identities (#1826). AWS-managed CSI driver policies;
     # controllers run in kube-system with their driver-default service accounts.

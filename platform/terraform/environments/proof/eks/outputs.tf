@@ -11,6 +11,8 @@ output "bundle_outputs" {
     ingress_certificate_arn         = module.eks.ingress_certificate_arn
     ingress_certificate_dns_records = module.eks.ingress_certificate_validation_records
     ingress_waf_acl_arn             = module.eks.ingress_waf_acl_arn
+    portal_db_address               = module.eks.portal_db_address
+    portal_db_port                  = module.eks.portal_db_port
   }
 }
 
