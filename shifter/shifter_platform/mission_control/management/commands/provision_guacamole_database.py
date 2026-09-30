@@ -28,12 +28,14 @@ from typing import Any
 
 import psycopg
 from django.core.management.base import BaseCommand, CommandError
-from psycopg import sql
+from psycopg import Cursor, sql
 
 from shared.cloud import get_secrets_store
 
 
 class Command(BaseCommand):
+    """Create the guacamole database + guacamole_admin role on the shared RDS (idempotent)."""
+
     help = "Idempotently create the guacamole database and guacamole_admin role on the shared RDS instance."
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -70,7 +72,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"Guacamole database {database!r} and role {role!r} are provisioned."))
 
-    def _ensure_role(self, cursor: Any, role: str, password: str) -> None:
+    def _ensure_role(self, cursor: Cursor, role: str, password: str) -> None:
         """Create the guacamole_admin LOGIN role or re-sync its password to the secret."""
         cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
         action = "ALTER" if cursor.fetchone() is not None else "CREATE"
@@ -86,7 +88,7 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"{action.title()}d role {role!r}.")
 
-    def _ensure_database(self, cursor: Any, database: str, owner: str) -> None:
+    def _ensure_database(self, cursor: Cursor, database: str, owner: str) -> None:
         """Create the dedicated guacamole database owned by guacamole_admin, if absent."""
         cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (database,))
         if cursor.fetchone() is not None:

@@ -120,6 +120,7 @@ _GUACAMOLE_NAMESPACE = "shifter-platform"
 _GUACAMOLE_PROVISION_JOB = "guacamole-db-provision"
 _GUACAMOLE_PROVISION_SERVICE_ACCOUNT = "guacamole-db-provisioner"
 _GUACAMOLE_PROVISION_IDENTITY = "guacamoleProvisioner"
+_PART_OF_LABEL = "app.kubernetes.io/part-of"
 _REQUIRED_TERRAFORM_INPUTS = frozenset(
     {
         "addon_versions",
@@ -365,7 +366,7 @@ def _apply_platform_namespaces() -> None:
                 "metadata": {
                     "name": namespace,
                     "labels": {
-                        "app.kubernetes.io/part-of": "shifter",
+                        _PART_OF_LABEL: "shifter",
                         "shifter.dev/plane": plane,
                         "pod-security.kubernetes.io/audit": "restricted",
                         "pod-security.kubernetes.io/enforce": "restricted",
@@ -866,6 +867,22 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
     _run_networkpolicy_readiness_probes(*probes)
 
 
+def _bundle_outputs(terraform_outputs: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the validated bundle_outputs mapping from the eks Terraform outputs."""
+    bundle = _output(terraform_outputs, "bundle_outputs")
+    if not isinstance(bundle, Mapping):
+        raise ValueError("bundle_outputs must be a mapping")
+    return bundle
+
+
+def _bundle_secret_arns(terraform_outputs: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the validated bundle_outputs.secret_arns mapping (name -> ARN)."""
+    secret_arns = _bundle_outputs(terraform_outputs).get("secret_arns")
+    if not isinstance(secret_arns, Mapping):
+        raise ValueError("bundle_outputs.secret_arns must map eks workload secret names to ARNs")
+    return secret_arns
+
+
 def _workload_secret_arns(terraform_outputs: Mapping[str, object]) -> dict[str, str]:
     """Return the eks-owned workload secret ARNs (role-readable) keyed by name.
 
@@ -873,12 +890,7 @@ def _workload_secret_arns(terraform_outputs: Mapping[str, object]) -> dict[str, 
     the portal/worker secret references and _populate_eks_workload_secrets both key
     off these ARNs from the eks module's secret_arns output.
     """
-    bundle = _output(terraform_outputs, "bundle_outputs")
-    if not isinstance(bundle, Mapping):
-        raise ValueError("bundle_outputs must be a mapping")
-    secret_arns = bundle.get("secret_arns")
-    if not isinstance(secret_arns, Mapping):
-        raise ValueError("bundle_outputs.secret_arns must map eks workload secret names to ARNs")
+    secret_arns = _bundle_secret_arns(terraform_outputs)
     resolved: dict[str, str] = {}
     # guacamole-json-auth is the shared JSON-auth signing key the portal entrypoint
     # hydrates into GUACAMOLE_JSON_AUTH_SECRET; it is role-readable like the rest.
@@ -892,9 +904,7 @@ def _workload_secret_arns(terraform_outputs: Mapping[str, object]) -> dict[str, 
 
 def _guacamole_db_endpoint(terraform_outputs: Mapping[str, object]) -> tuple[str, str]:
     """Return the (host, port) of the shared portal RDS for guacamole PostgreSQL."""
-    bundle = _output(terraform_outputs, "bundle_outputs")
-    if not isinstance(bundle, Mapping):
-        raise ValueError("bundle_outputs must be a mapping")
+    bundle = _bundle_outputs(terraform_outputs)
     host = bundle.get("portal_db_address")
     if not isinstance(host, str) or not host:
         raise ValueError("bundle_outputs.portal_db_address is required for the guacamole PostgreSQL host")
@@ -1197,12 +1207,7 @@ def _read_secret_string(secret_id: str, *, region: str, aws_profile: str | None)
 
 def _guacamole_secret_arns(outputs: Mapping[str, object]) -> tuple[str, str]:
     """Return (guacamole-db ARN, guacamole-json-auth ARN) from bundle_outputs."""
-    bundle = _output(outputs, "bundle_outputs")
-    if not isinstance(bundle, Mapping):
-        raise ValueError("bundle_outputs must be a mapping")
-    secret_arns = bundle.get("secret_arns")
-    if not isinstance(secret_arns, Mapping):
-        raise ValueError("bundle_outputs.secret_arns must map secret names to ARNs")
+    secret_arns = _bundle_secret_arns(outputs)
     db_arn = secret_arns.get(_GUACAMOLE_DB_SECRET_NAME)
     json_arn = secret_arns.get(_GUACAMOLE_JSON_AUTH_SECRET_NAME)
     if not isinstance(db_arn, str) or not db_arn or not isinstance(json_arn, str) or not json_arn:
@@ -1233,7 +1238,7 @@ def _sync_guacamole_runtime_secret(
         "metadata": {
             "name": _GUACAMOLE_RUNTIME_SECRET_NAME,
             "namespace": _GUACAMOLE_NAMESPACE,
-            "labels": {"app.kubernetes.io/part-of": "shifter"},
+            "labels": {_PART_OF_LABEL: "shifter"},
         },
         "type": "Opaque",
         "stringData": {
@@ -1253,57 +1258,55 @@ def _sync_guacamole_runtime_secret(
         Path(path).unlink(missing_ok=True)
 
 
-def _provision_guacamole_database(
-    outputs: Mapping[str, object],
+def _guacamole_provision_secret_arns(outputs: Mapping[str, object]) -> dict[str, str]:
+    """Return the database/django/guacamole-db ARNs the provisioner Job hydrates."""
+    secret_arns = _bundle_secret_arns(outputs)
+    resolved: dict[str, str] = {}
+    for name in ("database", "django", _GUACAMOLE_DB_SECRET_NAME):
+        arn = secret_arns.get(name)
+        if not isinstance(arn, str) or not arn:
+            raise ValueError(f"bundle_outputs.secret_arns is missing '{name}' for guacamole provisioning")
+        resolved[name] = arn
+    return resolved
+
+
+def _guacamole_provision_role_arn(outputs: Mapping[str, object]) -> str:
+    """Return the exact-subject guacamoleProvisioner IRSA role ARN."""
+    roles = _output(outputs, "workload_role_arns")
+    role_arn = roles.get(_GUACAMOLE_PROVISION_IDENTITY) if isinstance(roles, Mapping) else None
+    if not isinstance(role_arn, str) or not role_arn:
+        raise ValueError("workload_role_arns must include the guacamoleProvisioner role")
+    return role_arn
+
+
+def _guacamole_provision_manifests(
     *,
+    role_arn: str,
+    secret_arns: Mapping[str, str],
     environment: str,
     region: str,
     platform_image: str,
-    aws_profile: str | None,
-) -> None:
-    """Run the one-shot guacamole database/role provisioner Job before the chart install.
-
-    RDS exposes no native Terraform user/database resource and the deploy runner has
-    no network path to RDS, so the guacamole_admin password role and guacamole
-    database are created from inside the cluster. The Job runs the portal image under
-    the exact-subject guacamoleProvisioner IRSA role, hydrates the master + guacamole
-    secrets, and runs manage.py provision_guacamole_database (idempotent). It must
-    complete before guacamole-client, whose entrypoint connects as guacamole_admin and
-    initialises its schema.
-    """
-    roles = _output(outputs, "workload_role_arns")
-    if not isinstance(roles, Mapping) or not isinstance(roles.get(_GUACAMOLE_PROVISION_IDENTITY), str):
-        raise ValueError("workload_role_arns must include the guacamoleProvisioner role")
-    bundle = _output(outputs, "bundle_outputs")
-    secret_arns = bundle.get("secret_arns") if isinstance(bundle, Mapping) else None
-    if not isinstance(secret_arns, Mapping):
-        raise ValueError("bundle_outputs.secret_arns must map secret names to ARNs")
-    for name in ("database", "django", _GUACAMOLE_DB_SECRET_NAME):
-        if not isinstance(secret_arns.get(name), str) or not secret_arns[name]:
-            raise ValueError(f"bundle_outputs.secret_arns is missing '{name}' for guacamole provisioning")
-
-    service_account_manifest = {
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Build the (ServiceAccount, Job) manifests for the guacamole DB provisioner."""
+    labels = {_PART_OF_LABEL: "shifter"}
+    service_account = {
         "apiVersion": "v1",
         "kind": "ServiceAccount",
         "metadata": {
             "name": _GUACAMOLE_PROVISION_SERVICE_ACCOUNT,
             "namespace": _GUACAMOLE_NAMESPACE,
-            "labels": {"app.kubernetes.io/part-of": "shifter"},
-            "annotations": {"eks.amazonaws.com/role-arn": str(roles[_GUACAMOLE_PROVISION_IDENTITY])},
+            "labels": labels,
+            "annotations": {"eks.amazonaws.com/role-arn": role_arn},
         },
     }
-    job_manifest = {
+    job = {
         "apiVersion": "batch/v1",
         "kind": "Job",
-        "metadata": {
-            "name": _GUACAMOLE_PROVISION_JOB,
-            "namespace": _GUACAMOLE_NAMESPACE,
-            "labels": {"app.kubernetes.io/part-of": "shifter"},
-        },
+        "metadata": {"name": _GUACAMOLE_PROVISION_JOB, "namespace": _GUACAMOLE_NAMESPACE, "labels": labels},
         "spec": {
             "backoffLimit": 2,
             "template": {
-                "metadata": {"labels": {"app.kubernetes.io/part-of": "shifter"}},
+                "metadata": {"labels": labels},
                 "spec": {
                     "serviceAccountName": _GUACAMOLE_PROVISION_SERVICE_ACCOUNT,
                     "restartPolicy": "Never",
@@ -1327,21 +1330,18 @@ def _provision_guacamole_database(
                                 "allowPrivilegeEscalation": False,
                                 "capabilities": {"drop": ["ALL"]},
                             },
+                            # Skip migrations and keep the master (password) DB connection:
+                            # the command connects as master to create the guacamole
+                            # role/database, so no IAM-auth switch.
                             "env": [
                                 {"name": "CLOUD_PROVIDER", "value": "aws"},
                                 {"name": "AWS_REGION", "value": region},
                                 {"name": "ENVIRONMENT", "value": environment},
-                                # Skip migrations and keep the master (password) DB
-                                # connection: the command connects as master to create
-                                # the guacamole role/database, so no IAM-auth switch.
                                 {"name": "SKIP_MIGRATIONS", "value": "1"},
                                 {"name": "DB_IAM_AUTH_RUNTIME", "value": "false"},
-                                {"name": "DB_SECRET_ID", "value": str(secret_arns["database"])},
-                                {"name": "APP_SECRET_ID", "value": str(secret_arns["django"])},
-                                {
-                                    "name": "GUACAMOLE_DB_SECRET_ID",
-                                    "value": str(secret_arns[_GUACAMOLE_DB_SECRET_NAME]),
-                                },
+                                {"name": "DB_SECRET_ID", "value": secret_arns["database"]},
+                                {"name": "APP_SECRET_ID", "value": secret_arns["django"]},
+                                {"name": "GUACAMOLE_DB_SECRET_ID", "value": secret_arns[_GUACAMOLE_DB_SECRET_NAME]},
                             ],
                         }
                     ],
@@ -1349,9 +1349,11 @@ def _provision_guacamole_database(
             },
         },
     }
+    return service_account, job
 
-    # A completed Job's pod template is immutable, so clear any prior run before
-    # re-applying (idempotent redeploys).
+
+def _delete_guacamole_provision_job() -> None:
+    """Delete the guacamole provisioner Job (idempotent; ignores absence)."""
     run_cmd(
         [
             "kubectl",
@@ -1363,7 +1365,35 @@ def _provision_guacamole_database(
             "--ignore-not-found",
         ]
     )
-    for manifest in (service_account_manifest, job_manifest):
+
+
+def _provision_guacamole_database(
+    outputs: Mapping[str, object],
+    *,
+    environment: str,
+    region: str,
+    platform_image: str,
+) -> None:
+    """Run the one-shot guacamole database/role provisioner Job before the chart install.
+
+    RDS exposes no native Terraform user/database resource and the deploy runner has
+    no network path to RDS, so the guacamole_admin password role and guacamole
+    database are created from inside the cluster. The Job runs the portal image under
+    the exact-subject guacamoleProvisioner IRSA role, hydrates the master + guacamole
+    secrets, and runs manage.py provision_guacamole_database (idempotent). It must
+    complete before guacamole-client, whose entrypoint connects as guacamole_admin and
+    initialises its schema.
+    """
+    service_account, job = _guacamole_provision_manifests(
+        role_arn=_guacamole_provision_role_arn(outputs),
+        secret_arns=_guacamole_provision_secret_arns(outputs),
+        environment=environment,
+        region=region,
+        platform_image=platform_image,
+    )
+    # A completed Job's pod template is immutable, so clear any prior run first.
+    _delete_guacamole_provision_job()
+    for manifest in (service_account, job):
         handle, path = tempfile.mkstemp(suffix="-guacamole-provision.json")
         os.close(handle)
         try:
@@ -1387,29 +1417,11 @@ def _provision_guacamole_database(
     if waited is None or waited.returncode != 0:
         # Surface the pod logs (the command redacts secrets) before failing.
         run_cmd(
-            [
-                "kubectl",
-                "logs",
-                f"job/{_GUACAMOLE_PROVISION_JOB}",
-                "--namespace",
-                _GUACAMOLE_NAMESPACE,
-                "--tail",
-                "80",
-            ],
+            ["kubectl", "logs", f"job/{_GUACAMOLE_PROVISION_JOB}", "--namespace", _GUACAMOLE_NAMESPACE, "--tail", "80"],
             check=False,
         )
         raise RuntimeError("guacamole database provisioning Job did not complete successfully")
-    run_cmd(
-        [
-            "kubectl",
-            "delete",
-            "job",
-            _GUACAMOLE_PROVISION_JOB,
-            "--namespace",
-            _GUACAMOLE_NAMESPACE,
-            "--ignore-not-found",
-        ]
-    )
+    _delete_guacamole_provision_job()
 
 
 def _write_private_api_kubeconfig(
@@ -1593,7 +1605,6 @@ def deploy_eks(
         environment=profile,
         region=str(config.settings["region"]),
         platform_image=str(_validated_images(images)["platform"]),
-        aws_profile=aws_profile,
     )
     values = render_aws_values(
         config,
