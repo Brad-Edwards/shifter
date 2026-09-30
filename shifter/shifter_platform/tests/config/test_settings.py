@@ -161,6 +161,7 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
         "edge_client_cidrs": {"value": ["203.0.113.0/24"]},
         "ingress_source_cidrs": {"value": ["10.42.0.0/16"]},
         "provider_api_cidrs": {"value": ["10.42.0.0/16"]},
+        "provider_api_egress_except": {"value": ["172.20.0.0/16"]},
         "private_service_cidrs": {"value": ["10.42.0.0/16"]},
         "kubernetes_api_cidrs": {"value": ["172.20.0.0/16"]},
         "bundle_outputs": {
