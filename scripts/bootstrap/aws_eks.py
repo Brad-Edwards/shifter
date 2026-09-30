@@ -1279,12 +1279,35 @@ def _guacamole_provision_role_arn(outputs: Mapping[str, object]) -> str:
     return role_arn
 
 
+def _guacamole_provision_job_env(
+    secret_arns: Mapping[str, str], runtime_env: Mapping[str, str]
+) -> list[dict[str, str]]:
+    """Env for the provisioner Job: the chart's runtime env plus secret-id controls.
+
+    The Job runs the portal image + entrypoint, so Django settings need the same
+    runtime env the chart projects into platform-runtime (not yet created). The
+    control keys drive the entrypoint: skip migrations and keep the master password
+    connection (the command creates the guacamole role/database as master, so no
+    RDS IAM-auth switch). Control keys win on conflict.
+    """
+    merged: dict[str, str] = dict(runtime_env)
+    merged.update(
+        {
+            "SKIP_MIGRATIONS": "1",
+            "DB_IAM_AUTH_RUNTIME": "false",
+            "DB_SECRET_ID": secret_arns["database"],
+            "APP_SECRET_ID": secret_arns["django"],
+            "GUACAMOLE_DB_SECRET_ID": secret_arns[_GUACAMOLE_DB_SECRET_NAME],
+        }
+    )
+    return [{"name": key, "value": merged[key]} for key in sorted(merged)]
+
+
 def _guacamole_provision_manifests(
     *,
     role_arn: str,
     secret_arns: Mapping[str, str],
-    environment: str,
-    region: str,
+    runtime_env: Mapping[str, str],
     platform_image: str,
 ) -> tuple[dict[str, object], dict[str, object]]:
     """Build the (ServiceAccount, Job) manifests for the guacamole DB provisioner."""
@@ -1330,19 +1353,7 @@ def _guacamole_provision_manifests(
                                 "allowPrivilegeEscalation": False,
                                 "capabilities": {"drop": ["ALL"]},
                             },
-                            # Skip migrations and keep the master (password) DB connection:
-                            # the command connects as master to create the guacamole
-                            # role/database, so no IAM-auth switch.
-                            "env": [
-                                {"name": "CLOUD_PROVIDER", "value": "aws"},
-                                {"name": "AWS_REGION", "value": region},
-                                {"name": "ENVIRONMENT", "value": environment},
-                                {"name": "SKIP_MIGRATIONS", "value": "1"},
-                                {"name": "DB_IAM_AUTH_RUNTIME", "value": "false"},
-                                {"name": "DB_SECRET_ID", "value": secret_arns["database"]},
-                                {"name": "APP_SECRET_ID", "value": secret_arns["django"]},
-                                {"name": "GUACAMOLE_DB_SECRET_ID", "value": secret_arns[_GUACAMOLE_DB_SECRET_NAME]},
-                            ],
+                            "env": _guacamole_provision_job_env(secret_arns, runtime_env),
                         }
                     ],
                 },
@@ -1370,9 +1381,8 @@ def _delete_guacamole_provision_job() -> None:
 def _provision_guacamole_database(
     outputs: Mapping[str, object],
     *,
-    environment: str,
-    region: str,
     platform_image: str,
+    runtime_env: Mapping[str, str],
 ) -> None:
     """Run the one-shot guacamole database/role provisioner Job before the chart install.
 
@@ -1382,13 +1392,13 @@ def _provision_guacamole_database(
     the exact-subject guacamoleProvisioner IRSA role, hydrates the master + guacamole
     secrets, and runs manage.py provision_guacamole_database (idempotent). It must
     complete before guacamole-client, whose entrypoint connects as guacamole_admin and
-    initialises its schema.
+    initialises its schema. ``runtime_env`` is the rendered chart runtime env (carries
+    ENVIRONMENT/AWS_REGION and the settings the Job's Django load needs).
     """
     service_account, job = _guacamole_provision_manifests(
         role_arn=_guacamole_provision_role_arn(outputs),
         secret_arns=_guacamole_provision_secret_arns(outputs),
-        environment=environment,
-        region=region,
+        runtime_env=runtime_env,
         platform_image=platform_image,
     )
     # A completed Job's pod template is immutable, so clear any prior run first.
@@ -1592,9 +1602,20 @@ def deploy_eks(
     )
     _bootstrap_cluster(outputs, str(config.settings["region"]))
     images = _read_images(images_path, allowed_roots=allowed_roots)
+    values = render_aws_values(
+        config,
+        outputs,
+        images,
+    )
+    runtime_env = values["runtimeEnv"]
+    if not isinstance(runtime_env, Mapping):
+        raise RuntimeError("rendered runtimeEnv must be a mapping")
     # Guacamole (AWS EKS parity with GCP): create the guacamole-runtime Secret and
     # provision the guacamole database + guacamole_admin role in-cluster before Helm,
-    # so guacamole-client can start and initialise its schema during --wait.
+    # so guacamole-client can start and initialise its schema during --wait. The
+    # provisioner Job runs the portal image + entrypoint, so it needs the same
+    # runtime env the chart projects into platform-runtime (which does not exist yet)
+    # for Django settings to load; pass the rendered runtimeEnv through.
     _sync_guacamole_runtime_secret(
         outputs,
         region=str(config.settings["region"]),
@@ -1602,14 +1623,8 @@ def deploy_eks(
     )
     _provision_guacamole_database(
         outputs,
-        environment=profile,
-        region=str(config.settings["region"]),
         platform_image=str(_validated_images(images)["platform"]),
-    )
-    values = render_aws_values(
-        config,
-        outputs,
-        images,
+        runtime_env={str(k): str(v) for k, v in runtime_env.items()},
     )
     chart = get_repo_root() / "platform" / "charts" / "shifter"
     provider_values = chart / f"values-aws-{profile}.yaml"
