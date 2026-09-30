@@ -645,21 +645,41 @@ def _verify_effective_irsa(roles: Mapping[str, object], platform_image: str) -> 
 
 
 def _restricted_probe_container(platform_image: str, workload: str) -> dict[str, object]:
-    """Build a restricted container that records denied API egress."""
+    """Build a restricted container that records denied API egress.
+
+    The AWS VPC CNI network-policy agent programs a freshly-applied policy into
+    eBPF asynchronously; in "standard" enforcing mode a newly-created pod has a
+    brief allow window before its egress rules are installed (#1826). The probe
+    therefore polls until the default-deny is enforced (steady state) rather than
+    sampling once and racing the agent's programming latency (a single sample
+    plus CrashLoopBackOff retries can miss the enforcement-transition window
+    inside the rollout timeout). A policy that never blocks still fails closed:
+    the loop raises after its deadline, so the deployment/job never succeeds.
+    """
     marker_path = "/var/run/shifter-readiness/networkpolicy-ok"
     success_action = (
         f'Path("{marker_path}").touch()\ntime.sleep(300)' if workload == "deployment" else "raise SystemExit(0)"
     )
     script = f"""import socket, time
 from pathlib import Path
-try:
-    connection = socket.create_connection(("kubernetes.default.svc", 443), timeout=5)
-except OSError:
-    print("NETWORK_POLICY_OK:{workload}", flush=True)
-    {success_action}
-else:
+
+
+def _api_blocked():
+    try:
+        connection = socket.create_connection(("kubernetes.default.svc", 443), timeout=5)
+    except OSError:
+        return True
     connection.close()
-    raise RuntimeError("default-deny NetworkPolicy allowed Kubernetes API access")
+    return False
+
+
+deadline = time.monotonic() + 240
+while not _api_blocked():
+    if time.monotonic() >= deadline:
+        raise RuntimeError("default-deny NetworkPolicy allowed Kubernetes API access")
+    time.sleep(3)
+print("NETWORK_POLICY_OK:{workload}", flush=True)
+{success_action}
 """
     container: dict[str, object] = {
         "name": "networkpolicy-check",
