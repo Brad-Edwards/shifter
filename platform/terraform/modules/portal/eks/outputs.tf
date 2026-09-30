@@ -70,6 +70,11 @@ output "private_subnet_ids" {
   value       = [for subnet in aws_subnet.private : subnet.id]
 }
 
+output "service_ipv4_cidr" {
+  description = "Cluster service (ClusterIP) CIDR. In-cluster clients reach the Kubernetes API at the kubernetes.default ClusterIP in this range, so it is the launcher's real API-egress target and the range the broad provider-API egress must exclude (#1826)."
+  value       = aws_eks_cluster.this.kubernetes_network_config[0].service_ipv4_cidr
+}
+
 output "secret_arns" {
   description = "Secret-container ARNs keyed by logical name."
   value       = { for name, secret in aws_secretsmanager_secret.platform : name => secret.arn }

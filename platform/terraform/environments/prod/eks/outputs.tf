@@ -77,8 +77,13 @@ output "private_service_cidrs" {
 }
 
 output "kubernetes_api_cidrs" {
-  description = "Private cluster API reachability CIDRs consumed by chart network policy."
-  value       = var.private_subnet_cidrs
+  description = "Kubernetes API reachability CIDRs for the provisioner-launcher egress policy. In-cluster clients dial the API at the kubernetes.default ClusterIP (the service CIDR); the private subnet CIDRs are retained so the control-plane ENIs stay reachable too."
+  value       = concat([module.eks.service_ipv4_cidr], var.private_subnet_cidrs)
+}
+
+output "provider_api_egress_except" {
+  description = "CIDRs carved out of the broad provider-API (0.0.0.0/0:443) egress so only the launcher policy grants Kubernetes API access. The service CIDR covers the kubernetes.default ClusterIP that every in-cluster client dials."
+  value       = [module.eks.service_ipv4_cidr]
 }
 
 output "model_broker" {

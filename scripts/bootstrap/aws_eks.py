@@ -1035,6 +1035,11 @@ def render_aws_values(
             "providerApiCidrs": sorted(
                 set(_cidr_output(terraform_outputs, "provider_api_cidrs") + broker.get("endpoint_cidrs", []))
             ),
+            # Carve the cluster service CIDR out of the wildcard provider-API (443)
+            # egress so the broad AWS-API allow cannot also reach the in-cluster
+            # Kubernetes API (kubernetes.default ClusterIP). Only the launcher
+            # policy then grants API access (#1826).
+            "providerApiEgressExcept": _cidr_output(terraform_outputs, "provider_api_egress_except"),
             "privateServiceCidrs": _cidr_output(terraform_outputs, "private_service_cidrs"),
             "kubernetesApiCidrs": _cidr_output(terraform_outputs, "kubernetes_api_cidrs"),
             "rangeClusterApiCidrs": [],

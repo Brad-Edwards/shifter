@@ -90,6 +90,7 @@ def _terraform_outputs() -> dict[str, object]:
         "edge_client_cidrs": {"value": ["203.0.113.0/24"]},
         "ingress_source_cidrs": {"value": ["10.42.128.0/24", "10.42.129.0/24"]},
         "provider_api_cidrs": {"value": ["10.42.0.0/16"]},
+        "provider_api_egress_except": {"value": ["172.20.0.0/16"]},
         "private_service_cidrs": {"value": ["10.42.0.0/16"]},
         "kubernetes_api_cidrs": {"value": ["172.20.0.0/16"]},
     }
@@ -145,6 +146,9 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     assert values["network"]["ingressSourceCidrs"] == ["10.42.128.0/24", "10.42.129.0/24"]
     assert values["edge"]["ingress"]["annotations"]["alb.ingress.kubernetes.io/inbound-cidrs"] == "203.0.113.0/24"
     assert values["network"]["kubernetesApiCidrs"] == ["172.20.0.0/16"]
+    # The service CIDR is carved out of the wildcard provider-API egress so the
+    # broad 443 allow cannot reach the in-cluster Kubernetes API (#1826).
+    assert values["network"]["providerApiEgressExcept"] == ["172.20.0.0/16"]
     assert values["identity"]["serviceAccountRoleArns"]["portal"].endswith("shifter-dev-portal")
     assert values["identity"]["serviceAccountRoleArns"]["workers"].endswith("shifter-dev-workers")
     assert values["identity"]["serviceAccountRoleArns"]["ctfScheduler"].endswith("shifter-dev-ctf-scheduler")
