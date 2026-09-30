@@ -85,6 +85,9 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
         # must not supply it.
         "ENGINE_TASK_IMAGE",
+        # Deployed pods run outside build/dev-default mode, so config._email requires
+        # EMAIL_BACKEND; the renderer defaults it to the console backend.
+        "EMAIL_BACKEND",
         "ENVIRONMENT",
         # Guacamole data-plane wiring (aws_eks.render_aws_values): the PostgreSQL
         # host/port come from the shared portal RDS bundle output, the database

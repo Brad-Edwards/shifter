@@ -122,6 +122,9 @@ _GUACAMOLE_PROVISION_JOB = "guacamole-db-provision"
 _GUACAMOLE_PROVISION_SERVICE_ACCOUNT = "guacamole-db-provisioner"
 _GUACAMOLE_PROVISION_IDENTITY = "guacamoleProvisioner"
 _PART_OF_LABEL = "app.kubernetes.io/part-of"
+# Deployed-pod default email backend (console: mail is logged, not sent). Mirrors
+# the GCP renderer's empty-email fallback; keeps config._email from failing closed.
+_CONSOLE_EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 _REQUIRED_TERRAFORM_INPUTS = frozenset(
     {
         "addon_versions",
@@ -263,6 +266,11 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
         "CLOUD_PROVIDER": "aws",
         "DJANGO_ALLOWED_HOSTS": f"{domain},localhost,127.0.0.1",
         "DJANGO_CSRF_TRUSTED_ORIGINS": f"https://{domain}",
+        # Deployed pods run outside build/dev-default mode, so config._email requires
+        # EMAIL_BACKEND explicitly. Default to the console backend (mail logged, never
+        # silently dropped), mirroring the GCP renderer's empty-tfvar fallback; a
+        # provider backend (e.g. django-ses) is a follow-up once SES is provisioned.
+        "EMAIL_BACKEND": _CONSOLE_EMAIL_BACKEND,
         "ENVIRONMENT": _runtime_environment(config.deployment.profile),
         **_rendered_env_values(render_model_access_env(config)),
         **_rendered_env_values(render_mission_control_lease_env(config)),
