@@ -26,6 +26,9 @@ def _config() -> SimpleNamespace:
     )
 
 
+_SECRET_ARN_PREFIX = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks"
+
+
 def _terraform_outputs() -> dict[str, object]:
     return {
         "cluster_name": {"value": "shifter-dev-eks"},
@@ -35,12 +38,12 @@ def _terraform_outputs() -> dict[str, object]:
             "value": {
                 "vpc_id": "vpc-" + "0" * 17,
                 "secret_arns": {
-                    "database": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/database-ab",
-                    "django": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/django-cd",
-                    "redis": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/redis-ef",
-                    "cognito": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/cognito-gh",
-                    "guacamole-db": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/guacamole-db-ij",
-                    "guacamole-json-auth": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/guacamole-json-auth-kl",
+                    "database": f"{_SECRET_ARN_PREFIX}/database-ab",
+                    "django": f"{_SECRET_ARN_PREFIX}/django-cd",
+                    "redis": f"{_SECRET_ARN_PREFIX}/redis-ef",
+                    "cognito": f"{_SECRET_ARN_PREFIX}/cognito-gh",
+                    "guacamole-db": f"{_SECRET_ARN_PREFIX}/guacamole-db-ij",
+                    "guacamole-json-auth": f"{_SECRET_ARN_PREFIX}/guacamole-json-auth-kl",
                 },
                 "portal_db_address": "dev-portal-db.abcdef.us-east-2.rds.amazonaws.com",
                 "portal_db_port": 5432,

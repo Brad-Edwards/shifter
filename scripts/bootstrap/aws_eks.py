@@ -113,9 +113,9 @@ _RENDERER_OWNED_RUNTIME_ENV = AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS
 # provision_guacamole_database; the guacamole-runtime k8s Secret carrying
 # POSTGRESQL_USER/POSTGRESQL_PASSWORD/JSON_SECRET_KEY is synced before Helm runs.
 _GUACAMOLE_DATABASE_NAME = "guacamole"
-_GUACAMOLE_RUNTIME_SECRET_NAME = "guacamole-runtime"  # noqa: S105 - Secret container name, not a credential.
-_GUACAMOLE_DB_SECRET_NAME = "guacamole-db"  # noqa: S105 - Secret container name, not a credential.
-_GUACAMOLE_JSON_AUTH_SECRET_NAME = "guacamole-json-auth"  # noqa: S105 - Secret container name, not a credential.
+_GUACAMOLE_RUNTIME_SECRET_NAME = "guacamole-runtime"  # noqa: S105 - Secret container name.  # nosec B105
+_GUACAMOLE_DB_SECRET_NAME = "guacamole-db"  # noqa: S105 - Secret container name.  # nosec B105
+_GUACAMOLE_JSON_AUTH_SECRET_NAME = "guacamole-json-auth"  # noqa: S105 - Secret container name.  # nosec B105
 _GUACAMOLE_NAMESPACE = "shifter-platform"
 _GUACAMOLE_PROVISION_JOB = "guacamole-db-provision"
 _GUACAMOLE_PROVISION_SERVICE_ACCOUNT = "guacamole-db-provisioner"
@@ -1307,13 +1307,26 @@ def _provision_guacamole_database(
                 "spec": {
                     "serviceAccountName": _GUACAMOLE_PROVISION_SERVICE_ACCOUNT,
                     "restartPolicy": "Never",
-                    "securityContext": {"runAsNonRoot": True},
+                    # Restricted-PSS-compliant (mirrors the IRSA readiness probe).
+                    # readOnlyRootFilesystem is intentionally left unset so the portal
+                    # entrypoint + Django have a writable scratch/overlay; the pod is
+                    # one-shot and non-serving.
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "runAsUser": 1000,
+                        "runAsGroup": 1000,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
                     "containers": [
                         {
                             "name": "provision",
                             "image": platform_image,
+                            "imagePullPolicy": "IfNotPresent",
                             "args": ["python", "manage.py", "provision_guacamole_database"],
-                            "securityContext": {"allowPrivilegeEscalation": False},
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "capabilities": {"drop": ["ALL"]},
+                            },
                             "env": [
                                 {"name": "CLOUD_PROVIDER", "value": "aws"},
                                 {"name": "AWS_REGION", "value": region},
@@ -1330,10 +1343,8 @@ def _provision_guacamole_database(
                                     "value": str(secret_arns[_GUACAMOLE_DB_SECRET_NAME]),
                                 },
                             ],
-                            "volumeMounts": [{"name": "tmp", "mountPath": "/tmp"}],  # noqa: S108 - pod-local scratch
                         }
                     ],
-                    "volumes": [{"name": "tmp", "emptyDir": {}}],
                 },
             },
         },

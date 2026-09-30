@@ -38,7 +38,7 @@ class _FakeCursor:
         self.executed: list[object] = []
         self._pending: tuple[int] | None = None
 
-    def __enter__(self) -> "_FakeCursor":
+    def __enter__(self) -> _FakeCursor:
         return self
 
     def __exit__(self, *exc: object) -> None:
