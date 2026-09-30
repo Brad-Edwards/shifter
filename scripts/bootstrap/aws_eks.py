@@ -1705,7 +1705,42 @@ def deploy_eks(
     _verify_kubernetes_security_enforcement(str(values["images"]["platform"]))
     _verify_effective_irsa(roles, str(values["images"]["platform"]))
     run_cmd(["curl", "--fail", "--silent", "--show-error", "--max-time", "30", health_url])
+    _bootstrap_inbox_catalog()
     return {"backend": "aws", "profile": profile, "health_url": health_url}
+
+
+def _bootstrap_inbox_catalog() -> None:
+    """Register the in-box scenario packs through the uniform ingestion path (#1578).
+
+    Mirrors the GCP control-plane's post-deploy ``bootstrap_inbox_catalog`` step so a
+    fresh AWS tenant has its in-box catalog registered (for example the post-deploy
+    smoke's ``smoke-linux`` scenario, which otherwise fails with "No RAES package
+    registered"). Runs inside a live portal pod through ``entrypoint.sh`` so the
+    command receives the hydrated runtime secrets and RDS IAM auth it needs; the
+    container env alone carries neither. ``SKIP_MIGRATIONS`` keeps it to catalog
+    registration -- the platform already migrated on rollout. Registration is
+    idempotent, so a redeploy re-running this is a no-op (drift is a loud failure).
+
+    The AWS provisioner resolves range images from its forwarded ``*_AMI_ID`` env,
+    not the RAES image registry, so the GCP ``seed_raes_image_registry`` companion
+    (which reads ``GCP_RANGE_*_IMAGE``) is intentionally not run here.
+    """
+    run_cmd(
+        [
+            "kubectl",
+            "exec",
+            "--namespace",
+            "shifter-platform",
+            "deployment/portal-web",
+            "--",
+            "env",
+            "SKIP_MIGRATIONS=1",
+            "/app/entrypoint.sh",
+            "python",
+            "manage.py",
+            "bootstrap_inbox_catalog",
+        ]
+    )
 
 
 def teardown_eks(
