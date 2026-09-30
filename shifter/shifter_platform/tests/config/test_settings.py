@@ -169,7 +169,13 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
                     "database": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/database-ab",
                     "django": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/django-cd",
                     "cognito": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/cognito-gh",
-                }
+                    "guacamole-db": "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/guac-db-ij",
+                    "guacamole-json-auth": (
+                        "arn:aws:secretsmanager:us-east-2:123456789012:secret:shifter/dev/eks/guac-json-auth-kl"
+                    ),
+                },
+                "portal_db_address": "dev-portal-db.abcdef.us-east-2.rds.amazonaws.com",
+                "portal_db_port": 5432,
             }
         },
     }
