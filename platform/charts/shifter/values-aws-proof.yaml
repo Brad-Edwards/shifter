@@ -31,6 +31,15 @@ images:
 
 portal:
   replicas: 2
+  # The portal runs 4 uvicorn workers (PORTAL_WEB_WORKERS default); with the 1Gi
+  # chart-default limit they OOM-kill on the startup peak, and the post-deploy
+  # smoke runs an extra manage.py process inside this pod. Raise the AWS memory
+  # ceiling (Helm deep-merges, so cpu/ephemeral-storage keep their chart defaults).
+  resources:
+    requests:
+      memory: 1Gi
+    limits:
+      memory: 2Gi
 
 guacd:
   replicas: 1
