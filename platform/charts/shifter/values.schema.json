@@ -287,6 +287,13 @@
         "taskRunner": { "enum": ["gcp", "aws"] }
       }
     },
+    "provisionerAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inlineParams": { "type": "boolean" }
+      }
+    },
     "runtime": {
       "type": "object",
       "additionalProperties": false,

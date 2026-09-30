@@ -85,6 +85,11 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
         # must not supply it.
         "ENGINE_TASK_IMAGE",
+        # Provisioner-Job admission contract (restrict-provisioner-jobs, #1826): the
+        # policy pins the Job's imagePullPolicy and DB_USER to these renderer-owned
+        # values, which the launcher also applies when building the Job.
+        "ENGINE_TASK_IMAGE_PULL_POLICY",
+        "PROVISIONER_DB_USER",
         # Deployed pods run outside build/dev-default mode, so config._email requires
         # EMAIL_BACKEND; the renderer defaults it to the console backend.
         "EMAIL_BACKEND",

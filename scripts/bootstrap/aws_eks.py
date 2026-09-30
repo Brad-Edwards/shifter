@@ -949,6 +949,13 @@ def render_aws_values(
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
+    # Provisioner-Job admission contract (restrict-provisioner-jobs, #1826). The
+    # launcher builds the Job with imagePullPolicy = ENGINE_TASK_IMAGE_PULL_POLICY
+    # (GCPTaskRunner default IfNotPresent) and DB_USER = provisioner_lambda
+    # (eks-provisioner-env), and the policy pins the Job to these exact values.
+    # They must be present so the policy admits the real Job.
+    runtime_env["ENGINE_TASK_IMAGE_PULL_POLICY"] = "IfNotPresent"
+    runtime_env["PROVISIONER_DB_USER"] = "provisioner_lambda"
     # OIDC is hydrated by the portal/workers, whose role can read only the
     # eks-owned shifter/<env>/eks/* secrets. Terraform's OIDC_SECRET_ID points at
     # the portal-owned cognito secret the role cannot read, so repoint it at the
