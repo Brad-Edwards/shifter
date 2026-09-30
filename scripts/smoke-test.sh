@@ -79,10 +79,15 @@ users:
         args: [--region, ${AWS_REGION}, eks, get-token, --cluster-name, ${CLUSTER_NAME}, --output, json]
 EOF
 
-# The manage command runs inside the portal pod via `kubectl exec`, which does
-# not inherit this job's environment. Forward the smoke user identity explicitly
-# with `env`. The smoke provisions ranges from base AMIs (no XDR agent), so there
-# are no per-variant agent IDs to forward.
+# The manage command runs inside the portal pod via `kubectl exec`, which starts
+# a fresh process that inherits neither this job's environment nor the runtime
+# secrets the portal entrypoint hydrates in-process (DJANGO_SECRET_KEY,
+# FIELD_ENCRYPTION_KEY, DB credentials — never baked into the container env). So
+# run through `entrypoint.sh`, which fetches those secrets from Secrets Manager
+# and switches on RDS IAM auth before exec-ing the command, with SKIP_MIGRATIONS
+# set (the deploy already migrated; the smoke only provisions/tears down a range).
+# Forward the smoke user identity explicitly with `env`. The smoke provisions
+# ranges from base AMIs (no XDR agent), so there are no per-variant agent IDs.
 kubectl exec -n "${NAMESPACE}" "${PORTAL_DEPLOYMENT}" -- \
-  env "SMOKE_TEST_USER_EMAIL=${SMOKE_TEST_USER_EMAIL}" \
-  python manage.py run_post_deploy_smoke --variant "${VARIANT}"
+  env "SMOKE_TEST_USER_EMAIL=${SMOKE_TEST_USER_EMAIL}" SKIP_MIGRATIONS=1 \
+  /app/entrypoint.sh python manage.py run_post_deploy_smoke --variant "${VARIANT}"
