@@ -116,11 +116,10 @@ module "eks" {
       namespace       = "shifter-platform"
       service_account = "guacamole-db-provisioner"
       policy_arns     = []
-      # Full platform secret read: the Job runs the portal entrypoint, which
-      # hydrates every secret id the rendered runtime env advertises (DB, app,
-      # OIDC, guacamole) before Django settings load, so it needs parity with the
-      # portal/worker secret access, not just the guacamole subset.
-      secret_names = local.secret_names
+      # The provision command reads only the RDS master (database) and guacamole-db
+      # credentials from Secrets Manager; it runs under ENVIRONMENT=build so Django
+      # settings load without the other platform secrets.
+      secret_names = toset(["database", "guacamole-db"])
     }
     # EKS add-on controller identities (#1826). AWS-managed CSI driver policies;
     # controllers run in kube-system with their driver-default service accounts.
