@@ -7,6 +7,7 @@ never read, imported, adopted, or destroyed by this module.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -1280,18 +1281,27 @@ def _guacamole_provision_role_arn(outputs: Mapping[str, object]) -> str:
 
 
 def _guacamole_provision_job_env(secret_arns: Mapping[str, str], region: str) -> list[dict[str, str]]:
-    """Minimal env for the provisioner command (it bypasses the portal entrypoint).
+    """Env for the provisioner command (it bypasses the portal entrypoint).
 
     The command only needs Django to initialise, not the full platform runtime env.
-    ENVIRONMENT=build loads settings in tooling mode (dev defaults for EMAIL_BACKEND,
-    SECRET_KEY, ...), exactly as the image build's collectstatic does. It then reads
-    its DB credentials from Secrets Manager via IRSA and talks to RDS directly; it
-    never serves traffic.
+    ENVIRONMENT=build loads settings in tooling mode exactly as the image build's
+    collectstatic does; the build-time placeholders below satisfy the settings that
+    have no build default (DJANGO_SECRET_KEY, FIELD_ENCRYPTION_KEY, OIDC_*) and are
+    never used by the command, which reads its DB credentials from Secrets Manager
+    via IRSA and talks to RDS directly. The two keys are ephemeral (generated per
+    run) and are not real credentials.
     """
+    ephemeral_secret_key = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    ephemeral_fernet_key = base64.urlsafe_b64encode(os.urandom(32)).decode()
     return [
+        {"name": "ENVIRONMENT", "value": "build"},
         {"name": "CLOUD_PROVIDER", "value": "aws"},
         {"name": "AWS_REGION", "value": region},
-        {"name": "ENVIRONMENT", "value": "build"},
+        {"name": "DJANGO_SECRET_KEY", "value": ephemeral_secret_key},
+        {"name": "FIELD_ENCRYPTION_KEY", "value": ephemeral_fernet_key},
+        {"name": "OIDC_RP_CLIENT_ID", "value": "build-time-client"},
+        {"name": "OIDC_AUTH_DOMAIN", "value": "https://auth.example.test"},
+        {"name": "OIDC_ISSUER_URL", "value": "https://issuer.example.test"},
         {"name": "DB_SECRET_ID", "value": secret_arns["database"]},
         {"name": "GUACAMOLE_DB_SECRET_ID", "value": secret_arns[_GUACAMOLE_DB_SECRET_NAME]},
     ]
