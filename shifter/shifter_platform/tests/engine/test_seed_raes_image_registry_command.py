@@ -113,8 +113,10 @@ def test_rejects_non_integer_disk_size(monkeypatch):
 
 def test_seeds_aws_ec2_mappings_from_ami_env(monkeypatch):
     # CLOUD_PROVIDER=aws routes to the EC2 branch: provider='aws' mappings sourced
-    # from the forwarded *_AMI_ID / *_INSTANCE_TYPE env, with the AMI's cloud-init
-    # login as the management SSH user. Windows/DC AMIs are unset here -> skipped.
+    # from the forwarded *_AMI_ID / *_INSTANCE_TYPE env. The management SSH login is
+    # left blank so the EC2 apply uses its dedicated "raes" login (which must stay
+    # distinct from the scenario's authored participant accounts). Windows/DC AMIs
+    # are unset here -> skipped.
     monkeypatch.setenv("CLOUD_PROVIDER", "aws")
     monkeypatch.setenv("KALI_AMI_ID", "ami-0kali")
     monkeypatch.setenv("KALI_INSTANCE_TYPE", "t3.medium")
@@ -127,14 +129,14 @@ def test_seeds_aws_ec2_mappings_from_ami_env(monkeypatch):
     assert kali.provider == "aws"
     assert kali.image_ref == "ami-0kali"
     assert kali.machine_type == "t3.medium"
-    assert kali.management_ssh_username == "kali"
+    assert kali.management_ssh_username == ""
     assert kali.source_version == ""  # any-version fallback
 
     ubuntu = RaesImageMapping.objects.get(source_name="ubuntu")
     assert ubuntu.provider == "aws"
     assert ubuntu.image_ref == "ami-0ubuntu"
     assert ubuntu.machine_type == "t3.small"
-    assert ubuntu.management_ssh_username == "ubuntu"
+    assert ubuntu.management_ssh_username == ""
 
     assert not RaesImageMapping.objects.filter(source_name="windows").exists()
     assert not RaesImageMapping.objects.filter(source_name="dc").exists()

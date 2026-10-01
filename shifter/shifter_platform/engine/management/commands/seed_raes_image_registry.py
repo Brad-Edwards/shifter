@@ -68,19 +68,21 @@ _IMAGE_SOURCES: tuple[tuple[str, str, str, str, str, int], ...] = (
     ),
 )
 
-# AWS (EC2) RAES source name -> (AMI env var, instance-type env var, management
-# SSH username) for the provider="aws" image mappings. The AMI/instance-type env
-# the EKS provisioner launcher forwards (engine.ecs._env /
-# AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS) mirror the legacy AWS range
-# terraform source map (kali -> kali_ami_id, ubuntu -> victim_ami_id, ...). AWS
-# AMIs carry their own root volume, so no disk size is seeded; the management SSH
-# username is the AMI's cloud-init default login so guest setup can reach it.
-# Windows/DC images use WinRM, not SSH, so their management login stays blank.
-_AWS_IMAGE_SOURCES: tuple[tuple[str, str, str, str], ...] = (
-    ("kali", "KALI_AMI_ID", "KALI_INSTANCE_TYPE", "kali"),
-    ("ubuntu", "VICTIM_AMI_ID", "VICTIM_INSTANCE_TYPE", "ubuntu"),
-    ("windows", "WINDOWS_AMI_ID", "", ""),
-    ("dc", "DC_AMI_ID", "", ""),
+# AWS (EC2) RAES source name -> (AMI env var, instance-type env var) for the
+# provider="aws" image mappings. The AMI/instance-type env the EKS provisioner
+# launcher forwards (engine.ecs._env / AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS)
+# mirror the legacy AWS range terraform source map (kali -> kali_ami_id,
+# ubuntu -> victim_ami_id, ...). AWS AMIs carry their own root volume, so no disk
+# size is seeded. The management SSH username is left blank: the EC2 apply then
+# uses its dedicated "raes" management login (raes_ec2_apply), which must stay
+# distinct from the scenario's authored participant accounts (kali/ubuntu). Seeding
+# the AMI's own login (kali/ubuntu) collides with those accounts and the apply
+# refuses it ("Authored account conflicts with the image management login").
+_AWS_IMAGE_SOURCES: tuple[tuple[str, str, str], ...] = (
+    ("kali", "KALI_AMI_ID", "KALI_INSTANCE_TYPE"),
+    ("ubuntu", "VICTIM_AMI_ID", "VICTIM_INSTANCE_TYPE"),
+    ("windows", "WINDOWS_AMI_ID", ""),
+    ("dc", "DC_AMI_ID", ""),
 )
 
 
@@ -152,7 +154,7 @@ class Command(BaseCommand):
         provisioner. Idempotent; a redeploy converges the registry.
         """
         seeded = 0
-        for source_name, ami_env, instance_type_env, management_user in _AWS_IMAGE_SOURCES:
+        for source_name, ami_env, instance_type_env in _AWS_IMAGE_SOURCES:
             image_ref = os.environ.get(ami_env, "").strip()
             if not image_ref:
                 self.stdout.write(f"skip {source_name}: {ami_env} is unset")
@@ -160,7 +162,6 @@ class Command(BaseCommand):
             options_obj = RaesImageMappingOptions(
                 source_version="",
                 machine_type=os.environ.get(instance_type_env, "").strip() if instance_type_env else "",
-                management_ssh_username=management_user,
                 notes=f"seeded from {ami_env}",
             )
             try:
