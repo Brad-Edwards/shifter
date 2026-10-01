@@ -199,8 +199,16 @@ def _verify_root_disk(image: dict[str, Any], profile: Ec2ImageProfile) -> tuple[
     root = image.get("RootDeviceName")
     if not isinstance(root, str) or not re.fullmatch(r"/dev/[a-z][a-z0-9]{1,30}", root):
         raise Ec2ImageError("EC2 root device is invalid")
-    # Refuse extra disks until their lifecycle and evidence are represented.
-    disk = _only(image.get("BlockDeviceMappings"), "root disk")
+    mappings = image.get("BlockDeviceMappings")
+    if not isinstance(mappings, list):
+        raise Ec2ImageError("EC2 root disk observation is unavailable or ambiguous")
+    # Only EBS mappings are disks with a snapshot and lifecycle to attest. Virtual
+    # (instance-store / ephemeral) mappings carry no snapshot and only materialise
+    # when the instance type provides instance-store volumes, so they are not extra
+    # disks. Refuse extra EBS disks until their lifecycle and evidence are
+    # represented, but ignore ephemeral mappings that AMIs commonly declare.
+    ebs_disks = [m for m in mappings if isinstance(m, dict) and isinstance(m.get("Ebs"), dict)]
+    disk = _only(ebs_disks, "root disk")
     ebs = disk.get("Ebs", {})
     size, snapshot = ebs.get("VolumeSize"), ebs.get("SnapshotId")
     if (

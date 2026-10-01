@@ -72,6 +72,31 @@ def test_pinned_registry_image_keeps_management_transport_and_source_identity():
     assert actual.image_id == profile.image_id
 
 
+def test_image_with_ephemeral_mappings_verifies_the_ebs_root():
+    # Virtual (instance-store / ephemeral) mappings carry no snapshot/lifecycle and
+    # are not extra disks; a base AMI that declares them must still verify its EBS root.
+    ec2 = client()
+    ec2.describe_images.return_value["Images"][0]["BlockDeviceMappings"] = [
+        {"DeviceName": "/dev/sda1", "Ebs": {"VolumeSize": 30, "SnapshotId": "snap-0123456789abcdef0"}},
+        {"DeviceName": "/dev/sdb", "VirtualName": "ephemeral0"},
+        {"DeviceName": "/dev/sdc", "VirtualName": "ephemeral1"},
+    ]
+    actual = verify_ec2_image(node(ram_mib=4096, vcpus=2), resolve_ec2_image(node(), [candidate()]), ec2)
+    assert actual.root_device == "/dev/sda1"
+    assert actual.disk_size_gb >= 30
+
+
+def test_image_with_extra_ebs_disk_is_refused():
+    # A second EBS disk still fails closed until its lifecycle and evidence are represented.
+    ec2 = client()
+    ec2.describe_images.return_value["Images"][0]["BlockDeviceMappings"] = [
+        {"DeviceName": "/dev/sda1", "Ebs": {"VolumeSize": 30, "SnapshotId": "snap-0123456789abcdef0"}},
+        {"DeviceName": "/dev/sdb", "Ebs": {"VolumeSize": 100, "SnapshotId": "snap-0fedcba9876543210"}},
+    ]
+    with pytest.raises(Ec2ImageError, match="root disk"):
+        verify_ec2_image(node(ram_mib=4096, vcpus=2), resolve_ec2_image(node(), [candidate()]), ec2)
+
+
 def test_adapter_target_profile_selects_an_exact_ami():
     runtime = RuntimeTargetImageProfile(
         provider="aws",
