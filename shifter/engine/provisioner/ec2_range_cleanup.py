@@ -70,7 +70,12 @@ def _inventory(scope: Ec2CleanupScope, ec2: BaseClient) -> dict[str, list[dict[s
     ]
     inventory = {}
     for category, (operation, key, identity) in _LOOKUPS.items():
-        response = getattr(ec2, operation)(Filters=filters, MaxResults=1000)
+        # 100 is the smallest MaxResults ceiling across these EC2 describe
+        # operations (DescribeRouteTables/DescribeSubnets cap at 100; 1000 is
+        # rejected with InvalidParameterValue). A range owns far fewer resources
+        # than this, and the NextToken guard below still refuses a partial
+        # inventory, preserving the bound.
+        response = getattr(ec2, operation)(Filters=filters, MaxResults=100)
         if response.get("NextToken"):
             raise Ec2CleanupError("EC2 cleanup inventory exceeded its bound")
         rows = response.get(key, [])
