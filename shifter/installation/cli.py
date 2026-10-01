@@ -53,6 +53,7 @@ from .publication import (
     version_snapshot_path,
 )
 from .render import (
+    render_capacity_projection,
     render_cloud_provider_tfvars,
     render_mission_control_lease_env,
     render_model_access_catalog,
@@ -166,6 +167,20 @@ def _cmd_render_model_access(path_str: str, output: str | None, *, catalog: bool
     rendered = render_model_access_catalog(config) if catalog else render_model_access_env(config)
     what = "model-access catalog" if catalog else "model-access runtime env"
     return _emit_rendered(rendered, output, config.backend, what=what)
+
+
+def _cmd_render_capacity(path_str: str, output: str | None, projection: str) -> int:
+    """Render a selected GCP capacity profile for one closed consumer."""
+    config_path = Path(path_str)
+    try:
+        config = load_root_config(config_path)
+        rendered = render_capacity_projection(config, projection)  # type: ignore[arg-type]
+    except InstallationConfigError as exc:
+        print(f"{config_path}: invalid", file=sys.stderr)
+        for issue in exc.issues:
+            print(f"  - {issue.render()}", file=sys.stderr)
+        return 1
+    return _emit_rendered(rendered, output, config.backend, what=f"capacity {projection} JSON")
 
 
 def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
@@ -314,6 +329,8 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = _cmd_render_model_access(args.path, args.output, catalog=True)
     elif args.command == "render-model-access-env":
         exit_code = _cmd_render_model_access(args.path, args.output, catalog=False)
+    elif args.command == "render-capacity":
+        exit_code = _cmd_render_capacity(args.path, args.output, args.projection)
     elif args.command == "runtime-inventory":
         exit_code = _cmd_runtime_inventory(args.repo_root, check=args.check)
     elif args.command == "init":

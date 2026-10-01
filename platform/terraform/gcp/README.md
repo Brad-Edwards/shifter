@@ -194,22 +194,20 @@ do not estimate log size from request count alone. See
 [Cloud Logging pricing](https://cloud.google.com/products/observability/pricing)
 and [Secret Manager audit logging](https://cloud.google.com/secret-manager/docs/audit-logging).
 
-A service account can have at most 10 keys. Consequently the per-range Vertex
-key path cannot support the default 24-slot concurrency unless existing keys
-leave enough capacity; the optional shared Vertex-key source avoids per-range
-key creation but increases blast radius. Its per-range Secret Manager copy is
-still deleted with the range. Multiple keys on one range-Vertex service account
-authenticate as the same IAM principal and carry identical permissions:
-key-per-range is a revocation handle, not principal isolation (#681). Check the
-[service-account key limit](https://cloud.google.com/iam/docs/keys-create-delete)
-and current key inventory before rollout.
+Range guests reach Vertex through a keyless, predict-only identity attached via
+Workload Identity (ADR-064): no per-range service-account keys are created, so the
+10-key-per-principal limit no longer bounds range concurrency. The identity is
+least privilege (`aiplatform.endpoints.predict` plus host telemetry) and is
+attached only when the model broker is not the guest path. Enabling a specific
+model (for example Claude in Vertex Model Garden) is a one-time provider-console
+step.
 
 Secret deletion blocks fresh Secret Manager reads after IAM propagation, but
 already delivered guest credentials, cached portal values, downloaded VPN
 profiles, minted OAuth tokens, and service-account keys have separate revocation
 windows. The rollout owner must record the observed permission-probe propagation
-time, allow five minutes for the portal cache, revoke the guest/gateway material,
-and verify the Vertex key deletion independently. The extra project also consumes
+time, allow five minutes for the portal cache, and revoke the guest/gateway
+material. The extra project also consumes
 the organization's project quota and requires billing/API/audit-policy authority;
 verify those deployment-specific limits rather than assuming project creation is
 available.

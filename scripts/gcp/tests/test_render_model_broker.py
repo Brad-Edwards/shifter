@@ -4,9 +4,11 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 
+@pytest.mark.integration
 def test_disabled_and_enabled_projection_use_real_chart(tmp_path):
     path = Path(__file__).resolve().parents[1] / "render_model_broker.py"
     spec = importlib.util.spec_from_file_location("render_model_broker", path)
@@ -42,10 +44,12 @@ def test_disabled_and_enabled_projection_use_real_chart(tmp_path):
     identities = {(doc["kind"], doc["metadata"]["name"]) for doc in docs}
     assert ("Deployment", "model-broker") in identities
     assert ("Deployment", "model-access-control") in identities
+    assert ("Deployment", "model-provider-egress") in identities
+    assert ("NetworkPolicy", "model-provider-egress-boundary") in identities
     assert ("Deployment", "portal-web") not in identities
     assert ("ValidatingAdmissionPolicy", "restrict-provisioner-jobs") not in identities
     policy = next(doc for doc in docs if doc["metadata"]["name"] == "allow-platform-private-service-egress")
-    assert policy["spec"]["podSelector"]["matchExpressions"][0]["values"] == ["model-broker"]
+    assert policy["spec"]["podSelector"]["matchExpressions"][0]["values"] == ["model-broker", "model-provider-egress"]
 
 
 def test_combining_manifests_replaces_shared_policies_before_any_apply():
@@ -64,7 +68,11 @@ def test_combining_manifests_replaces_shared_policies_before_any_apply():
         "spec": {
             "podSelector": {
                 "matchExpressions": [
-                    {"key": "app.kubernetes.io/component", "operator": "NotIn", "values": ["model-broker"]}
+                    {
+                        "key": "app.kubernetes.io/component",
+                        "operator": "NotIn",
+                        "values": ["model-broker", "model-provider-egress"],
+                    }
                 ]
             }
         },
@@ -74,6 +82,57 @@ def test_combining_manifests_replaces_shared_policies_before_any_apply():
         yaml.safe_load_all(module.combine_resources(yaml.safe_dump_all([broad, unrelated]), yaml.safe_dump(narrow)))
     )
     assert combined == [unrelated, narrow]
+
+
+def test_normal_apply_projects_selected_capacity_profile():
+    path = Path(__file__).resolve().parents[1] / "render_model_broker.py"
+    spec = importlib.util.spec_from_file_location("render_model_broker_capacity", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    documents = [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": name, "namespace": "shifter-platform"},
+            "spec": {
+                "replicas": 1,
+                "template": {
+                    "metadata": {},
+                    "spec": {
+                        "containers": [{"name": container, "resources": {}}],
+                    },
+                },
+            },
+        }
+        for name, container in (
+            ("portal-web", "portal"),
+            ("guacd", "guacd"),
+            ("guacamole-client", "guacamole-client"),
+        )
+    ]
+    documents.append(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "platform-runtime", "namespace": "shifter-platform"},
+            "data": {},
+        }
+    )
+
+    applied = list(
+        yaml.safe_load_all(module.apply_capacity_profile(yaml.safe_dump_all(documents), "gcp-shared-v1-p10"))
+    )
+    portal = next(document for document in applied if document.get("metadata", {}).get("name") == "portal-web")
+    assert portal["spec"]["replicas"] == 2
+    assert portal["spec"]["template"]["spec"]["containers"][0]["resources"] == {
+        "requests": {"cpu": "500m", "memory": "2Gi", "ephemeral-storage": "256Mi"},
+        "limits": {"cpu": "2", "memory": "4Gi", "ephemeral-storage": "256Mi"},
+    }
+    assert portal["metadata"]["annotations"]["shifter.dev/capacity-profile"] == "gcp-shared-v1-p10"
+    assert portal["spec"]["template"]["metadata"]["labels"]["shifter.dev/capacity-profile"] == ("gcp-shared-v1-p10")
+    runtime = next(document for document in applied if document.get("kind") == "ConfigMap")
+    assert runtime["data"]["SHARED_SERVICE_CAPACITY_PROFILE"] == "gcp-shared-v1-p10"
+    assert runtime["data"]["PORTAL_WEB_WORKERS"] == "4"
 
 
 def test_deploy_job_installs_renderer_dependencies_before_use():
@@ -91,6 +150,35 @@ def test_deploy_job_installs_renderer_dependencies_before_use():
     assert "GITHUB_PATH" in helm[0]["run"]
 
 
+def test_migration_does_not_load_the_unmounted_runtime_catalog():
+    from shared.model_access.runtime import load_mounted_catalog
+
+    root = Path(__file__).resolve().parents[3]
+    workflow = yaml.safe_load((root / ".github/workflows/_gcp-dev.yml").read_text())
+    step = next(
+        step
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name", "").startswith("Run database migrations")
+    )
+    manifest = step["run"].split("cat <<YAML | kubectl apply -f -\n", 1)[1].split("\nYAML\n", 1)[0]
+    container = yaml.safe_load(manifest)["spec"]["template"]["spec"]["containers"][0]
+    effective = {
+        "MODEL_ACCESS_ENABLED": "true",
+        "MODEL_ACCESS_CATALOG_PATH": "/unmounted/catalog.json",
+        "MODEL_ACCESS_CATALOG_DIGEST": "sha256:" + "a" * 64,
+        **{item["name"]: item["value"] for item in container["env"] if "value" in item},
+    }
+    assert (
+        load_mounted_catalog(
+            enabled=effective["MODEL_ACCESS_ENABLED"] == "true",
+            path=effective["MODEL_ACCESS_CATALOG_PATH"],
+            expected_digest=effective["MODEL_ACCESS_CATALOG_DIGEST"],
+        )
+        is None
+    )
+
+
+@pytest.mark.integration
 def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     import subprocess
 
@@ -132,16 +220,38 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
         "spec": {
             "template": {
                 "metadata": {"annotations": {"checksum/runtime-config": "empty"}},
-                "spec": {"containers": [{"name": "model-access-control"}]},
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "model-access-control",
+                            "env": [
+                                {"name": "MODEL_ACCESS_ENABLED", "value": "true"},
+                                {
+                                    "name": "MODEL_ACCESS_CATALOG_PATH",
+                                    "value": "/etc/shifter/model-access/catalog.json",
+                                },
+                                {"name": "MODEL_ACCESS_CATALOG_DIGEST", "value": "old"},
+                            ],
+                        }
+                    ]
+                },
             }
         },
     }
+    catalog = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": "model-broker-catalog", "namespace": "shifter-platform"},
+        "data": {"enrollment.json": json.dumps({"MODEL_BROKER_GUEST_VIP": "10.40.0.25"})},
+    }
     versions = []
     for value in ("old", "new", "new"):
-        runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] = value
+        control["spec"]["template"]["spec"]["containers"][0]["env"][2]["value"] = value
         combined = list(
             yaml.safe_load_all(
-                module.combine_resources(base + "\n---\n" + yaml.safe_dump(runtime), yaml.safe_dump(control))
+                module.combine_resources(
+                    base + "\n---\n" + yaml.safe_dump(runtime), yaml.safe_dump_all([control, catalog])
+                )
             )
         )
         policies = {
@@ -159,7 +269,7 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
             assert {
                 "key": "app.kubernetes.io/component",
                 "operator": "NotIn",
-                "values": ["model-broker"],
+                "values": ["model-broker", "model-provider-egress"],
             } in policy["podSelector"].get("matchExpressions", [])
         versions.append(
             next(
@@ -174,6 +284,19 @@ def test_actual_actions_policies_are_narrowed_and_control_rolls_with_runtime():
     assert (
         applied_control["spec"]["template"]["spec"]["containers"][0]["envFrom"]
         == worker_patch["spec"]["template"]["spec"]["containers"][0]["envFrom"]
+    )
+    applied_runtime = next(
+        doc for doc in combined if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "platform-runtime"
+    )
+    assert applied_runtime["data"]["MODEL_BROKER_GUEST_VIP"] == "10.40.0.25"
+    assert applied_runtime["data"]["MODEL_ACCESS_ENABLED"] == "true"
+    assert applied_runtime["data"]["MODEL_ACCESS_CATALOG_DIGEST"] == "new"
+    applied_worker = next(
+        doc for doc in combined if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "worker-engine"
+    )
+    assert any(
+        mount["mountPath"] == "/etc/shifter/model-access"
+        for mount in applied_worker["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
     )
     assert versions[0] != versions[1]
     assert versions[1] == versions[2]

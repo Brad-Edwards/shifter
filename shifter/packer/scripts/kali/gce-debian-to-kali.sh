@@ -43,7 +43,7 @@ echo "=== Pinning the Debian signed boot chain so GCE Secure Boot keeps working 
 # kali-rolling swaps in Kali's unsigned boot chain and the guest then fails at
 # firmware ("BdsDxe: failed to load ... Security Violation"). Keep the signed
 # Debian boot packages held so Kali *userland* layers on top while the signed
-# EFI shim/GRUB and a signed kernel stay Debian's -- the same reason polaris-vm
+# EFI shim/GRUB and a signed kernel stay Debian's -- the same reason preconfigured Linux images
 # (also a debian-12 base that never rewrites its boot chain) boots clean.
 apt-get install -y --no-install-recommends shim-signed grub-efi-amd64-signed
 # The GCE debian-12 base ships a *cloud* kernel (linux-image-cloud-amd64 plus a

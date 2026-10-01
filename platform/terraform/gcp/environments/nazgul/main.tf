@@ -8,7 +8,11 @@ terraform {
     }
     google = {
       source  = "hashicorp/google"
-      version = "~> 6.0"
+      version = "~> 8.1"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 8.1"
     }
     random = {
       source  = "hashicorp/random"
@@ -18,6 +22,11 @@ terraform {
 }
 
 provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+provider "google-beta" {
   project = var.project_id
   region  = var.region
 }
@@ -88,12 +97,15 @@ module "platform_core" {
   worker_node_count                  = var.worker_node_count
   provisioner_node_count             = var.provisioner_node_count
   access_node_count                  = var.access_node_count
+  access_node_max_count              = var.access_node_max_count
+  shared_service_capacity_profile    = var.shared_service_capacity_profile
   cloud_sql_database_version         = var.cloud_sql_database_version
   cloud_sql_tier                     = var.cloud_sql_tier
   cloud_sql_availability_type        = var.cloud_sql_availability_type
   cloud_sql_disk_size_gb             = var.cloud_sql_disk_size_gb
   cloud_sql_database_name            = var.cloud_sql_database_name
   cloud_sql_user_name                = var.cloud_sql_user_name
+  cloud_sql_deletion_protection      = var.cloud_sql_deletion_protection
   redis_tier                         = var.redis_tier
   redis_memory_size_gb               = var.redis_memory_size_gb
   public_hostname                    = var.public_hostname

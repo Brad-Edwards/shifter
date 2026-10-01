@@ -124,6 +124,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "1.13.3"
@@ -317,6 +318,7 @@ jobs:
         with:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
+          role-duration-seconds: 21600
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "1.13.3"

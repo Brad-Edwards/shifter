@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -14,10 +15,6 @@ _PUBLIC_HOSTNAME_OUTPUT_KEY = "public_hostname"
 _PUBLIC_INGRESS_IP_NAME_OUTPUT_KEY = "public_ingress_ip_name"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _TERRAFORM_OUTPUT_PATH = Path("/tmp/gcp-terraform-outputs.json")  # noqa: S108 - fixed path the deploy workflow writes
-_EDGE_MANIFEST_RELATIVE_PATHS = {
-    "gcp-dev": Path("platform/k8s/gcp/overlays/gcp-dev/platform-edge.generated.yaml"),
-    "gcp-prod": Path("platform/k8s/gcp/overlays/gcp-prod/platform-edge.generated.yaml"),
-}
 _YAML_METADATA = "metadata:"
 _YAML_NAMESPACE = "  namespace: shifter-platform"
 _YAML_SPEC = "spec:"
@@ -35,10 +32,11 @@ def _validated_output_path(path: Path) -> Path:
 
 
 def _output_path_for_environment(environment: str) -> Path:
-    try:
-        relative_path = _EDGE_MANIFEST_RELATIVE_PATHS[environment]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported environment for edge manifest output: {environment}") from exc
+    # Match installation.deployment_inventory_types.Environment, including
+    # GitHub Environment names, without interpreting the value as a path.
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}", environment, flags=re.ASCII):
+        raise ValueError("Invalid environment name for edge manifest output")
+    relative_path = Path("platform/k8s/gcp/overlays") / environment / "platform-edge.generated.yaml"
     return _validated_output_path(_REPO_ROOT / relative_path)
 
 
@@ -141,7 +139,7 @@ def render_manifest(outputs: dict[str, object]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--environment", required=True, choices=sorted(_EDGE_MANIFEST_RELATIVE_PATHS))
+    parser.add_argument("--environment", required=True)
     args = parser.parse_args()
 
     outputs = json.loads(_TERRAFORM_OUTPUT_PATH.read_text())

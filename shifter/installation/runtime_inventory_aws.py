@@ -92,6 +92,10 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "MODEL_ACCESS_CATALOG_DIGEST",
         "MODEL_ACCESS_CATALOG_PATH",
         "MODEL_ACCESS_ENABLED",
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_BROKER_GUEST_CIDRS",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "SITE_URL",
     }
 )
@@ -103,10 +107,15 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
 # the Django platform), so the set is declared here as data; a platform-side
 # parity test (``tests/shared/cloud/test_aws_runtime_role_parity.py``) fails if it
 # drifts from the authoritative forwarding list ``engine.ecs._AWS_PROVISIONER_ENV_KEYS``.
-# It mirrors the environment the AWS provisioner previously received from its ECS
-# task definition (``platform/terraform/modules/engine-provisioner/task_definition.tf``).
+# It mirrors the environment the AWS provisioner receives; on EKS that environment
+# is assembled by the ``portal/eks-provisioner-env`` Terraform module and forwarded
+# through the Kubernetes Job's runtimeEnv.
 AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "MODEL_BROKER_GUEST_URL",
+        "MODEL_BROKER_GUEST_CIDRS",
+        "MODEL_ENROLLMENT_CONTROL_URL",
+        "MODEL_ENROLLMENT_CA_PEM_B64",
         "CLOUD_PROVIDER",
         "ENVIRONMENT",
         "AWS_REGION",
@@ -138,6 +147,8 @@ AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "FIREWALL_ENDPOINT_ID",
         "SSM_ENDPOINTS_SUBNET_CIDR",
         "PORTAL_VPC_CIDR",
+        "PORTAL_NETWORK_CIDRS",
+        "ACCESS_NETWORK_CIDRS",
         "PORTAL_VPC_PEERING_ID",
         "NGFW_AMI_ID",
         "NGFW_INSTANCE_TYPE",
@@ -148,16 +159,6 @@ AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "NGFW_SUBNET_CIDR",
         "NGFW_BOOTSTRAP_BUCKET",
         "NGFW_INSTANCE_PROFILE_NAME",
-        "AWS_POLARIS_AGENT_REGION",
-        "AWS_POLARIS_AGENT_MAIN_MODEL_ID",
-        "AWS_POLARIS_AGENT_SMALL_MODEL_ID",
-        "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN",
-        "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
-        "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
-        "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
-        "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS",
-        "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS",
-        "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
         "DC_DOMAIN_PASSWORD",
     }
 )
@@ -173,7 +174,7 @@ AWS_PROVISIONER_HYDRATED_SECRET_KEYS: frozenset[str] = frozenset({"DC_DOMAIN_PAS
 # The complete set of keys render_aws_values emits into the ConfigMap-bound runtime
 # env. It mirrors the Terraform merged_runtime_env (var.runtime_env carrying the
 # required bindings, the eks-provisioner-env provisioner_env range/portal topology,
-# and deployment extras such as AWS_POLARIS_AGENT_*) plus the renderer-owned keys,
+# and non-secret deployment extras) plus the renderer-owned keys,
 # minus the hydrated-secret keys that flow as references. The bundle's generated
 # outputs are derived from this so the published contract and the renderer cannot
 # drift; an oracle test asserts a representative render emits exactly this set.

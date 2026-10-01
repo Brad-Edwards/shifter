@@ -221,20 +221,25 @@ def _write_audit(
     )
 
 
-def get_organization_profile(actor: User, organization_uuid: str | uuid.UUID) -> OrganizationProfile:
+def get_organization_profile(
+    actor: User, organization_uuid: str | uuid.UUID, *, lock: bool = False
+) -> OrganizationProfile:
     """Return the organization profile addressed by its public ``organization_uuid``.
 
     Side-effect free. Authorizes the read before returning any target-specific
     data (an ``admin`` organization membership or a superuser override); a
     missing organization, an organization outside the actor's authority, and
-    insufficient authority raise the same opaque denial.
+    insufficient authority raise the same opaque denial. Mutation composers may
+    request the organization mutex inside their existing transaction, so member
+    removal cannot race a subsequent authorized write.
 
     Raises:
         OrganizationAuthorizationError: The UUID is malformed, the organization
             does not exist, or the actor may not read it.
     """
     parsed = _parsed_uuid(organization_uuid)
-    organization = Organization.objects.filter(uuid=parsed).first()
+    query = Organization.objects.select_for_update() if lock else Organization.objects.all()
+    organization = query.filter(uuid=parsed).first()
     if organization is None:
         raise OrganizationAuthorizationError(_ORG_DENIED_MESSAGE)
     _authorize(actor, organization)

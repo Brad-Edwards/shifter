@@ -177,8 +177,9 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
             )
 
         try:
-            from ctf.bridges import cms_create_range, cms_find_range_instance_id
+            from ctf.bridges import CTFRangeLaunchOptions, cms_create_range, cms_find_range_instance_id
             from ctf.services.model_access_sharing import participant_model_admission_subject
+            from ctf.services.range.model_allocation import project_event_model_scope
 
             result = cms_create_range(
                 user=participant.user,
@@ -189,7 +190,14 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
                 # PLAT-202: resolve the participant's authoritative sharing-membership
                 # subject (realized range ref if one exists, else the draw ref) so
                 # required-model admission matches #2139/#2140 projections.
-                model_admission_subject=participant_model_admission_subject(participant),
+                launch_options=CTFRangeLaunchOptions(
+                    model_admission_subject=participant_model_admission_subject(participant),
+                    model_launch_scope=project_event_model_scope(
+                        event, participant.pk, participant_model_admission_subject(participant)
+                    ),
+                    content_authorizer=event.created_by,
+                    event_policy_workspace_id=event.workspace_id,
+                ),
             )
         except Exception as e:
             logger.exception("Range provisioning failed for participant %s", safe_log_value(participant_id))

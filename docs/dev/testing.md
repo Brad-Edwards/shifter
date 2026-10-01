@@ -158,3 +158,25 @@ per R4/R6). The matrix reconciles fail-closed against the SPA route table
 or exclusion fails. Nightly multi-browser runs, deployed-target scans, the
 WCAG-EM manual audit, and the release-evidence gate are the remaining ADR-055
 tail tracked in [#2117](https://github.com/Brad-Edwards/shifter/issues/2117).
+
+## External tool integration tests
+
+The GCP scripts, bootstrap, adapter SDK and Packer packages register the
+`integration` pytest marker for checks that require external rendering/build
+commands or isolated package/TLS environments. Use `uv run pytest -m "not integration"`
+from a package directory for its tool-independent unit selection, or
+`uv run pytest -m integration` to run the external-tool checks explicitly.
+GCP scripts and bootstrap default to the unit selection; their CI jobs explicitly
+select both with `-m "integration or not integration"`. SDK and Packer default
+runs retain both selections. No regression checks are removed from CI.
+
+The bootstrap and GCP script CI jobs install the same digest-verified Helm build;
+the GCP script job also installs the pinned kubectl client. Bootstrap verifies its
+OpenSSL prerequisite. SDK wheel conformance requires uv and the runtime extra's
+cached dependencies; guest TLS integration requires OpenSSL. Packer validation
+requires Packer and its plugins. These checks do not deploy cloud resources.
+
+`shifter/packer/tests/test_scripts.sh` and the `TestScriptStructureLint` and
+`TestScriptContentLint` classes are lint-only checks. Their success does not prove
+provisioning behavior or qualify an image. The script execution suites use
+controlled command shims; built-image behavior still requires image qualification.

@@ -325,7 +325,7 @@ class TestApiParticipantErrorPaths:
             "api_participant_resend_invite",
             kwargs={"participant_id": ctf_participant_no_account.id},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 410
 
     def test_invite_participant_validation_error(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
         """A duplicate delivery email is rejected by the real invite service (400).

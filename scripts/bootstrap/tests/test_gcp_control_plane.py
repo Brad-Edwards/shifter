@@ -77,6 +77,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
             "value": {
                 "app": f"projects/{project_id}/secrets/shifter-gcp-dev-app",
                 "db": f"projects/{project_id}/secrets/shifter-gcp-dev-db",
+                "db-provisioner": f"projects/{project_id}/secrets/shifter-gcp-dev-db-provisioner",
                 "db-migration": f"projects/{project_id}/secrets/shifter-gcp-dev-db-migration",
                 "guacamole-db": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-db",
                 "guacamole-json-auth": f"projects/{project_id}/secrets/shifter-gcp-dev-guacamole-json-auth",
@@ -101,6 +102,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "port": 5432,
                 "database_name": "shifter",
                 "user_name": "portal_runtime",
+                "provisioner_user_name": "provisioner_runtime",
             }
         },
         # ADR-008-R6 (#963): Memorystore runs with TLS on the GCP runtime,
@@ -126,6 +128,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
         "portal_network_cidrs": {"value": ["10.46.0.0/20"]},
         "access_network_cidrs": {"value": ["10.47.0.0/20"]},
         "gke_services_cidr": {"value": "10.48.0.0/20"},
+        "gke_master_ipv4_cidr": {"value": "172.16.0.0/28"},
         "workload_service_accounts": {
             "value": {
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
@@ -1057,11 +1060,45 @@ class TestGdcControlPlaneHelmValues:
         pod = job["spec"]["template"]["spec"]
         assert pod["serviceAccountName"] == "migrator"
         container = pod["containers"][0]
+        # Entrypoint migrates first; then register the shipped catalog and base
+        # image mappings through the same idempotent commands used by deploy.
+        assert container["args"] == [
+            "/bin/sh",
+            "-c",
+            "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+        ]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
         temp_dir = next(item for item in container["env"] if item["name"] == "TMPDIR")["value"]
         assert temp_dir == "/var/run/shifter-migrate"
         assert container["volumeMounts"] == [{"name": "tmp", "mountPath": temp_dir}]
+        # The portal image's USER is the name appuser (uid 1000); pair
+        # runAsNonRoot with the numeric uid so the kubelet can verify non-root
+        # (parity with the CI _gcp-dev.yml migrate Job; #2244).
+        assert container["securityContext"]["runAsNonRoot"] is True
+        assert container["securityContext"]["runAsUser"] == 1000
+        # DB-only Job: REDIS_SECRET_ID is blank (no REDIS_PASSWORD hydration), so
+        # REDIS_HOST must also be blank or Django fails closed at import (#2245).
+        redis_secret = next(item for item in container["env"] if item["name"] == "REDIS_SECRET_ID")
+        assert redis_secret["value"] == ""
+        redis_host = next(item for item in container["env"] if item["name"] == "REDIS_HOST")
+        assert redis_host["value"] == ""
+        from shared.model_access.runtime import load_mounted_catalog
+
+        effective = {
+            "MODEL_ACCESS_ENABLED": "true",
+            "MODEL_ACCESS_CATALOG_PATH": "/unmounted/catalog.json",
+            "MODEL_ACCESS_CATALOG_DIGEST": "sha256:" + "a" * 64,
+            **{item["name"]: item["value"] for item in container["env"] if "value" in item},
+        }
+        assert (
+            load_mounted_catalog(
+                enabled=effective["MODEL_ACCESS_ENABLED"] == "true",
+                path=effective["MODEL_ACCESS_CATALOG_PATH"],
+                expected_digest=effective["MODEL_ACCESS_CATALOG_DIGEST"],
+            )
+            is None
+        )
         assert container["image"] == values["images"]["platform"]
         assert (
             values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]
@@ -1090,7 +1127,7 @@ class TestGdcControlPlaneHelmValues:
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
             "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32"],
-            "kubernetesApiCidrs": ["10.48.0.0/20"],
+            "kubernetesApiCidrs": ["10.48.0.0/20", "172.16.0.0/28"],
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
             "rangeAccessCidrs": ["10.50.0.0/16"],
@@ -1377,7 +1414,11 @@ class TestGdcControlPlaneHelmChart:
         assert "runAsGroup: 1000" in output
         assert "runAsUser: 1001" in output
         assert "runAsGroup: 1001" in output
-        assert "kind: Namespace" not in output
+        import yaml
+
+        namespaces = [doc for doc in yaml.safe_load_all(output) if doc and doc["kind"] == "Namespace"]
+        assert [doc["metadata"]["name"] for doc in namespaces] == ["shifter-plugins"]
+        assert namespaces[0]["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
         assert "kind: BackendConfig" in output
         assert "kind: NetworkPolicy" in output
         assert "name: default-deny-platform" in output
@@ -1934,9 +1975,9 @@ class TestGcpPlatformCoreContracts:
 
         assert 'resource "google_service_account_iam_member" "workload_identity"' in module_main
         assert 'role               = "roles/iam.workloadIdentityUser"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"' in module_main
-        assert '"serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/portal]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-platform/workers]"' in module_main
+        assert '"serviceAccount:${var.workload_identity_pool}[shifter-jobs/provisioner]"' in module_main
 
     def test_workers_have_pubsub_publish_and_subscribe_permissions(self):
         """The shared workers service account must publish as well as consume Pub/Sub events."""
@@ -2017,6 +2058,28 @@ class TestGcpPlatformCoreContracts:
         assert "'sensitivity': 1" in module_main
         assert "opt_out_rule_ids" not in module_main
 
+    def test_cloud_armor_bypasses_raw_multipart_only_for_tenant_pack_uploads(self):
+        """Binary pack archives must not disable SQLi/XSS inspection outside their exact upload route."""
+        module_path = (
+            Path(__file__).resolve().parents[3]
+            / "platform"
+            / "terraform"
+            / "gcp"
+            / "modules"
+            / "portal"
+            / "ingress"
+            / "main.tf"
+        )
+        module_main = module_path.read_text()
+
+        assert "tenant_pack_upload" in module_main
+        assert "request.method == 'POST'" in module_main
+        assert "/api/v1/cms/organizations/" in module_main
+        assert "/packs/$" in module_main
+        assert "multipart/form-data;" in module_main
+        assert "evaluatePreconfiguredWaf('sqli-v33-stable'" in module_main
+        assert "evaluatePreconfiguredWaf('xss-v33-stable') && !(${local.tenant_pack_upload})" in module_main
+
 
 class TestGcpBootstrapIdentityPlatform:
     """Tests for Identity Platform bootstrap user sourcing and seeding."""
@@ -2084,6 +2147,35 @@ class TestGcpBootstrapIdentityPlatform:
         values = gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
 
         assert values["GCP_BOOTSTRAP_ADMIN_PASSWORD"] == "from-overlay"
+
+    def test_process_bootstrap_source_never_reads_configuration_files(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "process")
+        monkeypatch.setenv("GCP_BOOTSTRAP_ADMIN_EMAIL", "operator@example.test")
+
+        def forbidden_read(*args, **kwargs):
+            raise AssertionError("Process-only bootstrap must not inspect files")
+
+        monkeypatch.setattr(Path, "read_text", forbidden_read)
+        monkeypatch.setattr(Path, "exists", forbidden_read)
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+        assert values["GCP_BOOTSTRAP_ADMIN_EMAIL"] == "operator@example.test"
+
+    def test_unknown_bootstrap_source_fails_closed(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "unknown")
+        with pytest.raises(ValueError, match="must be files or process"):
+            gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+
+    def test_file_bootstrap_source_ignores_sibling_checkout(self, tmp_path, monkeypatch):
+        root = tmp_path / "active"
+        sibling = tmp_path / "shifter"
+        root.mkdir()
+        sibling.mkdir()
+        (sibling / ".env").write_text("GCP_BOOTSTRAP_ADMIN_EMAIL=wrong@example.test\n")
+        monkeypatch.setenv("SHIFTER_BOOTSTRAP_ENV_SOURCE", "files")
+        monkeypatch.delenv("GCP_BOOTSTRAP_ADMIN_EMAIL", raising=False)
+
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=root)
+        assert "GCP_BOOTSTRAP_ADMIN_EMAIL" not in values
 
     def test_resolve_gcp_bootstrap_operator_credentials_returns_none_when_missing(self):
         """Bootstrap should report no operator credentials when the env files do not provide them."""
@@ -2709,4 +2801,82 @@ def test_staging_writes_configured_lease_policy_into_generated_values(tmp_path):
         "extension_days": 3,
         "maximum_days": 90,
         "extensions_enabled": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "participants", "portal_replicas", "guacd_replicas"),
+    [
+        ("gcp-shared-v1-p10", 10, 2, 1),
+        ("gcp-shared-v1-p30", 30, 5, 2),
+        ("gcp-shared-v1-p50", 50, 8, 4),
+        ("gcp-shared-v1-p100", 100, 14, 8),
+    ],
+)
+def test_staging_projects_every_selected_capacity_profile(
+    tmp_path, profile_id, participants, portal_replicas, guacd_replicas
+):
+    """One validated selector drives every Terraform-adjacent Helm shape (#1816)."""
+    import json
+
+    import yaml
+
+    root_path = tmp_path / "shifter.yaml"
+    root_path.write_text(
+        yaml.safe_dump(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "portal.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "project_id": "prod-rwctxzl6shxk",
+                    "dynamic_secret_project_id": "secrets-example",
+                    "region": "us-central1",
+                    "shared_service_capacity_profile": profile_id,
+                },
+            }
+        )
+    )
+    config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", shifter_config_path=str(root_path))
+    outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+    values_path = gcp_control_plane.stage_gcp_control_plane_values(
+        config, outputs, tmp_path, image_tag=PINNED_IMAGE_TAG, image_identities=None
+    )
+
+    values = json.loads(values_path.read_text())
+    assert values["capacityProfile"] == {"id": profile_id, "participants": participants}
+    assert values["portal"]["replicas"] == portal_replicas
+    assert values["guacd"]["replicas"] == guacd_replicas
+    assert values["guacamoleClient"]["replicas"] == 1
+    assert values["runtimeEnv"]["SHARED_SERVICE_CAPACITY_PROFILE"] == profile_id
+    assert values["runtimeEnv"]["PORTAL_WEB_WORKERS"] == "4"
+    assert values["runtimeEnv"]["PORTAL_WEB_WS_PING_INTERVAL"] == "30"
+    assert values["runtimeEnv"]["PORTAL_WEB_WS_PING_TIMEOUT"] == "30"
+    assert values["runtimeEnv"]["PORTAL_WEB_GRACEFUL_TIMEOUT"] == "300"
+    assert values["portal"]["terminationGracePeriodSeconds"] == 330
+    assert values["guacd"]["terminationGracePeriodSeconds"] == 330
+    assert values["guacamoleClient"]["terminationGracePeriodSeconds"] == 330
+    assert values["guacamoleClient"]["postgresqlAbsoluteMaxConnections"] == participants
+    assert values["services"]["portal"]["backendConfig"]["timeoutSec"] == 3600
+    assert values["services"]["guacamoleClient"]["backendConfig"]["timeoutSec"] == 3600
+
+
+def test_merge_capacity_values_preserves_unrelated_nested_chart_values():
+    target = {
+        "runtimeEnv": {"CLOUD_PROVIDER": "gcp"},
+        "services": {"portal": {"backendConfig": {"securityPolicyName": "portal-waf"}}},
+    }
+    projection = {
+        "runtimeEnv": {"PORTAL_WEB_WORKERS": "4"},
+        "services": {"portal": {"backendConfig": {"timeoutSec": 3600}}},
+    }
+
+    merged = gcp_control_plane._merge_capacity_values(target, projection)
+
+    assert merged is target
+    assert merged["runtimeEnv"] == {"CLOUD_PROVIDER": "gcp", "PORTAL_WEB_WORKERS": "4"}
+    assert merged["services"]["portal"]["backendConfig"] == {
+        "securityPolicyName": "portal-waf",
+        "timeoutSec": 3600,
     }

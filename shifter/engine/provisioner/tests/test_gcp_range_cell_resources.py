@@ -44,13 +44,14 @@ def _instance(*, os_type: str = "kali", attach_service_account: bool = True) -> 
     return {
         "resource_name": "shifter-r-42-kali",
         "address_name": "shifter-r-42-kali-ip",
-        "subnet_name": "polaris",
+        "subnet_name": "example",
         "subnetwork_link": "projects/p/regions/us-central1/subnetworks/sn",
         "private_ip": "10.50.2.4",
         "role": "attacker",
         "os_type": os_type,
-        "tags": ["shifter-range-42", "shifter-range-42-polaris"],
+        "tags": ["shifter-range-42", "shifter-range-42-example"],
         "host_ssh_username": "ubuntu",
+        "ssh_port": 22,
         "profile": profile,
         "image_key": "",
         "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
@@ -81,12 +82,12 @@ class TestNetworkResource:
 class TestSubnetworkResource:
     def test_renders_cidr_region_and_pga_flag(self):
         subnet = {
-            "resource_name": "shifter-r-42-polaris",
+            "resource_name": "shifter-r-42-example",
             "network_link": "projects/p/global/networks/shifter-range-42",
             "cidr": "10.50.2.0/28",
         }
         body = subnetwork_resource(_plan(), subnet)
-        assert body["name"] == "shifter-r-42-polaris"
+        assert body["name"] == "shifter-r-42-example"
         assert body["ip_cidr_range"] == "10.50.2.0/28"
         assert body["region"] == "us-central1"
         assert body["private_ip_google_access"] is True
@@ -188,10 +189,10 @@ class TestInstanceResource:
             host_public_key="ssh-ed25519 AAAAhost",
         )
         assert body["machine_type"] == "zones/us-central1-b/machineTypes/e2-standard-4"
-        assert body["labels"]["subnet"] == "polaris"
+        assert body["labels"]["subnet"] == "example"
         assert body["labels"]["role"] == "attacker"
         assert body["labels"]["range"] == "shifter-range-42"
-        assert body["tags"] == {"items": ["shifter-range-42", "shifter-range-42-polaris"]}
+        assert body["tags"] == {"items": ["shifter-range-42", "shifter-range-42-example"]}
         assert body["network_interfaces"][0]["network_i_p"] == "10.50.2.4"
         assert "access_configs" not in body["network_interfaces"][0]
         disk = body["disks"][0]["initialize_params"]
@@ -229,6 +230,26 @@ class TestInstanceResource:
         # service_account_email set -> service_accounts block present with scopes.
         assert body["service_accounts"][0]["email"] == "range-host@test-project.iam.gserviceaccount.com"
         assert body["service_accounts"][0]["scopes"] == ["https://www.googleapis.com/auth/cloud-platform"]
+
+    def test_host_key_converge_check_targets_the_instance_mgmt_ssh_port(self):
+        """A Docker host's sshd is on a mgmt port; :22 is the container's.
+
+        The converge check must scan the host's actual management port or it
+        would scan the container's sshd (or a closed port) and always report
+        FAILED even when the host key is correctly served.
+        """
+        instance = _instance(os_type="kali")
+        instance["ssh_port"] = 2222
+        body = instance_resource(
+            _plan(),
+            instance,
+            _config(),
+            ssh_public_key="ssh-ed25519 AAAAkey",
+            host_private_key_b64="Ym9ndXM=",
+            host_public_key="ssh-ed25519 AAAAhost",
+        )
+        startup = _metadata_map(body)["startup-script"]
+        assert "ssh-keyscan -t ed25519 -T 5 -p 2222 127.0.0.1" in startup
 
     def test_windows_instance_uses_powershell_boot_script(self):
         body = instance_resource(
@@ -303,3 +324,44 @@ class TestInstanceResource:
         ]
         assert body["service_accounts"][0]["email"] == "sh-range-host-4@test-project.iam.gserviceaccount.com"
         assert _metadata_map(body)["ssh-keys"] == "hostadmin:ssh-ed25519 AAAAkey"
+
+    def test_custom_image_preconfigured_host_has_nested_virt_and_owned_boot_disk(self):
+        instance = _instance(attach_service_account=False)
+        instance["profile"] = GCERangeImageProfile(
+            source_image="projects/test/global/images/nested-host-v1",
+            machine_type="n2-standard-8",
+            disk_size_gb=220,
+            bootstrap_capability="preconfigured-machine-host",
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+        )
+        instance["host_ssh_username"] = "hostadmin"
+        body = instance_resource(_plan(), instance, _config(), ssh_public_key="ssh-ed25519 AAAAkey")
+        assert body["advanced_machine_features"] == {"enable_nested_virtualization": True}
+        assert body["disks"][0]["auto_delete"] is True
+        assert body["disks"][0]["initialize_params"]["source_image"] == instance["profile"].source_image
+        assert body["service_accounts"] == []
+        assert body["shielded_instance_config"]["enable_secure_boot"] is True
+
+    def test_machine_image_instance_clears_inherited_identity_when_none_is_authorized(self):
+        instance = _instance(attach_service_account=False)
+        instance["profile"] = GCERangeImageProfile(
+            source_machine_image="projects/test/global/machineImages/nested-host-v1",
+            machine_type="n2-standard-8",
+            bootstrap_capability="preconfigured-machine-host",
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            host_ssh_port=2222,
+        )
+        instance["service_account_email"] = ""
+
+        body = instance_resource(
+            _plan(),
+            instance,
+            _config(service_account_email="deployment-wide@test-project.iam.gserviceaccount.com"),
+            ssh_public_key="ssh-ed25519 AAAAkey",
+        )
+
+        assert body["service_accounts"] == []

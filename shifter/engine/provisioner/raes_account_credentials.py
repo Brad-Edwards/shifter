@@ -97,8 +97,8 @@ def _run_public_key_strategy(
     platform: str,
     account: RaesPlanAccount,
     secret_ops: RaesAccountCredentialOps,
-) -> str:
-    """Install one authored account's public key, returning its secret reference."""
+) -> tuple[str, str]:
+    """Return the secret reference and public key only after verified installation."""
     secret_ref, public_key = secret_ops.ensure_public_key(range_id, instance_key, account.username)
     plan = SetAuthorizedKeyPlan(platform=platform)
     context = plan.get_context({"account_username": account.username, "account_public_key": public_key})
@@ -106,7 +106,7 @@ def _run_public_key_strategy(
     verification = result.verification_result
     if not result.success or verification is None or not verification.success:
         raise RuntimeError("public-key setup plan did not complete")
-    return secret_ref
+    return secret_ref, public_key
 
 
 def install_instance_account_credentials(
@@ -152,6 +152,7 @@ def install_instance_account_credentials(
             )
         orchestrator = secret_ops.orchestrator_factory(execution.executor)
         secret_refs: dict[str, str] = {}
+        public_keys: dict[str, str] = {}
         for account in enabled_accounts:
             try:
                 if account.auth_method == "password":
@@ -159,15 +160,19 @@ def install_instance_account_credentials(
                         orchestrator, execution, range_id, instance_key, platform, account, secret_ops
                     )
                 elif account.auth_method == "key":
-                    secret_ref = _run_public_key_strategy(
+                    secret_ref, public_key = _run_public_key_strategy(
                         orchestrator, execution, range_id, instance_key, platform, account, secret_ops
                     )
+                    public_keys[account.address] = public_key
                 # Defense in depth; the plan parser rejects this first.
                 else:
                     raise ValueError("unsupported authored-account credential strategy")
             except Exception:
                 raise RaesAccountCredentialError("failed to realize authored-account credential") from None
             secret_refs[account.address] = secret_ref
+        # Process-local projection. The access publisher selects only the exact
+        # declared participant account and removes this intermediate map.
+        instance_output["_verified_account_public_keys"] = public_keys
         return secret_refs
     finally:
         execution.close()

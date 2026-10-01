@@ -57,7 +57,7 @@ class TestRunCmdSecretStdin:
 
 
 class TestConfirmAssumeYes:
-    """Non-interactive proceed for confirm() via --yes/assume-yes (issue #1639)."""
+    """Routine prompts proceed via --yes/assume-yes (issue #1639)."""
 
     @pytest.fixture(autouse=True)
     def _reset_assume_yes(self):
@@ -86,6 +86,38 @@ class TestConfirmAssumeYes:
         # --yes makes routine confirm() prompts proceed without a TTY instead of
         # auto-aborting on the default_yes=False fallback.
         assert bootstrap_core.confirm("proceed?", default_yes=False) is True
+
+    def test_interactive_proceeds_without_prompt_under_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _prompt: pytest.fail("--yes must bypass interactive prompts"),
+        )
+        bootstrap_core.set_assume_yes(True)
+
+        assert bootstrap_core.confirm("proceed?", default_yes=False) is True
+
+    def test_confirm_or_manual_returns_manual_non_tty_without_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: False)
+        # Without --yes, a non-TTY confirm_or_manual falls back to the manual path.
+        assert bootstrap_core.confirm_or_manual("automate?") == "manual"
+
+    def test_confirm_or_manual_proceeds_yes_under_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: False)
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _prompt: pytest.fail("--yes must bypass interactive prompts"),
+        )
+        bootstrap_core.set_assume_yes(True)
+        # --yes takes the automated 'yes' path so headless bootstrap sets secrets
+        # and writes backend configs rather than silently skipping them (#1639).
+        assert bootstrap_core.confirm_or_manual("automate?") == "yes"
 
 
 class TestSubprocessPagerSuppression:

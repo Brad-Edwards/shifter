@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 
+from management.policy import require_principal_administration
+from shared.authorization import AuthorizationProvider
+from shared.credentials import CredentialContext
+
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from django.db.models import QuerySet
@@ -91,3 +95,24 @@ def list_admin_users(
         )
 
     return queryset
+
+
+def list_policy_admin_users(
+    actor: CredentialContext,
+    provider: AuthorizationProvider,
+    *,
+    search: str = "",
+    user_type: str = "",
+    is_active: bool | None = None,
+    account_origin: str = "",
+    include_deleted: bool = False,
+) -> QuerySet[User]:
+    """Authorize the global identity list before count, filtering, or paging."""
+    require_principal_administration(actor, provider)
+    return list_admin_users(
+        search=search,
+        user_type=user_type,
+        is_active=is_active,
+        account_origin=account_origin,
+        include_deleted=include_deleted,
+    )

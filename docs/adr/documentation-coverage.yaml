@@ -3,15 +3,25 @@
   "docs_root": "docs",
   "features": [
     {
-      "id": "external-deployment-inventory",
-      "title": "External deployment inventory and GCP bootstrap",
-      "requirement": "PLAT-005",
-      "user_docs": [
-        "dev/gcp-inventory-bootstrap.md"
-      ],
-      "technical_docs": [
-        "architecture/deployment-inventory-contract.md"
-      ]
+      "id": "unified-access-credentials",
+      "title": "Personal and native service credentials",
+      "requirement": "PLAT-102",
+      "user_docs": ["features/access-credentials.md"],
+      "technical_docs": ["technical/shifter_platform/access-credentials.md"]
+    },
+    {
+      "id": "ctf-communications",
+      "title": "Scoped CTF communications",
+      "requirement": "CTF-012",
+      "user_docs": ["features/ctf-communications.md"],
+      "technical_docs": ["technical/shifter_platform/ctf-communications.md"]
+    },
+    {
+      "id": "gcp-shared-service-event-capacity",
+      "title": "GCP shared-service event capacity profiles and gate",
+      "requirement": "GEN-001",
+      "user_docs": ["ops/gcp-event-capacity.md"],
+      "technical_docs": ["technical/platform_infrastructure/gcp-event-capacity.md"]
     },
     {
       "id": "tenant-artifact-preparation",
@@ -25,7 +35,7 @@
       "title": "Per-range model access (planned; PLAT-202 design)",
       "requirement": "PLAT-202",
       "user_docs": ["features/model-access.md"],
-      "technical_docs": ["architecture/model-access/architecture.md", "architecture/model-access/gcp-packaging.md", "ops/model-access.md", "ops/model-access-gcp-probes.md"]
+      "technical_docs": ["architecture/model-access/architecture.md", "architecture/model-access/allocations.md", "architecture/model-access/gcp-packaging.md", "ops/model-access.md", "ops/model-access-gcp-probes.md"]
     },
     {
       "id": "agents",
@@ -75,6 +85,13 @@
       "requirement": "GEN-001",
       "user_docs": ["features/ctf.md", "features/ctf-organizer-guide.md"],
       "technical_docs": ["technical/shifter_platform/ctf.md"]
+    },
+    {
+      "id": "authorization-policies-and-groups",
+      "title": "Authorization policies and groups",
+      "requirement": "GEN-001",
+      "user_docs": ["features/authorization-policies-and-groups.md"],
+      "technical_docs": ["technical/shifter_platform/authorization.md"]
     },
     {
       "id": "workspaces",
@@ -138,6 +155,13 @@
       "requirement": "GEN-001",
       "user_docs": ["how-to/aws-ecs-to-eks-migration.md", "ops/portal-eks-operations.md"],
       "technical_docs": ["technical/platform_infrastructure/aws-eks-bundle.md"]
+    },
+    {
+      "id": "tenant-model-sources",
+      "title": "Tenant model sources and range routing",
+      "requirement": "PLAT-202",
+      "user_docs": ["features/model-access.md"],
+      "technical_docs": ["architecture/model-access/source-management.md"]
     }
   ]
 }

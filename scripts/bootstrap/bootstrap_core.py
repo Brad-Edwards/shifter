@@ -104,12 +104,16 @@ def assume_yes_enabled() -> bool:
 def confirm(msg: str, default_yes: bool = False) -> bool:
     """Prompt for yes/no confirmation.
 
-    Non-interactive: returns True when --yes/assume-yes was set (issue #1639),
-    otherwise the caller's ``default_yes`` fallback.
+    Returns True without prompting when --yes/assume-yes was set (issue #1639).
+    Without --yes, a non-interactive caller receives its ``default_yes``
+    fallback and an interactive caller receives the normal prompt.
     """
+    if _ASSUME_YES["enabled"]:
+        return True
+
     # Check if we're in a non-interactive environment
     if not sys.stdin.isatty():
-        return True if _ASSUME_YES["enabled"] else default_yes
+        return default_yes
 
     while True:
         response = input(f"{Colors.YELLOW}{msg} [y/N]: {Colors.END}").strip().lower()
@@ -126,6 +130,14 @@ def confirm_or_manual(msg: str) -> str:
     Note: 'no' will cause the script to abort with an error explanation,
     as all steps are required for a functioning deployment.
     """
+    # --yes/assume-yes (issue #1639) authorizes routine proceed prompts. Take the
+    # automated 'yes' path so a headless bootstrap actually sets the GitHub
+    # secrets and writes the backend configs, instead of falling through to the
+    # non-TTY 'manual' branch (a no-op without a terminal), which silently skips
+    # those steps and contradicts the documented --yes contract.
+    if _ASSUME_YES["enabled"]:
+        return "yes"
+
     # Check if we're in a non-interactive environment
     if not sys.stdin.isatty():
         return "manual"

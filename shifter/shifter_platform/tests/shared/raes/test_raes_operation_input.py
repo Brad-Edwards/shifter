@@ -20,6 +20,7 @@ from shared.raes.operation_input import (
     MAX_IMAGE_CANDIDATES,
     RaesInputBindings,
     RaesOperationInputError,
+    RaesRangeIdentity,
     build_raes_operation_input,
     image_lookup_key,
     parse_raes_operation_input,
@@ -102,6 +103,14 @@ def _candidates() -> dict[str, list[dict[str, object]]]:
     }
 
 
+@pytest.mark.parametrize("port", [0, -1, 65536, True, "22", None])
+def test_candidate_rejects_invalid_management_port(port):
+    raw = _built()
+    raw["image_candidates"]["gce:kali"][0]["management_ssh_port"] = port
+    with pytest.raises(RaesOperationInputError, match="management_ssh_port"):
+        parse_raes_operation_input(raw)
+
+
 def _built(**overrides: object) -> dict:
     kwargs: dict[str, object] = {
         "plan": _plan(),
@@ -117,6 +126,7 @@ def _built(**overrides: object) -> dict:
         access=kwargs.pop("access_bindings", ()),  # type: ignore[arg-type]
         artifact=kwargs.pop("artifact_bindings", ()),  # type: ignore[arg-type]
     )
+    kwargs["identity"] = RaesRangeIdentity(kwargs.pop("legacy_range_id"), kwargs.pop("resource_generation", None))  # type: ignore[arg-type]
     return build_raes_operation_input(bindings=bindings, **kwargs)  # type: ignore[arg-type]
 
 
@@ -190,6 +200,24 @@ class TestImageLookupKey:
 
 
 class TestRoundTrip:
+    def test_preconfigured_custom_image_candidate_crosses_closed_wire(self):
+        payload = _built()
+        candidate = payload["image_candidates"]["gce:kali"][0]
+        candidate.update(
+            {
+                "image_ref": "projects/example/global/images/nested-host-v1",
+                "image_kind": "image",
+                "bootstrap_capability": "preconfigured-machine-host",
+                "participant_container_name": "participant-desktop",
+                "participant_username": "student",
+                "participant_readiness_contract": "participant-readiness/v1",
+                "participant_readiness_manifest_sha256": "a" * 64,
+            }
+        )
+        projected = parse_raes_operation_input(payload).image_candidates_for("gce", "kali")[0]
+        assert projected["image_kind"] == "image"
+        assert projected["participant_container_name"] == "participant-desktop"
+
     def test_parse_returns_the_built_projection(self):
         parsed = parse_raes_operation_input(_built())
         assert parsed.plan == _plan()
@@ -332,3 +360,32 @@ class TestEgressMode:
         payload["egress_mode"] = "wide-open"
         with pytest.raises(RaesOperationInputError):
             parse_raes_operation_input(payload)
+
+
+def test_ec2_resource_ownership_epoch_survives_operation_input_roundtrip():
+    generation = "00000000-0000-0000-0000-000000000007"
+    payload = build_raes_operation_input(
+        plan=_plan(),
+        bindings=RaesInputBindings(delivery=()),
+        image_candidates={},
+        range_backend="ec2",
+        instantiation_purpose="live_fire",
+        identity=RaesRangeIdentity(7, generation),
+    )
+    assert parse_raes_operation_input(payload).resource_generation == generation
+    del payload["resource_generation"]
+    with pytest.raises(RaesOperationInputError):
+        parse_raes_operation_input(payload)
+
+
+@pytest.mark.parametrize("generation", [None, "", "not-a-uuid", 7, "00000000000000000000000000000007"])
+def test_ec2_cannot_launch_or_cleanup_with_a_missing_or_noncanonical_ownership_epoch(generation):
+    with pytest.raises(RaesOperationInputError):
+        build_raes_operation_input(
+            plan=_plan(),
+            bindings=RaesInputBindings(delivery=()),
+            image_candidates={},
+            range_backend="ec2",
+            instantiation_purpose="live_fire",
+            identity=RaesRangeIdentity(7, generation),
+        )

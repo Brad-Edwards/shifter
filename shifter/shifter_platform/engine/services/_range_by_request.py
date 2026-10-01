@@ -69,6 +69,13 @@ def range_owner_reassignment_available_by_request(request_id: UUID) -> bool:
     return Range.objects.filter(request__request_id=request_id, vpn_access_binding__isnull=True).exists()
 
 
+def get_pinned_range_egress_mode_by_request(request_id: UUID) -> str | None:
+    """Project the immutable launch posture for a trusted CTF spare claim."""
+    from engine.models import Range
+
+    return Range.objects.filter(request__request_id=request_id).values_list("egress_mode", flat=True).first()
+
+
 def destroy_range_by_request(request_id: UUID) -> bool:
     """Tear down range infrastructure by request_id.
 

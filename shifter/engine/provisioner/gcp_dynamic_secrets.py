@@ -195,7 +195,14 @@ class _SecretVersion(Protocol):
     payload: _SecretPayload
 
 
-class SecretManagerClient(Protocol):
+class SecretDeletionClient(Protocol):
+    """Minimal client required to remove an existing secret."""
+
+    def delete_secret(self, *, request: dict[str, object]) -> object:
+        """Delete one secret container."""
+
+
+class SecretManagerClient(SecretDeletionClient, Protocol):
     """Secret Manager client operations required by the lifecycle helpers."""
 
     def access_secret_version(self, *, request: dict[str, object]) -> _SecretVersion:
@@ -345,7 +352,7 @@ def wait_for_published_value(
     ) from None
 
 
-def delete_all(client: SecretManagerClient, exceptions: GoogleSecretExceptions, locations: SecretLocations) -> None:
+def delete_all(client: SecretDeletionClient, exceptions: GoogleSecretExceptions, locations: SecretLocations) -> None:
     """Delete every exact migration location, ignoring already-absent secrets."""
     for name in locations.delete_refs:
         try:

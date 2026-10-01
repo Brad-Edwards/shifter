@@ -32,6 +32,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -91,6 +92,7 @@ class PackRegistrationRequest:
     # Explicit optimistic concurrency precondition for an intentional revision.
     # This is registration control, never part of the portable pack identity.
     expected_package_digest: str = ""
+    package_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -105,12 +107,30 @@ class RegisteredPack:
     created: bool
 
 
+def _authorize_registration(
+    user: User, request: PackRegistrationRequest, organization_uuid: UUID | None
+) -> UUID | None:
+    """Authorize the ingestion scope and validate caller-supplied revision identity."""
+    if organization_uuid is None:
+        validate_cms_authoring_user(user, "register_pack")
+    else:
+        from workspaces.services import get_organization_profile
+
+        organization_uuid = get_organization_profile(user, organization_uuid).uuid
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", request.package_name):
+            raise CMSError("Invalid pack identity")
+    if request.expected_package_digest and not re.fullmatch(r"sha256:[a-f0-9]{64}", request.expected_package_digest):
+        raise CMSError("Invalid expected package digest")
+    return organization_uuid
+
+
 def register_pack(
     *,
     user: User,
     request: PackRegistrationRequest,
     request_id: str = "",
     idempotent: bool = False,
+    organization_uuid: UUID | None = None,
 ) -> RegisteredPack:
     """Register a pack through the single uniform ingestion boundary.
 
@@ -132,18 +152,22 @@ def register_pack(
             scenario_id that does not match the pack's validated identity, or an
             invalid reference record.
     """
-    validate_cms_authoring_user(user, "register_pack")
-    if request.expected_package_digest and not re.fullmatch(r"sha256:[a-f0-9]{64}", request.expected_package_digest):
-        raise CMSError("Invalid expected package digest")
+    organization_uuid = _authorize_registration(user, request, organization_uuid)
     existing = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
     if existing is not None:
+        if existing.organization_uuid != organization_uuid:
+            raise CMSError("Pack registration is unavailable")
         return _existing_registration(existing, user, request, request_id=request_id, idempotent=idempotent)
+    if organization_uuid is not None and request.expected_package_digest:
+        raise CMSError("Pack revision conflicts with the current immutable identity")
     _bind_scenario_id_to_pack_identity(request)
 
     try:
         with transaction.atomic():
             row = RaesPackageSource.objects.create(
                 scenario_id=request.scenario_id,
+                organization_uuid=organization_uuid,
+                package_name=request.package_name,
                 source_kind=request.source_kind,
                 contract_kind=request.contract_kind,
                 contract_profile=request.contract_profile,
@@ -167,11 +191,7 @@ def register_pack(
         # Reference-shape violation from the model's provenance-only validator.
         raise CMSError("Invalid pack reference") from exc
     except IntegrityError as exc:
-        if idempotent:
-            raced = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
-            if raced is not None:
-                return _reuse_existing(raced, request, idempotent=True)
-        raise CMSError(f"A pack with id '{request.scenario_id}' is already registered") from exc
+        return _registration_race(request, organization_uuid, idempotent, exc)
 
     logger.info(
         "register_pack: registered scenario_id=%s source_kind=%s",
@@ -186,6 +206,20 @@ def register_pack(
         conformance_status=row.conformance_status,
         created=True,
     )
+
+
+def _registration_race(
+    request: PackRegistrationRequest,
+    organization_uuid: UUID | None,
+    idempotent: bool,
+    exc: IntegrityError,
+) -> RegisteredPack:
+    """Reuse only an identical concurrent winner in the same organization scope."""
+    if idempotent:
+        raced = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
+        if raced is not None and raced.organization_uuid == organization_uuid:
+            return _reuse_existing(raced, request, idempotent=True)
+    raise CMSError(f"A pack with id '{request.scenario_id}' is already registered") from exc
 
 
 def _existing_registration(
@@ -203,6 +237,7 @@ def _existing_registration(
 
 
 _IDENTITY_FIELDS = (
+    "package_name",
     "source_kind",
     "contract_kind",
     "contract_profile",
@@ -329,7 +364,7 @@ def _bind_scenario_id_to_pack_identity(request: PackRegistrationRequest) -> None
             safe_log_value(str(exc)),
         )
         raise CMSError("pack failed ingestion validation") from exc
-    if validated_name != request.scenario_id:
+    if validated_name != (request.package_name or request.scenario_id):
         raise CMSError("scenario_id does not match the pack's validated identity")
     try:
         digest_matches = verify_pack_digest(pack_root, request.package_digest)

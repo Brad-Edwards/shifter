@@ -59,7 +59,20 @@ def test_seeds_kali_and_ubuntu_any_version(monkeypatch):
     ubuntu = RaesImageMapping.objects.get(source_name="ubuntu")
     assert ubuntu.image_ref == "projects/x/global/images/family/shifter-ubuntu"
     assert ubuntu.source_version == ""
+    assert ubuntu.disk_size_gb == 50
     assert "Seeded 2 RAES image mapping(s)." in output
+
+
+def test_uses_gce_base_profile_disk_defaults(monkeypatch):
+    monkeypatch.setenv("GCP_RANGE_KALI_IMAGE", "projects/x/global/images/shifter-kali")
+    monkeypatch.setenv("GCP_RANGE_LINUX_IMAGE", "projects/x/global/images/shifter-ubuntu")
+    monkeypatch.setenv("GCP_RANGE_WINDOWS_IMAGE", "projects/x/global/images/shifter-windows")
+    monkeypatch.setenv("GCP_RANGE_DC_IMAGE", "projects/x/global/images/shifter-dc")
+
+    _run()
+
+    sizes = dict(RaesImageMapping.objects.values_list("source_name", "disk_size_gb"))
+    assert sizes == {"kali": 80, "ubuntu": 50, "windows": 100, "dc": 100}
 
 
 def test_skips_unset_images(monkeypatch):

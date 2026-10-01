@@ -1,11 +1,10 @@
 # Substrate-neutral Shifter provisioner IAM (#1826).
 #
-# The Shifter provisioner performs identical AWS work whether it runs as an ECS
-# Fargate task (legacy) or an EKS Kubernetes Job (the management-plane default).
-# This module is the single source of truth for the privileged provisioner's AWS
-# permission set, attached to a caller-supplied role: the ECS task role
-# (modules/engine-provisioner) or the EKS provisioner IRSA role
-# (modules/portal/eks). The large EC2 / RunInstances / GWLB policies are managed
+# The Shifter provisioner runs as an EKS Kubernetes Job (the AWS management-plane
+# runtime). This module is the single source of truth for the privileged
+# provisioner's AWS permission set, attached to a caller-supplied role: the EKS
+# provisioner IRSA role (modules/portal/eks-provisioner-env). The large EC2 /
+# RunInstances / GWLB policies are managed
 # (attached by ARN) to stay under the 10,240-byte per-role inline aggregate; the
 # smaller policies are inline on the caller's role. Both together stay under the
 # per-role managed-policy count limit.
@@ -702,46 +701,6 @@ resource "aws_iam_role_policy" "kms" {
             "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com"
           }
         }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "polaris_agent_role_management" {
-  name = "polaris-agent-role-management"
-  role = var.role_id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid      = "CreatePolarisAgentRoleWithBoundary"
-        Effect   = "Allow"
-        Action   = "iam:CreateRole"
-        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
-        Condition = {
-          StringEquals = {
-            "iam:PermissionsBoundary" = var.permissions_boundary_arn
-          }
-        }
-      },
-      {
-        Sid    = "ManagePolarisAgentRole"
-        Effect = "Allow"
-        Action = [
-          "iam:DeleteRole",
-          "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:TagRole",
-          "iam:UntagRole",
-          "iam:GetRole",
-          "iam:GetRolePolicy",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:ListInstanceProfilesForRole",
-          "iam:ListRoleTags"
-        ]
-        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
       }
     ]
   })

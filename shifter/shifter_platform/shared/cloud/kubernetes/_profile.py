@@ -87,6 +87,9 @@ class KubernetesTaskProfile:
     resource_requests: Mapping[str, str] | None = None
     resource_limits: Mapping[str, str] | None = None
     active_deadline_seconds: int | None = None
+    # Selected by the host, never by a tenant manifest. Missing runtimes fail
+    # scheduling instead of falling back to the cluster's default runtime.
+    runtime_class_name: str | None = None
 
     def hardening_for(self, container_name: str) -> ProvisionerHardeningProfile | None:
         """Return the hardening profile when it applies to ``container_name``."""

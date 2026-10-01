@@ -46,7 +46,7 @@ variable "build_roles" {
 }
 
 variable "build_read_bucket_names" {
-  description = "Existing input buckets the Packer build identity may read, such as the Polaris stack bucket."
+  description = "Existing platform image input buckets the Packer build identity may read."
   type        = set(string)
   default     = []
 }
@@ -76,11 +76,18 @@ variable "validate_permissions" {
     "compute.instances.delete",
     "compute.instances.attachDisk",
     "compute.instances.get",
+    "compute.instances.list",
     "compute.instances.reset",
+    # Both candidate and scanner creation supply instance-local SSH metadata
+    # and lifecycle labels; Compute checks these permissions at insert time.
+    "compute.instances.setLabels",
+    "compute.instances.setMetadata",
     "compute.instances.setTags",
     "compute.machineTypes.get",
     "compute.networks.get",
     "compute.networks.use",
+    # gcloud SSH/SCP inspect project settings for the credentialless scanner.
+    "compute.projects.get",
     "compute.subnetworks.get",
     "compute.subnetworks.use",
     "compute.zoneOperations.get",
@@ -131,6 +138,12 @@ variable "deploy_roles" {
     "roles/monitoring.editor",
     "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
+    # Manage the dynamic-secret custom role DEFINITIONS created by the platform-core
+    # deploy (portal/iam: shifterDynamicSecretCreator / shifterDynamicSecretLifecycle).
+    # projectIamAdmin covers IAM bindings but not iam.roles.* on custom-role
+    # definitions. Tracked for a least-privilege redesign (bootstrap-created roles,
+    # deploy binds only) in #2227.
+    "roles/iam.roleAdmin",
   ]
 }
 
@@ -156,6 +169,12 @@ variable "destroy_roles" {
     "roles/monitoring.editor",
     "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
+    # Teardown must DELETE the dynamic-secret custom role definitions (portal/iam:
+    # shifterDynamicSecretCreator / shifterDynamicSecretLifecycle) and the packer
+    # image-export custom role. projectIamAdmin manages IAM bindings, not iam.roles.*
+    # on custom-role definitions, so destroy fails with IAM_PERMISSION_DENIED reading
+    # projects/<p>/roles/<custom>. Mirrors the deploy_roles grant above (#2258, #2228).
+    "roles/iam.roleAdmin",
   ]
 }
 

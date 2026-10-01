@@ -42,7 +42,7 @@ class TestGuestSSHExecutorRunCommand:
         assert mock_run.call_args.kwargs["input"].decode("utf-8").startswith("set -euo pipefail\necho ok")
 
     def test_seeded_host_key_uses_bracketed_form_for_non_default_port(self, tmp_path):
-        # A Docker-host guest reached on the management port (e.g. the Polaris
+        # A Docker-host guest reached on the management port (e.g. the Example
         # range host on :2222) must be seeded as [host]:port, else OpenSSH's
         # known_hosts lookup misses the entry and strict checking fails.
         executor = GuestSSHExecutor(
@@ -107,17 +107,22 @@ class TestGuestSSHExecutorRunCommand:
 
         assert result.success is True
         ssh_args = mock_run.call_args.args[0]
-        assert ssh_args[-7:] == [
+        # The script is delivered via -EncodedCommand, not `-Command -` with the
+        # script piped on stdin: the latter silently returns empty stdout for
+        # multi-line scripts over SSH (Windows OS-observation probe).
+        assert ssh_args[-7:-1] == [
             "powershell.exe",
             "-NoProfile",
             "-NonInteractive",
             "-ExecutionPolicy",
             "Bypass",
-            "-Command",
-            "-",
+            "-EncodedCommand",
         ]
+        # The last arg is the base64/UTF-16LE-encoded script; no stdin is used.
+        encoded = ssh_args[-1]
+        assert base64.b64decode(encoded).decode("utf-16-le") == 'Write-Output "ok"'
         assert "Administrator@10.10.1.10" in ssh_args
-        assert mock_run.call_args.kwargs["input"].decode("utf-8") == 'Write-Output "ok"\n'
+        assert mock_run.call_args.kwargs["input"].decode("utf-8") == ""
 
     def test_windows_secret_stdin_is_separate_from_non_secret_encoded_source(self, mocker):
         mock_run = mocker.patch("executors.guest_ssh_executor.subprocess.run")

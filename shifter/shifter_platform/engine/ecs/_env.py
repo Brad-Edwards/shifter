@@ -2,10 +2,10 @@
 
 Forwards the runtime env-var contract that ephemeral provisioner Jobs need. On
 GCP the values ride ``_GCP_PROVISIONER_ENV_KEYS``; on AWS (#1826) the provisioner
-now runs as a Kubernetes Job on EKS instead of an ECS task, so the contract that
-used to be baked into the ECS task definition
-(``platform/terraform/modules/engine-provisioner/task_definition.tf``) is
-forwarded here as ``_AWS_PROVISIONER_ENV_KEYS`` from the platform runtime env.
+now runs as a Kubernetes Job on EKS instead of an ECS task, so the provisioner
+environment contract (assembled by the ``portal/eks-provisioner-env`` Terraform
+module) is forwarded here as ``_AWS_PROVISIONER_ENV_KEYS`` from the platform
+runtime env.
 Sensitive keys are separated into Secret-backed ``secretKeyRef`` env by the
 neutral Job manifest builder via ``shared.cloud.sensitive_env`` — this module
 only assembles the flat forwarded dict. Split out of the former single-module
@@ -19,9 +19,14 @@ import os
 from collections.abc import Collection
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from installation.runtime_inventory import AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
 
 _GCP_PROVISIONER_ENV_KEYS = (
+    "MODEL_BROKER_GUEST_URL",
+    "MODEL_BROKER_GUEST_VIP",
+    "MODEL_ENROLLMENT_CONTROL_URL",
+    "MODEL_ENROLLMENT_CA_PEM_B64",
     "CLOUD_PROVIDER",
     "ENVIRONMENT",
     "CLOUD_REGION",
@@ -73,15 +78,7 @@ _GCP_PROVISIONER_ENV_KEYS = (
     "GCP_RANGE_EGRESS_ALLOW_CIDRS",
     "GCP_RANGE_PRIVATE_GOOGLE_ACCESS",
     "GCP_RANGE_HOST_MGMT_SSH_PORT",
-    "GCP_RANGE_VERTEX_PROJECT_ID",
-    "GCP_RANGE_VERTEX_REGION",
-    "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
-    "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
     "GCP_RANGE_PREPROVISIONED_FIREWALLS",
-    "GCP_RANGE_KALI_ANTHROPIC_MODEL",
-    "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
-    "POLARIS_TESTS_BUCKET",
-    "POLARIS_TESTS_KEY",
     "GDC_ACCESS_SECRET_ID",
     "GDC_RANGE_NAMESPACE_PREFIX",
     "GDC_NETWORK_INTERFACE",
@@ -143,6 +140,14 @@ _GCP_PROVISIONER_ENV_KEYS = (
     "AVAILABILITY_ZONE",
 )
 
+_GCP_PROVISIONER_DB_ENV_MAP = {
+    "DB_HOST": "PROVISIONER_DB_HOST",
+    "DB_PORT": "PROVISIONER_DB_PORT",
+    "DB_NAME": "PROVISIONER_DB_NAME",
+    "DB_USER": "PROVISIONER_DB_USER",
+    "DB_PASSWORD": "PROVISIONER_DB_PASSWORD",  # nosec B105 - environment variable name
+}
+
 
 # AWS (EKS) provisioner Job env contract (#1826). The authoritative key set is
 # the standalone bundle contract
@@ -199,7 +204,19 @@ def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
         "CLOUD_PROJECT_ID": getattr(settings, "GCP_PROJECT_ID", ""),
     }
 
-    return _forward_env(_GCP_PROVISIONER_ENV_KEYS, fallback_values)
+    provisioner_database = {
+        job_key: os.environ.get(source_key, "").strip() for job_key, source_key in _GCP_PROVISIONER_DB_ENV_MAP.items()
+    }
+    missing = [_GCP_PROVISIONER_DB_ENV_MAP[job_key] for job_key, value in provisioner_database.items() if not value]
+    if missing:
+        raise ImproperlyConfigured(
+            "GCP provisioner launcher is missing its dedicated database environment: " + ", ".join(sorted(missing))
+        )
+
+    forwarded_keys = tuple(key for key in _GCP_PROVISIONER_ENV_KEYS if key not in _GCP_PROVISIONER_DB_ENV_MAP)
+    env_overrides = _forward_env(forwarded_keys, fallback_values) or {}
+    env_overrides.update(provisioner_database)
+    return env_overrides
 
 
 def _get_aws_provisioner_env_overrides() -> dict[str, str] | None:

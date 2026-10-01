@@ -58,9 +58,10 @@ locals {
     "localhost",
   ]))
   common_labels = merge(var.labels, {
-    environment = var.environment
-    managed_by  = "terraform"
-    project     = "shifter"
+    environment              = var.environment
+    managed_by               = "terraform"
+    project                  = "shifter"
+    shifter_capacity_profile = var.shared_service_capacity_profile
   })
 
   artifact_repositories = toset([
@@ -86,6 +87,7 @@ locals {
   runtime_secrets = merge({
     "app"                 = "Django runtime secret bundle (SECRET_KEY and field encryption key)."
     "db"                  = "Database connection secret bundle for the platform control plane."
+    "db-provisioner"      = "Function-bound database connection bundle restricted to the provisioner launcher."
     "db-migration"        = "Schema-owner database connection bundle restricted to the migration workload."
     "guacamole-db"        = "Database connection secret bundle for the Guacamole client."
     "guacamole-json-auth" = "Guacamole JSON auth signing key."
@@ -94,6 +96,9 @@ locals {
   }, local.email_runtime_secrets)
 
   required_services = toset([
+    # Default-on, keyless range model access (ADR-064): range guests call Vertex
+    # publisher models directly via the attached predict-only range host SA.
+    "aiplatform.googleapis.com",
     "artifactregistry.googleapis.com",
     "binaryauthorization.googleapis.com",
     "cloudbuild.googleapis.com",
@@ -356,6 +361,8 @@ module "portal_secrets" {
   cloud_sql_platform_database_name  = module.portal_cloud_sql.platform_database_name
   cloud_sql_runtime_user_name       = module.portal_cloud_sql.runtime_user_name
   cloud_sql_runtime_db_password     = module.portal_cloud_sql.runtime_db_password
+  cloud_sql_provisioner_user_name   = module.portal_cloud_sql.provisioner_user_name
+  cloud_sql_provisioner_db_password = module.portal_cloud_sql.provisioner_db_password
   cloud_sql_migration_user_name     = module.portal_cloud_sql.platform_user_name
   cloud_sql_migration_db_password   = module.portal_cloud_sql.db_password
   cloud_sql_guacamole_database_name = module.portal_cloud_sql.guacamole_database_name
@@ -386,6 +393,7 @@ module "portal_iam" {
   vmseries_bootstrap_bucket_name = var.vmseries_bootstrap_bucket_name
   raes_package_bucket_name       = var.raes_package_bucket_name
   ctf_content_bucket_name        = var.ctf_content_bucket_name
+  workload_identity_pool         = module.portal_gke.workload_identity_pool
   range_host_identity_pool_size  = var.range_host_identity_pool_size
   deploy_service_account_email   = var.deploy_service_account_email
 
@@ -416,6 +424,7 @@ module "portal_gke" {
   worker_node_count                         = var.worker_node_count
   provisioner_node_count                    = var.provisioner_node_count
   access_node_count                         = var.access_node_count
+  access_node_max_count                     = var.access_node_max_count
   node_service_account_email                = module.portal_iam.node_service_account_email
 
   # The cluster already orders after the node service account via the
@@ -424,7 +433,7 @@ module "portal_gke" {
   # whose member is PROJECT.svc.id.goog[...], which only exists once this
   # workload-identity-enabled cluster is created. Depending on the whole module
   # deadlocks a fresh project (cluster waits for bindings that wait for the
-  # cluster). The svc.id.goog bindings converge on a subsequent apply once the
-  # pool exists (#1723).
+  # cluster). Instead, the bindings depend on the cluster through its
+  # workload_identity_pool output, so a fresh project converges in one apply.
   depends_on = [module.project_services, module.portal_vpc]
 }

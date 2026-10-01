@@ -85,7 +85,7 @@ def _contract_request() -> dict[str, object]:
                             "uuid": "host-b",
                             "role": "attacker",
                             "os_type": "kali",
-                            "ami_key": "polaris-vm",
+                            "ami_key": "example-vm",
                         }
                     ],
                 },

@@ -8,6 +8,12 @@ admission/enrollment path are available in the attested release image.
 
 ## Project and identity onboarding
 
+These steps describe the current package restrictions. The intended
+[#2243 source-management boundary](../architecture/model-access/source-management-preflight-2243.md)
+also permits Vertex in the platform project with distinct broker/invocation
+identities. That delivery must update onboarding and effective-IAM probes
+together; the existing project-reuse rejection is not a permanent policy.
+
 Use dedicated existing model projects with billing enabled and the
 `shifter-deployment` label equal to `deployment.name`. Root
 `settings.model_broker.model_projects` is the reviewed project-to-invocation

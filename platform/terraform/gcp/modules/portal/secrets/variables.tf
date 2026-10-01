@@ -31,6 +31,15 @@ variable "cloud_sql_runtime_db_password" {
   sensitive = true
 }
 
+variable "cloud_sql_provisioner_user_name" {
+  type = string
+}
+
+variable "cloud_sql_provisioner_db_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "cloud_sql_migration_user_name" {
   type = string
 }

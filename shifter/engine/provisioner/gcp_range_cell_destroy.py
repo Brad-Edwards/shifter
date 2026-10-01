@@ -14,6 +14,7 @@ from gcp_range_cell_credentials import (
 )
 from gcp_range_cell_ops import _delete_resource, _get_or_none, _wait_for_operation
 from gcp_range_cell_plan import render_range_cell_plan
+from gcp_range_cell_shared_nat import remove_shared_nat
 from gcp_range_cell_types import RangeCellPlan, ResourceDict
 from provisioner_db import get_range_data_by_request_id
 from range_placement import resolve_placement_from_range_data
@@ -108,6 +109,7 @@ def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None
     """Delete the range-owned router/NAT, firewalls, subnets, and (when range-owned) the VPC."""
     # The range-owned Cloud Router (carrying the Cloud NAT) references this range's
     # subnets, so it is torn down before them (PLAT-238). Absent for a `none` range.
+    remove_shared_nat(plan, clients)
     router_nat = plan.get("router_nat")
     if router_nat is not None:
         _delete_resource(

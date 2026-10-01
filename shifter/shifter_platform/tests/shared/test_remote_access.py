@@ -6,12 +6,37 @@ from uuid import uuid4
 import pytest
 
 from shared.remote_access import (
+    TERMINAL_TARGET_PATH_RE,
     OpenVpnBindingError,
     build_openvpn_capability,
     parse_openvpn_binding,
     parse_openvpn_capability,
     validate_openvpn_profile,
 )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/ws/terminal/00000000-0000-0000-0000-000000000000/",
+        "/ws/terminal/provision.node.attack-workstation#0/",
+    ],
+)
+def test_terminal_target_path_accepts_closed_instance_identifiers(path):
+    assert TERMINAL_TARGET_PATH_RE.fullmatch(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/ws/terminal/provision.node.attack-workstation#1/",
+        "/ws/terminal/provision.node.attack-workstation/",
+        "/ws/terminal/provision.node.attack/workstation#0/",
+        "/ws/terminal/../provision.node.attack-workstation#0/",
+    ],
+)
+def test_terminal_target_path_rejects_noncanonical_member_identifiers(path):
+    assert not TERMINAL_TARGET_PATH_RE.fullmatch(path)
 
 
 def test_capability_builder_binds_one_target_to_a_bounded_teardown_deadline():

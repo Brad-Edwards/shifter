@@ -14,6 +14,13 @@ _RANGE_RESOLUTION_SHAPE = "sharing.range_resolution_shape"
 _RANGE_MEMBERSHIP_CHANGED = "sharing.range_membership_changed"
 
 
+def _legacy_workspace_id(workspace_id: int | None) -> int:
+    """Reject ranges whose account scope cannot use the legacy workspace projection."""
+    if workspace_id is None:
+        raise SharingError("sharing.range_membership_unavailable")
+    return workspace_id
+
+
 def _query_shape(
     *,
     range_uuids: tuple[UUID, ...] | None,
@@ -117,7 +124,7 @@ def resolve_model_access_range_page(
                 authority_ref=OwnedReference(owner="engine", reference=f"range:{row.uuid}"),
                 range_uuid=row.uuid,
                 owner_user_id=row.user_id,
-                workspace_id=row.workspace_id,
+                workspace_id=_legacy_workspace_id(row.workspace_id),
                 request_uuid=row.request.request_id if row.request is not None else None,
             )
             for row in rows

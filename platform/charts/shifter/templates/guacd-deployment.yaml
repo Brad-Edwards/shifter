@@ -3,6 +3,10 @@ kind: Deployment
 metadata:
   name: guacd
   namespace: {{ .Values.namespaces.platform }}
+  {{- if .Values.capacityProfile.id }}
+  annotations:
+    shifter.dev/capacity-profile: {{ .Values.capacityProfile.id | quote }}
+  {{- end }}
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
     app.kubernetes.io/component: guacd
@@ -17,6 +21,9 @@ spec:
       labels:
         {{- include "shifter.partOfLabels" . | nindent 8 }}
         app.kubernetes.io/component: guacd
+        {{- if .Values.capacityProfile.id }}
+        shifter.dev/capacity-profile: {{ .Values.capacityProfile.id | quote }}
+        {{- end }}
     spec:
       securityContext:
         fsGroup: {{ .Values.security.guacd.runAsGroup }}
@@ -25,6 +32,7 @@ spec:
           type: {{ .Values.security.pod.seccompProfile }}
       automountServiceAccountToken: false
       serviceAccountName: {{ .Values.serviceAccounts.workers.name }}
+      terminationGracePeriodSeconds: {{ .Values.guacd.terminationGracePeriodSeconds }}
       {{- include "shifter.accessNodePlacement" . | nindent 6 }}
       {{- include "shifter.podAntiAffinity" (dict "component" "guacd") | nindent 6 }}
       containers:

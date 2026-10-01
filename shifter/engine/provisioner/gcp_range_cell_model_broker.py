@@ -7,6 +7,7 @@ import ipaddress
 from shared.model_access.network import broker_egress_destination
 
 from config import GCERangeCellConfig
+from gcp_range_cell_naming import _short_resource_name
 from gcp_range_cell_types import GceEgressPolicy, InstancePlan, OpenVpnGatewayPlan, SubnetPlan
 
 
@@ -35,3 +36,8 @@ def admitted_broker_destination(
     if any(ipaddress.ip_network(destination).overlaps(ipaddress.ip_network(subnet["cidr"])) for subnet in subnet_plans):
         raise RuntimeError("model broker VIP must not overlap an intra-range egress destination")
     return destination
+
+
+def broker_firewall_name(range_id: int) -> str:
+    """Retain the exact optional resource name for teardown after configuration edits."""
+    return _short_resource_name("shifter-r", range_id, "egress-model-broker")
