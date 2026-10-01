@@ -208,7 +208,15 @@ def _verify_root_disk(image: dict[str, Any], profile: Ec2ImageProfile) -> tuple[
     # disks. Refuse extra EBS disks until their lifecycle and evidence are
     # represented, but ignore ephemeral mappings that AMIs commonly declare.
     ebs_disks = [m for m in mappings if isinstance(m, dict) and isinstance(m.get("Ebs"), dict)]
-    disk = _only(ebs_disks, "root disk")
+    size, snapshot = _validated_root_ebs(_only(ebs_disks, "root disk"), root)
+    requested_size = profile.disk_size_gb if profile.disk_size_gb is not None else max(30, size)
+    if requested_size < size:
+        raise Ec2ImageError("EC2 boot volume cannot be smaller than the source snapshot")
+    return root, snapshot, requested_size
+
+
+def _validated_root_ebs(disk: dict[str, Any], root: str) -> tuple[int, str]:
+    """Return the (size, snapshot) of the sole EBS root mapping, or raise."""
     ebs = disk.get("Ebs", {})
     size, snapshot = ebs.get("VolumeSize"), ebs.get("SnapshotId")
     if (
@@ -219,7 +227,4 @@ def _verify_root_disk(image: dict[str, Any], profile: Ec2ImageProfile) -> tuple[
         or not re.fullmatch(r"snap-(?:[0-9a-f]{8}|[0-9a-f]{17})", snapshot)
     ):
         raise Ec2ImageError("EC2 root snapshot observation is invalid")
-    requested_size = profile.disk_size_gb if profile.disk_size_gb is not None else max(30, size)
-    if requested_size < size:
-        raise Ec2ImageError("EC2 boot volume cannot be smaller than the source snapshot")
-    return root, snapshot, requested_size
+    return size, snapshot
