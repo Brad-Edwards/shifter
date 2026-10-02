@@ -70,12 +70,14 @@ def _inventory(scope: Ec2CleanupScope, ec2: BaseClient) -> dict[str, list[dict[s
     ]
     inventory = {}
     for category, (operation, key, identity) in _LOOKUPS.items():
-        # 100 is the smallest MaxResults ceiling across these EC2 describe
-        # operations (DescribeRouteTables/DescribeSubnets cap at 100; 1000 is
-        # rejected with InvalidParameterValue). A range owns far fewer resources
-        # than this, and the NextToken guard below still refuses a partial
-        # inventory, preserving the bound.
-        response = getattr(ec2, operation)(Filters=filters, MaxResults=100)
+        # No MaxResults: EC2 derives NextToken from its account-wide resource scan, not
+        # these tag filters, so a bounded page emits a continuation token (read below as
+        # an incomplete inventory) whenever the account holds more resources of that type
+        # than the page -- e.g. EKS pod ENIs -- even when the filters match one or none.
+        # The server-side filters already scope the result to this range's few resources;
+        # the NextToken guard still refuses a genuinely oversized (truncated) inventory,
+        # preserving "incomplete pagination cannot establish absence".
+        response = getattr(ec2, operation)(Filters=filters)
         if response.get("NextToken"):
             raise Ec2CleanupError("EC2 cleanup inventory exceeded its bound")
         rows = response.get(key, [])
