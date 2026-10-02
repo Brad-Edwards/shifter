@@ -46,6 +46,8 @@ _HELM_RELEASE = "shifter"
 _PLATFORM_NAMESPACE = "shifter-platform"
 _MIGRATOR_SERVICE_ACCOUNT = "migrator"
 _MIGRATION_JOB = "platform-migrate"
+_BATCH_V1_API_VERSION = "batch/v1"
+_KUBECTL_WAIT_FOR_COMPLETE = "--for=condition=complete"
 _LOAD_BALANCER_CONTROLLER_CHART_VERSION = "3.2.2"
 # Pinned cluster-autoscaler chart (#1826). The image tag must track the cluster's
 # Kubernetes minor; the chart's autoDiscovery + the node-group ASG discovery tags
@@ -788,7 +790,7 @@ def _networkpolicy_probe_manifests(
         },
     }
     job = {
-        "apiVersion": "batch/v1",
+        "apiVersion": _BATCH_V1_API_VERSION,
         "kind": "Job",
         "metadata": {"name": job_name, "namespace": "shifter-jobs"},
         "spec": {
@@ -863,7 +865,7 @@ def _run_networkpolicy_readiness_probes(
                     f"job/{job_name}",
                     "--namespace",
                     "shifter-jobs",
-                    "--for=condition=complete",
+                    _KUBECTL_WAIT_FOR_COMPLETE,
                     _KUBECTL_TIMEOUT,
                 ]
             )
@@ -1379,7 +1381,7 @@ def _guacamole_provision_manifests(
         },
     }
     job = {
-        "apiVersion": "batch/v1",
+        "apiVersion": _BATCH_V1_API_VERSION,
         "kind": "Job",
         "metadata": {"name": _GUACAMOLE_PROVISION_JOB, "namespace": _GUACAMOLE_NAMESPACE, "labels": labels},
         "spec": {
@@ -1474,7 +1476,7 @@ def _provision_guacamole_database(
         [
             "kubectl",
             "wait",
-            "--for=condition=complete",
+            _KUBECTL_WAIT_FOR_COMPLETE,
             f"job/{_GUACAMOLE_PROVISION_JOB}",
             "--namespace",
             _GUACAMOLE_NAMESPACE,
@@ -1793,7 +1795,7 @@ def _migration_job(platform_image: str) -> dict[str, object]:
     """
     labels = {_PART_OF_LABEL: "shifter", "app.kubernetes.io/component": "migrator"}
     return {
-        "apiVersion": "batch/v1",
+        "apiVersion": _BATCH_V1_API_VERSION,
         "kind": "Job",
         "metadata": {"name": _MIGRATION_JOB, "namespace": _PLATFORM_NAMESPACE, "labels": labels},
         "spec": {
@@ -1844,6 +1846,28 @@ def _delete_migration_job() -> None:
     run_cmd(["kubectl", "delete", "job", _MIGRATION_JOB, "--namespace", _PLATFORM_NAMESPACE, "--ignore-not-found"])
 
 
+def _as_mapping(value: object) -> Mapping[str, object]:
+    """Return ``value`` if it is a mapping, else an empty mapping (defensive projection)."""
+    return value if isinstance(value, Mapping) else {}
+
+
+def _migration_inputs(values: Mapping[str, object]) -> tuple[str, Mapping[str, object], Mapping[str, object], str]:
+    """Extract and validate the migration Job inputs from the rendered chart values.
+
+    Returns ``(migrator_role_arn, runtime_env, secret_refs, platform_image)``.
+    """
+    role_arns = _as_mapping(_as_mapping(values.get("identity")).get("serviceAccountRoleArns"))
+    migrator_role_arn = role_arns.get(_MIGRATOR_SERVICE_ACCOUNT)
+    if not migrator_role_arn:
+        raise RuntimeError("render_aws_values did not provide the migrator service-account role ARN")
+    platform_image = str(_as_mapping(values.get("images")).get("platform") or "")
+    if not platform_image:
+        raise RuntimeError("render_aws_values did not provide the platform image for the migration Job")
+    runtime_env = _as_mapping(values.get("runtimeEnv"))
+    secret_refs = _as_mapping(_as_mapping(values.get("runtime")).get("secretReferences"))
+    return str(migrator_role_arn), runtime_env, secret_refs, platform_image
+
+
 def _run_database_migrations(values: Mapping[str, object]) -> None:
     """Run schema migrations + content bootstrap once, before the chart install.
 
@@ -1854,23 +1878,12 @@ def _run_database_migrations(values: Mapping[str, object]) -> None:
     the in-box scenario catalog and the ``provider=aws`` RAES image registry so a fresh
     tenant's smoke scenario resolves its package and AMIs.
     """
-    identity = values.get("identity", {})
-    role_arns = identity.get("serviceAccountRoleArns", {}) if isinstance(identity, Mapping) else {}
-    migrator_role_arn = role_arns.get(_MIGRATOR_SERVICE_ACCOUNT) if isinstance(role_arns, Mapping) else None
-    if not migrator_role_arn:
-        raise RuntimeError("render_aws_values did not provide the migrator service-account role ARN")
-    runtime_env = values.get("runtimeEnv", {})
-    runtime = values.get("runtime", {})
-    secret_refs = runtime.get("secretReferences", {}) if isinstance(runtime, Mapping) else {}
-    images = values.get("images", {})
-    platform_image = str(images["platform"]) if isinstance(images, Mapping) and "platform" in images else ""
-    if not platform_image:
-        raise RuntimeError("render_aws_values did not provide the platform image for the migration Job")
+    migrator_role_arn, runtime_env, secret_refs, platform_image = _migration_inputs(values)
 
     prerequisites = _migration_prerequisites(
-        migrator_role_arn=str(migrator_role_arn),
-        runtime_env=runtime_env if isinstance(runtime_env, Mapping) else {},
-        secret_refs=secret_refs if isinstance(secret_refs, Mapping) else {},
+        migrator_role_arn=migrator_role_arn,
+        runtime_env=runtime_env,
+        secret_refs=secret_refs,
     )
     job = _migration_job(platform_image)
     # A completed Job's pod template is immutable, so clear any prior run first.
@@ -1888,7 +1901,7 @@ def _run_database_migrations(values: Mapping[str, object]) -> None:
         [
             "kubectl",
             "wait",
-            "--for=condition=complete",
+            _KUBECTL_WAIT_FOR_COMPLETE,
             f"job/{_MIGRATION_JOB}",
             "--namespace",
             _PLATFORM_NAMESPACE,

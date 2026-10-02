@@ -149,6 +149,7 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
         "workload_role_arns": {
             "value": {
                 "ctfScheduler": "arn:aws:iam::123456789012:role/shifter-dev-ctf-scheduler",
+                "migrator": "arn:aws:iam::123456789012:role/shifter-dev-migrator",
                 "ingress": "arn:aws:iam::123456789012:role/shifter-dev-ingress",
                 "portal": "arn:aws:iam::123456789012:role/shifter-dev-portal",
                 "workers": "arn:aws:iam::123456789012:role/shifter-dev-workers",
