@@ -22,7 +22,12 @@ tags = {
 # VPC
 # ------------------------------------------------------------------------------
 
-vpc_cidr           = "10.0.0.0/16"
+vpc_cidr = "10.0.0.0/16"
+
+# CIDR of the EKS control-plane VPC (must match the eks root vpc_cidr; disjoint
+# from vpc_cidr + range). Portal app/provisioner run as EKS pods reaching RDS/Redis
+# over the portal<->EKS peering.
+eks_vpc_cidr       = "10.80.0.0/16"
 az_count           = 2
 enable_nat_gateway = true
 
@@ -47,10 +52,6 @@ db_apply_immediately     = true
 # ------------------------------------------------------------------------------
 
 # Standard AL2023 AMI (NOT ECS-optimized) - us-east-2
-ec2_ami_id           = "ami-xxxxxxxxxxxxxxxxx"
-ec2_instance_type    = "t3.xlarge"
-ec2_root_volume_size = 50
-
 # Standalone CTFd host in the portal VPC
 enable_ctfd                 = true
 ctfd_ami_id                 = "ami-xxxxxxxxxxxxxxxxx"
@@ -77,10 +78,7 @@ ctfd_ssh_allowed_cidrs = {}
 # ------------------------------------------------------------------------------
 
 # TODO: Update with your proof domain
-domain_name       = "proof.shifter.example.com"
-app_port          = 8000
-health_check_path = "/health"
-
+domain_name = "proof.shifter.example.com"
 # ------------------------------------------------------------------------------
 # Cognito
 # ------------------------------------------------------------------------------
@@ -107,20 +105,9 @@ user_storage_bucket = "shifter-proof-user-storage-REPLACE_WITH_ACCOUNT_ID"
 # AMI IDs are now managed via SSM Parameter Store (/shifter/ami/*)
 # See shifter/packer/ for AMI build configuration
 
-victim_instance_type = "t3.large"
-kali_instance_type   = "t3.large"
-
 # ------------------------------------------------------------------------------
 # Autoscaling
 # ------------------------------------------------------------------------------
-
-enable_autoscaling     = false
-asg_min_size           = 1
-asg_max_size           = 1
-asg_desired_capacity   = 1
-asg_warm_pool_min_size = 0
-asg_warm_pool_state    = "Stopped"
-scale_up_threshold     = 70
 
 # Channel-layer backend (ADR-018, #849), decoupled from autoscaling above.
 # Event-representative proof runs the portal on Redis so websocket behavior is
@@ -154,7 +141,7 @@ enable_log_aggregation = true
 # Phase 5: Additional Log Sources
 # ------------------------------------------------------------------------------
 
-enable_alb_access_logs = true
+enable_alb_access_logs = false
 enable_vpc_flow_logs   = true
 enable_rds_log_exports = true
 enable_waf_logging     = true
@@ -179,11 +166,8 @@ portal_inspection_delete_protection = false
 # Engine Provisioner
 # ------------------------------------------------------------------------------
 
-engine_container_tag = "latest"
-
 # Windows/DC AMIs also managed via SSM Parameter Store
 
-dc_domain_name = "internal.shifter"
 # Domain Controller Administrator password is sourced from
 # aws_secretsmanager_secret.dc_domain_password (engine-provisioner module)
 # at runtime; the value is managed out-of-band and is intentionally not
@@ -194,41 +178,13 @@ dc_domain_name = "internal.shifter"
 # Guacamole
 # ------------------------------------------------------------------------------
 
-guacd_image_tag            = "1.5.5-r1"
-guacamole_client_image_tag = "1.5.5-r1"
-guacd_cpu                  = 2048
-guacd_memory               = 4096
-guacamole_client_cpu       = 4096
-guacamole_client_memory    = 8192
-guacd_desired_count        = 6
 # Guacamole JSON-auth tokens are scoped to the guacamole-client webapp task
 # that minted them. Keep guacamole-client singleton until token affinity is
 # implemented; scale guacd for protocol capacity instead.
-guacamole_client_desired_count = 1
-
 # Database
-guacamole_db_instance_class        = "db.m6i.xlarge"
-guacamole_db_allocated_storage     = 100
-guacamole_db_max_allocated_storage = 500
-guacamole_db_engine_version        = "16"
-guacamole_db_multi_az              = true
-guacamole_db_backup_retention_days = 7
-guacamole_db_deletion_protection   = false
-guacamole_db_skip_final_snapshot   = true
-guacamole_db_apply_immediately     = true
-
 # Autoscaling
-guacamole_enable_autoscaling       = true
-guacamole_autoscaling_min_capacity = 6
-guacamole_autoscaling_max_capacity = 12
-guacamole_autoscaling_cpu_target   = 60
-
 # Secrets
-guacamole_secrets_recovery_window_days = 0
-
 # OIDC/Cognito authentication
-guacamole_enable_oidc = true
-
 # ------------------------------------------------------------------------------
 # Messaging (SNS/SQS)
 # ------------------------------------------------------------------------------

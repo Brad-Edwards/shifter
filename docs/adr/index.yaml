@@ -107,32 +107,27 @@
       },
       {
         "id": "ADR-003-R2",
-        "description": "AWS Terraform plan routing must stay scoped to Terraform-consumed files, while Quality routing must run by exclusion for pull requests and dev pushes: a dedicated quality_relevant output runs Quality unless the diff is ordinary docs-only, and guardrail docs such as .github/pull_request_template.md, .github/copilot-instructions.md, docs/adr/**, and adr-enforcement.md must remain quality-relevant. Non-deploy support/test paths such as scripts/stack-smoke/** and scenario-dev/** must stay categorized through a dedicated quality_only filter/output without launching Terraform plans, image builds, or environment deploys. Commit-message or label-based test skips are not accepted. AWS deploy runs that can apply infrastructure must queue instead of cancelling an in-flight apply. Core, range, and platform Terraform plan and apply commands must wait for the backend state lock. Their apply jobs must create a local saved tfplan and apply that exact file instead of uploading raw binary plans as artifacts or running a fresh unplanned apply; platform Service Discovery replacement handling must inspect that same saved plan before apply. When the saved plan deletes an aws_service_discovery_service, the pre-apply handler must drain every ECS service registered against it (scale to desiredCount=0, wait for tasks to stop and Cloud Map to deregister all instances, failing the run on timeout rather than warning), snapshot the original desired counts, and restore them after apply; restoration is mandatory because aws_ecs_service.guacd sets lifecycle.ignore_changes=[desired_count], so Terraform will not bring the service back on its own. Portal application changes must keep reaching the portal image build/deploy path through the dedicated portal_image filter wired into the shifter_platform job trigger and the platform build job's portal_image_changes input, without widening the Terraform-scoped plan trigger.",
+        "description": "AWS Terraform plan routing must stay scoped to Terraform-consumed files, while Quality routing must run by exclusion for pull requests and dev pushes: a dedicated quality_relevant output runs Quality unless the diff is ordinary docs-only, and guardrail docs such as .github/pull_request_template.md, .github/copilot-instructions.md, docs/adr/**, and adr-enforcement.md must remain quality-relevant. Non-deploy support/test paths such as scripts/stack-smoke/** and scenario-dev/** must stay categorized through a dedicated quality_only filter/output without launching Terraform plans, image builds, or environment deploys. Commit-message or label-based test skips are not accepted. AWS deploy runs that can apply infrastructure must queue instead of cancelling an in-flight apply. Core, range, and platform Terraform plan and apply commands must wait for the backend state lock. Their apply jobs must create a local saved tfplan and apply that exact file instead of uploading raw binary plans as artifacts or running a fresh unplanned apply (the platform folds plan+apply into a single apply job; there is no separate plan job since the legacy ECS/EC2 rollout jobs were retired). Portal application changes must keep reaching the portal image build/deploy path through the dedicated portal_image filter wired into the shifter_platform job trigger and the platform build job's portal_image_changes input, without widening the Terraform-scoped plan trigger.",
         "checks": [
           "deploy-workflow-plan-scope"
         ]
       },
       {
         "id": "ADR-003-R3",
-        "description": "Deploy-verification steps must fail the run when the thing they verify did not happen, instead of warning and exiting 0. The Guacamole stabilization wait in _shifter-platform.yml must exit 1 on timeout (raise the timeout if first boot needs longer rather than downgrading the result). The engine ECS task-definition update in _shifter-engine.yml must exit 1 when the task-definition family cannot be described, with the only skip gated on the explicit first_deploy bootstrap input (surfaced as the aws_first_deploy workflow_dispatch input in deploy.yml, strict by default and settable only on manual dispatch). After portal deploy, the Verify job in _shifter-platform.yml must fail when portal ALB target health, /health/, Guacamole ECS rollouts, Guacamole target health, or /guacamole/ smoke probes are not satisfied; scripts/portal_deploy/portal_deploy.py verify-post-deploy must treat a non-ACTIVE Guacamole cluster as failure when Guacamole outputs are present.",
-        "checks": [
-          "deploy-verification-fail-loud"
-        ]
+        "description": "[Retired with the legacy ECS/EC2 AWS portal runtime.] This rule required the ECS-era deploy-verification steps to fail loud (the Guacamole ECS stabilization wait, the engine ECS task-definition update, and the portal Verify job). Those steps and the legacy ECS/EC2 provider they verified were removed; the AWS portal runs on EKS. Remaining verification (the apply job's portal-inspection and RDS-pending asserts) is fail-loud by construction, and the advisory range smoke is covered by ADR-003-R6.",
+        "checks": []
       },
       {
         "id": "ADR-003-R6",
-        "description": "After successful dev portal deploy verification, provider-specific reusable deploy workflows may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes the shared run_post_deploy_smoke manage command through the provider's bounded command transport. The job must remain dev-only (`inputs.is_dev` or the provider-equivalent dev-environment gate), continue-on-error so deploy success is not blocked, request `issues: write` only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. AWS keeps its existing `scripts/smoke-test.sh` -> `scripts/portal_deploy/portal_deploy.py run-manage-on-portal` SSM transport, and long-running AWS portal-manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit `aws ssm wait command-executed` waiter. GCP uses a short-lived Job rendered from the live digest-pinned portal template instead of streaming kubectl exec through Connect Gateway; the Job must retain the portal entrypoint, service account, access-pool placement and runtime configuration, avoid the portal Service selector, inject the smoke identity through a temporary Secret reference, and remove both Job and Secret on exit. The GCP migration Job idempotently registers the immutable shipped smoke seed through the uniform ingestion service before rollout using a fixed non-login system actor whose bounded identity fails closed on drift. The shared smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED. Provider parity must reuse the shared smoke command/variant contract rather than forking smoke lifecycle logic by cloud.",
+        "description": "After successful dev portal deploy verification, provider-specific reusable deploy workflows may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes the shared run_post_deploy_smoke manage command through the provider's bounded command transport. The job must remain dev-only (`inputs.is_dev` or the provider-equivalent dev-environment gate), continue-on-error so deploy success is not blocked, request `issues: write` only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. AWS runs `scripts/smoke-test.sh`, which execs the shared `run_post_deploy_smoke` manage command inside the live `portal-web` pod via `kubectl exec` on the EKS cluster (the AWS portal runtime is EKS; the legacy ECS/EC2 SSM+ASG transport was retired). GCP uses a short-lived Job rendered from the live digest-pinned portal template instead of streaming kubectl exec through Connect Gateway; the Job must retain the portal entrypoint, service account, access-pool placement and runtime configuration, avoid the portal Service selector, inject the smoke identity through a temporary Secret reference, and remove both Job and Secret on exit. The GCP migration Job idempotently registers the immutable shipped smoke seed through the uniform ingestion service before rollout using a fixed non-login system actor whose bounded identity fails closed on drift. The shared smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED. Provider parity must reuse the shared smoke command/variant contract rather than forking smoke lifecycle logic by cloud.",
         "checks": [
-          "deploy-verification-fail-loud",
           "deploy-workflow-runner-exposure"
         ]
       },
       {
         "id": "ADR-003-R4",
-        "description": "AWS portal deployment mode must have one authoritative source: the deploy workflow derives single-instance vs. ASG mode from Terraform outputs, not from a GitHub Actions variable. The single-instance path must fail unless exactly one running tagged portal instance matches Terraform state, and the ASG path must verify the deployed image digest on every in-service instance after refresh.",
-        "checks": [
-          "portal-deploy-mode-source-of-truth"
-        ]
+        "description": "[Retired with the legacy ECS/EC2 AWS portal runtime.] This rule governed the AWS portal single-instance-vs-ASG deployment-mode source of truth. There is no ASG/EC2 portal runtime anymore (the AWS portal runs as pods on EKS), so the deployment-mode concept and its guardrail were removed.",
+        "checks": []
       },
       {
         "id": "ADR-003-R5",
@@ -168,8 +163,6 @@
       ".github/workflows/_range.yml",
       ".github/workflows/_shifter-engine.yml",
       ".github/workflows/_shifter-platform.yml",
-      "scripts/portal_deploy/portal_deploy.py",
-      "scripts/portal-deploy/deploy_portal.sh",
       "scripts/adr_guard/tests/test_deploy_workflow.py",
       "platform/terraform/environments/dev/portal/outputs.tf",
       "platform/terraform/environments/prod/portal/outputs.tf"
@@ -235,7 +228,7 @@
       },
       {
         "id": "ADR-004-R10",
-        "description": "Every Terraform module that defines an `aws_iam_role` whose attached `aws_iam_role_policy` grants `secretsmanager:GetSecretValue` (or any wildcard that covers it \u2014 `secretsmanager:*`, `secretsmanager:Get*`, `*`) on a secret encrypted with the portal Secrets Manager CMK must also attach a single `aws_iam_role_policy` statement granting `kms:Decrypt` on that CMK. The grant must satisfy all three predicates in the SAME IAM Statement: Action covering `kms:Decrypt`; Resource set to `var.secrets_manager_kms_key_arn` or `var.secrets_kms_key_arn` (both are accepted module-input names referring to the portal CMK; preferred) or `\"*\"` (accepted when the same statement carries the service condition); Condition `StringEquals` (or `StringLike`) `kms:ViaService = \"secretsmanager.<region>.amazonaws.com\"`. Spreading the three predicates across separate statements does NOT satisfy IAM evaluation. Additionally, any IAM statement granting `kms:Decrypt` on `Resource=\"*\"` (or `[\"*\"]`) must carry a `kms:ViaService` condition pinning to some service \u2014 unconditioned wildcard `kms:Decrypt` is too broad. The check is implemented in `scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py` and wired as a blocking CI step in `.github/workflows/_quality.yml`. Currently scoped to `platform/terraform/modules/engine-provisioner/iam.tf`, `platform/terraform/modules/portal/ec2/main.tf`, and `platform/terraform/modules/guacamole/iam.tf`; expand the CI invocation when a new module starts reading portal Secrets Manager secrets. Backstops the silent failure mode resolved by #52 where a fresh Secrets Manager CMK rotation left multiple roles without `kms:Decrypt` and ECS task secrets injection aborted at startup with `AccessDeniedException: Access to KMS is not allowed`.",
+        "description": "Every Terraform module that defines an `aws_iam_role` whose attached `aws_iam_role_policy` grants `secretsmanager:GetSecretValue` (or any wildcard that covers it \u2014 `secretsmanager:*`, `secretsmanager:Get*`, `*`) on a secret encrypted with the portal Secrets Manager CMK must also attach a single `aws_iam_role_policy` statement granting `kms:Decrypt` on that CMK. The grant must satisfy all three predicates in the SAME IAM Statement: Action covering `kms:Decrypt`; Resource set to `var.secrets_manager_kms_key_arn` or `var.secrets_kms_key_arn` (both are accepted module-input names referring to the portal CMK; preferred) or `\"*\"` (accepted when the same statement carries the service condition); Condition `StringEquals` (or `StringLike`) `kms:ViaService = \"secretsmanager.<region>.amazonaws.com\"`. Spreading the three predicates across separate statements does NOT satisfy IAM evaluation. Additionally, any IAM statement granting `kms:Decrypt` on `Resource=\"*\"` (or `[\"*\"]`) must carry a `kms:ViaService` condition pinning to some service \u2014 unconditioned wildcard `kms:Decrypt` is too broad. The check is implemented in `scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py` and wired as a blocking CI step in `.github/workflows/_quality.yml`. Currently scoped to `platform/terraform/modules/provisioner-iam/*.tf` (the shared provisioner permission set attached to the EKS provisioner IRSA role); expand the CI invocation when a new module starts reading portal Secrets Manager secrets. Backstops the silent failure mode resolved by #52 where a fresh Secrets Manager CMK rotation left roles without `kms:Decrypt` and secrets injection aborted at startup with `AccessDeniedException: Access to KMS is not allowed`.",
         "checks": []
       },
       {
@@ -245,7 +238,7 @@
       },
       {
         "id": "ADR-004-R12",
-        "description": "First-party AWS RDS DB instances under `platform/terraform/modules/portal/rds/main.tf` and `platform/terraform/modules/guacamole/rds.tf` MUST keep `iam_database_authentication_enabled = true` and MUST explicitly set `ca_cert_identifier` to a non-empty expression. Checkov covers IAM authentication through CKV_AWS_161, but CKV_AWS_211 currently passes when the CA attribute is absent; the repo-native `scripts/check_tf_rds_security/check_tf_rds_security.py` checker closes that gap. The checker is wired as a blocking CI step in `.github/workflows/_quality.yml`, and its unittest suite is included in the `check_tf_*` checker tests.",
+        "description": "First-party AWS RDS DB instances under `platform/terraform/modules/portal/rds/main.tf` MUST keep `iam_database_authentication_enabled = true` and MUST explicitly set `ca_cert_identifier` to a non-empty expression. Checkov covers IAM authentication through CKV_AWS_161, but CKV_AWS_211 currently passes when the CA attribute is absent; the repo-native `scripts/check_tf_rds_security/check_tf_rds_security.py` checker closes that gap. The checker is wired as a blocking CI step in `.github/workflows/_quality.yml`, and its unittest suite is included in the `check_tf_*` checker tests.",
         "checks": []
       },
       {
@@ -459,7 +452,6 @@
       "shifter/shifter_platform/shared/cloud/gcp/task_runner.py",
       "shifter/engine/provisioner/Dockerfile",
       "shifter/engine/provisioner/terraform_base.py",
-      "platform/terraform/modules/engine-provisioner/task_definition.tf",
       "docs/architecture/gcp-provisioner-launch-boundary-preflight-1518.md"
     ]
   },
@@ -1158,7 +1150,6 @@
       "shifter/shifter_platform/config/asgi.py",
       "shifter/shifter_platform/tests/config/test_channel_layers.py",
       "platform/terraform/modules/portal/ssm/main.tf",
-      "platform/terraform/modules/portal/ec2/user_data.sh",
       "platform/terraform/environments/dev/portal/main.tf",
       "platform/terraform/environments/dev/portal/variables.tf",
       "platform/terraform/environments/dev/portal/terraform.tfvars",
@@ -1260,8 +1251,6 @@
     "evidence": [
       "platform/terraform/modules/range/vpc/nat.tf",
       "platform/terraform/modules/range/vpc/outputs.tf",
-      "platform/terraform/modules/engine-provisioner/task_definition.tf",
-      "platform/terraform/modules/engine-provisioner/iam.tf",
       "shifter/engine/provisioner/config.py",
       "shifter/engine/provisioner/terraform_vars.py",
       "shifter/engine/provisioner/terraform/modules/range/main.tf",
@@ -2937,7 +2926,6 @@
       "shifter/shifter_platform/engine/models/_capacity_assessment.py",
       "shifter/shifter_platform/engine/services/_capacity_plan.py",
       "shifter/shifter_platform/config/_capacity_planning_settings.py",
-      "platform/terraform/modules/portal/ec2/main.tf",
       "shifter/shifter_platform/tests/shared/capacity",
       "shifter/shifter_platform/tests/shared/cloud/test_capacity_inventory.py",
       "shifter/shifter_platform/tests/engine/test_capacity_plan.py",
@@ -4245,6 +4233,36 @@
       "shifter/shifter_platform/shared/api/principals.py",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py"
+    ]
+  },
+  {
+    "id": "ADR-067",
+    "title": "Model-access enforcement is optional; keyless-direct is the default; adopt a mature LLM gateway for enforcement",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Model-access enforcement (spend, rate, and request metering, and later detections) is an optional capability, not a requirement: no deployment must run an enforcing gateway to give ranges model access. Keyless Workload Identity direct access (ADR-064) is the default guest model path for all ranges including CTF ranges. The deployment-owned broker is an LLM gateway built in-house whose mandatory-enforcement posture, plus a bespoke zero-trust rotating-credential model, blocked basic range-to-model flows (GCE provisioning outlasts the membership freshness window; capacity, enrollment, and per-event bindings are not turnkey). The broker is no longer the strategic enforcement mechanism: investment in hardening its mandatory-enforcement, freshness, and membership machinery stops, and it is retained only as a compatibility and opt-in path pending migration. The strategic optional-enforcement path is a mature, self-hosted LLM gateway (LiteLLM primary candidate) evaluated and adopted under #2411 as part of the AI Gateway milestone #2274. This supersedes the mandatory-enforcement posture of ADR-059 and complements ADR-064.",
+    "rules": [
+      {
+        "id": "ADR-067-R1",
+        "description": "Model access must be reachable by ranges without an enforcing gateway; enforcement is opt-in per deployment. Keyless Workload Identity direct access (ADR-064) is the default guest model path. A deployment that has not opted into enforcement must not require the broker for a range to reach approved models.",
+        "checks": []
+      },
+      {
+        "id": "ADR-067-R2",
+        "description": "No new work hardens the bespoke broker's mandatory-enforcement, membership-projection, credential-freshness, quota-observation, or per-event sharing-binding machinery. The strategic optional-enforcement path is the adopted mature LLM gateway (#2411, AI Gateway milestone #2274); the broker is compatibility and opt-in only. The credential-lifetime correction (credential lives for the range session, not the membership freshness window) remains valid for deployments still running the broker in transition.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2411",
+      "docs/adr/067-model-access-enforcement-optional.md",
+      "docs/adr/064-default-range-model-access.md",
+      "docs/adr/059-range-model-access-broker.md"
     ]
   }
 ]

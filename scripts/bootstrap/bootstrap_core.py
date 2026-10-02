@@ -130,6 +130,14 @@ def confirm_or_manual(msg: str) -> str:
     Note: 'no' will cause the script to abort with an error explanation,
     as all steps are required for a functioning deployment.
     """
+    # --yes/assume-yes (issue #1639) authorizes routine proceed prompts. Take the
+    # automated 'yes' path so a headless bootstrap actually sets the GitHub
+    # secrets and writes the backend configs, instead of falling through to the
+    # non-TTY 'manual' branch (a no-op without a terminal), which silently skips
+    # those steps and contradicts the documented --yes contract.
+    if _ASSUME_YES["enabled"]:
+        return "yes"
+
     # Check if we're in a non-interactive environment
     if not sys.stdin.isatty():
         return "manual"
