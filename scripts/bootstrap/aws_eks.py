@@ -39,6 +39,13 @@ from installation.schema import RootConfig  # noqa: E402
 _LOWERCASE_HEX = frozenset("0123456789abcdef")
 _EKS_NAMESPACE = "shifter-system"
 _HELM_RELEASE = "shifter"
+# Dedicated pre-helm schema-migration + content-bootstrap Job (#1826). The SA and the
+# platform-runtime ConfigMap are pre-created with the shifter release's Helm-ownership
+# metadata so the chart adopts (not collides with) them; the Job is deleted after it
+# completes. _PLATFORM_NAMESPACE matches the chart's namespaces.platform.
+_PLATFORM_NAMESPACE = "shifter-platform"
+_MIGRATOR_SERVICE_ACCOUNT = "migrator"
+_MIGRATION_JOB = "platform-migrate"
 _LOAD_BALANCER_CONTROLLER_CHART_VERSION = "3.2.2"
 # Pinned cluster-autoscaler chart (#1826). The image tag must track the cluster's
 # Kubernetes minor; the chart's autoDiscovery + the node-group ASG discovery tags
@@ -104,7 +111,7 @@ print(f"IRSA_OK:{identity}")
 # roles (cni, ingress, ebs-csi, efs-csi, cluster-autoscaler) are wired to their
 # controllers directly (EKS add-on service_account_role_arn / Helm SA annotation),
 # not projected into the chart's identity.serviceAccountRoleArns.
-_WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner"})
+_WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner", "migrator"})
 # Single source of truth in the installation package (installation.runtime_inventory_aws),
 # so the renderer and the backend bundle's generated-output projection cannot drift.
 _RENDERER_OWNED_RUNTIME_ENV = AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS
@@ -272,6 +279,11 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
         # provider backend (e.g. django-ses) is a follow-up once SES is provisioned.
         "EMAIL_BACKEND": _CONSOLE_EMAIL_BACKEND,
         "ENVIRONMENT": _runtime_environment(config.deployment.profile),
+        # Schema migrations run once in the dedicated pre-helm migration Job
+        # (_run_database_migrations), so every deployed pod skips them on startup.
+        # Per-pod migrations made the launcher's startup exceed its liveness window
+        # under DB load and crash-loop; the migration Job overrides this to "" (#1826).
+        "SKIP_MIGRATIONS": "1",
         **_rendered_env_values(render_model_access_env(config)),
         **_rendered_env_values(render_mission_control_lease_env(config)),
         "SITE_URL": f"https://{domain}",
@@ -1666,6 +1678,12 @@ def deploy_eks(
         outputs,
         images,
     )
+    # Migrate the schema and converge the in-box catalog / RAES image registry once,
+    # before the chart install. Deployed pods then skip per-pod startup migrations
+    # (SKIP_MIGRATIONS=1), which previously crash-looped the provisioner-launcher
+    # under DB load (#1826). Pre-creates the Helm-adopted migrator SA + runtime
+    # ConfigMap the chart owns afterward.
+    _run_database_migrations(values)
     chart = get_repo_root() / "platform" / "charts" / "shifter"
     provider_values = chart / f"values-aws-{profile}.yaml"
     _run_helm_with_values(["helm", "lint", str(chart), "--values", str(provider_values)], values)
@@ -1705,40 +1723,187 @@ def deploy_eks(
     _verify_kubernetes_security_enforcement(str(values["images"]["platform"]))
     _verify_effective_irsa(roles, str(values["images"]["platform"]))
     run_cmd(["curl", "--fail", "--silent", "--show-error", "--max-time", "30", health_url])
-    _bootstrap_inbox_catalog()
     return {"backend": "aws", "profile": profile, "health_url": health_url}
 
 
-def _bootstrap_inbox_catalog() -> None:
-    """Register the in-box catalog and seed the RAES image registry (#1578, #1826).
+def _migration_prerequisites(
+    *,
+    migrator_role_arn: str,
+    runtime_env: Mapping[str, str],
+    secret_refs: Mapping[str, str],
+) -> dict[str, object]:
+    """Build the Helm-adopted migrator ServiceAccount and platform-runtime ConfigMap.
 
-    Mirrors the GCP control-plane's post-deploy step so a fresh AWS tenant has both
-    its in-box scenario catalog (e.g. the post-deploy smoke's ``smoke-linux-aws``
-    scenario, which otherwise fails "No RAES package registered") and its RAES image
-    registry (``provider=aws`` mappings from the forwarded ``*_AMI_ID`` env, without
-    which an authored source like ``kali``/``ubuntu`` is NOT_REALIZABLE even though
-    the AMIs are baked). Runs inside a live portal pod through ``entrypoint.sh`` so
-    the commands receive the hydrated runtime secrets, forwarded AMI env, and RDS
-    IAM auth they need; the container env alone carries none of it. ``SKIP_MIGRATIONS``
-    keeps it to catalog/registry convergence -- the platform already migrated on
-    rollout. Both commands are idempotent, so a redeploy re-running this is a no-op.
+    The migration Job runs before the chart install, so its IRSA ServiceAccount and the
+    runtime ConfigMap it reads must already exist. Both carry the shifter release's Helm
+    ownership metadata so the subsequent ``helm upgrade --install`` adopts them rather
+    than failing on pre-existing resources (mirrors the GCP control-plane). The
+    ConfigMap data replicates configmap-runtime.yaml (the rendered runtime env plus the
+    ``APP_SECRET_ID``/``DB_SECRET_ID`` secret references) so the Job's entrypoint
+    hydrates exactly the secrets the deployed pods do.
     """
-    run_cmd(
+    helm_labels = {_PART_OF_LABEL: "shifter", "app.kubernetes.io/managed-by": "Helm"}
+    helm_annotations = {
+        "meta.helm.sh/release-name": _HELM_RELEASE,
+        "meta.helm.sh/release-namespace": _EKS_NAMESPACE,
+    }
+    configmap_data = dict(runtime_env)
+    if secret_refs.get("app"):
+        configmap_data["APP_SECRET_ID"] = secret_refs["app"]
+    if secret_refs.get("database"):
+        configmap_data["DB_SECRET_ID"] = secret_refs["database"]
+    return {
+        "apiVersion": "v1",
+        "kind": "List",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "ServiceAccount",
+                "metadata": {
+                    "name": _MIGRATOR_SERVICE_ACCOUNT,
+                    "namespace": _PLATFORM_NAMESPACE,
+                    "labels": {**helm_labels, "app.kubernetes.io/component": "migrator"},
+                    "annotations": {**helm_annotations, "eks.amazonaws.com/role-arn": migrator_role_arn},
+                },
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                    "name": "platform-runtime",
+                    "namespace": _PLATFORM_NAMESPACE,
+                    "labels": helm_labels,
+                    "annotations": helm_annotations,
+                },
+                "data": configmap_data,
+            },
+        ],
+    }
+
+
+def _migration_job(platform_image: str) -> dict[str, object]:
+    """Build the one-shot schema-migration + content-bootstrap Job.
+
+    Runs through the portal entrypoint with ``SKIP_MIGRATIONS=""`` (overriding the
+    runtime ConfigMap's ``"1"``) so it hydrates the runtime secrets, applies migrations
+    as the RDS master, switches to portal_runtime RDS IAM auth, then registers the
+    in-box catalog and seeds the RAES image registry. Deployed pods keep
+    ``SKIP_MIGRATIONS=1`` and skip startup migrations, so this is the single migrator
+    (#1826). Both management commands are idempotent, so a redeploy is a no-op.
+    """
+    labels = {_PART_OF_LABEL: "shifter", "app.kubernetes.io/component": "migrator"}
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": _MIGRATION_JOB, "namespace": _PLATFORM_NAMESPACE, "labels": labels},
+        "spec": {
+            "backoffLimit": 0,
+            "activeDeadlineSeconds": 900,
+            "template": {
+                "metadata": {"labels": labels},
+                "spec": {
+                    "serviceAccountName": _MIGRATOR_SERVICE_ACCOUNT,
+                    "restartPolicy": "Never",
+                    # Restricted-PSS-compliant; readOnlyRootFilesystem is left unset so
+                    # the entrypoint + Django have writable scratch (mirrors the
+                    # guacamole provisioner Job). The pod is one-shot and non-serving.
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "runAsUser": 1000,
+                        "runAsGroup": 1000,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "containers": [
+                        {
+                            "name": "migrate",
+                            "image": platform_image,
+                            "imagePullPolicy": "IfNotPresent",
+                            # Passed to entrypoint.sh as "$@": it migrates first, then
+                            # execs these content-convergence commands.
+                            "args": [
+                                "/bin/sh",
+                                "-c",
+                                "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+                            ],
+                            "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
+                            "env": [{"name": "SKIP_MIGRATIONS", "value": ""}],
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "capabilities": {"drop": ["ALL"]},
+                            },
+                        }
+                    ],
+                },
+            },
+        },
+    }
+
+
+def _delete_migration_job() -> None:
+    """Delete the migration Job (idempotent; keeps the adopted SA + ConfigMap)."""
+    run_cmd(["kubectl", "delete", "job", _MIGRATION_JOB, "--namespace", _PLATFORM_NAMESPACE, "--ignore-not-found"])
+
+
+def _run_database_migrations(values: Mapping[str, object]) -> None:
+    """Run schema migrations + content bootstrap once, before the chart install.
+
+    AWS has no cloud-managed migration hook, so this dedicated Job is the single
+    migrator (GCP parity). Deployed pods carry ``SKIP_MIGRATIONS=1`` and must not
+    migrate on startup -- per-pod migrations made the provisioner-launcher's startup
+    exceed its liveness window under DB load and crash-loop (#1826). It also converges
+    the in-box scenario catalog and the ``provider=aws`` RAES image registry so a fresh
+    tenant's smoke scenario resolves its package and AMIs.
+    """
+    identity = values.get("identity", {})
+    role_arns = identity.get("serviceAccountRoleArns", {}) if isinstance(identity, Mapping) else {}
+    migrator_role_arn = role_arns.get(_MIGRATOR_SERVICE_ACCOUNT) if isinstance(role_arns, Mapping) else None
+    if not migrator_role_arn:
+        raise RuntimeError("render_aws_values did not provide the migrator service-account role ARN")
+    runtime_env = values.get("runtimeEnv", {})
+    runtime = values.get("runtime", {})
+    secret_refs = runtime.get("secretReferences", {}) if isinstance(runtime, Mapping) else {}
+    images = values.get("images", {})
+    platform_image = str(images["platform"]) if isinstance(images, Mapping) and "platform" in images else ""
+    if not platform_image:
+        raise RuntimeError("render_aws_values did not provide the platform image for the migration Job")
+
+    prerequisites = _migration_prerequisites(
+        migrator_role_arn=str(migrator_role_arn),
+        runtime_env=runtime_env if isinstance(runtime_env, Mapping) else {},
+        secret_refs=secret_refs if isinstance(secret_refs, Mapping) else {},
+    )
+    job = _migration_job(platform_image)
+    # A completed Job's pod template is immutable, so clear any prior run first.
+    _delete_migration_job()
+    for manifest in (prerequisites, job):
+        handle, path = tempfile.mkstemp(suffix="-platform-migrate.json")
+        os.close(handle)
+        try:
+            Path(path).write_text(json.dumps(manifest), encoding="utf-8")
+            run_cmd(["kubectl", "apply", "-f", str(path)])
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+    waited = run_cmd(
         [
             "kubectl",
-            "exec",
+            "wait",
+            "--for=condition=complete",
+            f"job/{_MIGRATION_JOB}",
             "--namespace",
-            "shifter-platform",
-            "deployment/portal-web",
-            "--",
-            "env",
-            "SKIP_MIGRATIONS=1",
-            "/app/entrypoint.sh",
-            "/bin/sh",
-            "-c",
-            "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
-        ]
+            _PLATFORM_NAMESPACE,
+            "--timeout=900s",
+        ],
+        check=False,
     )
+    # Surface the pod logs (the commands redact secrets) regardless of outcome.
+    run_cmd(
+        ["kubectl", "logs", f"job/{_MIGRATION_JOB}", "--namespace", _PLATFORM_NAMESPACE, "--tail", "120"],
+        check=False,
+    )
+    if waited is None or waited.returncode != 0:
+        raise RuntimeError("platform database migration Job did not complete successfully")
+    _delete_migration_job()
 
 
 def teardown_eks(

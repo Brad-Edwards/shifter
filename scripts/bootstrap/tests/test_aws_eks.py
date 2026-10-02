@@ -56,6 +56,7 @@ def _terraform_outputs() -> dict[str, object]:
                 "portal": "arn:aws:iam::123456789012:role/shifter-dev-portal",
                 "workers": "arn:aws:iam::123456789012:role/shifter-dev-workers",
                 "ctfScheduler": "arn:aws:iam::123456789012:role/shifter-dev-ctf-scheduler",
+                "migrator": "arn:aws:iam::123456789012:role/shifter-dev-migrator",
                 "ingress": "arn:aws:iam::123456789012:role/shifter-dev-ingress",
                 "cni": "arn:aws:iam::123456789012:role/shifter-dev-cni",
                 "ebs-csi": "arn:aws:iam::123456789012:role/shifter-dev-ebs-csi",
@@ -497,11 +498,14 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     terraform_inputs_path = tmp_path / "eks.tfvars.json"
     terraform_inputs_path.write_text(json.dumps(_terraform_inputs()))
     calls: list[list[str]] = []
+    manifests: list[dict[str, object]] = []
     secret_stdin_calls: list[tuple[list[str], str]] = []
     outputs_json = json.dumps(_terraform_outputs())
 
     def _runner(cmd, **kwargs):
         calls.append(cmd)
+        if cmd[:3] == ["kubectl", "apply", "-f"]:
+            manifests.append(json.loads(Path(cmd[cmd.index("-f") + 1]).read_text()))
         if cmd[:3] == ["aws", "secretsmanager", "get-secret-value"]:
             secret_id = cmd[cmd.index("--secret-id") + 1]
             if "guacamole-json-auth" in secret_id:
@@ -591,10 +595,40 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         if cmd[:3] == ["aws", "eks", "wait"] and "--addon-name" in cmd
     }
     assert waited_addons == expected_addons
-    # Two platform-namespace manifests plus three guacamole manifests (the
-    # guacamole-runtime Secret, the provisioner ServiceAccount, and the provisioner
-    # Job) are applied before the chart install.
-    assert sum(cmd[:3] == ["kubectl", "apply", "-f"] for cmd in calls) == 5
+    # Two platform-namespace manifests, three guacamole manifests (the guacamole-runtime
+    # Secret, the provisioner ServiceAccount, and the provisioner Job), and two migration
+    # manifests (the migrator SA + platform-runtime ConfigMap prerequisites List, and the
+    # migration Job) are applied before the chart install.
+    assert sum(cmd[:3] == ["kubectl", "apply", "-f"] for cmd in calls) == 7
+    # The dedicated pre-helm migration Job (#1826) runs the single schema migration +
+    # content bootstrap, is awaited to completion, and is deleted afterward.
+    assert any(cmd[:2] == ["kubectl", "wait"] and f"job/{aws_eks._MIGRATION_JOB}" in cmd for cmd in calls)
+    assert any(cmd[:4] == ["kubectl", "delete", "job", aws_eks._MIGRATION_JOB] for cmd in calls)
+    migration_manifests = [
+        m
+        for m in manifests
+        if m.get("kind") == "List"
+        and any(item.get("metadata", {}).get("name") == "platform-runtime" for item in m.get("items", []))
+    ]
+    assert len(migration_manifests) == 1
+    migration_items = {item["kind"]: item for item in migration_manifests[0]["items"]}
+    # The SA + ConfigMap carry Helm-ownership metadata so the chart adopts them.
+    for item in migration_items.values():
+        assert item["metadata"]["annotations"]["meta.helm.sh/release-name"] == "shifter"
+        assert item["metadata"]["labels"]["app.kubernetes.io/managed-by"] == "Helm"
+    assert migration_items["ServiceAccount"]["metadata"]["annotations"]["eks.amazonaws.com/role-arn"].endswith(
+        "shifter-dev-migrator"
+    )
+    # The ConfigMap replicates the runtime env plus the two secret references.
+    migration_cfg = migration_items["ConfigMap"]["data"]
+    assert migration_cfg["SKIP_MIGRATIONS"] == "1"
+    assert migration_cfg["APP_SECRET_ID"] and migration_cfg["DB_SECRET_ID"]
+    # The Job overrides SKIP_MIGRATIONS to "" so the entrypoint migrates once.
+    migrate_job = next(
+        m for m in manifests if m.get("kind") == "Job" and m["metadata"]["name"] == aws_eks._MIGRATION_JOB
+    )
+    job_env = {e["name"]: e.get("value") for e in migrate_job["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert job_env["SKIP_MIGRATIONS"] == ""
     # Guacamole provisioning: the guacamole-db + json-auth secrets are read, and the
     # provisioner Job is awaited to completion before Helm runs.
     read_secret_ids = [

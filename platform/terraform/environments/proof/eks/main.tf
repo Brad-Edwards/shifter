@@ -100,6 +100,20 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
     }
+    # One-shot schema-migration + content-bootstrap Job (AWS EKS parity with the GCP
+    # platform-migrate Job, #1826). aws_eks.py runs it once before the chart install so
+    # the workloads deploy with SKIP_MIGRATIONS=1 and never race per-pod migrations on
+    # startup (the provisioner-launcher's slow per-pod migration tripped its liveness
+    # probe). entrypoint.sh hydrates the master (database) + app (django) + cognito
+    # secrets to import settings and migrate as the master user, then switches to
+    # portal_runtime RDS IAM auth for bootstrap_inbox_catalog / seed_raes_image_registry.
+    migrator = {
+      namespace       = "shifter-platform"
+      service_account = "migrator"
+      policy_arns     = []
+      secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
+    }
     # One-shot guacamole database/role provisioner (AWS EKS parity with the GCP
     # cloud-sql module). RDS has no native terraform user/database resource and the
     # deploy runner cannot reach RDS, so aws_eks.py runs provision_guacamole_database

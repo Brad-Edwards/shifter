@@ -94,6 +94,10 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # EMAIL_BACKEND; the renderer defaults it to the console backend.
         "EMAIL_BACKEND",
         "ENVIRONMENT",
+        # Migrations run once in the dedicated pre-helm migration Job; the renderer
+        # sets SKIP_MIGRATIONS=1 so deployed pods skip per-pod startup migrations
+        # (which crash-looped the launcher under DB load). See #1826.
+        "SKIP_MIGRATIONS",
         # Guacamole data-plane wiring (aws_eks.render_aws_values): the PostgreSQL
         # host/port come from the shared portal RDS bundle output, the database
         # name is the dedicated guacamole database, and GUACAMOLE_SECRET_ID points
