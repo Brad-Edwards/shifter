@@ -10,7 +10,7 @@ constraint/fencing behavior is proven against actual PostgreSQL.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, timedelta
 from uuid import UUID
 
 import pytest
@@ -32,12 +32,11 @@ _DEPLOYMENT = UUID("11111111-1111-4111-8111-111111111111")
 _OTHER_DEPLOYMENT = UUID("22222222-2222-4222-8222-222222222222")
 _PUBLISHER = {"owner": "deployment", "reference": "operator:platform"}
 _SUBJECT = {"owner": "deployment", "reference": "range:r-1"}
-# Relative to now so the binding stays effective at real "now" (allocation checks
-# the window against the wall clock). Hardcoded 2026-09/2026-10 dates expired on
-# 2026-10-01 and silently lifted the sharing restriction (#2415-adjacent fixture
-# rot). The expired-binding preview test probes relative to this same window.
-_FROM = (timezone.now() - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00Z")
-_UNTIL = (timezone.now() + timedelta(days=90)).strftime("%Y-%m-%dT00:00:00Z")
+_FROM = "2026-09-01T00:00:00Z"
+# Far-future sentinel: the sharing binding and price must stay effective for every
+# test's now()-relative range-session window. A fixed near-term expiry detonated
+# once wall-clock passed it.
+_UNTIL = "2099-01-01T00:00:00Z"
 _ALL_RANGES_DIGEST = compute_digest(SharingSelector(kind=SelectorKind.ALL_RANGES))
 
 
@@ -83,7 +82,7 @@ def _catalog(deployment_id: UUID = _DEPLOYMENT, *, spend_cap: int = 5_000_000):
             {
                 "price_schedule_id": "vertex-2026-09",
                 "currency": "USD",
-                "valid_until": _UNTIL,
+                "valid_until": "2099-01-01T00:00:00Z",
                 "prices": [{"component": "input_tokens", "unit_denominator": 1000000, "price_micro_units": 3000000}],
             }
         ],
@@ -550,14 +549,17 @@ def test_acknowledged_empty_snapshot_never_means_all_ranges():
 def test_expired_binding_does_not_contribute():
     svc = _services()
     catalog = _catalog()
-    _publish(svc, catalog, _binding_dto(), _pool_dto())
+    # This test owns an explicit bounded effective window (the shared _UNTIL default
+    # is far-future so "active now" previews elsewhere keep passing); the two
+    # evaluation points below deliberately bracket this fixed expiry.
+    _publish(svc, catalog, _binding_dto(effective_until="2026-10-01T00:00:00Z"), _pool_dto())
 
-    # Probe relative to the effective window (_FROM .. _UNTIL = now +/- 90d): after
-    # _UNTIL the binding has expired, inside the window it is active.
-    expired = _preview(svc, catalog, evaluated_at=timezone.now() + timedelta(days=180))
+    from datetime import datetime
+
+    expired = _preview(svc, catalog, evaluated_at=datetime(2026, 11, 1, tzinfo=UTC))
     assert expired.contributions == ()
 
-    active = _preview(svc, catalog, evaluated_at=timezone.now())
+    active = _preview(svc, catalog, evaluated_at=datetime(2026, 9, 15, tzinfo=UTC))
     assert len(active.contributions) == 1
 
 

@@ -4234,5 +4234,35 @@
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py"
     ]
+  },
+  {
+    "id": "ADR-067",
+    "title": "Model-access enforcement is optional; keyless-direct is the default; adopt a mature LLM gateway for enforcement",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Model-access enforcement (spend, rate, and request metering, and later detections) is an optional capability, not a requirement: no deployment must run an enforcing gateway to give ranges model access. Keyless Workload Identity direct access (ADR-064) is the default guest model path for all ranges including CTF ranges. The deployment-owned broker is an LLM gateway built in-house whose mandatory-enforcement posture, plus a bespoke zero-trust rotating-credential model, blocked basic range-to-model flows (GCE provisioning outlasts the membership freshness window; capacity, enrollment, and per-event bindings are not turnkey). The broker is no longer the strategic enforcement mechanism: investment in hardening its mandatory-enforcement, freshness, and membership machinery stops, and it is retained only as a compatibility and opt-in path pending migration. The strategic optional-enforcement path is a mature, self-hosted LLM gateway (LiteLLM primary candidate) evaluated and adopted under #2411 as part of the AI Gateway milestone #2274. This supersedes the mandatory-enforcement posture of ADR-059 and complements ADR-064.",
+    "rules": [
+      {
+        "id": "ADR-067-R1",
+        "description": "Model access must be reachable by ranges without an enforcing gateway; enforcement is opt-in per deployment. Keyless Workload Identity direct access (ADR-064) is the default guest model path. A deployment that has not opted into enforcement must not require the broker for a range to reach approved models.",
+        "checks": []
+      },
+      {
+        "id": "ADR-067-R2",
+        "description": "No new work hardens the bespoke broker's mandatory-enforcement, membership-projection, credential-freshness, quota-observation, or per-event sharing-binding machinery. The strategic optional-enforcement path is the adopted mature LLM gateway (#2411, AI Gateway milestone #2274); the broker is compatibility and opt-in only. The credential-lifetime correction (credential lives for the range session, not the membership freshness window) remains valid for deployments still running the broker in transition.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2411",
+      "docs/adr/067-model-access-enforcement-optional.md",
+      "docs/adr/064-default-range-model-access.md",
+      "docs/adr/059-range-model-access-broker.md"
+    ]
   }
 ]
