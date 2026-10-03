@@ -2357,6 +2357,7 @@ jobs:
             if ! osv-scanner scan source \
               --experimental-no-default-plugins \
               --experimental-plugins lockfile \
+              --config="${GITHUB_WORKSPACE}/osv-scanner.toml" \
               --lockfile="${lockfile}" \
               --format sarif \
               --output-file "${sarif_out}"; then
