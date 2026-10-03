@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -252,5 +253,10 @@ def apply_raes_ec2_range(
         }
         return result
     except Exception:
-        destroy_raes_ec2_range(request_id, range_id, plan, options)
+        # Compensate the failed launch, but never let a teardown failure mask the
+        # original provision error (a `raise ... from None` in the cleanup path
+        # otherwise suppresses it). The cleanup failure still surfaces on the
+        # explicit destroy path; the original error is what must propagate here.
+        with contextlib.suppress(Exception):
+            destroy_raes_ec2_range(request_id, range_id, plan, options)
         raise
