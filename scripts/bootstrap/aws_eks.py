@@ -1290,7 +1290,7 @@ def _sync_guacamole_runtime_secret(
     this Secret via envFrom; the values are the Terraform-generated guacamole_admin
     credentials and the shared JSON-auth signing key (also hydrated by the portal as
     GUACAMOLE_JSON_AUTH_SECRET). Mirrors GCP's sync_gcp_guacamole_runtime_secret; the
-    manifest moves through a 0600 temp file so values never reach argv or the log.
+    manifest is streamed to kubectl over stdin so values never reach disk, argv or the log.
     """
     db_arn, json_arn = _guacamole_secret_arns(outputs)
     db_payload = json.loads(_read_secret_string(db_arn, region=region, aws_profile=aws_profile))
@@ -1310,15 +1310,12 @@ def _sync_guacamole_runtime_secret(
             "JSON_SECRET_KEY": json_auth,
         },
     }
-    handle, path = tempfile.mkstemp(suffix="-guacamole-runtime.json")
-    os.close(handle)
-    try:
-        secret_file = Path(path)
-        secret_file.chmod(0o600)
-        secret_file.write_text(json.dumps(manifest), encoding="utf-8")
-        run_cmd(["kubectl", "apply", "-f", str(path)])
-    finally:
-        Path(path).unlink(missing_ok=True)
+    return_code = run_cmd_secret_stdin(
+        ["kubectl", "apply", "-f", "-"],
+        secret_stdin=json.dumps(manifest),
+    )
+    if return_code != 0:
+        raise RuntimeError("failed to apply the guacamole runtime Secret")
 
 
 def _guacamole_provision_secret_arns(outputs: Mapping[str, object]) -> dict[str, str]:
@@ -1896,14 +1893,16 @@ def _run_database_migrations(values: Mapping[str, object]) -> None:
     job = _migration_job(platform_image)
     # A completed Job's pod template is immutable, so clear any prior run first.
     _delete_migration_job()
+    # Stream the manifests to kubectl over stdin rather than a temp file: the
+    # platform-runtime ConfigMap carries the APP_SECRET_ID/DB_SECRET_ID references,
+    # so no secret-bearing manifest is written to disk.
     for manifest in (prerequisites, job):
-        handle, path = tempfile.mkstemp(suffix="-platform-migrate.json")
-        os.close(handle)
-        try:
-            Path(path).write_text(json.dumps(manifest), encoding="utf-8")
-            run_cmd(["kubectl", "apply", "-f", str(path)])
-        finally:
-            Path(path).unlink(missing_ok=True)
+        return_code = run_cmd_secret_stdin(
+            ["kubectl", "apply", "-f", "-"],
+            secret_stdin=json.dumps(manifest),
+        )
+        if return_code != 0:
+            raise RuntimeError("platform database migration prerequisites/Job apply failed")
 
     waited = run_cmd(
         [

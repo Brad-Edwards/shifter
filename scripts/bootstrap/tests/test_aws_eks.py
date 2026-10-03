@@ -595,18 +595,26 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         if cmd[:3] == ["aws", "eks", "wait"] and "--addon-name" in cmd
     }
     assert waited_addons == expected_addons
-    # Two platform-namespace manifests, three guacamole manifests (the guacamole-runtime
-    # Secret, the provisioner ServiceAccount, and the provisioner Job), and two migration
-    # manifests (the migrator SA + platform-runtime ConfigMap prerequisites List, and the
-    # migration Job) are applied before the chart install.
-    assert sum(cmd[:3] == ["kubectl", "apply", "-f"] for cmd in calls) == 7
+    # On-disk `kubectl apply -f <file>` carries only non-secret manifests (two
+    # platform-namespace manifests + the guacamole provisioner ServiceAccount and Job).
+    assert sum(cmd[:3] == ["kubectl", "apply", "-f"] for cmd in calls) == 4
+    # Secret- and reference-bearing manifests are streamed to kubectl over stdin, never
+    # written to disk (#1826 CodeQL clear-text-storage fix): the guacamole-runtime Secret
+    # and the migration prerequisites + Job all go through `kubectl apply -f -`.
+    stdin_applied = [
+        json.loads(secret_stdin)
+        for cmd, secret_stdin in secret_stdin_calls
+        if cmd[:4] == ["kubectl", "apply", "-f", "-"]
+    ]
+    assert any(m.get("kind") == "Secret" for m in stdin_applied)  # guacamole-runtime Secret, via stdin
+    assert not any(m.get("kind") == "Secret" for m in manifests)  # never written to a temp file
     # The dedicated pre-helm migration Job (#1826) runs the single schema migration +
     # content bootstrap, is awaited to completion, and is deleted afterward.
     assert any(cmd[:2] == ["kubectl", "wait"] and f"job/{aws_eks._MIGRATION_JOB}" in cmd for cmd in calls)
     assert any(cmd[:4] == ["kubectl", "delete", "job", aws_eks._MIGRATION_JOB] for cmd in calls)
     migration_manifests = [
         m
-        for m in manifests
+        for m in stdin_applied
         if m.get("kind") == "List"
         and any(item.get("metadata", {}).get("name") == "platform-runtime" for item in m.get("items", []))
     ]
@@ -625,7 +633,7 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     assert migration_cfg["APP_SECRET_ID"] and migration_cfg["DB_SECRET_ID"]
     # The Job overrides SKIP_MIGRATIONS to "" so the entrypoint migrates once.
     migrate_job = next(
-        m for m in manifests if m.get("kind") == "Job" and m["metadata"]["name"] == aws_eks._MIGRATION_JOB
+        m for m in stdin_applied if m.get("kind") == "Job" and m["metadata"]["name"] == aws_eks._MIGRATION_JOB
     )
     job_env = {e["name"]: e.get("value") for e in migrate_job["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert job_env["SKIP_MIGRATIONS"] == ""
@@ -675,8 +683,13 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         cmd[:4] == ["helm", "upgrade", "--install", "shifter"] and {"--atomic", "--wait", "--values", "-"} <= set(cmd)
         for cmd, _values in secret_stdin_calls
     )
-    assert len(secret_stdin_calls) == 3
-    assert all('"secretReferences"' in values for _cmd, values in secret_stdin_calls)
+    helm_values_calls = [values for cmd, values in secret_stdin_calls if "--values" in cmd]
+    apply_stdin_calls = [values for cmd, values in secret_stdin_calls if cmd[:4] == ["kubectl", "apply", "-f", "-"]]
+    assert len(helm_values_calls) == 3  # helm lint + template + upgrade --install, values over stdin
+    assert len(apply_stdin_calls) == 3  # guacamole-runtime Secret + migration prerequisites + Job, over stdin
+    # Helm values stream the secret references over stdin, never argv or disk.
+    assert all('"secretReferences"' in values for values in helm_values_calls)
+    # Secret references never reach run_cmd argv (they flow only through the stdin path).
     assert not any("shifter/dev/app" in token for call in calls for token in call)
     assert not any("destroy" in cmd for cmd in calls)
     irsa_verify.assert_called_once()
