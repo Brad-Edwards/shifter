@@ -115,7 +115,6 @@ def _log_violation(request: HttpRequest, body: dict[str, object]) -> None:
             "csp_disposition": safe_disposition,
             "csp_blocked_origin": safe_blocked,
             "csp_document_origin": safe_document,
-            "request": request,
         },
     )
 
