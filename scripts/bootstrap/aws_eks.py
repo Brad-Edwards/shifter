@@ -280,7 +280,15 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
         # silently dropped), mirroring the GCP renderer's empty-tfvar fallback; a
         # provider backend (e.g. django-ses) is a follow-up once SES is provisioned.
         "EMAIL_BACKEND": _CONSOLE_EMAIL_BACKEND,
+        # The Django runtime mode (development/production); keyed by Django settings.
         "ENVIRONMENT": _runtime_environment(config.deployment.profile),
+        # The AWS infrastructure environment name (dev/proof/prod) used by the
+        # standalone provisioner to tag and scope range resources. It must equal the
+        # Terraform/IAM environment (local.environment == the deployment profile), not
+        # the Django ENVIRONMENT (development/production): the provisioner-iam tag
+        # conditions and resource/secret ARNs are all keyed on this name, so tagging a
+        # range resource with the Django value would be IAM-denied (#1826).
+        "DEPLOYMENT_ENVIRONMENT": config.deployment.profile,
         # Schema migrations run once in the dedicated pre-helm migration Job
         # (_run_database_migrations), so every deployed pod skips them on startup.
         # Per-pod migrations made the launcher's startup exceed its liveness window

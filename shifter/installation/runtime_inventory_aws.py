@@ -79,6 +79,11 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "AUDIT_DEPLOYMENT_SCOPE",
         "AUTH_PROVIDER",
         "CLOUD_PROVIDER",
+        # The AWS infrastructure environment name (dev/proof/prod), equal to the
+        # Terraform/IAM environment. The standalone provisioner tags and scopes range
+        # resources with this (not the Django ENVIRONMENT=development/production), so it
+        # matches the provisioner-iam tag conditions and resource/secret ARNs (#1826).
+        "DEPLOYMENT_ENVIRONMENT",
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
         # ENGINE_TASK_IMAGE is generated from the attested provisioner image
@@ -139,6 +144,7 @@ AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "MODEL_ENROLLMENT_CA_PEM_B64",
         "CLOUD_PROVIDER",
         "ENVIRONMENT",
+        "DEPLOYMENT_ENVIRONMENT",
         "AWS_REGION",
         "SECRETS_KMS_KEY_ARN",
         "DB_HOST",
