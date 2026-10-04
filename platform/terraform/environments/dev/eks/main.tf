@@ -67,7 +67,9 @@ module "eks" {
       service_account = "portal"
       policy_arns     = []
       secret_names    = local.secret_names
-      rds_iam_db_user = "portal_runtime"
+      # Broker participant SSH/RDP connections to realized range guests (#1826).
+      range_participant_secret_read = true
+      rds_iam_db_user               = "portal_runtime"
       object_read_arns = (
         var.ctf_content_bucket_arn == ""
         ? []
