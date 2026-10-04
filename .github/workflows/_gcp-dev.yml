@@ -442,6 +442,33 @@ jobs:
               -var-file="${RANGE_EGRESS_TFVARS_FILE}" \
               "${addr}" "${GCP_PROJECT_ID}"
           fi
+      - name: Release a disabled model broker's load balancer before Terraform
+        # The broker's internal LoadBalancer Service holds the Terraform-owned
+        # broker VIP address. Removal runs in the reverse of creation order: when
+        # the reviewed config disables the broker, delete that Service first so
+        # Terraform can release the address. The remaining broker objects are
+        # retired by the deploy job. A first deploy has no cluster and no Service.
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          set -euo pipefail
+          enabled="$(uv run --project "${GITHUB_WORKSPACE}/scripts/gcp" python -c '
+          import sys, yaml
+          settings = (yaml.safe_load(open(sys.argv[1])) or {}).get("settings") or {}
+          print("true" if (settings.get("model_broker") or {}).get("enabled") is True else "false")
+          ' "${RUNNER_TEMP}/shifter.yaml")"
+          if [ "${enabled}" = true ]; then
+            exit 0
+          fi
+          cluster="shifter-${GCP_ENVIRONMENT}-gke"
+          if ! gcloud container fleet memberships describe "${cluster}" \
+            --location "${GCP_REGION}" --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gcloud container fleet memberships get-credentials "${cluster}" \
+            --location "${GCP_REGION}" --project "${GCP_PROJECT_ID}"
+          kubectl delete service model-broker -n shifter-platform --ignore-not-found --wait=true --timeout=300s
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
