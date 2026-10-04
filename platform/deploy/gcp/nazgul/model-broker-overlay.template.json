@@ -68,7 +68,7 @@
         "contract_version": "model-access-policy/v3",
         "deployment_id": "41f80ac5-98f0-5e9e-bddb-a5555b5e75a1",
         "digest": "__CATALOG_DIGEST__",
-        "enabled": true,
+        "enabled": false,
         "price_schedules": [
           {
             "currency": "USD",
@@ -283,14 +283,14 @@
           }
         ]
       },
-      "enabled": true
+      "enabled": false
     },
     "model_broker": {
       "admitted_subnets": [
         "10.50.0.0/16"
       ],
       "control_tls_secret_name": "model-control-tls-v1",
-      "enabled": true,
+      "enabled": false,
       "global_access": false,
       "hostname": "models.nazgul.internal",
       "model_projects": {
