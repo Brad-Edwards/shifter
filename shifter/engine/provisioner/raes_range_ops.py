@@ -277,16 +277,27 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         logger.error("RAES range provision failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
         raise
-    _report(ref, operation, ResultStep.RAES_PROVISION_SNAPSHOT, {"resources": resources})
-    # The realized member/access projection rides the terminal result itself, so
-    # the Engine validates it and transitions READY in one transaction against
-    # this generation's own state (#1710, ADR-032-R10).
-    _report(
-        ref,
-        operation,
-        ResultStep.RAES_TERMINAL_READY,
-        {"raes_status": "succeeded", "members": members, "completion": completion},
-    )
+    try:
+        _report(ref, operation, ResultStep.RAES_PROVISION_SNAPSHOT, {"resources": resources})
+        # The realized member/access projection rides the terminal result itself, so
+        # the Engine validates it and transitions READY in one transaction against
+        # this generation's own state (#1710, ADR-032-R10).
+        _report(
+            ref,
+            operation,
+            ResultStep.RAES_TERMINAL_READY,
+            {"raes_status": "succeeded", "members": members, "completion": completion},
+        )
+    except Exception as exc:
+        # The appends validate the result contract. A rejected realized result must
+        # still end the generation with a terminal failure; otherwise the range stays
+        # PROVISIONING indefinitely and occupies the owner's active-range slot. The
+        # cloud resources are realized, so allocations are not released here: the
+        # failed range is torn down through the normal destroy operation.
+        reason_code, diagnostic = _classify_failure(exc, "raes range provision result")
+        logger.error("RAES range provision result was rejected for request_id=%s", request_id)
+        _report_failure(ref, operation, diagnostic, reason_code)
+        raise
 
 
 def _release_failed_provision_allocation(
