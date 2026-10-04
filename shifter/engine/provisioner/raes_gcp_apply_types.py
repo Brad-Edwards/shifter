@@ -18,7 +18,7 @@ from raes_preconfigured_host_readiness import verify_preconfigured_hosts
 from raes_substrate_observation import observe_gce_substrates
 
 if TYPE_CHECKING:
-    from raes_gcp_plan import RaesGceRemoteAccess
+    from raes_gcp_vpn_plan import RaesGceRemoteAccess
 
 
 class RaesGceOpenVpn(Protocol):

@@ -12,16 +12,16 @@ consumer reports verified cleanup, prunes retry evidence, or releases capacity.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from config import GCERangeCellConfig, load_gce_range_cell_config
+from config import load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _get_or_none
-from raes_gcp_destroy import _default_destroy_profile
-from raes_gcp_plan import RaesGcePlanOptions, RaesGceRemoteAccess, build_raes_range_cell_plan
+from raes_gcp_destroy import RaesGceDestroyOptions, _default_destroy_profile
+from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_plan import RaesPlan
 
 __all__ = ["INCOMPLETE", "RESIDUALS_FOUND", "VERIFIED_ABSENT", "inventory_raes_range_cell"]
@@ -53,22 +53,20 @@ def inventory_raes_range_cell(
     request_uuid: str,
     range_id: int,
     raes_plan: RaesPlan,
-    config: GCERangeCellConfig | None = None,
-    clients: GCEClients | None = None,
-    allocated_network_cidrs: Sequence[tuple[str, str]] | None = None,
-    reconstruct_without_allocation: bool = False,
-    remote_access: RaesGceRemoteAccess | None = None,
+    options: RaesGceDestroyOptions | None = None,
 ) -> dict[str, Any]:
     """Inventory the RAES range cell's owned resources after teardown.
 
     Returns a dict ``{outcome, residual_categories, scope}`` suitable for the
-    terminal destroy result payload. Rebuilds the plan the same way destroy does
-    (names only), then GETs each owned resource. No observation timestamp is
-    carried in the payload -- it would make the digested terminal result differ on
-    redelivery; the Engine applier stamps the observation time from the result row.
+    terminal destroy result payload. ``options`` are the destroy's own options:
+    the plan is rebuilt exactly as destroy rebuilt it (names only), then each owned
+    resource is read back. No observation timestamp is carried in the payload --
+    it would make the digested terminal result differ on redelivery; the Engine
+    applier stamps the observation time from the result row.
     """
-    resolved_config = config or load_gce_range_cell_config()
-    resolved_clients = clients or _build_clients()
+    resolved_options = options or RaesGceDestroyOptions()
+    resolved_config = resolved_options.config or load_gce_range_cell_config()
+    resolved_clients = resolved_options.clients or _build_clients()
     plan = build_raes_range_cell_plan(
         request_uuid,
         range_id,
@@ -76,9 +74,9 @@ def inventory_raes_range_cell(
         _default_destroy_profile,
         RaesGcePlanOptions(
             config=resolved_config,
-            allocated_network_cidrs=allocated_network_cidrs,
-            reconstruct_for_teardown=reconstruct_without_allocation,
-            remote_access=remote_access,
+            allocated_network_cidrs=resolved_options.allocated_network_cidrs,
+            reconstruct_for_teardown=resolved_options.reconstruct_without_allocation,
+            remote_access=resolved_options.remote_access,
         ),
     )
 

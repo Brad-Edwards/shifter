@@ -32,7 +32,8 @@ from raes_gcp_apply import (
 )
 from raes_gcp_composition import RaesGceCompositionError
 from raes_gcp_firewall import node_tag
-from raes_gcp_plan import RaesGcePlanError, RaesGceRemoteAccess, build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanError, build_raes_range_cell_plan
+from raes_gcp_vpn_plan import RaesGceRemoteAccess
 from raes_plan import (
     RaesPlan,
     RaesPlanAccount,
@@ -1714,10 +1715,12 @@ class TestOpenVpnGateway:
                 "11111111-2222-3333-4444-555555555555",
                 7,
                 _access_plan(),
-                config=_vpn_config(),
-                clients=_clients(exists=True),
-                allocated_network_cidrs=(("net.lan", "10.9.0.0/24"),),
-                remote_access=remote_access,
+                RaesGceDestroyOptions(
+                    config=_vpn_config(),
+                    clients=_clients(exists=True),
+                    allocated_network_cidrs=(("net.lan", "10.9.0.0/24"),),
+                    remote_access=remote_access,
+                ),
             )
             return {row["category"]: row["count"] for row in report["residual_categories"]}["instances"]
 

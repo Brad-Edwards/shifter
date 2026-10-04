@@ -44,7 +44,6 @@ from gcp_range_cells import (
     _ensure_attached_disks_auto_delete,
     _ensure_firewall,
     _ensure_network,
-    _ensure_openvpn_gateway,
     _ensure_router_nat,
     _ensure_subnetwork,
     _host_public_key_from_instance,
@@ -63,9 +62,10 @@ from raes_gcp_apply_types import RaesGceApplyOptions, RaesGceApplyRuntime
 from raes_gcp_attempt_cleanup import _cleanup_created_resources
 from raes_gcp_composition import node_bootstrap_script
 from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
-from raes_gcp_plan import RaesGcePlanOptions, RaesGceRemoteAccess, build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_gcp_verification import _verify_raes_apply
+from raes_gcp_vpn_apply import ensure_vpn_gateway, publish_vpn_access, remote_access_plan
 from raes_guest_plan import (
     _access_by_node,
     _accounts_by_node,
@@ -120,29 +120,6 @@ def _apply_runtime(
         model_enrollment=options.model_enrollment,
         openvpn=options.openvpn,
     )
-
-
-def _ensure_vpn_gateway(plan: RangeCellPlan, runtime: RaesGceApplyRuntime) -> ResourceDict | None:
-    """Create the participant OpenVPN gateway when this generation realizes one (#2030).
-
-    Called right after the hosts exist, so the gateway boots while the range is
-    verified; :func:`_publish_vpn_access` probes it afterwards.
-    """
-    if runtime.openvpn is None:
-        return None
-    return _ensure_openvpn_gateway(plan, runtime.clients, runtime.config)
-
-
-def _publish_vpn_access(runtime: RaesGceApplyRuntime, gateway: ResourceDict | None) -> dict[str, Any]:
-    """Verify the gateway and publish the profile; return the result fragment."""
-    if runtime.openvpn is None:
-        return {}
-    return {"vpn_access": runtime.openvpn.publish(gateway)}
-
-
-def _remote_access_plan(options: RaesGceApplyOptions) -> RaesGceRemoteAccess | None:
-    """Return the gateway planning inputs for a realizing apply, if any."""
-    return options.openvpn.plan_remote_access() if options.openvpn is not None else None
 
 
 def _assert_content_delivery_bindings_complete(
@@ -384,7 +361,7 @@ def _prepare_raes_apply(
             access_bindings=realized_access,
             egress_policy=GceEgressPolicy(mode=options.egress_mode, model_broker=options.model_broker),
             allocated_network_cidrs=options.allocated_network_cidrs,
-            remote_access=_remote_access_plan(options),
+            remote_access=remote_access_plan(options),
         ),
     )
     for instance in plan["instances"]:
@@ -473,9 +450,9 @@ def apply_raes_range_cell(
             _access_by_node(realized_access),
             created,
         )
-        vpn_gateway = _ensure_vpn_gateway(plan, runtime)
+        vpn_gateway = ensure_vpn_gateway(plan, runtime)
         verified_observations = _verify_raes_apply(plan, raes_plan, instance_outputs, delivery_bindings, runtime)
-        vpn_access = _publish_vpn_access(runtime, vpn_gateway)
+        vpn_access = publish_vpn_access(runtime, vpn_gateway)
     except GCEInstanceBindingError:
         # A conflicting VM is not ours to delete, even if a race placed it
         # after the read-only preflight and some network resources were made.

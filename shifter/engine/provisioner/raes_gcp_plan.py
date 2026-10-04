@@ -33,7 +33,7 @@ from config import (
     gce_image_profile_fingerprint,
     load_gce_range_cell_config,
 )
-from gcp_range_cell_firewall import PARTICIPANT_CHANNEL_PORTS, build_firewall_plan
+from gcp_range_cell_firewall import build_firewall_plan
 from gcp_range_cell_naming import (
     _network_name_from_id,
     _network_self_link,
@@ -44,7 +44,7 @@ from gcp_range_cell_naming import (
     range_router_nat_plan,
     shared_router_nat_plan,
 )
-from gcp_range_cell_plan import _openvpn_gateway_plan, _range_labels
+from gcp_range_cell_plan import _range_labels
 from gcp_range_cell_types import (
     DEFAULT_GCE_EGRESS_POLICY,
     FirewallPlan,
@@ -67,6 +67,7 @@ from raes_gcp_firewall import (
     service_base_priority,
 )
 from raes_gcp_plan_errors import RaesGcePlanError
+from raes_gcp_vpn_plan import RaesGceRemoteAccess, vpn_gateway_plan
 from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 
 #: Default guest login user the provisioner injects (management reachability). The
@@ -80,24 +81,6 @@ _DEFAULT_SSH_USERNAME = "raes"
 #: guest setup connects as the built-in domain "Administrator". Mirrors the legacy
 #: get_ssh_username(role="dc") host access on the RAES-native path.
 _WINDOWS_DC_ADMIN_USERNAME = "Administrator"
-
-
-@dataclass(frozen=True)
-class RaesGceRemoteAccess:
-    """The range's OpenVPN gateway planning inputs (ADR-039-R10, #2030).
-
-    ``server_secret_ref`` is the exact identity secret the gateway reads. It is
-    present only when the plan realizes the gateway; destroy and inventory plan
-    resource names only and leave it empty.
-    """
-
-    target_ref: str
-    gateway_pool_slot: int
-    server_secret_ref: str = ""
-
-    def names_only(self) -> RaesGceRemoteAccess:
-        """Return the inputs destroy and inventory need: resource names, no identity secret."""
-        return RaesGceRemoteAccess(target_ref=self.target_ref, gateway_pool_slot=self.gateway_pool_slot)
 
 
 @dataclass(frozen=True)
@@ -190,7 +173,7 @@ def build_raes_range_cell_plan(
             )
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
-    vpn_gateway = _vpn_gateway_plan(
+    vpn_gateway = vpn_gateway_plan(
         range_id, instance_plans, subnet_plans, resolved_config, resolved_options.remote_access
     )
 
@@ -251,42 +234,6 @@ def _plan_options(
         ),
         reconstruct_for_teardown=cast(bool, legacy.get("reconstruct_for_teardown", resolved.reconstruct_for_teardown)),
     )
-
-
-def _vpn_gateway_plan(
-    range_id: int,
-    instance_plans: list[InstancePlan],
-    subnet_plans: list[SubnetPlan],
-    config: GCERangeCellConfig,
-    remote_access: RaesGceRemoteAccess | None,
-) -> OpenVpnGatewayPlan | None:
-    """Plan the OpenVPN gateway beside the authorized member (ADR-039-R10, #2030).
-
-    The gateway forwards only the target's declared participant channels, so the
-    tunnel reaches exactly what portal access reaches and nothing else.
-    """
-    if remote_access is None:
-        return None
-    realizing = bool(remote_access.server_secret_ref)
-    target = next((instance for instance in instance_plans if instance["uuid"] == remote_access.target_ref), None)
-    channels = target.get("participant_access_channels", []) if target is not None else []
-    ports = sorted({PARTICIPANT_CHANNEL_PORTS[channel] for channel in channels}, key=int)
-    if realizing and not ports:
-        raise RaesGcePlanError("the OpenVPN target declares no participant channel to forward")
-    try:
-        return _openvpn_gateway_plan(
-            range_id,
-            remote_access.gateway_pool_slot,
-            instance_plans,
-            subnet_plans,
-            config,
-            {"target_ref": remote_access.target_ref},
-            require_provision_values=realizing,
-            target_ports=ports,
-            server_secret_ref=remote_access.server_secret_ref,
-        )
-    except RuntimeError as exc:
-        raise RaesGcePlanError(str(exc)) from None
 
 
 def _all_firewalls(
