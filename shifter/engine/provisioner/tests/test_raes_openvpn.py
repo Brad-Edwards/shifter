@@ -23,7 +23,7 @@ from shared.remote_access import build_openvpn_capability
 
 import raes_openvpn
 from raes_gcp_network_allocation import RaesRealizationError
-from raes_gcp_plan import RaesGceRemoteAccess
+from raes_gcp_vpn_plan import RaesGceRemoteAccess
 
 _REQUEST_ID = "11111111-2222-3333-4444-555555555555"
 _TARGET = "provision.node.kali#0"

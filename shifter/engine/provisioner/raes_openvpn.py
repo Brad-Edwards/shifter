@@ -14,12 +14,13 @@ gateway that never becomes ready is cleaned up with the rest of the attempt.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from shared.raes.operation_input import RaesRemoteAccess
 
 from raes_gcp_network_allocation import RaesRealizationError
-from raes_gcp_plan import RaesGceRemoteAccess
+from raes_gcp_vpn_plan import RaesGceRemoteAccess
 from raes_plan import RaesPlan
 from vpn_access import (
     OpenVpnPreparation,
@@ -31,7 +32,16 @@ from vpn_access import (
 )
 from vpn_secrets import GCPVpnSecretOps, openvpn_access_enabled
 
-__all__ = ["RaesOpenVpnSession", "cleanup_raes_openvpn", "names_only_remote_access", "prepare_raes_openvpn"]
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "RaesOpenVpnSession",
+    "cleanup_failed_provision_openvpn",
+    "cleanup_raes_openvpn",
+    "names_only_remote_access",
+    "prepare_raes_openvpn",
+    "vpn_access_fragment",
+]
 
 
 @dataclass(frozen=True)
@@ -105,3 +115,16 @@ def cleanup_raes_openvpn(request_id: str, range_id: int, remote_access: RaesRemo
     if remote_access is None:
         return
     cleanup_openvpn_access(range_id, request_id, _secret_ops(remote_access))
+
+
+def cleanup_failed_provision_openvpn(request_id: str, range_id: int, remote_access: RaesRemoteAccess | None) -> None:
+    """Delete a failed provision's credentials without masking the provision's failure."""
+    try:
+        cleanup_raes_openvpn(request_id, range_id, remote_access)
+    except Exception:
+        logger.exception("RAES OpenVPN credential cleanup failed for request_id=%s", request_id)
+
+
+def vpn_access_fragment(vpn_access: object) -> dict[str, object]:
+    """Return the terminal-result ``vpn_access`` fragment when a realization exists."""
+    return {"vpn_access": vpn_access} if vpn_access is not None else {}

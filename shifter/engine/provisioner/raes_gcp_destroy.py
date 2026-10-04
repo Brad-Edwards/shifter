@@ -35,8 +35,9 @@ from raes_active_directory import (
     default_directory_secret_ops,
     delete_raes_directory_secrets,
 )
-from raes_gcp_plan import RaesGcePlanOptions, RaesGceRemoteAccess, build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
+from raes_gcp_vpn_plan import RaesGceRemoteAccess
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
 
 __all__ = ["RaesGceDestroyOptions", "destroy_raes_range_cell"]

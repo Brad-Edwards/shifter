@@ -39,6 +39,7 @@ from shared.operation_results import ResultStep, range_status_for
 from shared.raes.status import RAES_STATE_FAILED
 
 from ._operation_apply_effects import _audit, _enqueue_range_status_event, _save_status, _terminal_timestamps
+from ._operation_apply_vpn import bound_vpn_access
 
 if TYPE_CHECKING:
     from engine.models import OperationResultInbox, Range, WarmRangeGeneration
@@ -221,7 +222,7 @@ def _apply_ready_with_realized_access(
     range_obj.provisioned_instances = [
         _provisioned_instance(member, range_obj.range_backend or "gce") for member in members
     ]
-    range_obj.vpn_access_binding = _bound_vpn_access(row, payload.get("vpn_access"), range_obj)
+    range_obj.vpn_access_binding = bound_vpn_access(row, payload.get("vpn_access"), range_obj)
     range_obj.save(update_fields=["provisioned_instances", "vpn_access_binding", "updated_at"])
     logger.info(
         "raes realized access applied: request_id=%s members=%d",
@@ -229,33 +230,6 @@ def _apply_ready_with_realized_access(
         len(members),
     )
     return _apply_observation(row, ResultStep.RAES_TERMINAL_READY, payload, range_obj)
-
-
-def _bound_vpn_access(
-    row: OperationResultInbox, realization: dict[str, Any] | None, range_obj: Range
-) -> dict[str, object] | None:
-    """Bind this generation's realized OpenVPN gateway to the range owner (#2030).
-
-    The realization is owner-free by contract (ADR-043): ownership is read here
-    from the locked range row, so a warm claim's rehomed owner is the one bound.
-    A range holding a capability must report exactly its authorized gateway, and a
-    range without one must report none.
-    """
-    from shared.remote_access import OpenVpnBindingError, bind_openvpn_realization, parse_openvpn_capability
-
-    capability = range_obj.remote_access_capability
-    if capability is None and realization is None:
-        return None
-    if capability is None or realization is None:
-        raise RaesRealizedAccessError("raes realized OpenVPN access does not match the range capability")
-    try:
-        authorized = parse_openvpn_capability(capability)
-        binding = bind_openvpn_realization(realization, range_obj.user_id)
-    except OpenVpnBindingError:
-        raise RaesRealizedAccessError("raes realized OpenVPN access is invalid") from None
-    if binding["target_ref"] != authorized.target_ref or binding["generation"] != str(row.request_id):
-        raise RaesRealizedAccessError("raes realized OpenVPN access does not match the authorized generation")
-    return binding
 
 
 def _generation_cancelled(row: OperationResultInbox) -> bool:

@@ -553,9 +553,8 @@ class TestDestroy:
         assert patched.destroy.call_args.args[3].allocated_network_cidrs == (
             (raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS, "10.90.0.0/28"),
         )
-        assert patched.inventory.call_args.kwargs["allocated_network_cidrs"] == (
-            (raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS, "10.90.0.0/28"),
-        )
+        # Inventory reads back exactly what destroy reconstructed.
+        assert patched.inventory.call_args.args[3] is patched.destroy.call_args.args[3]
         patched.release_subnet.assert_called_once_with("req-1", operation_id=_OPERATION_ID)
 
     def test_inventory_precedes_verified_allocation_release(self, patched):
@@ -833,7 +832,7 @@ class TestOpenVpnOrchestration:
             vpn.cleaned.append(args)
             raise RuntimeError("secret store unavailable")
 
-        monkeypatch.setattr(raes_range_ops, "cleanup_raes_openvpn", broken_cleanup)
+        monkeypatch.setattr("raes_openvpn.cleanup_raes_openvpn", broken_cleanup)
 
         with pytest.raises(RuntimeError, match="apply failed"):
             raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
@@ -853,11 +852,11 @@ class TestOpenVpnOrchestration:
         assert str(ResultStep.RAES_TERMINAL_FAILED) in _steps(patched)
 
     def test_destroy_removes_the_gateway_and_its_credentials_with_inventory(self, patched, vpn):
-        from raes_gcp_plan import RaesGceRemoteAccess
+        from raes_gcp_vpn_plan import RaesGceRemoteAccess
 
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
 
         names_only = RaesGceRemoteAccess("provision.node.web#0", 3)
         assert patched.destroy.call_args.args[3].remote_access == names_only
-        assert patched.inventory.call_args.kwargs["remote_access"] == names_only
+        assert patched.inventory.call_args.args[3].remote_access == names_only
         assert vpn.cleaned == [("req-1", 7, vpn.remote)]
