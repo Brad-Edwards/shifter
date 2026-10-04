@@ -17,7 +17,17 @@ def fixture():
             {"InstanceId": "i-" + "0" * 17, "VpcId": scope.vpc_id, "Tags": tags, "State": {"Name": "running"}}
         ],
         "volumes": [],
-        "interfaces": [],
+        # describe_network_interfaces returns tags under TagSet (not Tags); a
+        # correctly owned guest ENI must still be recognized as in-scope (#1826).
+        "interfaces": [
+            {
+                "NetworkInterfaceId": "eni-" + "0" * 17,
+                "VpcId": scope.vpc_id,
+                "TagSet": tags,
+                "RequesterManaged": False,
+                "Attachment": {"InstanceId": "i-" + "0" * 17},
+            }
+        ],
         "subnets": [{"SubnetId": "subnet-" + "0" * 17, "VpcId": scope.vpc_id, "Tags": tags}],
         "groups": [{"GroupId": "sg-" + "0" * 17, "VpcId": scope.vpc_id, "GroupName": "range", "Tags": tags}],
         "route_tables": [
@@ -41,7 +51,9 @@ def fixture():
         ("route_tables", "describe_route_tables", "RouteTables"),
     ):
         getattr(ec2, operation).side_effect = lambda category=category, key=key, **kw: {key: deepcopy(rows[category])}
-    ec2.terminate_instances.side_effect = lambda **kw: rows["instances"].clear()
+    # Terminating the guest releases its primary ENI (DeleteOnTermination), so the
+    # post-termination re-inventory observes neither the instance nor its interface.
+    ec2.terminate_instances.side_effect = lambda **kw: (rows["instances"].clear(), rows["interfaces"].clear())
     for category, operation in (
         ("subnets", "delete_subnet"),
         ("groups", "delete_security_group"),
@@ -84,11 +96,18 @@ def test_inventory_lookups_never_bound_describe_with_max_results():
         assert all("MaxResults" not in call.kwargs for call in describe.call_args_list)
 
 
-@pytest.mark.parametrize("drift", ["generation", "vpc", "main", "foreign_association"])
+@pytest.mark.parametrize("drift", ["generation", "interface_generation", "vpc", "main", "foreign_association"])
 def test_destroy_refuses_foreign_or_ambiguous_ownership_before_any_mutation(drift):
     scope, ec2, rows = fixture()
     if drift == "generation":
         rows["subnets"][0]["Tags"] = [
+            {"Key": key, "Value": value}
+            for key, value in (scope.tags() | {"shifter:generation": str(UUID(int=3))}).items()
+        ]
+    elif drift == "interface_generation":
+        # An ENI carrying a foreign generation must be refused: proof the ownership
+        # check reads interface tags from TagSet, not the always-absent Tags.
+        rows["interfaces"][0]["TagSet"] = [
             {"Key": key, "Value": value}
             for key, value in (scope.tags() | {"shifter:generation": str(UUID(int=3))}).items()
         ]
