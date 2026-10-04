@@ -134,11 +134,7 @@ class Ec2GuestSecrets:
                 arn = _until_visible(lambda: self._owned(name, range_id))
             else:
                 created = False
-
-            def read_value() -> object:
-                return self.client.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT").get("SecretString")
-
-            value = _until_visible(read_value) if created else read_value()
+            value = _until_visible(lambda: self._current_value(arn)) if created else self._current_value(arn)
             if not isinstance(value, str) or not 1 <= len(value.encode()) <= 65536:
                 raise Ec2SecretError("EC2 credential payload is unavailable")
             return arn, value
@@ -152,6 +148,10 @@ class Ec2GuestSecrets:
                 "EC2 credential operation failed range_id=%s kind=%s error_type=%s", range_id, kind, type(exc).__name__
             )
             raise Ec2SecretError(f"EC2 credential operation failed ({type(exc).__name__})") from None
+
+    def _current_value(self, arn: str) -> object:
+        """Return the AWSCURRENT payload of an owned secret (validated by the caller)."""
+        return self.client.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT").get("SecretString")
 
     def _create(self, name: str, range_id: int, factory: Callable[[], str]) -> None:
         """Atomically create bounded credential bytes, accepting a concurrent winner."""
