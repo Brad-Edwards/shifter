@@ -167,7 +167,16 @@ def install_instance_account_credentials(
                 # Defense in depth; the plan parser rejects this first.
                 else:
                     raise ValueError("unsupported authored-account credential strategy")
-            except Exception:
+            except Exception as exc:
+                # Type-only logging, as in _fail_credential_setup_channel: the message
+                # and traceback can carry secret material and are never recorded.
+                logger.error(
+                    "authored-account credential setup failed range_id=%s instance_key=%s auth_method=%s error_type=%s",
+                    range_id,
+                    instance_key,
+                    account.auth_method,
+                    type(exc).__name__,
+                )
                 raise RaesAccountCredentialError("failed to realize authored-account credential") from None
             secret_refs[account.address] = secret_ref
         # Process-local projection. The access publisher selects only the exact
