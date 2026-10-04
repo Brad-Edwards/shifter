@@ -27,7 +27,7 @@ from __future__ import annotations
 import base64
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
@@ -336,7 +336,8 @@ def _cleanup_failed_apply(
     runtime: RaesGceApplyRuntime,
 ) -> None:
     """Run reconstructive cleanup using the apply pass's resolved clients."""
-    remote_access = runtime.openvpn.plan_remote_access() if runtime.openvpn is not None else None
+    # Destroy reconstructs names only; the identity secret is not needed.
+    remote_access = runtime.openvpn.plan_remote_access().names_only() if runtime.openvpn is not None else None
     destroy_raes_range_cell(
         request_uuid,
         range_id,
@@ -348,8 +349,7 @@ def _cleanup_failed_apply(
             account_secret_ops=runtime.account_secret_ops,
             directory_secret_ops=runtime.directory_secret_ops,
             allocated_network_cidrs=runtime.allocated_network_cidrs,
-            # Destroy reconstructs names only; the identity secret is not needed.
-            remote_access=replace(remote_access, server_secret_ref="") if remote_access is not None else None,
+            remote_access=remote_access,
         ),
     )
 

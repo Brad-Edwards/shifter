@@ -32,7 +32,7 @@ def openvpn_deadline(backend: str | None, lease_ceiling: datetime | None) -> dat
     if (
         lease_ceiling is None
         or not getattr(settings, "RANGE_OPENVPN_ENABLED", False)
-        or str(getattr(settings, "LOCAL_PROVISIONER", "")).strip()
+        or str(getattr(settings, "LOCAL_PROVISIONER", "") or "").strip()
         or backend not in _OPENVPN_BACKENDS
     ):
         return None
