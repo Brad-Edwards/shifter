@@ -20,6 +20,7 @@ from config import load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _get_or_none
+from gcp_range_cell_types import RangeCellPlan
 from raes_gcp_destroy import RaesGceDestroyOptions, _default_destroy_profile
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_plan import RaesPlan
@@ -49,6 +50,92 @@ class _Tally:
             self.incomplete = True
 
 
+def _reconstructed_plan(
+    request_uuid: str, range_id: int, raes_plan: RaesPlan, options: RaesGceDestroyOptions
+) -> RangeCellPlan:
+    """Rebuild the plan exactly as destroy rebuilt it: resource names only."""
+    return build_raes_range_cell_plan(
+        request_uuid,
+        range_id,
+        raes_plan,
+        _default_destroy_profile,
+        RaesGcePlanOptions(
+            config=options.config or load_gce_range_cell_config(),
+            allocated_network_cidrs=options.allocated_network_cidrs,
+            reconstruct_for_teardown=options.reconstruct_without_allocation,
+            remote_access=options.remote_access,
+        ),
+    )
+
+
+def _owned_compute(plan: RangeCellPlan) -> list[tuple[str, str]]:
+    """Return every owned ``(instance, address)`` pair, the OpenVPN gateway included."""
+    owned = [(instance["resource_name"], instance["address_name"]) for instance in plan["instances"]]
+    vpn_gateway = plan.get("vpn_gateway")
+    if vpn_gateway is not None:
+        owned.append((vpn_gateway["resource_name"], vpn_gateway["address_name"]))
+    return owned
+
+
+def _check_compute(tally: _Tally, clients: GCEClients, plan: RangeCellPlan) -> None:
+    """Read back every owned instance and its address."""
+    for instance_name, address_name in _owned_compute(plan):
+        tally.check(
+            clients,
+            "instances",
+            clients.instances.get,
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=instance_name,
+        )
+        tally.check(
+            clients,
+            "addresses",
+            clients.addresses.get,
+            project=plan["project_id"],
+            region=plan["region"],
+            address=address_name,
+        )
+
+
+def _check_network(tally: _Tally, clients: GCEClients, plan: RangeCellPlan, range_id: int) -> None:
+    """Read back the owned router, firewalls, subnets, and an owned network."""
+    project = plan["project_id"]
+    router_nat = plan.get("router_nat")
+    if router_nat is not None:
+        tally.check(
+            clients,
+            "routers",
+            clients.routers.get,
+            project=project,
+            region=plan["region"],
+            router=router_nat["router_name"],
+        )
+    firewall_names = {rule["name"] for rule in plan["firewalls"]} | {broker_firewall_name(range_id)}
+    for firewall_name in sorted(firewall_names):
+        tally.check(clients, "firewalls", clients.firewalls.get, project=project, firewall=firewall_name)
+    for subnet in plan["subnets"]:
+        tally.check(
+            clients,
+            "subnets",
+            clients.subnetworks.get,
+            project=project,
+            region=plan["region"],
+            subnetwork=subnet["resource_name"],
+        )
+    if plan["manage_network"]:
+        tally.check(clients, "networks", clients.networks.get, project=project, network=plan["network"]["name"])
+
+
+def _outcome(tally: _Tally) -> str:
+    """Return the closed inventory outcome: unknown wins over residuals over absence."""
+    if tally.incomplete:
+        return INCOMPLETE
+    if tally.residuals:
+        return RESIDUALS_FOUND
+    return VERIFIED_ABSENT
+
+
 def inventory_raes_range_cell(
     request_uuid: str,
     range_id: int,
@@ -65,83 +152,14 @@ def inventory_raes_range_cell(
     applier stamps the observation time from the result row.
     """
     resolved_options = options or RaesGceDestroyOptions()
-    resolved_config = resolved_options.config or load_gce_range_cell_config()
     resolved_clients = resolved_options.clients or _build_clients()
-    plan = build_raes_range_cell_plan(
-        request_uuid,
-        range_id,
-        raes_plan,
-        _default_destroy_profile,
-        RaesGcePlanOptions(
-            config=resolved_config,
-            allocated_network_cidrs=resolved_options.allocated_network_cidrs,
-            reconstruct_for_teardown=resolved_options.reconstruct_without_allocation,
-            remote_access=resolved_options.remote_access,
-        ),
-    )
+    plan = _reconstructed_plan(request_uuid, range_id, raes_plan, resolved_options)
 
     tally = _Tally()
     project = plan["project_id"]
-    owned_compute = [(instance["resource_name"], instance["address_name"]) for instance in plan["instances"]]
-    vpn_gateway = plan.get("vpn_gateway")
-    if vpn_gateway is not None:
-        owned_compute.append((vpn_gateway["resource_name"], vpn_gateway["address_name"]))
-    for instance_name, address_name in owned_compute:
-        tally.check(
-            resolved_clients,
-            "instances",
-            resolved_clients.instances.get,
-            project=project,
-            zone=plan["zone"],
-            instance=instance_name,
-        )
-        tally.check(
-            resolved_clients,
-            "addresses",
-            resolved_clients.addresses.get,
-            project=project,
-            region=plan["region"],
-            address=address_name,
-        )
-    router_nat = plan.get("router_nat")
-    if router_nat is not None:
-        tally.check(
-            resolved_clients,
-            "routers",
-            resolved_clients.routers.get,
-            project=project,
-            region=plan["region"],
-            router=router_nat["router_name"],
-        )
-    firewall_names = {rule["name"] for rule in plan["firewalls"]} | {broker_firewall_name(range_id)}
-    for firewall_name in sorted(firewall_names):
-        tally.check(
-            resolved_clients, "firewalls", resolved_clients.firewalls.get, project=project, firewall=firewall_name
-        )
-    for subnet in plan["subnets"]:
-        tally.check(
-            resolved_clients,
-            "subnets",
-            resolved_clients.subnetworks.get,
-            project=project,
-            region=plan["region"],
-            subnetwork=subnet["resource_name"],
-        )
-    if plan["manage_network"]:
-        tally.check(
-            resolved_clients,
-            "networks",
-            resolved_clients.networks.get,
-            project=project,
-            network=plan["network"]["name"],
-        )
-
-    if tally.incomplete:
-        outcome = INCOMPLETE
-    elif tally.residuals:
-        outcome = RESIDUALS_FOUND
-    else:
-        outcome = VERIFIED_ABSENT
+    _check_compute(tally, resolved_clients, plan)
+    _check_network(tally, resolved_clients, plan, range_id)
+    outcome = _outcome(tally)
     return {
         "outcome": outcome,
         "residual_categories": [{"category": name, "count": count} for name, count in sorted(tally.residuals.items())],
