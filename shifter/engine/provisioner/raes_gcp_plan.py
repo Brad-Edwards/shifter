@@ -95,6 +95,10 @@ class RaesGceRemoteAccess:
     gateway_pool_slot: int
     server_secret_ref: str = ""
 
+    def names_only(self) -> RaesGceRemoteAccess:
+        """Return the inputs destroy and inventory need: resource names, no identity secret."""
+        return RaesGceRemoteAccess(target_ref=self.target_ref, gateway_pool_slot=self.gateway_pool_slot)
+
 
 @dataclass(frozen=True)
 class RaesGcePlanOptions:

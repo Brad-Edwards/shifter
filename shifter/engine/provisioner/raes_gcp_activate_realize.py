@@ -87,10 +87,11 @@ def realize_claimant_access_on_cell(
             compute_substrates=result["compute_substrates"],
             generation_id=str(activate_generation),
         )
+        vpn_access = result.get("vpn_access")
+        if vpn_access is not None and not isinstance(vpn_access, dict):
+            raise ActivationRealizationError("warm activation OpenVPN realization is invalid")
     except Exception as exc:
         raise ActivationRealizationError(
             f"warm activation could not realize claimant access: {type(exc).__name__}"
         ) from None
-    return ActivationResult(
-        members=_realized_members(result), completion=completion, vpn_access=result.get("vpn_access")
-    )
+    return ActivationResult(members=_realized_members(result), completion=completion, vpn_access=vpn_access)
