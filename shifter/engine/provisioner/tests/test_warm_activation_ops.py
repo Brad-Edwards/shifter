@@ -201,6 +201,47 @@ class TestRealizeClaimantAccessOnCell:
         assert snapshots == []
 
 
+class TestRealizeClaimantOpenVpn:
+    """Activation realizes the claimant's OpenVPN gateway with the cell (#2030)."""
+
+    def _patch(self, monkeypatch, result: dict) -> list:
+        seen: list = []
+        monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
+        monkeypatch.setattr(
+            raes_gcp_activate_realize,
+            "realize_access_on_existing_cell",
+            lambda *a, **k: (
+                seen.append(k["options"])
+                or {
+                    "instances": [],
+                    "composition_verified_addresses": [],
+                    "operating_systems": [],
+                    "compute_substrates": [],
+                    **result,
+                }
+            ),
+        )
+        monkeypatch.setattr(raes_gcp_activate_realize, "_realized_members", lambda result: [])
+        monkeypatch.setattr(raes_gcp_activate_realize, "snapshot_resources", lambda plan, verified: [])
+        return seen
+
+    def test_the_prepared_session_rides_the_apply_and_its_realization_returns(self, monkeypatch):
+        realization = {"generation": "g", "target_ref": "n1#0", "endpoint": "e", "port": 1194, "secret_ref": "s"}
+        seen = self._patch(monkeypatch, {"vpn_access": realization})
+        session = object()
+
+        result = raes_gcp_activate_realize.realize_claimant_access_on_cell(_activation(), uuid4(), openvpn=session)
+
+        assert seen[0].openvpn is session
+        assert result.vpn_access == realization
+
+    def test_a_malformed_realization_fails_closed(self, monkeypatch):
+        self._patch(monkeypatch, {"vpn_access": "profile"})
+        with pytest.raises(raes_gcp_activate_realize.ActivationRealizationError):
+            raes_gcp_activate_realize.realize_claimant_access_on_cell(_activation(), uuid4(), openvpn=object())
+
+
 class _FakePlan:
     content: tuple = ()
     accounts: tuple = ()
@@ -260,6 +301,38 @@ class TestRunRaesRangeActivate:
         assert ready_payload["members"] == members
         assert ready_payload["completion"] == completion
         assert ready_payload["raes_status"] == "succeeded"
+
+    def test_activation_prepares_and_reports_the_claimants_vpn(self, monkeypatch):
+        activation = _activation()
+        reports: list = []
+        _patch_activate_orchestration(monkeypatch, reports=reports, activation=activation)
+        session = object()
+        prepared: list = []
+        monkeypatch.setattr(raes_range_ops, "prepare_raes_openvpn", lambda *args: prepared.append(args) or session)
+        ops_kwargs: list = []
+        monkeypatch.setattr(
+            "raes_gcp_activate.default_activation_ops", lambda **kwargs: ops_kwargs.append(kwargs) or object()
+        )
+        monkeypatch.setattr(
+            raes_range_ops,
+            "_allocated_networks_for_destroy",
+            lambda *args: raes_range_ops._GceNetworkAllocation(required=False),
+        )
+        monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
+        monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", lambda **kwargs: object())
+        monkeypatch.setattr(raes_range_ops, "_config_for_range_placement", lambda request_id, config: config)
+        realization = {"generation": "rid", "target_ref": "n1#0", "endpoint": "e", "port": 1194, "secret_ref": "s"}
+        monkeypatch.setattr(
+            "raes_gcp_activate.activate_raes_range_cell",
+            lambda **kwargs: SimpleNamespace(members=[], completion={"resources": []}, vpn_access=realization),
+        )
+
+        raes_range_ops.run_raes_range_activate("rid")
+
+        assert prepared[0][0] == "rid"
+        assert ops_kwargs[0]["openvpn"] is session
+        ready_payload = next(payload for step, payload in reports if step is ResultStep.RAES_TERMINAL_READY)
+        assert ready_payload["vpn_access"] == realization
 
     def test_input_read_failure_reports_and_raises(self, monkeypatch):
         reports: list = []

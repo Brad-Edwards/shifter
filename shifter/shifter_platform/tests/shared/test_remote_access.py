@@ -8,10 +8,15 @@ import pytest
 from shared.remote_access import (
     TERMINAL_TARGET_PATH_RE,
     OpenVpnBindingError,
+    bind_openvpn_realization,
     build_openvpn_capability,
+    is_raes_member_target,
     parse_openvpn_binding,
     parse_openvpn_capability,
+    parse_openvpn_realization,
+    raes_member_target_ref,
     validate_openvpn_profile,
+    validate_openvpn_profile_for_endpoint,
 )
 
 
@@ -168,3 +173,58 @@ def test_profile_validator_rejects_an_endpoint_that_does_not_match_the_binding()
     profile = _profile(endpoint="other.example.test")
     with pytest.raises(OpenVpnBindingError, match="remote"):
         validate_openvpn_profile(profile, binding)
+
+
+def _realization(**overrides):
+    value = {
+        "generation": str(uuid4()),
+        "target_ref": "provision.node.kali#0",
+        "endpoint": "34.1.2.3",
+        "port": 1194,
+        "secret_ref": "projects/p/secrets/profile",
+    }
+    value.update(overrides)
+    return value
+
+
+def test_a_realization_binds_to_the_owner_the_caller_is_authoritative_for():
+    realization = _realization()
+    binding = bind_openvpn_realization(realization, 42)
+
+    parsed = parse_openvpn_binding(binding)
+    assert (parsed.owner_user_id, parsed.target_ref, parsed.ready) == (42, "provision.node.kali#0", True)
+    assert {key: binding[key] for key in realization} == parse_openvpn_realization(realization)
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        (_realization(owner_user_id=7), "unknown"),
+        ({key: val for key, val in _realization().items() if key != "secret_ref"}, "missing"),
+        (_realization(generation="not-a-uuid"), "generation"),
+        (_realization(endpoint="bad endpoint"), "endpoint"),
+    ],
+)
+def test_the_realization_parser_is_closed_and_owner_free(value, match):
+    with pytest.raises(OpenVpnBindingError, match=match):
+        parse_openvpn_realization(value)
+
+
+def test_binding_a_realization_requires_a_positive_owner():
+    with pytest.raises(OpenVpnBindingError, match="owner_user_id"):
+        bind_openvpn_realization(_realization(), 0)
+
+
+def test_raes_member_targets_are_the_single_instance_of_a_declared_node():
+    assert raes_member_target_ref("provision.node.kali") == "provision.node.kali#0"
+    assert is_raes_member_target("provision.node.kali#0") is True
+    assert is_raes_member_target(str(uuid4())) is False
+    with pytest.raises(OpenVpnBindingError, match="target_ref"):
+        raes_member_target_ref("kali")
+
+
+def test_the_endpoint_validator_admits_only_the_bound_remote():
+    profile = _profile(endpoint="34.1.2.3", port=1194)
+    assert validate_openvpn_profile_for_endpoint(profile, "34.1.2.3", 1194) == profile.encode()
+    with pytest.raises(OpenVpnBindingError, match="remote"):
+        validate_openvpn_profile_for_endpoint(profile, "34.9.9.9", 1194)
