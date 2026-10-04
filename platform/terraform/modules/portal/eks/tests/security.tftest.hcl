@@ -1,18 +1,16 @@
 override_data {
   target = data.aws_ssm_parameters_by_path.range_network
   values = {
-    names = [
-      "/shifter/test/range/vpc_id",
-      "/shifter/test/range/vpc_cidr",
-      "/shifter/test/range/private_route_table_id",
-      "/shifter/test/range/engine_secrets_kms_key_arn",
-    ]
-    values = [
-      "vpc-mock-range",
-      "10.50.0.0/16",
-      "rtb-mock-range",
-      "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets",
-    ]
+    names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
+    values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
+  }
+}
+
+# Portal Secrets Manager CMK the provisioner encrypts range guest credentials with.
+override_data {
+  target = data.aws_kms_alias.range_credential_secrets
+  values = {
+    target_key_arn = "arn:aws:kms:us-east-2:123456789012:key/mock-portal-secrets-manager"
   }
 }
 
@@ -434,11 +432,11 @@ run "security_contract" {
 
   assert {
     condition = (
-      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets" &&
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-secrets-manager" &&
       jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-2.amazonaws.com" &&
       jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringLike["kms:EncryptionContext:SecretARN"] == jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[0].Resource
     )
-    error_message = "Range-secret Decrypt must be confined to the range key, via Secrets Manager, for exactly the participant-delivery secret ARNs."
+    error_message = "Range-credential Decrypt must be confined to the key the provisioner encrypts with, via Secrets Manager, for exactly the participant-delivery secret ARNs."
   }
 
   assert {
