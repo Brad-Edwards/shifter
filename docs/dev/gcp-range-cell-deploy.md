@@ -133,8 +133,13 @@ Set the GCE range-cell variables documented in
 `docs/dev/deploy-secrets.md` ("GCE range-cell backend variables"). The
 minimum for a live range is: `RANGE_NETWORK_ZONE`, `GCP_RANGE_LINUX_IMAGE`,
 and any additional guest image profiles required by the authored topology.
-Native guests do not receive a host service account. Plugin installation and
-compatibility are separate from range readiness; see the
+By default, range guests receive a keyless, least-privilege model-access
+identity (ADR-064): the range host service account carries a predict-only Vertex
+role and the provisioner attaches it to guests through Workload Identity, with no
+key material minted or delivered. Guests stay identity-less only when the broker
+is the guest model path (`MODEL_BROKER_GUEST_VIP` set), which is optional
+(ADR-067). Plugin installation and compatibility are separate from range
+readiness; see the
 [external runtime boundary](../architecture/external-scenario-runtime-design.md).
 
 The deployment `shifter.yaml` must also set
@@ -353,15 +358,22 @@ there is no qcow2 export or CDI import.
 
 ## Service accounts
 
-Native range guests receive no platform cloud identity. Exact preconfigured
-machine-image profiles may use the bounded range-host identity pool selected by
-the range allocation slot. Pool identities have no roles by default; they are
-host-infrastructure identities, not per-range model authorization.
+By default, range guests receive a keyless, least-privilege model-access
+identity (ADR-064). On GCP the range host service account carries a predict-only
+Vertex custom role (`aiplatform.endpoints.predict`) in the platform project,
+attached to guests through Workload Identity; it is least privilege and never
+grants cloud management, project storage, secrets, another range, or the portal
+API. Exact preconfigured machine-image profiles use the bounded range-host
+identity pool selected by the range allocation slot.
 
-New ranges no longer mint provider service-account keys or copy a shared model
-key into guests. Legacy key revocation remains part of teardown. Model access
-must use the broker contract in ADR-059; adapter compatibility does not establish
-that the broker lifecycle or a particular provider has been qualified.
+The keyless-direct identity and the ADR-059 broker are mutually exclusive per
+range: when the broker is the guest model path (`MODEL_BROKER_GUEST_VIP` set) the
+provisioner leaves guests identity-less; the keyless identity is attached only
+when no broker guest path is configured. Enforcement is optional (ADR-067): no
+deployment must run the broker to give ranges model access, and keyless-direct is
+the default for all ranges, including CTF ranges. No provider service-account
+keys or shared model keys are minted into guests; legacy key revocation remains
+part of teardown.
 
 ## Baking a new pre-promoted DC image
 
