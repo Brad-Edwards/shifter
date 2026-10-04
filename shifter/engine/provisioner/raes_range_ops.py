@@ -56,6 +56,8 @@ from raes_gcp_network_allocation import (
 from raes_gcp_network_allocation import (
     allocated_networks_for_provision as _allocated_networks_for_provision,
 )
+from raes_gcp_plan import RaesGceRemoteAccess
+from raes_openvpn import cleanup_raes_openvpn, names_only_remote_access, prepare_raes_openvpn
 from raes_plan import RaesPlan, RaesPlanNode, parse_plan
 from raes_range_contract import _classify_failure, _require_gce_live_fire_binding
 from raes_range_members import realized_members as _realized_members
@@ -219,6 +221,9 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         if operation_input.range_backend == "ec2":
             from raes_ec2_runtime import provision_ec2_run
 
+            if operation_input.remote_access is not None:
+                # The EC2 range-cell gateway is #2443; never launch without it silently.
+                raise RaesRealizationError("OpenVPN access is not realized by the EC2 range backend")
             apply_result = provision_ec2_run(run, plugin_plans, enrollment)
         else:
             backend = _require_gce_live_fire_binding(operation_input)
@@ -231,6 +236,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
                 raes_plan,
                 config,
             )
+            openvpn = prepare_raes_openvpn(run.request_id, range_id, raes_plan, operation_input.remote_access)
 
             def release_pre_mutation_allocation() -> None:
                 """Release this generation's reservation before provider mutation."""
@@ -253,6 +259,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
                     on_pre_mutation_failure=(
                         release_pre_mutation_allocation if network_allocation.network_cidrs else None
                     ),
+                    openvpn=openvpn,
                 ),
                 delivery_bindings=operation_input.binding_transport(),
                 access_bindings=operation_input.access_binding_transport(),
@@ -273,6 +280,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         )
     except Exception as exc:
         _release_failed_provision_allocation(run, raes_plan, config, network_allocation, pre_mutation_release_attempted)
+        _cleanup_failed_provision_openvpn(run)
         reason_code, diagnostic = _classify_failure(exc, "raes range provision")
         logger.error("RAES range provision failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
@@ -280,13 +288,33 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
     _report(ref, operation, ResultStep.RAES_PROVISION_SNAPSHOT, {"resources": resources})
     # The realized member/access projection rides the terminal result itself, so
     # the Engine validates it and transitions READY in one transaction against
-    # this generation's own state (#1710, ADR-032-R10).
+    # this generation's own state (#1710, ADR-032-R10). So does the owner-free
+    # OpenVPN realization, which the Engine binds to the range owner (#2030).
     _report(
         ref,
         operation,
         ResultStep.RAES_TERMINAL_READY,
-        {"raes_status": "succeeded", "members": members, "completion": completion},
+        {
+            "raes_status": "succeeded",
+            "members": members,
+            "completion": completion,
+            **_vpn_access_fragment(apply_result),
+        },
     )
+
+
+def _vpn_access_fragment(result: dict[str, Any]) -> dict[str, Any]:
+    """Return the terminal-result ``vpn_access`` fragment when the apply realized one."""
+    vpn_access = result.get("vpn_access")
+    return {"vpn_access": vpn_access} if vpn_access is not None else {}
+
+
+def _cleanup_failed_provision_openvpn(run: RaesOperationRun) -> None:
+    """Delete a failed provision's OpenVPN credentials without masking its failure."""
+    try:
+        cleanup_raes_openvpn(run.request_id, run.input.legacy_range_id, run.input.remote_access)
+    except Exception:
+        logger.exception("RAES OpenVPN credential cleanup failed for request_id=%s", run.request_id)
 
 
 def _release_failed_provision_allocation(
@@ -305,7 +333,12 @@ def _release_failed_provision_allocation(
         and not pre_mutation_release_attempted
     ):
         cleanup_inventory = _raes_cleanup_inventory(
-            run.request_id, run.input.legacy_range_id, raes_plan, config, network_allocation
+            run.request_id,
+            run.input.legacy_range_id,
+            raes_plan,
+            config,
+            network_allocation,
+            names_only_remote_access(run.input.remote_access),
         )
         if cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
             _release_subnet_allocations_best_effort(run.request_id, operation_id=run.operation_id)
@@ -352,6 +385,11 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
             raes_plan,
             config,
         )
+        # The claimant's OpenVPN credentials, keyed on the range's request id like
+        # a cold provision; the warm-prepare generation never held any (#2030).
+        openvpn = prepare_raes_openvpn(
+            run.request_id, activation.legacy_range_id, raes_plan, operation_input.remote_access
+        )
         result = activate_raes_range_cell(
             activation=activation,
             prepared_generation=UUID(activation.prepared_generation_fence),
@@ -359,6 +397,7 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
             ops=default_activation_ops(
                 config=config,
                 allocated_network_cidrs=network_allocation.require_available(),
+                openvpn=openvpn,
             ),
         )
         resources = result.completion["resources"]
@@ -372,7 +411,12 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
         ref,
         operation,
         ResultStep.RAES_TERMINAL_READY,
-        {"raes_status": "succeeded", "members": result.members, "completion": result.completion},
+        {
+            "raes_status": "succeeded",
+            "members": result.members,
+            "completion": result.completion,
+            **({"vpn_access": result.vpn_access} if result.vpn_access is not None else {}),
+        },
     )
 
 
@@ -382,6 +426,7 @@ def _raes_cleanup_inventory(
     raes_plan: RaesPlan,
     config: GCERangeCellConfig,
     network_allocation: GceNetworkAllocation,
+    remote_access: RaesGceRemoteAccess | None = None,
 ) -> dict[str, Any]:
     """Inventory owned resources after a successful destroy; never fail the terminal report.
 
@@ -396,6 +441,7 @@ def _raes_cleanup_inventory(
             config=config,
             allocated_network_cidrs=network_allocation.network_cidrs or None,
             reconstruct_without_allocation=network_allocation.required and not network_allocation.network_cidrs,
+            remote_access=remote_access,
         )
     except Exception:
         logger.exception("RAES cleanup inventory failed for request_id=%s", request_id)
@@ -435,6 +481,7 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
             raes_plan,
             config,
         )
+        remote_access = names_only_remote_access(operation_input.remote_access)
         destroy_raes_range_cell(
             request_id,
             range_id,
@@ -443,8 +490,11 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
                 config=config,
                 allocated_network_cidrs=network_allocation.network_cidrs or None,
                 reconstruct_without_allocation=network_allocation.required and not network_allocation.network_cidrs,
+                remote_access=remote_access,
             ),
         )
+        # The gateway is gone; delete the generation's OpenVPN credentials (#2030).
+        cleanup_raes_openvpn(run.request_id, range_id, operation_input.remote_access)
     except Exception as exc:
         reason_code, diagnostic = _classify_failure(exc, "raes range destroy")
         logger.error("RAES range destroy failed for request_id=%s", request_id)
@@ -454,7 +504,9 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
     # this evidence, not the delete loop completing (#2086, ADR-063-R4/R5). The
     # reservation remains held until absence is proven so another range cannot
     # reuse an occupied CIDR after a partial or unreadable cleanup.
-    cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config, network_allocation)
+    cleanup_inventory = _raes_cleanup_inventory(
+        request_id, range_id, raes_plan, config, network_allocation, remote_access
+    )
     if network_allocation.network_cidrs and cleanup_inventory.get("outcome") == VERIFIED_ABSENT:
         _release_subnet_allocations_best_effort(request_id, operation_id=generation)
     _report(

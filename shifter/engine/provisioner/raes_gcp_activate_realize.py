@@ -33,6 +33,7 @@ from cloud.exceptions import CloudError
 from config import GCERangeCellConfig
 from raes_gcp_activate import ActivationResult
 from raes_gcp_apply import RaesGceApplyOptions, realize_access_on_existing_cell
+from raes_gcp_apply_types import RaesGceOpenVpn
 from raes_plan import parse_plan
 from raes_range_ops import _realized_members, _registry_resolver
 from raes_snapshot import snapshot_resources
@@ -50,6 +51,7 @@ def realize_claimant_access_on_cell(
     *,
     config: GCERangeCellConfig | None = None,
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None,
+    openvpn: RaesGceOpenVpn | None = None,
 ) -> ActivationResult:
     """Rotate credentials and realize the claimant's participant access; return members.
 
@@ -69,6 +71,7 @@ def realize_claimant_access_on_cell(
                 config=config,
                 egress_mode=operation_input.egress_mode,
                 allocated_network_cidrs=allocated_network_cidrs,
+                openvpn=openvpn,
             ),
             access_bindings=operation_input.access_binding_transport(),
             delivery_bindings=operation_input.binding_transport(),
@@ -88,4 +91,6 @@ def realize_claimant_access_on_cell(
         raise ActivationRealizationError(
             f"warm activation could not realize claimant access: {type(exc).__name__}"
         ) from None
-    return ActivationResult(members=_realized_members(result), completion=completion)
+    return ActivationResult(
+        members=_realized_members(result), completion=completion, vpn_access=result.get("vpn_access")
+    )

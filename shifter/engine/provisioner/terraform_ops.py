@@ -58,6 +58,7 @@ from vpn_access import (
     cleanup_openvpn_access,
     finalize_openvpn_access,
     prepare_openvpn_access,
+    range_spec_member_refs,
     verify_openvpn_gateway,
 )
 from vpn_secrets import get_vpn_secret_ops, openvpn_access_enabled
@@ -359,8 +360,7 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         prepare_openvpn_access(
             request_id,
             range_id,
-            user_id,
-            range_spec,
+            range_spec_member_refs(range_spec),
             remote_access_capability,
             vpn_secret_ops,
         )
@@ -405,6 +405,7 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
             vpn_preparation,
             verify_openvpn_gateway(output_data.get("vpn_gateway")),
             vpn_secret_ops,
+            owner_user_id=user_id,
         )
         if vpn_preparation is not None and vpn_secret_ops is not None
         else None

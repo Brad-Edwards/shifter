@@ -21,7 +21,7 @@ from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _get_or_none
 from raes_gcp_destroy import _default_destroy_profile
-from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
+from raes_gcp_plan import RaesGcePlanOptions, RaesGceRemoteAccess, build_raes_range_cell_plan
 from raes_plan import RaesPlan
 
 __all__ = ["INCOMPLETE", "RESIDUALS_FOUND", "VERIFIED_ABSENT", "inventory_raes_range_cell"]
@@ -57,6 +57,7 @@ def inventory_raes_range_cell(
     clients: GCEClients | None = None,
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None,
     reconstruct_without_allocation: bool = False,
+    remote_access: RaesGceRemoteAccess | None = None,
 ) -> dict[str, Any]:
     """Inventory the RAES range cell's owned resources after teardown.
 
@@ -77,19 +78,24 @@ def inventory_raes_range_cell(
             config=resolved_config,
             allocated_network_cidrs=allocated_network_cidrs,
             reconstruct_for_teardown=reconstruct_without_allocation,
+            remote_access=remote_access,
         ),
     )
 
     tally = _Tally()
     project = plan["project_id"]
-    for instance in plan["instances"]:
+    owned_compute = [(instance["resource_name"], instance["address_name"]) for instance in plan["instances"]]
+    vpn_gateway = plan.get("vpn_gateway")
+    if vpn_gateway is not None:
+        owned_compute.append((vpn_gateway["resource_name"], vpn_gateway["address_name"]))
+    for instance_name, address_name in owned_compute:
         tally.check(
             resolved_clients,
             "instances",
             resolved_clients.instances.get,
             project=project,
             zone=plan["zone"],
-            instance=instance["resource_name"],
+            instance=instance_name,
         )
         tally.check(
             resolved_clients,
@@ -97,7 +103,7 @@ def inventory_raes_range_cell(
             resolved_clients.addresses.get,
             project=project,
             region=plan["region"],
-            address=instance["address_name"],
+            address=address_name,
         )
     router_nat = plan.get("router_nat")
     if router_nat is not None:
