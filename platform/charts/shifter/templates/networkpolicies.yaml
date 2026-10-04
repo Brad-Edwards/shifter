@@ -225,6 +225,10 @@ spec:
         {{- range .Values.network.providerApiCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
+            {{- with $.Values.network.providerApiEgressExcept }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
         {{- end }}
       ports:
         - protocol: TCP
@@ -246,6 +250,10 @@ spec:
         {{- range .Values.network.providerApiCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
+            {{- with $.Values.network.providerApiEgressExcept }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
         {{- end }}
       ports:
         - protocol: TCP

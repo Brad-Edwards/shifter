@@ -141,6 +141,19 @@ def test_reconciles_private_subnet_and_narrow_rules_without_inheriting_default_e
     )
 
 
+def test_owned_lookups_never_bound_describe_with_max_results():
+    # MaxResults makes EC2 emit NextToken from its account-wide scan, which the owned
+    # lookups read as an incomplete result and reject -- spuriously failing provisioning
+    # once the account holds more resources of a type than the page (#1826). The filtered
+    # describes must omit MaxResults so a genuine NextToken means a truly oversized result.
+    plan = build()
+    ec2, _subnets, _groups, _tables = api_for(plan)
+    ensure_ec2_network(plan, ec2)
+    for describe in (ec2.describe_subnets, ec2.describe_security_groups, ec2.describe_route_tables):
+        assert describe.call_count
+        assert all("MaxResults" not in call.kwargs for call in describe.call_args_list)
+
+
 def test_peer_routes_never_fall_back_to_a_default_nat_or_gateway():
     plan = build()
     ec2, *_ = api_for(plan)

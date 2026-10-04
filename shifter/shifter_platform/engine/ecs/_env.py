@@ -237,7 +237,20 @@ def _get_aws_provisioner_env_overrides() -> dict[str, str] | None:
         "AWS_REGION": getattr(settings, "AWS_REGION", ""),
     }
 
-    return _forward_env(_AWS_PROVISIONER_ENV_KEYS, fallback_values)
+    env_overrides = _forward_env(_AWS_PROVISIONER_ENV_KEYS, fallback_values)
+    if env_overrides is None:
+        return None
+
+    # The launcher entrypoint switches its OWN DB_USER to the RDS IAM runtime user
+    # (portal_runtime) for the outbox connection, which would otherwise leak into
+    # the forwarded Job env. The provisioner Job must instead connect as its
+    # dedicated RDS IAM role, carried unswitched in PROVISIONER_DB_USER -- the
+    # value the fail-closed admission policy pins the Job's DB_USER against
+    # (mirrors the GCP launcher's PROVISIONER_DB_* -> DB_* remap). See #1826.
+    provisioner_db_user = os.environ.get("PROVISIONER_DB_USER", "").strip()
+    if provisioner_db_user:
+        env_overrides["DB_USER"] = provisioner_db_user
+    return env_overrides
 
 
 def _get_provisioner_env_overrides() -> dict[str, str] | None:

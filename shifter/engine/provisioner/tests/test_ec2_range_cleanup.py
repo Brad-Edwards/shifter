@@ -63,6 +63,27 @@ def test_destroy_waits_for_instances_and_independently_proves_empty_inventory():
     assert not any(rows.values())
 
 
+def test_inventory_lookups_never_bound_describe_with_max_results():
+    # MaxResults makes EC2 emit NextToken from its account-wide scan, which _inventory
+    # reads as incomplete and rejects -- spuriously refusing cleanup once the account
+    # holds more resources of a type than the page (e.g. EKS pod ENIs, #1826). The
+    # tag-scoped describes must omit MaxResults; a genuine NextToken still means truncation.
+    scope, ec2, _ = fixture()
+    inventory_ec2_resources(scope, ec2)
+    operations = (
+        "describe_instances",
+        "describe_volumes",
+        "describe_network_interfaces",
+        "describe_security_groups",
+        "describe_route_tables",
+        "describe_subnets",
+    )
+    for operation in operations:
+        describe = getattr(ec2, operation)
+        assert describe.call_count
+        assert all("MaxResults" not in call.kwargs for call in describe.call_args_list)
+
+
 @pytest.mark.parametrize("drift", ["generation", "vpc", "main", "foreign_association"])
 def test_destroy_refuses_foreign_or_ambiguous_ownership_before_any_mutation(drift):
     scope, ec2, rows = fixture()

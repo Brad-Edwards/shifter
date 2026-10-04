@@ -54,6 +54,7 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+      - registry.terraform.io/hashicorp/random
   - id: aws-dev-portal
     path: platform/terraform/environments/dev/portal
     owner: "@Brad-Edwards"
@@ -80,6 +81,7 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+      - registry.terraform.io/hashicorp/random
   - id: aws-proof-portal
     path: platform/terraform/environments/proof/portal
     owner: "@Brad-Edwards"
@@ -106,6 +108,7 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+      - registry.terraform.io/hashicorp/random
   - id: aws-prod-portal
     path: platform/terraform/environments/prod/portal
     owner: "@Brad-Edwards"

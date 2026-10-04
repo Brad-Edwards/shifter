@@ -23,7 +23,15 @@ class Ec2NetworkResources:
 
 
 def _rows(response: dict[str, Any], key: str) -> list[dict[str, Any]]:
-    """Require a complete lookup with at most one ownership candidate."""
+    """Require a complete lookup with at most one ownership candidate.
+
+    Callers must not pass ``MaxResults``: EC2 derives ``NextToken`` from its
+    account-wide resource scan, not the caller's filters, so a bounded page emits a
+    continuation token (read here as an incomplete lookup) whenever the account holds
+    more resources of that type than the page, even when the filters match one or none.
+    Omitting ``MaxResults`` lets the server-side filters return the few owned matches in
+    a single default page; a genuine ``NextToken`` then means a truly oversized result.
+    """
     if response.get("NextToken"):
         raise Ec2NetworkError("EC2 owned-resource lookup exceeded its bound")
     values = response.get(key, [])
@@ -73,7 +81,7 @@ def _peer_for_destination(routes: list[dict[str, Any]], destination: str) -> str
 def _subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, ec2: BaseClient) -> str:
     """Converge one reserved subnet without adopting foreign or exposed resources."""
     filters = [{"Name": "vpc-id", "Values": [plan.config.vpc_id]}, {"Name": "cidr-block", "Values": [wanted.cidr]}]
-    rows = _rows(ec2.describe_subnets(Filters=filters, MaxResults=5), "Subnets")
+    rows = _rows(ec2.describe_subnets(Filters=filters), "Subnets")
     if not rows:
         try:
             ec2.create_subnet(
@@ -85,7 +93,7 @@ def _subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, ec2: BaseClient) -> s
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "InvalidSubnet.Conflict":
                 raise
-        rows = _rows(ec2.describe_subnets(Filters=filters, MaxResults=5), "Subnets")
+        rows = _rows(ec2.describe_subnets(Filters=filters), "Subnets")
     if not rows:
         raise Ec2NetworkError("EC2 subnet creation is not yet observable")
     row = rows[0]
@@ -139,7 +147,7 @@ def _group(plan: Ec2NetworkPlan, wanted: Ec2GroupIntent, ec2: BaseClient) -> str
         {"Name": "vpc-id", "Values": [plan.config.vpc_id]},
         {"Name": "group-name", "Values": [wanted.resource_name]},
     ]
-    rows = _rows(ec2.describe_security_groups(Filters=filters, MaxResults=5), "SecurityGroups")
+    rows = _rows(ec2.describe_security_groups(Filters=filters), "SecurityGroups")
     if not rows:
         try:
             ec2.create_security_group(
@@ -151,7 +159,7 @@ def _group(plan: Ec2NetworkPlan, wanted: Ec2GroupIntent, ec2: BaseClient) -> str
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "InvalidGroup.Duplicate":
                 raise
-        rows = _rows(ec2.describe_security_groups(Filters=filters, MaxResults=5), "SecurityGroups")
+        rows = _rows(ec2.describe_security_groups(Filters=filters), "SecurityGroups")
     if not rows:
         raise Ec2NetworkError("EC2 security group creation is not yet observable")
     group = rows[0]
@@ -183,12 +191,12 @@ def _route_table(plan: Ec2NetworkPlan, subnets: dict[str, str], routes: dict[str
             if item["Key"] != "shifter:generation"
         ],
     ]
-    rows = _rows(ec2.describe_route_tables(Filters=filters, MaxResults=5), "RouteTables")
+    rows = _rows(ec2.describe_route_tables(Filters=filters), "RouteTables")
     if not rows:
         ec2.create_route_table(
             VpcId=plan.config.vpc_id, TagSpecifications=[{"ResourceType": "route-table", "Tags": plan.tags(subject)}]
         )
-        rows = _rows(ec2.describe_route_tables(Filters=filters, MaxResults=5), "RouteTables")
+        rows = _rows(ec2.describe_route_tables(Filters=filters), "RouteTables")
     if not rows:
         raise Ec2NetworkError("EC2 route table creation is not yet observable")
     row = rows[0]
