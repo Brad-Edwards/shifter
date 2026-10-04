@@ -11,7 +11,7 @@ import json
 import os
 import socket
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -22,12 +22,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID, ObjectIdentifier
 from shared.remote_access import (
-    OPENVPN_BINDING_VERSION,
-    OPENVPN_PROFILE_VERSION,
-    parse_openvpn_binding,
+    bind_openvpn_realization,
     parse_openvpn_capability,
+    parse_openvpn_realization,
     validate_openvpn_capability_window,
-    validate_openvpn_profile,
+    validate_openvpn_profile_for_endpoint,
 )
 
 _TLS_CRYPT_BYTES = 256
@@ -39,8 +38,8 @@ class VpnSecretOps(Protocol):
     def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory: Callable[[], str]) -> str:
         """Return the existing issuer payload or atomically store the factory result."""
 
-    def put_server(self, range_id: int, generation: UUID, payload: str) -> None:
-        """Store the gateway-only server identity for this generation."""
+    def put_server(self, range_id: int, generation: UUID, payload: str) -> str:
+        """Store the gateway-only server identity and return its exact provider reference."""
 
     def put_profile(self, range_id: int, generation: UUID, payload: str) -> str:
         """Store the participant profile and return its opaque provider reference."""
@@ -65,14 +64,20 @@ class OpenVpnIssuerMaterial:
 
 @dataclass(frozen=True)
 class OpenVpnPreparation:
-    """In-memory provisioning state for one range generation."""
+    """In-memory provisioning state for one range generation.
+
+    Ownership is deliberately absent: the gateway and its credentials belong to
+    the range generation, and the owner is bound to the published realization
+    afterwards. ``server_secret_ref`` is the exact provider reference the gateway
+    reads its identity from.
+    """
 
     range_id: int
-    owner_user_id: int
     generation: UUID
-    target_ref: UUID
+    target_ref: str
     teardown_at: datetime
     material: OpenVpnIssuerMaterial
+    server_secret_ref: str
 
 
 def _pem_private_key(key: ec.EllipticCurvePrivateKey) -> str:
@@ -204,33 +209,35 @@ def _load_material(payload: str, generation: UUID, teardown_at: datetime) -> Ope
     return material
 
 
-def _target_instances(range_spec: dict[str, object], target_ref: UUID) -> list[dict[str, object]]:
-    """Return the range-spec instances matching the authorized target ref."""
+def range_spec_member_refs(range_spec: dict[str, object]) -> list[str]:
+    """Return the member identities declared by a legacy range spec."""
     subnets = range_spec.get("subnets")
     if not isinstance(subnets, list):
         return []
     return [
-        instance
+        str(instance.get("uuid", ""))
         for subnet in subnets
         if isinstance(subnet, dict) and isinstance(subnet.get("instances"), list)
         for instance in subnet["instances"]
-        if isinstance(instance, dict) and str(instance.get("uuid", "")) == str(target_ref)
+        if isinstance(instance, dict)
     ]
 
 
 def prepare_openvpn_access(
     request_uuid: str,
     range_id: int,
-    owner_user_id: int,
-    range_spec: dict[str, object],
+    member_refs: Collection[str],
     remote_access_capability: dict[str, object],
     secret_ops: VpnSecretOps,
 ) -> OpenVpnPreparation:
-    """Create/reuse credentials only for the exact server-authorized target."""
+    """Create/reuse credentials only for the exact server-authorized target.
+
+    ``member_refs`` are the range's member identities (legacy instance UUIDs or
+    RAES member keys); the capability must name exactly one of them.
+    """
     capability = parse_openvpn_capability(remote_access_capability)
     validate_openvpn_capability_window(capability)
-    targets = _target_instances(range_spec, capability.target_ref)
-    if len(targets) != 1:
+    if list(member_refs).count(capability.target_ref) != 1:
         raise ValueError("OpenVPN capability must identify exactly one range member")
     generation = UUID(request_uuid)
     payload = secret_ops.read_or_create_issuer(
@@ -239,7 +246,7 @@ def prepare_openvpn_access(
         lambda: json.dumps(asdict(_generate_material(generation, capability.teardown_at)), sort_keys=True),
     )
     material = _load_material(payload, generation, capability.teardown_at)
-    secret_ops.put_server(
+    server_secret_ref = secret_ops.put_server(
         range_id,
         generation,
         json.dumps(
@@ -254,11 +261,11 @@ def prepare_openvpn_access(
     )
     return OpenVpnPreparation(
         range_id=range_id,
-        owner_user_id=owner_user_id,
         generation=generation,
         target_ref=capability.target_ref,
         teardown_at=capability.teardown_at,
         material=material,
+        server_secret_ref=server_secret_ref,
     )
 
 
@@ -326,46 +333,52 @@ def verify_openvpn_gateway(
     return verified
 
 
-def finalize_openvpn_access(
-    preparation: OpenVpnPreparation | None,
+def publish_openvpn_profile(
+    preparation: OpenVpnPreparation,
     gateway: object,
     secret_ops: VpnSecretOps,
-) -> dict[str, object] | None:
-    """Validate a ready gateway, store its client profile, and return a binding."""
-    if preparation is None:
-        return None
+) -> dict[str, object]:
+    """Validate a ready gateway, store its client profile, and return the realization.
+
+    The realization is owner-free; the caller binds the owner it is authoritative
+    for (``bind_openvpn_realization``).
+    """
     if not isinstance(gateway, dict):
         raise ValueError("OpenVPN gateway result is required")
     if gateway.get("ready") is not True:
         raise ValueError("OpenVPN gateway must be ready before profile publication")
-    if UUID(str(gateway.get("target_ref", ""))) != preparation.target_ref:
+    if str(gateway.get("target_ref", "")) != preparation.target_ref:
         raise ValueError("OpenVPN gateway target does not match the authorized Kali member")
     endpoint = str(gateway.get("endpoint", ""))
     port_value = gateway.get("port")
     if isinstance(port_value, bool) or not isinstance(port_value, int):
         raise ValueError("OpenVPN gateway port is invalid")
-    binding: dict[str, object] = {
-        "version": OPENVPN_BINDING_VERSION,
-        "channel": "openvpn",
-        "generation": str(preparation.generation),
-        "owner_user_id": preparation.owner_user_id,
-        "target_ref": str(preparation.target_ref),
-        "endpoint": endpoint,
-        "port": port_value,
-        "profile_version": OPENVPN_PROFILE_VERSION,
-        "secret_ref": f"profile-validation:{preparation.generation}",
-        "ready": True,
-    }
-    parsed_pending = parse_openvpn_binding(binding)
-    profile = _render_profile(preparation, endpoint, port_value)
-    validate_openvpn_profile(profile, parsed_pending)
-    binding["secret_ref"] = secret_ops.put_profile(
-        preparation.range_id,
-        preparation.generation,
-        profile,
+    realization = parse_openvpn_realization(
+        {
+            "generation": str(preparation.generation),
+            "target_ref": preparation.target_ref,
+            "endpoint": endpoint,
+            "port": port_value,
+            "secret_ref": f"profile-validation:{preparation.generation}",
+        }
     )
-    parse_openvpn_binding(binding)
-    return binding
+    profile = _render_profile(preparation, endpoint, port_value)
+    validate_openvpn_profile_for_endpoint(profile, endpoint, port_value)
+    realization["secret_ref"] = secret_ops.put_profile(preparation.range_id, preparation.generation, profile)
+    return parse_openvpn_realization(realization)
+
+
+def finalize_openvpn_access(
+    preparation: OpenVpnPreparation | None,
+    gateway: object,
+    secret_ops: VpnSecretOps,
+    *,
+    owner_user_id: int,
+) -> dict[str, object] | None:
+    """Publish the profile for a ready gateway and bind it to ``owner_user_id``."""
+    if preparation is None:
+        return None
+    return bind_openvpn_realization(publish_openvpn_profile(preparation, gateway, secret_ops), owner_user_id)
 
 
 def cleanup_openvpn_access(
@@ -385,5 +398,7 @@ __all__ = [
     "cleanup_openvpn_access",
     "finalize_openvpn_access",
     "prepare_openvpn_access",
+    "publish_openvpn_profile",
+    "range_spec_member_refs",
     "verify_openvpn_gateway",
 ]

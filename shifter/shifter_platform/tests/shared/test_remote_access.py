@@ -45,8 +45,34 @@ def test_capability_builder_binds_one_target_to_a_bounded_teardown_deadline():
 
     parsed = parse_openvpn_capability(build_openvpn_capability(target, teardown_at))
 
-    assert parsed.target_ref == target
+    assert parsed.target_ref == str(target)
     assert parsed.teardown_at >= teardown_at
+
+
+def test_capability_and_binding_accept_an_exact_raes_member_target():
+    member = "provision.node.a14-kali#0"
+    capability = build_openvpn_capability(member, datetime.now(UTC) + timedelta(days=5))
+
+    assert parse_openvpn_capability(capability).target_ref == member
+    assert parse_openvpn_binding(_binding(target_ref=member)).target_ref == member
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "provision.node.a14-kali#1",
+        "provision.node.a14-kali",
+        "provision.node.a14/kali#0",
+        "kali",
+        "",
+        None,
+    ],
+)
+def test_capability_and_binding_reject_targets_outside_the_closed_grammar(target):
+    with pytest.raises(OpenVpnBindingError, match="target_ref"):
+        build_openvpn_capability(target, datetime.now(UTC) + timedelta(days=5))
+    with pytest.raises(OpenVpnBindingError, match="target_ref"):
+        parse_openvpn_binding(_binding(target_ref=target))
 
 
 def test_capability_builder_rejects_an_unbounded_credential_window():

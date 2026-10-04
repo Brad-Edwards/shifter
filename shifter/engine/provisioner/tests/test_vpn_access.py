@@ -26,7 +26,9 @@ class MemorySecretOps:
         return self.values[ref]
 
     def put_server(self, range_id, generation, payload):
-        self.values[f"server:{range_id}:{generation}"] = payload
+        ref = f"server:{range_id}:{generation}"
+        self.values[ref] = payload
+        return ref
 
     def put_profile(self, range_id, generation, payload):
         ref = f"profile:{range_id}:{generation}"
@@ -63,13 +65,12 @@ def _capability(variables, *, teardown_at=None, target_ref=None):
 
 
 def _prepare(generation, variables, ops, *, capability=None):
-    from vpn_access import prepare_openvpn_access
+    from vpn_access import prepare_openvpn_access, range_spec_member_refs
 
     return prepare_openvpn_access(
         str(generation),
         42,
-        7,
-        variables,
+        range_spec_member_refs(variables),
         capability or _capability(variables),
         ops,
     )
@@ -98,6 +99,7 @@ def test_prepare_and_finalize_emit_a_ref_only_binding_and_valid_profile():
         preparation,
         gateway,
         ops,
+        owner_user_id=7,
     )
 
     binding = parse_openvpn_binding(binding_dict)
@@ -161,7 +163,7 @@ def test_finalize_rejects_wrong_target_or_unready_gateway():
         "ready": True,
     }
     with pytest.raises(ValueError, match="target"):
-        finalize_openvpn_access(preparation, wrong_target_gateway, ops)
+        finalize_openvpn_access(preparation, wrong_target_gateway, ops, owner_user_id=7)
     unready_gateway = {
         "endpoint": "vpn.example.test",
         "port": 1194,
@@ -169,7 +171,7 @@ def test_finalize_rejects_wrong_target_or_unready_gateway():
         "ready": False,
     }
     with pytest.raises(ValueError, match="ready"):
-        finalize_openvpn_access(preparation, unready_gateway, ops)
+        finalize_openvpn_access(preparation, unready_gateway, ops, owner_user_id=7)
 
 
 def test_gateway_verification_fails_closed_when_service_probe_does_not_pass():
@@ -325,6 +327,7 @@ def test_completed_generation_replay_keeps_the_same_issuer_and_runtime_material(
             "ready": True,
         },
         ops,
+        owner_user_id=7,
     )
     first_profile = ops.values[f"profile:42:{generation}"]
 
@@ -338,6 +341,7 @@ def test_completed_generation_replay_keeps_the_same_issuer_and_runtime_material(
             "ready": True,
         },
         ops,
+        owner_user_id=7,
     )
 
     assert replay == preparation

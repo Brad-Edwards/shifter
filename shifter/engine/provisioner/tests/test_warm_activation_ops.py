@@ -126,6 +126,7 @@ class TestRealizeClaimantAccess:
                 {
                     "config": config,
                     "allocated_network_cidrs": (("backend.gce.network.default", "10.90.0.0/28"),),
+                    "openvpn": None,
                 },
             )
         ]
@@ -247,7 +248,7 @@ class TestRunRaesRangeActivate:
         completion = {"resources": []}
         monkeypatch.setattr(
             "raes_gcp_activate.activate_raes_range_cell",
-            lambda **kwargs: SimpleNamespace(members=members, completion=completion),
+            lambda **kwargs: SimpleNamespace(members=members, completion=completion, vpn_access=None),
         )
         raes_range_ops.run_raes_range_activate("rid")
         assert [step for step, _payload in reports] == [
@@ -327,7 +328,7 @@ class TestRunRaesRangeActivate:
         )
         monkeypatch.setattr(
             "raes_gcp_activate.activate_raes_range_cell",
-            lambda **kwargs: SimpleNamespace(members=[], completion={"resources": []}),
+            lambda **kwargs: SimpleNamespace(members=[], completion={"resources": []}, vpn_access=None),
         )
 
         raes_range_ops.run_raes_range_activate("rid")
@@ -337,6 +338,7 @@ class TestRunRaesRangeActivate:
             {
                 "config": config,
                 "allocated_network_cidrs": (("backend.gce.network.default", "10.90.0.0/28"),),
+                "openvpn": None,
             }
         ]
 

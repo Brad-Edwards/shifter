@@ -27,6 +27,10 @@ _GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"  # NOSONAR
 
 _UNIVERSAL_IPV4_CIDR = "0.0.0.0/0"
 
+# The TCP port each participant channel is served on: the same pair the
+# access-workload ingress rule opens (portal terminal SSH, Guacamole RDP).
+PARTICIPANT_CHANNEL_PORTS = {"ssh": "22", "rdp": "3389"}
+
 
 def public_web_firewall_name(range_id: int) -> str:
     """Return the stable optional web-lane name for reconstructive cleanup."""
@@ -234,7 +238,7 @@ def _boundary_ingress_rules(
                 "priority": 900,
                 "target_tags": [range_tag],
                 "source_ranges": access_network_cidrs,
-                "allowed": [{"IPProtocol": "tcp", "ports": ["22", "3389"]}],
+                "allowed": [{"IPProtocol": "tcp", "ports": list(PARTICIPANT_CHANNEL_PORTS.values())}],
             }
         )
     # When no access-workload range is configured we OMIT participant ingress and
@@ -359,7 +363,13 @@ def _vpn_gateway_rules(
             "priority": 800,
             "target_tags": [vpn_gateway["tag"]],
             "destination_ranges": [f"{vpn_gateway['target_ip']}/32"],
-            "allowed": [{"IPProtocol": "all"}],
+            # Only the target's declared participant channels when the plan
+            # carries them (#2030); a legacy plan forwards every port.
+            "allowed": (
+                [{"IPProtocol": "tcp", "ports": list(vpn_gateway["target_ports"])}]
+                if vpn_gateway.get("target_ports")
+                else [{"IPProtocol": "all"}]
+            ),
         },
         {
             "name": _short_resource_name("shifter-r", range_id, "vpn-api"),

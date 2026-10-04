@@ -114,8 +114,8 @@ class AWSVpnSecretOps(VpnSecretOps):
             raise ValueError("OpenVPN issuer secret was not readable after creation")
         return value
 
-    def put_server(self, range_id: int, generation: UUID, payload: str) -> None:
-        self._put(_aws_secret_names(range_id, generation)["server"], payload, range_id)
+    def put_server(self, range_id: int, generation: UUID, payload: str) -> str:
+        return self._put(_aws_secret_names(range_id, generation)["server"], payload, range_id)
 
     def put_profile(self, range_id: int, generation: UUID, payload: str) -> str:
         return self._put(_aws_secret_names(range_id, generation)["profile"], payload, range_id)
@@ -185,6 +185,7 @@ class GCPVpnSecretOps(VpnSecretOps):
         exceptions: _GCPExceptions | None = None,
         *,
         project_id: str | None = None,
+        gateway_pool_slot: int | None = None,
     ) -> None:
         self._client = client or import_google_module("google.cloud.secretmanager").SecretManagerServiceClient()
         self._exceptions = exceptions or import_google_module("google.api_core.exceptions")
@@ -192,15 +193,19 @@ class GCPVpnSecretOps(VpnSecretOps):
         if not self._identity_project_id:
             raise RuntimeError("GCP project ID is required for OpenVPN secrets")
         self._storage_project_id = dynamic_secret_project_id()
+        self._gateway_pool_slot = gateway_pool_slot
 
     def _reserved_pool_slot(self, range_id: int) -> int:
         """Return the OpenVPN gateway pool slot reserved for this range (ADR-008-R7).
 
         The slot is reserved by ``Range.allocate_vpn_gateway_slot`` at range
-        creation; the provisioner only reads it here. A missing slot means the
-        range was not created with an OpenVPN capability, so no gateway identity
-        should be produced.
+        creation. The RAES family receives it on its immutable operation input
+        (ADR-043) and passes it in; the legacy range family still reads the row.
+        A missing slot means the range was not created with an OpenVPN
+        capability, so no gateway identity should be produced.
         """
+        if self._gateway_pool_slot is not None:
+            return self._gateway_pool_slot
         with get_db_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT vpn_gateway_pool_slot FROM mission_control_range WHERE id = %s",
@@ -311,9 +316,9 @@ class GCPVpnSecretOps(VpnSecretOps):
         )
         return value
 
-    def put_server(self, range_id: int, generation: UUID, payload: str) -> None:
+    def put_server(self, range_id: int, generation: UUID, payload: str) -> str:
         gateway_email = self._ensure_gateway_identity(range_id)
-        self._publish_once(
+        return self._publish_once(
             range_id,
             generation,
             "server",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import cast
 
@@ -189,11 +190,16 @@ def _openvpn_gateway_plan(
     remote_access: dict[str, object] | None,
     *,
     require_provision_values: bool,
+    target_ports: Sequence[str] = (),
+    server_secret_ref: str = "",
 ) -> OpenVpnGatewayPlan | None:
     """Plan the request-owned OpenVPN gateway adjacent to the authorized Kali.
 
     ``vpn_gateway_pool_slot`` is the range's reserved index into the pre-provisioned
     gateway SA pool (ADR-008-R7); the gateway VM runs as that pooled identity.
+    ``target_ports`` restricts forwarding to the target's declared participant
+    channels and ``server_secret_ref`` is the exact identity secret the gateway
+    reads; both are omitted from the plan when empty.
     """
     if remote_access is None:
         return None
@@ -210,7 +216,7 @@ def _openvpn_gateway_plan(
     target = targets[0]
     subnet = next(item for item in subnet_plans if item["name"] == target["subnet_name"])
     private_ip = _free_guest_address(subnet) if subnet["cidr"] else ""
-    return {
+    gateway: OpenVpnGatewayPlan = {
         "resource_name": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
         "address_name": _short_resource_name("shifter-r", range_id, "vpn-gateway-ip"),
         "private_ip": private_ip,
@@ -226,6 +232,11 @@ def _openvpn_gateway_plan(
             else ""
         ),
     }
+    if target_ports:
+        gateway["target_ports"] = list(target_ports)
+    if server_secret_ref:
+        gateway["server_secret_ref"] = server_secret_ref
+    return gateway
 
 
 def render_range_cell_plan(

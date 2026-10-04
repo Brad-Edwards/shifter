@@ -118,6 +118,11 @@ class OpenVpnGatewayPlan(TypedDict):
     tag: str
     profile: GCERangeImageProfile
     service_account_email: str
+    # TCP ports the gateway forwards to the target: the target's declared
+    # participant channels (#2030). Absent forwards every port (legacy plan).
+    target_ports: NotRequired[list[str]]
+    # Exact provider reference of the gateway's server identity secret.
+    server_secret_ref: NotRequired[str]
 
 
 class RangeCellPlan(TypedDict):

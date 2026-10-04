@@ -451,6 +451,13 @@ RANGE_RECONCILE_BATCH_SIZE: int = int(os.environ.get("RANGE_RECONCILE_BATCH_SIZE
 # pre-creates the pool SAs. Single isolated tenant / single project.
 VPN_GATEWAY_POOL_SIZE: int = int(os.environ.get("VPN_GATEWAY_POOL_SIZE", "24"))
 
+# ADR-039-R10: deployment opt-in for participant OpenVPN access (#2030). When
+# true, a GCE RAES launch whose scenario declares exactly one participant-access
+# target mints an OpenVPN capability, so the range gets a per-range gateway VM,
+# an external address, and per-range VPN secrets. Off by default: the gateway is
+# real cost and an extra failure mode an event may never use.
+RANGE_OPENVPN_ENABLED: bool = _env_bool("RANGE_OPENVPN_ENABLED", False)
+
 # ------------------------------------------------------------------------------
 # CTF Configuration
 # ------------------------------------------------------------------------------

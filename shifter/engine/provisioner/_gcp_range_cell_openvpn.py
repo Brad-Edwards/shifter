@@ -46,7 +46,7 @@ metadata = urllib.request.Request(
 )
 with urllib.request.urlopen(metadata, timeout=10) as response:
     token = json.load(response)["access_token"]
-name = "projects/{project_id}/secrets/{secret_id}/versions/latest"
+name = "{secret_name}/versions/latest"
 request = urllib.request.Request(
     f"https://secretmanager.googleapis.com/v1/{{name}}:access",
     headers={{"Authorization": f"Bearer {{token}}"}},
@@ -94,9 +94,10 @@ verb 3
 (directory / "server.conf").chmod(0o600)
 pathlib.Path("/etc/sysctl.d/90-shifter-openvpn.conf").write_text("net.ipv4.ip_forward=1\\n", encoding="utf-8")
 subprocess.run(["sysctl", "--system"], check=True, stdout=subprocess.DEVNULL)
+subprocess.run(["iptables", "-P", "FORWARD", "DROP"], check=True)
+for rule in {forward_target_rules}:
+    subprocess.run(["iptables", "-A", "FORWARD", *rule], check=True)
 for rule in (
-    ["iptables", "-P", "FORWARD", "DROP"],
-    ["iptables", "-A", "FORWARD", "-i", "tun0", "-d", "{target_ip}/32", "-j", "ACCEPT"],
     [
         "iptables", "-A", "FORWARD", "-o", "tun0", "-s", "{target_ip}/32",
         "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT",
@@ -113,6 +114,7 @@ import socketserver
 import subprocess
 
 TARGET = "{target_ip}/32"
+FORWARD_TARGET_RULES = {forward_target_rules}
 
 def healthy():
     active = subprocess.run(
@@ -126,7 +128,7 @@ def healthy():
         text=True,
     ).stdout.splitlines()
     rules = (
-        ["iptables", "-C", "FORWARD", "-i", "tun0", "-d", TARGET, "-j", "ACCEPT"],
+        *(["iptables", "-C", "FORWARD", *rule] for rule in FORWARD_TARGET_RULES),
         [
             "iptables", "-C", "FORWARD", "-o", "tun0", "-s", TARGET,
             "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT",
@@ -176,13 +178,29 @@ PY
 '''
 
 
+def _forward_target_rules(gateway: OpenVpnGatewayPlan) -> list[list[str]]:
+    """Return the tunnel-to-target FORWARD accepts: declared TCP ports, else every port."""
+    target = f"{gateway['target_ip']}/32"
+    ports = gateway.get("target_ports")
+    if not ports:
+        return [["-i", "tun0", "-d", target, "-j", "ACCEPT"]]
+    return [["-i", "tun0", "-d", target, "-p", "tcp", "--dport", port, "-j", "ACCEPT"] for port in ports]
+
+
 def _openvpn_gateway_startup(plan: RangeCellPlan, gateway: OpenVpnGatewayPlan) -> str:
-    """Return a fixed bootstrap that resolves only the server identity secret."""
-    secret_id = f"shifter-range-{plan['range_id']}-vpn-{plan['request_uuid'].replace('-', '')}-server"
+    """Return a fixed bootstrap that resolves only the server identity secret.
+
+    The secret is read from the exact reference the provisioner stored it at; a
+    legacy plan without one falls back to its deterministic platform-project name.
+    """
+    secret_name = gateway.get("server_secret_ref") or (
+        f"projects/{plan['project_id']}/secrets/"
+        f"shifter-range-{plan['range_id']}-vpn-{plan['request_uuid'].replace('-', '')}-server"
+    )
     return _OPENVPN_GATEWAY_STARTUP_TEMPLATE.format(
-        project_id=plan["project_id"],
-        secret_id=secret_id,
+        secret_name=secret_name,
         target_ip=gateway["target_ip"],
+        forward_target_rules=repr(_forward_target_rules(gateway)),
     )
 
 
