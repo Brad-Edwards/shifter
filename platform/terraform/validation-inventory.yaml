@@ -54,6 +54,7 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+      - registry.terraform.io/hashicorp/random
   - id: aws-dev-portal
     path: platform/terraform/environments/dev/portal
     owner: "@Brad-Edwards"
@@ -80,6 +81,7 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+      - registry.terraform.io/hashicorp/random
   - id: aws-proof-portal
     path: platform/terraform/environments/proof/portal
     owner: "@Brad-Edwards"
@@ -106,6 +108,7 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+      - registry.terraform.io/hashicorp/random
   - id: aws-prod-portal
     path: platform/terraform/environments/prod/portal
     owner: "@Brad-Edwards"
@@ -247,11 +250,6 @@ modules:
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
-  - path: platform/terraform/modules/engine-provisioner
-    owner: "@Brad-Edwards"
-    contract: deferred
-    reason: "Contract-test rollout tracked in #1597."
-    tracking: "#1597"
   - path: platform/terraform/modules/engine-state
     owner: "@Brad-Edwards"
     contract: deferred
@@ -262,22 +260,12 @@ modules:
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
-  - path: platform/terraform/modules/guacamole
-    owner: "@Brad-Edwards"
-    contract: deferred
-    reason: "Contract-test rollout tracked in #1597."
-    tracking: "#1597"
   - path: platform/terraform/modules/log-aggregation
     owner: "@Brad-Edwards"
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
   # AWS portal modules
-  - path: platform/terraform/modules/portal/alb
-    owner: "@Brad-Edwards"
-    contract: deferred
-    reason: "Contract-test rollout tracked in #1597."
-    tracking: "#1597"
   - path: platform/terraform/modules/portal/backup-alerts
     owner: "@Brad-Edwards"
     contract: deferred
@@ -289,11 +277,6 @@ modules:
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
   - path: platform/terraform/modules/portal/ctfd
-    owner: "@Brad-Edwards"
-    contract: deferred
-    reason: "Contract-test rollout tracked in #1597."
-    tracking: "#1597"
-  - path: platform/terraform/modules/portal/ec2
     owner: "@Brad-Edwards"
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."

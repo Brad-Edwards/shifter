@@ -261,10 +261,7 @@ jobs:
       - name: Run check-tf-kms-secrets-grant
         run: |
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py \
-            platform/terraform/modules/engine-provisioner/*.tf \
-            platform/terraform/modules/provisioner-iam/*.tf \
-            platform/terraform/modules/portal/ec2/*.tf \
-            platform/terraform/modules/guacamole/*.tf
+            platform/terraform/modules/provisioner-iam/*.tf
 
       # Issues #46/#1755: action/resource-aware ELBv2 scoping for GWLB and
       # request-owned VPN NLB resources, including creation-time listener tags.
@@ -284,7 +281,6 @@ jobs:
       - name: Run check-tf-iam-ssm-scope
         run: |
           python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
-            platform/terraform/modules/engine-provisioner/iam.tf \
             platform/terraform/modules/provisioner-iam/main.tf
 
       # Issue #1846: this checker previously lacked a live CI invocation, so a
@@ -293,7 +289,6 @@ jobs:
       - name: Run check-tf-iam-ec2-scope
         run: |
           python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py \
-            platform/terraform/modules/engine-provisioner/iam.tf \
             platform/terraform/modules/provisioner-iam/main.tf
 
       - name: Run check-tf-iam-role-naming
@@ -341,8 +336,7 @@ jobs:
       - name: Run check-tf-rds-security
         run: |
           python3 scripts/check_tf_rds_security/check_tf_rds_security.py \
-            platform/terraform/modules/portal/rds/main.tf \
-            platform/terraform/modules/guacamole/rds.tf
+            platform/terraform/modules/portal/rds/main.tf
 
       # ADR-008-R7 / issue #1517: GCP application workload identities must not
       # receive project-level Secret Manager payload/admin or Cloud Storage
@@ -2363,6 +2357,7 @@ jobs:
             if ! osv-scanner scan source \
               --experimental-no-default-plugins \
               --experimental-plugins lockfile \
+              --config="${GITHUB_WORKSPACE}/osv-scanner.toml" \
               --lockfile="${lockfile}" \
               --format sarif \
               --output-file "${sarif_out}"; then
