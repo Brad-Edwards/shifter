@@ -100,11 +100,23 @@ def _inventory_rows(category: str, rows: object) -> list[dict[str, Any]]:
     return rows
 
 
+def _row_tags(category: str, row: dict[str, Any]) -> dict[str, str]:
+    """Return a resource's tag map, honouring the per-API tag container name.
+
+    ``describe_network_interfaces`` returns tags under ``TagSet``; every other
+    ``describe_*`` in :data:`_LOOKUPS` returns them under ``Tags``. Reading the
+    wrong key leaves an owned, correctly tagged ENI looking untagged, which the
+    ownership check below then rejects as a conflict (AWS EKS EC2 path).
+    """
+    container = "TagSet" if category == "interfaces" else "Tags"
+    return {tag["Key"]: tag["Value"] for tag in row.get(container, [])}
+
+
 def _verify_inventory_rows(scope: Ec2CleanupScope, category: str, identity: str, rows: list[dict[str, Any]]) -> None:
     """Require unique provider identities with exact incumbent ownership and generation."""
     ids = set()
     for row in rows:
-        tags = {tag["Key"]: tag["Value"] for tag in row.get("Tags", [])}
+        tags = _row_tags(category, row)
         resource_id = row.get(identity)
         if (
             any(tags.get(key) != value for key, value in scope.tags().items())

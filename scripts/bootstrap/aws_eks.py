@@ -1086,7 +1086,14 @@ def render_aws_values(
             "kubernetesApiCidrs": _cidr_output(terraform_outputs, "kubernetes_api_cidrs"),
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
-            "rangeAccessCidrs": [],
+            # The RAES provisioner Job SSHes into range guests to bootstrap them.
+            # Guests are private-only on the peered range network, so without this
+            # the jobs default-deny drops the provisioner -> guest path and every
+            # SSH wait times out even though the guest is up (#1826). Source the
+            # CIDR from the same RANGE_VPC_CIDR the provisioner targets so the
+            # policy and the realized addressing can never diverge; an unset value
+            # leaves the chart's `if .rangeAccessCidrs` guard false (fail closed).
+            "rangeAccessCidrs": [runtime_env["RANGE_VPC_CIDR"]] if runtime_env.get("RANGE_VPC_CIDR") else [],
             "rangeAccessPorts": [22, 3389],
         },
         "identity": {"serviceAccountRoleArns": {key: roles[key] for key in sorted(_WORKLOAD_ROLE_KEYS)}},
