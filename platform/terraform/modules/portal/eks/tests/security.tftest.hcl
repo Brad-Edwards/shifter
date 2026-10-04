@@ -1,8 +1,18 @@
 override_data {
   target = data.aws_ssm_parameters_by_path.range_network
   values = {
-    names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
-    values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
+    names = [
+      "/shifter/test/range/vpc_id",
+      "/shifter/test/range/vpc_cidr",
+      "/shifter/test/range/private_route_table_id",
+      "/shifter/test/range/engine_secrets_kms_key_arn",
+    ]
+    values = [
+      "vpc-mock-range",
+      "10.50.0.0/16",
+      "rtb-mock-range",
+      "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets",
+    ]
   }
 }
 
@@ -226,9 +236,10 @@ variables {
       service_account = "aws-load-balancer-controller"
     }
     portal = {
-      namespace       = "shifter-platform"
-      service_account = "shifter-portal"
-      policy_arns     = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
+      namespace                     = "shifter-platform"
+      service_account               = "shifter-portal"
+      policy_arns                   = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
+      range_participant_secret_read = true
     }
     workers = {
       namespace       = "shifter-platform"
@@ -396,6 +407,38 @@ run "security_contract" {
   assert {
     condition     = strcontains(aws_iam_role.workload["provisioner"].assume_role_policy, "system:serviceaccount:shifter-jobs:provisioner")
     error_message = "The provisioner IRSA role must bind the exact shifter-jobs/provisioner subject."
+  }
+
+  # Only identities that opt in may read range participant-delivery credentials.
+  assert {
+    condition     = keys(aws_iam_role_policy.workload_range_participant_secrets) == ["portal"]
+    error_message = "Range participant-secret read must be granted only to identities that opt in (the portal)."
+  }
+
+  # GCP parity: participant-delivery kinds only. Provisioner management keys, host
+  # identities and directory admin material must never be readable by the portal.
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[0].Resource == [
+        "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:shifter/test/range/*/raes/account-key/*",
+        "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:shifter/test/range/*/raes/account-password/*",
+        "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:shifter/test/range/*/raes/domain-account/*",
+      ] &&
+      alltrue([
+        for kind in ["host-ssh", "host-identity", "domain-dsrm", "domain-authority"] :
+        !strcontains(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy, "/raes/${kind}/")
+      ])
+    )
+    error_message = "The portal may read only participant-delivery range secrets, never host-management or directory-admin secrets."
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets" &&
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-2.amazonaws.com" &&
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringLike["kms:EncryptionContext:SecretARN"] == jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[0].Resource
+    )
+    error_message = "Range-secret Decrypt must be confined to the range key, via Secrets Manager, for exactly the participant-delivery secret ARNs."
   }
 
   assert {

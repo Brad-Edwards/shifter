@@ -84,6 +84,9 @@ def test_enrollment_precedes_plugin_and_ready_requires_independent_guest_observa
     result = launch(options)
     assert order == ["network", "guest", "enrollment", "plugin", "composition", "os", "substrate"]
     assert result["compute_substrates"] == [{"instance_key": "node.host#0", "value": "virtual-machine"}]
+    # Each realized instance carries its authored subnet name so the terminal-ready
+    # member projection parses (non-empty subnet_name is required, #1710).
+    assert [instance["subnet_name"] for instance in result["instances"]] == ["lan"]
     cleanup.assert_not_called()
 
 
