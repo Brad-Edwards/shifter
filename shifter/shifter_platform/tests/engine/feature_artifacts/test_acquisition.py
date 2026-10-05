@@ -23,7 +23,7 @@ from engine.services._feature_artifacts import (
     finalize_attempt,
     request_acquisition,
 )
-from shared.cloud.exceptions import CloudTaskError
+from shared.cloud.exceptions import CloudStorageError, CloudTaskError
 from shared.feature_artifacts.job import RESULT_MARKER, AcquisitionResult
 from shared.feature_artifacts.recipes import OPEN_VERSION, RecipeError
 
@@ -44,6 +44,12 @@ class FakeObjectStorage:
 
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.error: Exception | None = None
+
+    def object_exists(self, bucket: str, key: str) -> bool:
+        if self.error is not None:
+            raise self.error
+        return key in self.objects
 
     def head_object(self, bucket: str, key: str) -> dict:
         return {"content_length": len(self.objects[key]), "etag": "x"}
@@ -164,6 +170,21 @@ def test_failure_backs_off_then_a_later_request_retries_and_stale_attempts_are_f
 
 
 @pytest.mark.django_db
+def test_storage_errors_never_masquerade_as_a_missing_object(env):
+    request_acquisition(REQUEST, target=env.target)
+    env.storage.objects[KEY] = BINARY
+    finalize_attempt(*_attempt(), GOOD, target=env.target)
+    ready_attempt = AcquiredFeatureArtifact.objects.get().attempt_id
+
+    env.storage.error = CloudStorageError("Failed to check S3 object: AccessDenied")
+    with pytest.raises(CloudStorageError):
+        request_acquisition(REQUEST, target=env.target)
+
+    row = AcquiredFeatureArtifact.objects.get()
+    assert (row.state, row.attempt_id) == (State.READY, ready_attempt)  # not reclaimed, nothing re-downloaded
+
+
+@pytest.mark.django_db
 def test_unknown_sources_fail_closed_without_creating_rows(env):
     with pytest.raises(RecipeError):
         request_acquisition(ArtifactRequest("arbitrary-url-fetch", OPEN_VERSION, "linux-x64-glibc"), target=env.target)
@@ -241,4 +262,13 @@ class TestLaunchGate:
         with pytest.raises(FeatureArtifactUnavailableError, match="did not complete in time"):
             await_ready(REQUEST, target=env.target, timeout=timedelta(0), sleep=lambda _seconds: None)
         with transaction.atomic(), pytest.raises(RuntimeError, match="inside a database transaction"):
+            await_ready(REQUEST, target=env.target, timeout=timedelta(seconds=1))
+
+    def test_unverifiable_storage_fails_the_range(self, env):
+        request_acquisition(REQUEST, target=env.target)
+        env.storage.objects[KEY] = BINARY
+        finalize_attempt(*_attempt(), GOOD, target=env.target)
+        env.storage.error = CloudStorageError("Failed to check S3 object: SlowDown")
+
+        with pytest.raises(FeatureArtifactUnavailableError, match="could not be verified"):
             await_ready(REQUEST, target=env.target, timeout=timedelta(seconds=1))

@@ -30,13 +30,8 @@ class MemoryStore:
 
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
-        self.puts = 0
-
-    def exists(self, key: str) -> bool:
-        return key in self.objects
 
     def put(self, path: Path, key: str) -> None:
-        self.puts += 1
         self.objects[key] = path.read_bytes()
 
 
@@ -71,7 +66,7 @@ def test_job_stores_under_the_delivery_key_and_reports_identity(upstream):
 
     again = acquire("claude-code", "2.1.289", "linux-x64-glibc", store=store, prefix=PREFIX, fetch=upstream)
     assert again == result
-    assert store.puts == 1  # an object already under its content key is never rewritten
+    assert list(store.objects) == [result.storage_key]  # re-acquisition lands on the same content key
 
 
 @pytest.mark.parametrize(

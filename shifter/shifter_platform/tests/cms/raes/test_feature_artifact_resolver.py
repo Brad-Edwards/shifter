@@ -22,6 +22,9 @@ class _Storage:
     def __init__(self, objects: dict[str, int]) -> None:
         self.objects = objects
 
+    def object_exists(self, bucket: str, key: str) -> bool:
+        return key in self.objects
+
     def head_object(self, bucket: str, key: str) -> dict:
         return {"content_length": self.objects[key], "etag": "x"}
 

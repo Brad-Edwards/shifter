@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 from django.db import transaction
 from django.utils import timezone
 
+from shared.cloud.exceptions import CloudStorageError
 from shared.feature_artifacts.job import AcquisitionResult
 from shared.feature_artifacts.recipes import NpmBinaryRecipe, RecipeError, recipe_for
 from shared.raes.content_delivery import normalized_storage_key
@@ -74,11 +75,14 @@ def _resolve(request: ArtifactRequest) -> tuple[NpmBinaryRecipe, str]:
 
 
 def _object_matches(target: StorageTarget, key: str, byte_count: int) -> bool:
-    """The stored object exists with exactly the expected size."""
-    try:
-        meta = target.storage.head_object(target.bucket, key)
-    except Exception:
+    """The stored object exists with exactly the expected size.
+
+    Only a definite absence is ``False``; a storage error (denied, throttled,
+    unreachable) propagates rather than masquerading as a missing object.
+    """
+    if not key or not target.storage.object_exists(target.bucket, key):
         return False
+    meta = target.storage.head_object(target.bucket, key)
     return int(meta.get("content_length", -1)) == byte_count
 
 
@@ -198,7 +202,10 @@ def await_ready(
     deadline = timezone.now() + timeout
     seen_attempt: UUID | None = None
     while True:
-        row = request_acquisition(request, target=target)
+        try:
+            row = request_acquisition(request, target=target)
+        except CloudStorageError as exc:
+            raise FeatureArtifactUnavailableError("feature artifact storage could not be verified") from exc
         if row.state == _READY:
             return row
         if row.state == _ACQUIRING:

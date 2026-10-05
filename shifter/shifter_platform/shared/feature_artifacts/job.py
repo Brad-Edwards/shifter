@@ -30,9 +30,7 @@ _OCTET_STREAM = "application/octet-stream"
 
 
 class ArtifactStore(Protocol):
-    """The two object operations the Job needs."""
-
-    def exists(self, key: str) -> bool: ...
+    """The one object operation the Job needs."""
 
     def put(self, path: Path, key: str) -> None: ...
 
@@ -64,17 +62,6 @@ class S3ArtifactStore:
         self._bucket = bucket
         self._client = client or boto3.client("s3", region_name=region)
 
-    def exists(self, key: str) -> bool:
-        from botocore.exceptions import ClientError
-
-        try:
-            self._client.head_object(Bucket=self._bucket, Key=key)
-        except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
-                return False
-            raise
-        return True
-
     def put(self, path: Path, key: str) -> None:
         with path.open("rb") as handle:
             self._client.upload_fileobj(handle, self._bucket, key, ExtraArgs={"ContentType": _OCTET_STREAM})
@@ -91,8 +78,10 @@ def acquire(
             return AcquisitionResult(ok=False, reason="acquisition requires a resolved exact version")
         fetched = fetch(recipe.package_for(platform), version, recipe.member, workdir)
         key = content_key(prefix, fetched.sha256)
-        if not store.exists(key):
-            store.put(fetched.path, key)
+        # The key is the content digest, so rewriting an existing object stores the
+        # same bytes. Writing unconditionally keeps the Job's grant to PutObject: a
+        # HEAD on a missing key without ListBucket answers 403, not 404.
+        store.put(fetched.path, key)
         return AcquisitionResult(
             ok=True,
             storage_key=key,
