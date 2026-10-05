@@ -378,8 +378,8 @@ def realize_raes_content_delivery(
     """
     try:
         _realize_delivery_plan(raes_plan, instance_outputs, delivery_bindings, ops)
-    except FeatureDependencyCycleError as exc:
-        raise RaesContentDeliveryError(str(exc)) from None
+    except FeatureDependencyCycleError:
+        raise RaesContentDeliveryError("RAES feature realization dependencies contain a cycle") from None
     except RaesContentDeliveryError:
         raise
     except Exception:
