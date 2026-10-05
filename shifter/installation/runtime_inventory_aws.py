@@ -174,6 +174,10 @@ AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "KALI_INSTANCE_TYPE",
         "VICTIM_INSTANCE_TYPE",
         "AGENT_S3_BUCKET",
+        # Source-backed RAES content delivery downloads payloads from the platform
+        # storage bucket (provisioner config RAES_CONTENT_DELIVERY_BUCKET, falling
+        # back to STORAGE_BUCKET_NAME), at parity with the GCP provisioner.
+        "STORAGE_BUCKET_NAME",
         "S3_ENDPOINT_ID",
         "FIREWALL_ENDPOINT_ID",
         "SSM_ENDPOINTS_SUBNET_CIDR",
