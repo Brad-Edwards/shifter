@@ -107,6 +107,8 @@ def _body(request: Request) -> dict[str, object]:
 
 
 class _VpnControlView(APIView):
+    """Base for the pool controller endpoints: Google identity of the pool SA only."""
+
     authentication_classes = [VpnControllerAuthentication]
     permission_classes = [IsVpnController]
 

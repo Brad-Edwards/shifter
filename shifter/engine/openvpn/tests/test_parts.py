@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import pwd
 import socket
 import threading
 import urllib.request
@@ -25,6 +26,7 @@ _ENV = {
     "CONTROL_AUDIENCE": "https://portal.example.com/vpn-control",
     "SERVER_SECRET": "projects/p/secrets/shifter-test-vpn-server",
     "SERVER_NAME": "shifter-test-vpn-abcd",
+    "TUNNEL_NETWORK": "100.96.0.0/22",
 }
 
 
@@ -114,6 +116,7 @@ class TestConfig:
             ("SERVER_NAME", "Bad_Name"),
             ("TUNNEL_NETWORK", "100.96.0.0/28"),
             ("MAX_CLIENTS", "5000"),
+            ("TUNNEL_NETWORK", ""),
         ],
     )
     def test_a_defective_environment_is_refused(self, monkeypatch, key, value):
@@ -141,11 +144,19 @@ class TestServerFiles:
             "verify-client-cert require",
             "management-client-auth",
             "auth-user-pass-optional",
-            "user nobody",
+            f"management-client-user {pwd.getpwuid(os.geteuid()).pw_name}",
             "max-clients 250",
         ):
             assert directive in text
-        for forbidden in ("client-to-client", "redirect-gateway", "username-as-common-name", "duplicate-cn"):
+        # The server is already unprivileged; a user/group switch would need CAP_SETUID/SETGID.
+        for forbidden in (
+            "client-to-client",
+            "redirect-gateway",
+            "username-as-common-name",
+            "duplicate-cn",
+            "\nuser ",
+            "\ngroup ",
+        ):
             assert forbidden not in text
         assert paths.management_socket.endswith("management.sock")
 

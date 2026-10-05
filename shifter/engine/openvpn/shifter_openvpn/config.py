@@ -30,6 +30,7 @@ class Config:
 
 
 def _require(name: str) -> str:
+    """Return a non-empty environment value or fail closed."""
     value = os.environ.get(name, "").strip()
     if not value:
         raise ConfigError(f"{name} is required")
@@ -47,7 +48,7 @@ def load_config() -> Config:
     server_name = _require("SERVER_NAME")
     if not _SERVER_NAME.fullmatch(server_name):
         raise ConfigError("SERVER_NAME must be the Compute Engine instance name")
-    network = ipaddress.ip_network(os.environ.get("TUNNEL_NETWORK", "100.96.0.0/22"), strict=True)
+    network = ipaddress.ip_network(_require("TUNNEL_NETWORK"), strict=True)
     if not isinstance(network, ipaddress.IPv4Network) or not 16 <= network.prefixlen <= 24:
         raise ConfigError("TUNNEL_NETWORK must be an IPv4 network between /16 and /24")
     max_clients = int(os.environ.get("MAX_CLIENTS", "250"))

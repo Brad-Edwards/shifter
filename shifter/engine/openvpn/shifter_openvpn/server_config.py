@@ -14,14 +14,16 @@ Options follow the OpenVPN 2.6 reference manual:
 * ``max-clients`` and ``connect-freq`` bound one server's load.
 * No ``client-to-client``, no pushed default gateway: each client is pushed a
   route to its single target by the controller.
-* ``user``/``group nobody`` with ``persist-key``/``persist-tun``: OpenVPN drops
-  privileges after it opens the tunnel and reads its credentials.
+* No ``user``/``group``: the whole server already runs as the unprivileged
+  ``shifter-vpn`` user with NET_ADMIN as its only capability (see the Dockerfile).
+  ``management-client-user`` admits only that same user to the control socket.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import pwd
 from dataclasses import dataclass
 
 from .config import Config
@@ -59,6 +61,7 @@ def render(config: Config) -> str:
     """Return the server configuration text."""
     network = config.tunnel_network
     run = config.runtime_dir
+    user = pwd.getpwuid(os.geteuid()).pw_name
     return f"""port 1194
 proto udp4
 dev tun0
@@ -80,12 +83,10 @@ remote-cert-tls client
 verify-client-cert require
 data-ciphers AES-256-GCM:AES-128-GCM
 auth SHA256
-user nobody
-group nobody
 persist-key
 persist-tun
 management {run}/management.sock unix
-management-client-user root
+management-client-user {user}
 management-client-auth
 auth-user-pass-optional
 verb 3

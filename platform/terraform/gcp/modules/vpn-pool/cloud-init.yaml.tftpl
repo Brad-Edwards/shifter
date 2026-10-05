@@ -2,7 +2,9 @@
 # Shared participant OpenVPN pool server (#2480). Container-Optimized OS runs the
 # image the deploy recorded in the release secret, after checking it names this
 # tenant's repository by digest. The container keeps its own network namespace:
-# NET_ADMIN applies there, never to the host.
+# NET_ADMIN applies there, never to the host. It starts as root only so the
+# image's setpriv entrypoint can switch to the unprivileged shifter-vpn user (uid
+# 10001) keeping NET_ADMIN as its sole capability.
 write_files:
   - path: /etc/systemd/system/shifter-openvpn.service
     permissions: "0644"
@@ -41,9 +43,11 @@ write_files:
       docker-credential-gcr configure-docker --registries="${registry}"
       docker rm -f shifter-openvpn >/dev/null 2>&1 || true
       exec docker run --rm --name shifter-openvpn \
-        --cap-drop ALL --cap-add NET_ADMIN --cap-add SETUID --cap-add SETGID \
+        --user 0:0 --cap-drop ALL --cap-add NET_ADMIN --cap-add SETUID --cap-add SETGID \
         --device /dev/net/tun --sysctl net.ipv4.ip_forward=1 \
-        --read-only --tmpfs /run:rw,nosuid,size=16m --tmpfs /tmp:rw,nosuid,size=16m \
+        --read-only \
+        --tmpfs /run:rw,nosuid,nodev,noexec,size=16m,uid=10001,gid=10001,mode=0700 \
+        --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,uid=10001,gid=10001,mode=0700 \
         --security-opt no-new-privileges --pids-limit 256 \
         -p 1194:1194/udp -p ${health_port}:${health_port}/tcp \
         -e PORTAL_URL="${portal_url}" \
@@ -51,6 +55,7 @@ write_files:
         -e SERVER_SECRET="${server_secret}" \
         -e SERVER_NAME="$(metadata instance/name)" \
         -e MAX_CLIENTS="${max_clients}" \
+        -e TUNNEL_NETWORK="${tunnel_network}" \
         -e HEALTH_PORT="${health_port}" \
         "$${image}"
 runcmd:

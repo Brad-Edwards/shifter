@@ -12,6 +12,8 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .capacity_profile_invariants_gcp import validate_profile_invariants
+
 CapacityProfileId = Literal[
     "gcp-shared-v1-p10",
     "gcp-shared-v1-p30",
@@ -209,11 +211,7 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
     @model_validator(mode="after")
     def validate_coupled_limits(self) -> GcpSharedServiceCapacityProfile:
         """Validate invariants that couple otherwise independent profile sections."""
-        _validate_profile_identity(self)
-        _validate_ready_replica_floors(self)
-        _validate_timeout_ordering(self)
-        _validate_connection_budgets(self)
-        _validate_gate_replica_floor(self)
+        validate_profile_invariants(self)
         return self
 
     def terraform_projection(self) -> dict[str, object]:
@@ -335,52 +333,6 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
             },
             "kubernetes": kubernetes,
         }
-
-
-def _validate_profile_identity(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require the profile suffix, participant count, and gate target to agree."""
-    expected_count = int(profile.profile_id.rsplit("p", 1)[1])
-    if expected_count != profile.participant_count or profile.gate.concurrency != profile.participant_count:
-        raise ValueError("profile identity, participant count, and gate concurrency must agree")
-
-
-def _validate_ready_replica_floors(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require ready replicas to carry the gate before autoscaling reacts."""
-    if profile.portal.autoscaling.min_replicas != profile.portal.replicas:
-        raise ValueError("portal minimum replicas must carry the gate before autoscaling")
-    if profile.guacd.autoscaling.min_replicas != profile.guacd.replicas:
-        raise ValueError("guacd minimum replicas must carry the gate before autoscaling")
-
-
-def _validate_timeout_ordering(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require heartbeat, drain, process, and pod timeouts to remain ordered."""
-    timeouts = profile.timeouts
-    cadence = timeouts.websocket_ping_interval_seconds + timeouts.websocket_ping_timeout_seconds
-    if cadence >= min(timeouts.portal_backend_seconds, timeouts.guacamole_backend_seconds):
-        raise ValueError("WebSocket cadence must remain below both public backend timeouts")
-    if timeouts.pod_termination_grace_seconds < timeouts.connection_draining_seconds:
-        raise ValueError("pod termination grace must cover connection draining")
-    if timeouts.pod_termination_grace_seconds <= timeouts.process_graceful_timeout_seconds:
-        raise ValueError("pod termination grace must exceed the process graceful timeout")
-
-
-def _validate_connection_budgets(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require SQL and Redis budgets to cover all configured process contexts."""
-    portal_contexts = profile.portal.replicas * (profile.portal.web_workers + profile.portal.bootstrap_workers)
-    required_sql = (
-        portal_contexts + profile.guacamole_client.jdbc_pool_active_connections + profile.cloud_sql.reserved_connections
-    )
-    if profile.cloud_sql.connection_budget < required_sql:
-        raise ValueError("SQL connection budget does not cover portal, Guacamole, and reserve contexts")
-    required_redis = profile.portal.replicas * profile.portal.web_workers * 2
-    if profile.redis.connection_budget < required_redis:
-        raise ValueError("Redis connection budget does not cover portal processes and reconnect headroom")
-
-
-def _validate_gate_replica_floor(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require the public-path gate to demand no more guacd pods than ready."""
-    if profile.gate.required_guacd_replicas > profile.guacd.replicas:
-        raise ValueError("gate requires more guacd replicas than the ready minimum")
 
 
 def _resources(request_cpu: str, request_memory: str, limit_cpu: str, limit_memory: str) -> WorkloadResources:

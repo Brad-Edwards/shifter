@@ -176,9 +176,10 @@ resource "google_compute_region_health_check" "pool" {
   healthy_threshold   = 2
   unhealthy_threshold = 3
 
-  http_health_check {
-    port         = var.health_port
-    request_path = "/healthz"
+  # The server opens the health port only once it is serving; a completed TCP
+  # handshake is the health signal.
+  tcp_health_check {
+    port = var.health_port
   }
 
   log_config {
@@ -232,6 +233,7 @@ resource "google_compute_region_instance_template" "pool" {
       portal_url             = local.portal_url
       control_audience       = local.control_audience
       max_clients            = var.max_clients_per_vm
+      tunnel_network         = var.tunnel_network
       health_port            = var.health_port
     })
   }

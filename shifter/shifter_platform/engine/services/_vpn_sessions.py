@@ -41,6 +41,10 @@ MAX_HEARTBEAT_SESSIONS = 1000
 _COMMON_NAME = re.compile(r"participant-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", re.ASCII)
 _SERVER_NAME = re.compile(r"[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?", re.ASCII)
 _CHANNEL_PORTS = {"ssh": 22, "rdp": 3389}
+# Closed refusal codes the pool controller relays to OpenVPN.
+_INVALID_REQUEST = "vpn.invalid_request"
+_UNKNOWN_CLIENT = "vpn.unknown_client"
+_ACCESS_REVOKED = "vpn.access_revoked"
 _MAX_CLIENT_ID = 2**63 - 1
 _EXPIRY_BATCH = 200
 
@@ -65,7 +69,7 @@ class VpnSessionGrant:
 def _require_server(server: object) -> str:
     """Accept only a Compute Engine instance name for the reporting server."""
     if not isinstance(server, str) or not _SERVER_NAME.fullmatch(server):
-        raise VpnSessionDenied("vpn.invalid_request")
+        raise VpnSessionDenied(_INVALID_REQUEST)
     return server
 
 
@@ -73,14 +77,14 @@ def _require_generation(common_name: object) -> UUID:
     """Return the binding generation a participant certificate was minted for."""
     match = _COMMON_NAME.fullmatch(common_name) if isinstance(common_name, str) else None
     if match is None:
-        raise VpnSessionDenied("vpn.unknown_client")
+        raise VpnSessionDenied(_UNKNOWN_CLIENT)
     return UUID(match.group(1))
 
 
 def _require_client_id(client_id: object) -> int:
     """Accept only the non-negative OpenVPN client id of the server."""
     if isinstance(client_id, bool) or not isinstance(client_id, int) or not 0 <= client_id <= _MAX_CLIENT_ID:
-        raise VpnSessionDenied("vpn.invalid_request")
+        raise VpnSessionDenied(_INVALID_REQUEST)
     return client_id
 
 
@@ -98,12 +102,12 @@ def _current_target(range_obj: Range, generation: UUID) -> tuple[str, tuple[int,
 
     request = range_obj.request
     if range_obj.status != Range.Status.READY or request is None or request.request_id != generation:
-        raise VpnSessionDenied("vpn.access_revoked")
+        raise VpnSessionDenied(_ACCESS_REVOKED)
     try:
         binding = parse_openvpn_binding(range_obj.vpn_access_binding)
         capability = parse_openvpn_capability(range_obj.remote_access_capability)
     except OpenVpnBindingError as exc:
-        raise VpnSessionDenied("vpn.access_revoked") from exc
+        raise VpnSessionDenied(_ACCESS_REVOKED) from exc
     valid = (
         binding.ready
         and binding.generation == generation
@@ -113,12 +117,12 @@ def _current_target(range_obj: Range, generation: UUID) -> tuple[str, tuple[int,
         and is_raes_member_target(binding.target_ref)
     )
     if not valid:
-        raise VpnSessionDenied("vpn.access_revoked")
+        raise VpnSessionDenied(_ACCESS_REVOKED)
     return _member_destination(range_obj, binding.target_ref)
 
 
-def _member_destination(range_obj: Range, target_ref: str) -> tuple[str, tuple[int, ...]]:
-    """Resolve the realized participant target to one private address and its declared ports."""
+def _realized_member(range_obj: Range, target_ref: str) -> dict[str, object]:
+    """Return the one realized RAES member named ``target_ref``."""
     members = range_obj.provisioned_instances if isinstance(range_obj.provisioned_instances, list) else []
     matches = [
         member
@@ -126,19 +130,27 @@ def _member_destination(range_obj: Range, target_ref: str) -> tuple[str, tuple[i
         if isinstance(member, dict) and member.get("uuid") == target_ref and member.get("role") == "raes-node"
     ]
     if len(matches) != 1:
-        raise VpnSessionDenied("vpn.access_revoked")
-    channels = matches[0].get("participant_access_channels")
-    ports = (
-        tuple(sorted({_CHANNEL_PORTS[c] for c in channels if c in _CHANNEL_PORTS}))
-        if isinstance(channels, list)
-        else ()
-    )
+        raise VpnSessionDenied(_ACCESS_REVOKED)
+    return matches[0]
+
+
+def _channel_ports(channels: object) -> tuple[int, ...]:
+    """Return the sorted ports of the declared participant channels."""
+    if not isinstance(channels, list):
+        return ()
+    return tuple(sorted({_CHANNEL_PORTS[channel] for channel in channels if channel in _CHANNEL_PORTS}))
+
+
+def _member_destination(range_obj: Range, target_ref: str) -> tuple[str, tuple[int, ...]]:
+    """Resolve the realized participant target to one private address and its declared ports."""
+    member = _realized_member(range_obj, target_ref)
+    ports = _channel_ports(member.get("participant_access_channels"))
     try:
-        address = ipaddress.ip_address(str(matches[0].get("private_ip", "")))
+        address = ipaddress.ip_address(str(member.get("private_ip", "")))
     except ValueError as exc:
-        raise VpnSessionDenied("vpn.access_revoked") from exc
+        raise VpnSessionDenied(_ACCESS_REVOKED) from exc
     if not ports or address.version != 4 or not address.is_private:
-        raise VpnSessionDenied("vpn.access_revoked")
+        raise VpnSessionDenied(_ACCESS_REVOKED)
     return str(address), ports
 
 
@@ -184,7 +196,7 @@ def authorize_vpn_session(
             .first()
         )
         if range_obj is None:
-            raise VpnSessionDenied("vpn.unknown_client")
+            raise VpnSessionDenied(_UNKNOWN_CLIENT)
         target_ip, ports = _current_target(range_obj, generation)
         for previous in VpnSession.objects.select_for_update().filter(range=range_obj, state=VpnSessionState.ACTIVE):
             _end(previous, VpnSessionEndReason.SUPERSEDED)
@@ -202,11 +214,11 @@ def authorize_vpn_session(
 def _require_session_ids(session_ids: object) -> set[UUID]:
     """Accept a bounded list of session identifiers from one heartbeat."""
     if not isinstance(session_ids, list) or len(session_ids) > MAX_HEARTBEAT_SESSIONS:
-        raise VpnSessionDenied("vpn.invalid_request")
+        raise VpnSessionDenied(_INVALID_REQUEST)
     try:
         return {UUID(str(value)) for value in session_ids}
     except ValueError as exc:
-        raise VpnSessionDenied("vpn.invalid_request") from exc
+        raise VpnSessionDenied(_INVALID_REQUEST) from exc
 
 
 def _renewed(row: VpnSession, server_name: str, lease: datetime) -> bool:
@@ -271,7 +283,7 @@ def end_vpn_session(*, server: object, session_id: object) -> None:
     try:
         identifier = UUID(str(session_id))
     except ValueError as exc:
-        raise VpnSessionDenied("vpn.invalid_request") from exc
+        raise VpnSessionDenied(_INVALID_REQUEST) from exc
     with transaction.atomic():
         row = (
             VpnSession.objects.select_for_update()
