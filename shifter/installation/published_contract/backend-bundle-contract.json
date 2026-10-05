@@ -3355,19 +3355,6 @@
           "source": "a Google Secret Manager reference rendered from the Terraform runtime_secret_ids output"
         },
         {
-          "description": "Public GCP runtime configuration value (FEATURE_ARTIFACT_JOB_IMAGE) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
-          "destination": "runtime-env",
-          "kind": "runtime-env",
-          "name": "FEATURE_ARTIFACT_JOB_IMAGE",
-          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
-          "process_roles": [
-            "portal",
-            "worker"
-          ],
-          "sensitivity": "public",
-          "source": "rendered from validated Terraform outputs and the normalized root config"
-        },
-        {
           "description": "Public GCP runtime configuration value (GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
           "destination": "runtime-env",
           "kind": "runtime-env",
@@ -4020,6 +4007,19 @@
           ],
           "sensitivity": "public",
           "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
+        },
+        {
+          "description": "Public GCP image identity (FEATURE_ARTIFACT_JOB_IMAGE) emitted into the platform runtime environment. Optional; emitted only when the deployment enables it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "FEATURE_ARTIFACT_JOB_IMAGE",
+          "owner": "GCP Helm-values renderer (scripts/bootstrap/gcp_control_plane.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "attested image identity projected during GCP Helm-value assembly"
         }
       ],
       "health_checks": [
