@@ -66,6 +66,7 @@ class TestChallengeExportImport:
         ).json()
         entry = exported["challenges"][0]
         assert entry["value"] == 100
+        assert entry["difficulty"] == ChallengeDifficulty.EASY.value
         assert entry["flags"] == []
         assert entry["hints"] == [{"content": "look closer", "cost": 10}]
 
