@@ -1856,11 +1856,15 @@ def _migration_job(platform_image: str) -> dict[str, object]:
                             "image": platform_image,
                             "imagePullPolicy": "IfNotPresent",
                             # Passed to entrypoint.sh as "$@": it migrates first, then
-                            # execs these content-convergence commands.
+                            # execs these content-convergence commands. The last one
+                            # claims registered packs' feature artifacts so they are
+                            # acquired before any range needs them (ADR-034-R12).
                             "args": [
                                 "/bin/sh",
                                 "-c",
-                                "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+                                "python manage.py bootstrap_inbox_catalog"
+                                " && python manage.py seed_raes_image_registry"
+                                " && python manage.py acquire_feature_artifacts",
                             ],
                             "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
                             "env": [{"name": "SKIP_MIGRATIONS", "value": ""}],

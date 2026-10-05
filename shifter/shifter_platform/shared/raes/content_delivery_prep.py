@@ -166,6 +166,20 @@ def prepare_content_delivery(
     )
 
 
+def pack_projects_feature(pack_root: Path, *, source_name: str, source_version: str, feature_type: str) -> bool:
+    """Whether the pack's verified projection carries this exact feature source.
+
+    The projection document is checked against the pack's associated-artifact
+    inventory first, exactly as launch does (ADR-034-R6).
+    """
+    if not _pack_projection_present(pack_root):
+        return False
+    _verify_projection_against_inventory(pack_root, build_inventory_index(pack_root))
+    return _load_pack_projection(pack_root).has_feature(
+        source_name=source_name, source_version=source_version, feature_type=feature_type
+    )
+
+
 def _pack_projection_present(pack_root: Path | None) -> bool:
     """Whether the pack ships a delivery projection document."""
     return pack_root is not None and (Path(pack_root) / PROJECTION_RELPATH).is_file()

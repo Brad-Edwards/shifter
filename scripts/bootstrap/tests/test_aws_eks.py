@@ -643,6 +643,10 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     )
     job_env = {e["name"]: e.get("value") for e in migrate_job["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert job_env["SKIP_MIGRATIONS"] == ""
+    assert migrate_job["spec"]["template"]["spec"]["containers"][0]["args"][-1] == (
+        "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry"
+        " && python manage.py acquire_feature_artifacts"
+    )
     # Guacamole provisioning: the guacamole-db + json-auth secrets are read, and the
     # provisioner Job is awaited to completion before Helm runs.
     read_secret_ids = [

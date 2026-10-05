@@ -28,6 +28,11 @@ locals {
     identity_name
     if identity.feature_artifact_store_write
   ])
+  workload_feature_artifact_store_read = toset([
+    for identity_name, identity in var.workload_identities :
+    identity_name
+    if identity.feature_artifact_store_read
+  ])
   workload_platform_application_access = toset([
     for identity_name, identity in var.workload_identities :
     identity_name
@@ -469,8 +474,9 @@ resource "aws_iam_role_policy" "workload_platform_application" {
 }
 
 # Isolated feature-artifact acquisition Job (ADR-034-R12, #2463): it may only
-# store and read back objects under the content-addressed delivery prefix. It
-# cannot list, delete, or touch any other bucket path.
+# write objects under the content-addressed delivery prefix (multipart SSE-KMS
+# uploads need the storage key's Decrypt and GenerateDataKey). It cannot read,
+# list, delete, or touch any other bucket path.
 resource "aws_iam_role_policy" "workload_feature_artifact_store" {
   for_each = local.workload_feature_artifact_store_write
 
@@ -482,7 +488,7 @@ resource "aws_iam_role_policy" "workload_feature_artifact_store" {
       {
         Sid      = "FeatureArtifactObjects"
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject"]
+        Action   = ["s3:PutObject"]
         Resource = "arn:aws:s3:::${var.storage_bucket_name}/${trim(var.feature_artifact_prefix, "/")}/*"
       },
       {
@@ -493,6 +499,34 @@ resource "aws_iam_role_policy" "workload_feature_artifact_store" {
         Condition = {
           StringEquals = { "kms:ViaService" = "s3.${var.aws_region}.amazonaws.com" }
         }
+      },
+    ]
+  })
+}
+
+# Deploy content bootstrap (acquire_feature_artifacts, ADR-034-R12): verifies an
+# inventoried artifact still exists before reusing it. HEAD needs s3:GetObject,
+# and only ListBucket turns a missing key into 404 instead of 403. With no
+# storage-key KMS grant the identity cannot decrypt object bytes.
+resource "aws_iam_role_policy" "workload_feature_artifact_store_read" {
+  for_each = local.workload_feature_artifact_store_read
+
+  name = "feature-artifact-store-read"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "FeatureArtifactObjectMetadata"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}/${trim(var.feature_artifact_prefix, "/")}/*"
+      },
+      {
+        Sid      = "FeatureArtifactMissingObjects"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}"
       },
     ]
   })

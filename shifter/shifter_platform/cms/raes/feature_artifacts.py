@@ -10,13 +10,17 @@ materialization; other ranges are unaffected.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
 
 from shared.raes.content_delivery import FEATURE_BINDING_VERSION, ContentDeliveryError, DeliveryBinding
+
+logger = logging.getLogger(__name__)
 
 # Guest platform of the backend's Linux range instances (x86_64, glibc). A backend
 # realization fact, not authored intent: other node OS families have no platform
@@ -112,3 +116,68 @@ def feature_artifact_resolver(
         )
 
     return acquire
+
+
+def acquisition_enabled() -> bool:
+    """Whether this deployment runs acquisition Jobs (an image is configured)."""
+    import os
+
+    return bool(os.environ.get("FEATURE_ARTIFACT_JOB_IMAGE", ""))
+
+
+def _pack_root(scenario_path: Path) -> Path | None:
+    """The pack root containing ``scenario_path`` (the nearest ``pack.yaml``)."""
+    for parent in scenario_path.parents:
+        if (parent / "pack.yaml").is_file():
+            return parent
+    return None
+
+
+def _projected(pack_root: Path | None, demand: Any) -> bool:
+    """Whether the pack itself projects (and therefore carries) this feature."""
+    from shared.raes.content_delivery_prep import pack_projects_feature
+
+    return pack_root is not None and pack_projects_feature(
+        pack_root, source_name=demand.source_name, source_version=demand.source_version, feature_type="artifact"
+    )
+
+
+def request_pack_feature_artifacts(scenario_id: str, *, target: Any | None = None) -> int:
+    """Claim acquisition for every unprojected artifact feature a registered pack declares.
+
+    Runs before any range needs the artifacts (pack registration, deploy
+    bootstrap). It never waits and never fails its caller: the launcher completes
+    the attempts, and a launch that still finds an artifact unavailable fails
+    only that range. Returns the number of acquisitions requested.
+    """
+    from cms.models import RaesPackageSource
+    from cms.scenarios.realizability import _trusted_scenario_path
+    from engine.services import ArtifactRequest, default_storage_target, request_acquisition
+    from shared.feature_artifacts.recipes import RecipeError
+    from shared.raes.realizability import assess_scenario_capability
+
+    if not acquisition_enabled():
+        return 0
+    source = RaesPackageSource.objects.filter(scenario_id=scenario_id).first()
+    if source is None:
+        return 0
+    requested = 0
+    with _trusted_scenario_path(source) as (scenario_path, _gap):
+        if scenario_path is None:
+            return 0
+        demands = assess_scenario_capability(scenario_path).feature_artifact_demands
+        pack_root = _pack_root(Path(scenario_path))
+        for demand in demands:
+            platform = _GUEST_PLATFORMS.get(demand.os_family.lower())
+            if platform is None or _projected(pack_root, demand):
+                continue
+            try:
+                request_acquisition(
+                    ArtifactRequest(demand.source_name, demand.source_version, platform),
+                    target=target or default_storage_target(),
+                )
+            except RecipeError:
+                logger.info("feature artifact has no platform recipe source=%s", demand.source_name)
+                continue
+            requested += 1
+    return requested
