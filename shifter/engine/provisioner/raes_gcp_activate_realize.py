@@ -31,10 +31,12 @@ from shared.warm_pool.activation_input import ActivationInput
 
 from cloud.exceptions import CloudError
 from config import GCERangeCellConfig
+from raes_gce_image import registry_image_resolver
 from raes_gcp_activate import ActivationResult
 from raes_gcp_apply import RaesGceApplyOptions, realize_access_on_existing_cell
+from raes_gcp_apply_types import RaesGceOpenVpn
 from raes_plan import parse_plan
-from raes_range_ops import _realized_members, _registry_resolver
+from raes_range_ops import _realized_members
 from raes_snapshot import snapshot_resources
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,7 @@ def realize_claimant_access_on_cell(
     *,
     config: GCERangeCellConfig | None = None,
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None,
+    openvpn: RaesGceOpenVpn | None = None,
 ) -> ActivationResult:
     """Rotate credentials and realize the claimant's participant access; return members.
 
@@ -64,11 +67,12 @@ def realize_claimant_access_on_cell(
             str(activate_generation),
             activation.legacy_range_id,
             raes_plan,
-            _registry_resolver(operation_input),
+            registry_image_resolver(operation_input),
             options=RaesGceApplyOptions(
                 config=config,
                 egress_mode=operation_input.egress_mode,
                 allocated_network_cidrs=allocated_network_cidrs,
+                openvpn=openvpn,
             ),
             access_bindings=operation_input.access_binding_transport(),
             delivery_bindings=operation_input.binding_transport(),
@@ -84,8 +88,11 @@ def realize_claimant_access_on_cell(
             compute_substrates=result["compute_substrates"],
             generation_id=str(activate_generation),
         )
+        vpn_access = result.get("vpn_access")
+        if vpn_access is not None and not isinstance(vpn_access, dict):
+            raise ActivationRealizationError("warm activation OpenVPN realization is invalid")
     except Exception as exc:
         raise ActivationRealizationError(
             f"warm activation could not realize claimant access: {type(exc).__name__}"
         ) from None
-    return ActivationResult(members=_realized_members(result), completion=completion)
+    return ActivationResult(members=_realized_members(result), completion=completion, vpn_access=vpn_access)

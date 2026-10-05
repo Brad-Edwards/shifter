@@ -267,6 +267,18 @@ def _model_access_runtime_values() -> dict[str, str]:
     }
 
 
+def _openvpn_runtime_values() -> dict[str, str]:
+    """Render the deployment's participant OpenVPN opt-in (#2030, ADR-039-R10).
+
+    Always emitted, so a deploy that turns the opt-in off also revokes a stale
+    ``true`` from an earlier rollout.
+    """
+    enabled = os.environ.get("RANGE_OPENVPN_ENABLED", "").strip().lower() or "false"
+    if enabled not in {"true", "false"}:
+        raise ValueError("RANGE_OPENVPN_ENABLED must be true or false")
+    return {"RANGE_OPENVPN_ENABLED": enabled}
+
+
 def _mission_control_lease_runtime_values() -> dict[str, str]:
     """Pass through the validated Mission Control lease policy JSON (issue #27).
 
@@ -546,6 +558,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values["MODEL_ENROLLMENT_CONTROL_URL"] = ""
     values["MODEL_ENROLLMENT_CA_PEM_B64"] = ""
     values.update(_model_access_runtime_values())
+    values.update(_openvpn_runtime_values())
     values.update(_mission_control_lease_runtime_values())
     # These references originate in the same validated shifter.yaml map that
     # drives per-secret Terraform IAM. Apply them last so a process-local env

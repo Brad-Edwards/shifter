@@ -99,6 +99,14 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                     "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
                     "ports": [{"protocol": "TCP", "port": port} for port in (22, 3389)],
                 }])
+                # Provisioner Jobs dial the management channels and the OpenVPN
+                # gateway health responder (#2030); the portal does not.
+                jobs = next(doc for doc in documents if _identity(doc) == (
+                    "NetworkPolicy", "allow-jobs-range-access-egress"))
+                self.assertEqual(jobs["spec"]["egress"], [{
+                    "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
+                    "ports": [{"protocol": "TCP", "port": port} for port in (22, 2222, 3389, 5985, 5986, 1195)],
+                }])
 
     def test_aws_supplies_gvisor_runtime_class_for_only_the_isolated_pool(self) -> None:
         _, documents = _render(VALUES_FILES["aws-dev"])

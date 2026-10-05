@@ -23,10 +23,12 @@ from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import (
     RaesInputBindings,
     RaesRangeIdentity,
+    RaesRemoteAccess,
     build_raes_operation_input,
     candidate_key,
     plan_image_lookup_keys,
 )
+from shared.raes.operation_input_remote_access import parse_remote_access
 from shared.raes.participant_access import ParticipantAccessBinding
 
 __all__ = ["operation_input_payload"]
@@ -200,6 +202,21 @@ def _raes_artifact_bindings(target: Range) -> list[ArtifactBinding]:
     ]
 
 
+def _raes_remote_access(target: Range) -> RaesRemoteAccess | None:
+    """Project the range's OpenVPN capability and reserved gateway slot (#2030).
+
+    Carried on every operation of a range that holds a capability -- including
+    destroy, which must remove the gateway and its secrets -- so the provisioner
+    never reads either from ``mission_control_range`` (ADR-043).
+    """
+    capability = target.remote_access_capability
+    if capability is None:
+        return None
+    if target.vpn_gateway_pool_slot is None:
+        raise ValueError("an OpenVPN range must hold a reserved gateway pool slot")
+    return parse_remote_access({"capability": capability, "gateway_pool_slot": target.vpn_gateway_pool_slot})
+
+
 def _raes_input_payload(target: Range, request: Request, *, suppress_access: bool = False) -> dict[str, object]:
     """Compose the RAES operation input (ADR-043 phase 5, #1837).
 
@@ -226,6 +243,7 @@ def _raes_input_payload(target: Range, request: Request, *, suppress_access: boo
             artifact=_raes_artifact_bindings(target),
             runtime_plugin=pin,
             model_enrollments=project_model_guest_bindings(target, pin) if not suppress_access else (),
+            remote_access=None if suppress_access else _raes_remote_access(target),
         ),
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
