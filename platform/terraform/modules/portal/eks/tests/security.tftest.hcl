@@ -532,6 +532,17 @@ run "security_contract" {
     error_message = "The module-owned Load Balancer Controller policy must attach only to the exact ingress IRSA role."
   }
 
+  # IP targets sit in the EKS-managed cluster security group; it carries the
+  # exact cluster ownership tag so the controller's tag-scoped rule edits reach it.
+  assert {
+    condition = (
+      aws_ec2_tag.cluster_security_group_lb_controller.resource_id == aws_eks_cluster.this.vpc_config[0].cluster_security_group_id &&
+      aws_ec2_tag.cluster_security_group_lb_controller.key == "elbv2.k8s.aws/cluster" &&
+      aws_ec2_tag.cluster_security_group_lb_controller.value == var.cluster_name
+    )
+    error_message = "The EKS cluster security group must carry the Load Balancer Controller's exact cluster ownership tag."
+  }
+
   # EBS/EFS CSI drivers are installed as managed add-ons bound to their own
   # exact-subject IRSA roles (least-privilege controller identity).
   assert {
