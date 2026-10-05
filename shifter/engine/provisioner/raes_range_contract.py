@@ -9,6 +9,7 @@ from shared.range_instantiation_policy import (
 )
 
 from cloud.exceptions import CloudError
+from executors.base import GuestReadinessTimeoutError
 from raes_content_payload import RaesContentDeliveryError
 from raes_gcp_network_allocation import RaesRealizationError
 
@@ -51,12 +52,14 @@ def _require_gce_live_fire_binding(operation_input: RaesOperationInput) -> str:
 
 
 #: Failures whose messages are authored text, safe to report: RAES realization
-#: errors raised by this module, and content-delivery errors, which carry only
+#: errors raised by this module, content-delivery errors, which carry only
 #: constant messages naming the failing step (enforced by
-#: test_content_delivery_errors_carry_only_authored_text).
+#: test_content_delivery_errors_carry_only_authored_text), and guest readiness
+#: timeouts, which carry only the wait and a fixed probe-failure category.
 _AUTHORED_FAILURES: tuple[tuple[type[BaseException], str, str], ...] = (
     (RaesRealizationError, _INVALID_STATE_REASON_CODE, "{stage}: {message}"),
     (RaesContentDeliveryError, _FAILURE_REASON_CODE, "{stage} failed: {message}"),
+    (GuestReadinessTimeoutError, _TIMEOUT_REASON_CODE, "{stage} timed out: {message}"),
 )
 
 
