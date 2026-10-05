@@ -407,13 +407,15 @@ Every participant connects to one shared OpenVPN server pool per deployment
 
 Enable it per deployment:
 
-1. Set the deployment variable `RANGE_OPENVPN_ENABLED=true` (default `false`).
-   The deploy then creates the pool, its PKI, and its release record, and renders
-   the pool wiring into the runtime environment.
-2. Apply `platform/terraform/gcp/global/cicd-oidc` for the deployment's identity
-   profile first. The deploy identity needs the conditioned pool role it adds
+1. Apply `platform/terraform/gcp/global/cicd-oidc` for the deployment's identity
+   profile. The deploy identity needs the conditioned pool role it adds
    (instance templates, the regional instance group, and the autoscaler, limited
    to the pool's own VM names).
+2. Set the deployment variable `RANGE_OPENVPN_ENABLED=true` (default `false`) and
+   run the CI deploy. It creates the pool, its PKI, and its release record, and
+   renders the pool wiring into the runtime environment. The local
+   `gdc-bootstrap` path never deploys the pool; see step 6 of the GCP deployment
+   in [`docs/technical/dev/setup.md`](../technical/dev/setup.md).
 3. Size the pool through `settings.shared_service_capacity_profile`. Each profile
    plans 25 participants per `e2-standard-2` server, keeps one spare server above
    the planned count, scales out at 30% CPU, and allows twice the minimum. Check

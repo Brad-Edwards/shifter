@@ -108,3 +108,28 @@ def test_the_http_client_opens_only_http_and_never_follows_redirects():
         opener.open("file:///etc/passwd")
     assert not any(isinstance(h, urllib.request.HTTPRedirectHandler) for h in opener.handlers)
     assert not any(isinstance(h, urllib.request.ProxyHandler) for h in opener.handlers)
+
+
+class _Stoppable:
+    def __init__(self) -> None:
+        self.terminated = False
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def wait(self) -> int:
+        return 0
+
+
+def test_a_stop_signal_is_passed_to_openvpn_and_ends_cleanly(monkeypatch):
+    stopping = threading.Event()
+    process = _Stoppable()
+
+    entry._forward_stop(process, stopping)(15, None)
+
+    assert process.terminated and stopping.is_set()
+    exits: list[int] = []
+    monkeypatch.setattr(entry.os, "_exit", exits.append)
+    entry._watch_openvpn(process, stopping)
+    entry._watch_openvpn(process, threading.Event())
+    assert exits == [0, 1]  # asked to stop vs. OpenVPN died on its own
