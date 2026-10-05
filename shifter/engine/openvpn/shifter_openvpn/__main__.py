@@ -69,6 +69,7 @@ def _forward_stop(process: subprocess.Popen[bytes], stopping: threading.Event) -
     """Return a signal handler that asks OpenVPN to notify its clients and exit."""
 
     def handler(_signum: int, _frame: object) -> None:
+        """Mark the stop as intended, then send OpenVPN SIGTERM."""
         stopping.set()
         process.terminate()
 
