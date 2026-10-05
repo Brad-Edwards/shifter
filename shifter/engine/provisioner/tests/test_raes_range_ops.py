@@ -460,6 +460,47 @@ class TestProvisionFailure:
         for leaked in ("X-Goog-Signature", "deadbeef", "acme-prod", "storage.example", "db1"):
             assert leaked not in diagnostic
 
+    def test_content_delivery_failures_name_the_authored_step(self, patched):
+        # Content delivery raises only authored constant messages, so the step
+        # that failed may cross; the reason code stays closed.
+        from raes_content_payload import RaesContentDeliveryError
+
+        patched.apply.side_effect = RaesContentDeliveryError("RAES content delivery setup plan failed")
+        with pytest.raises(RaesContentDeliveryError):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        payload = _payload_for(patched, ResultStep.RAES_TERMINAL_FAILED)
+        assert payload["reason_code"] == "cloud_operation_failed"
+        assert payload["diagnostic"] == "raes range provision failed: RAES content delivery setup plan failed"
+
+    def test_content_delivery_errors_carry_only_authored_text(self):
+        """Every RaesContentDeliveryError(...) passes a literal or a module constant,
+        never runtime data, which is what lets its message cross the result boundary."""
+        import ast
+        from pathlib import Path
+
+        root = Path(raes_range_ops.__file__).resolve().parent
+
+        def authored(call: ast.Call) -> bool:
+            if len(call.args) != 1 or call.keywords:
+                return False
+            arg = call.args[0]
+            literal = isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+            constant = isinstance(arg, ast.Name) and arg.id.lstrip("_").isupper()
+            return literal or constant
+
+        checked, offenders = 0, []
+        for path in root.rglob("*.py"):
+            if "tests" in path.parts or ".venv" in path.parts:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "RaesContentDeliveryError":
+                    checked += 1
+                    if not authored(node):
+                        offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+        assert checked > 20  # the scan really sees the delivery raises
+        assert offenders == []
+
     def test_destroy_diagnostic_is_authored_too(self, patched):
         # Same category, other entry point: a fix applied only to provision
         # would leave this channel open.

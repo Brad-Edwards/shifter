@@ -130,6 +130,30 @@ class CommandExecutor(Protocol):
 
 
 @runtime_checkable
+class StreamingCommandExecutor(Protocol):
+    """Optional guest port: run a script whose stdin streams from a local file.
+
+    Feeds ``stdin_prefix`` and then the bytes of ``stdin_path`` to the script's
+    stdin with constant memory, so a payload of any size can travel over the
+    authenticated guest channel (ADR-032-R9). Transports that cannot stream do
+    not implement it, and callers fail closed.
+    """
+
+    def run_command_streaming(
+        self,
+        instance_id: str,
+        script: str,
+        *,
+        stdin_path: str,
+        stdin_prefix: str = "",
+        timeout_seconds: int = 300,
+        document_name: str = "AWS-RunShellScript",
+    ) -> CommandResult:
+        """Execute ``script`` with ``stdin_prefix`` + the file's bytes on stdin."""
+        ...
+
+
+@runtime_checkable
 class ActionExecutor(Protocol):
     """Provider action-dispatch port.
 

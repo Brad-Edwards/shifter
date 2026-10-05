@@ -82,6 +82,10 @@ _IRSA_PROBE_IDENTITIES = {
     "provisionerLauncher": ("shifter-platform", "provisioner-launcher"),
     "provisioner": ("shifter-jobs", "provisioner"),
 }
+# Probed only when the environment defines the role (see _OPTIONAL_WORKLOAD_ROLE_KEYS).
+_OPTIONAL_IRSA_PROBE_IDENTITIES = {
+    "artifactAcquirer": ("shifter-acquisition", "artifact-acquirer"),
+}
 _IRSA_PROBE_SCRIPT = """import json, os
 import boto3
 from botocore.exceptions import ClientError
@@ -114,6 +118,10 @@ print(f"IRSA_OK:{identity}")
 # controllers directly (EKS add-on service_account_role_arn / Helm SA annotation),
 # not projected into the chart's identity.serviceAccountRoleArns.
 _WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner", "migrator"})
+# Workload roles an environment may define. Their presence enables the matching
+# capability: artifactAcquirer turns on isolated feature-artifact acquisition
+# Jobs (ADR-034-R12, #2463).
+_OPTIONAL_WORKLOAD_ROLE_KEYS = frozenset({"artifactAcquirer"})
 # Single source of truth in the installation package (installation.runtime_inventory_aws),
 # so the renderer and the backend bundle's generated-output projection cannot drift.
 _RENDERER_OWNED_RUNTIME_ENV = AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS
@@ -579,13 +587,17 @@ def _verify_effective_irsa(roles: Mapping[str, object], platform_image: str) -> 
     missing = sorted(set(_IRSA_PROBE_IDENTITIES).difference(roles))
     if missing:
         raise ValueError("workload_role_arns is missing IRSA probe identities: " + ", ".join(missing))
-    if not all(isinstance(roles[name], str) for name in _IRSA_PROBE_IDENTITIES):
+    identities = {
+        **_IRSA_PROBE_IDENTITIES,
+        **{name: target for name, target in _OPTIONAL_IRSA_PROBE_IDENTITIES.items() if name in roles},
+    }
+    if not all(isinstance(roles[name], str) for name in identities):
         raise ValueError("IRSA probe role ARNs must be strings")
 
-    role_arns = {name: str(roles[name]) for name in _IRSA_PROBE_IDENTITIES}
+    role_arns = {name: str(roles[name]) for name in identities}
     with tempfile.TemporaryDirectory(prefix="shifter-irsa-readiness-") as staging:
         staging_path = Path(staging)
-        for identity, (namespace, service_account) in _IRSA_PROBE_IDENTITIES.items():
+        for identity, (namespace, service_account) in identities.items():
             pod_name = "shifter-irsa-check-" + re.sub(r"[^a-z0-9-]", "-", identity.lower())
             sibling_roles = [role_arns[name] for name in sorted(role_arns) if name != identity]
             manifest = {
@@ -965,6 +977,66 @@ def _guacamole_db_endpoint(terraform_outputs: Mapping[str, object]) -> tuple[str
     return host, str(port)
 
 
+def _validated_workload_roles(terraform_outputs: Mapping[str, object]) -> Mapping[str, str]:
+    """The workload IRSA role map, required to cover every chart workload identity."""
+    roles = _output(terraform_outputs, "workload_role_arns")
+    if not isinstance(roles, Mapping) or not all(isinstance(k, str) and isinstance(v, str) for k, v in roles.items()):
+        raise ValueError("workload_role_arns must map exact service-account names to IAM role ARNs")
+    missing_roles = sorted(_WORKLOAD_ROLE_KEYS.difference(roles))
+    if missing_roles:
+        raise ValueError("workload_role_arns is missing chart workload roles: " + ", ".join(missing_roles))
+    return roles
+
+
+def _feature_artifact_job_image(roles: Mapping[str, str], validated_images: Mapping[str, str]) -> str:
+    """The image isolated feature-artifact acquisition Jobs run (#2463), or "" when disabled.
+
+    Acquisition is enabled only where the environment defines the
+    artifactAcquirer identity; an empty image keeps the launcher's acquisition
+    reconcile a no-op elsewhere. The Jobs run the platform image.
+    """
+    if "artifactAcquirer" not in roles:
+        return ""
+    if "platform" not in validated_images:
+        raise ValueError("images must include the digest-pinned 'platform' identity for feature-artifact acquisition")
+    return validated_images["platform"]
+
+
+def _edge_values(config: RootConfig, terraform_outputs: Mapping[str, object]) -> dict[str, object]:
+    """Public edge: ALB ingress with ACM TLS and WAF, restricted to the edge client CIDRs."""
+    edge_client_cidrs = _cidr_output(terraform_outputs, "edge_client_cidrs")
+    return {
+        "hostname": config.deployment.domain,
+        "certificateArn": _output(terraform_outputs, "certificate_arn"),
+        "wafAclArn": _output(terraform_outputs, "waf_acl_arn"),
+        "ingress": {
+            "enabled": True,
+            "className": "alb",
+            "annotations": {
+                "alb.ingress.kubernetes.io/scheme": "internet-facing",
+                "alb.ingress.kubernetes.io/target-type": "ip",
+                "alb.ingress.kubernetes.io/listen-ports": '[{"HTTPS":443}]',
+                "alb.ingress.kubernetes.io/ssl-redirect": "443",
+                "alb.ingress.kubernetes.io/load-balancer-name": (
+                    f"{_output(terraform_outputs, 'cluster_name')}-platform"
+                ),
+                "alb.ingress.kubernetes.io/certificate-arn": _output(terraform_outputs, "certificate_arn"),
+                "alb.ingress.kubernetes.io/wafv2-acl-arn": _output(terraform_outputs, "waf_acl_arn"),
+                "alb.ingress.kubernetes.io/inbound-cidrs": ",".join(edge_client_cidrs),
+            },
+            "host": config.deployment.domain,
+            # TLS terminates at the AWS Load Balancer Controller using ACM,
+            # so no Kubernetes TLS Secret is created or placed in values.
+            "tls": {"enabled": False, "secretName": ""},
+            "gcpManagedTls": {
+                "enabled": False,
+                "certificateName": "platform-managed-cert",
+                "frontendConfigName": "platform-frontend-config",
+            },
+        },
+    }
+
+
 def render_aws_values(
     config: RootConfig,
     terraform_outputs: Mapping[str, object],
@@ -972,12 +1044,7 @@ def render_aws_values(
 ) -> dict[str, object]:
     """Render non-secret AWS values from validated config, outputs, and digests."""
     _validate_config(config)
-    roles = _output(terraform_outputs, "workload_role_arns")
-    if not isinstance(roles, Mapping) or not all(isinstance(k, str) and isinstance(v, str) for k, v in roles.items()):
-        raise ValueError("workload_role_arns must map exact service-account names to IAM role ARNs")
-    missing_roles = sorted(_WORKLOAD_ROLE_KEYS.difference(roles))
-    if missing_roles:
-        raise ValueError("workload_role_arns is missing chart workload roles: " + ", ".join(missing_roles))
+    roles = _validated_workload_roles(terraform_outputs)
     validated_images = _validated_images(images)
     if "provisioner" not in validated_images:
         raise ValueError("images must include a digest-pinned 'provisioner' identity for the Kubernetes Job launcher")
@@ -991,6 +1058,7 @@ def render_aws_values(
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
+    runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"] = _feature_artifact_job_image(roles, validated_images)
     # Provisioner-Job admission contract (restrict-provisioner-jobs, #1826). The
     # launcher builds the Job with imagePullPolicy = ENGINE_TASK_IMAGE_PULL_POLICY
     # (GCPTaskRunner default IfNotPresent) and DB_USER = provisioner_lambda
@@ -1034,43 +1102,16 @@ def render_aws_values(
             **broker.get("enrollment_env", {}),
         }
     )
-    edge_client_cidrs = _cidr_output(terraform_outputs, "edge_client_cidrs")
     return {
         "provider": {"name": "aws"},
         "modelBroker": broker,
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
-        "capabilities": {"kubernetesJobLauncher": True},
-        "provisioner": {"taskRunner": "aws"},
-        "edge": {
-            "hostname": config.deployment.domain,
-            "certificateArn": _output(terraform_outputs, "certificate_arn"),
-            "wafAclArn": _output(terraform_outputs, "waf_acl_arn"),
-            "ingress": {
-                "enabled": True,
-                "className": "alb",
-                "annotations": {
-                    "alb.ingress.kubernetes.io/scheme": "internet-facing",
-                    "alb.ingress.kubernetes.io/target-type": "ip",
-                    "alb.ingress.kubernetes.io/listen-ports": '[{"HTTPS":443}]',
-                    "alb.ingress.kubernetes.io/ssl-redirect": "443",
-                    "alb.ingress.kubernetes.io/load-balancer-name": (
-                        f"{_output(terraform_outputs, 'cluster_name')}-platform"
-                    ),
-                    "alb.ingress.kubernetes.io/certificate-arn": _output(terraform_outputs, "certificate_arn"),
-                    "alb.ingress.kubernetes.io/wafv2-acl-arn": _output(terraform_outputs, "waf_acl_arn"),
-                    "alb.ingress.kubernetes.io/inbound-cidrs": ",".join(edge_client_cidrs),
-                },
-                "host": config.deployment.domain,
-                # TLS terminates at the AWS Load Balancer Controller using ACM,
-                # so no Kubernetes TLS Secret is created or placed in values.
-                "tls": {"enabled": False, "secretName": ""},
-                "gcpManagedTls": {
-                    "enabled": False,
-                    "certificateName": "platform-managed-cert",
-                    "frontendConfigName": "platform-frontend-config",
-                },
-            },
+        "capabilities": {
+            "kubernetesJobLauncher": True,
+            "featureArtifactAcquisition": bool(runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"]),
         },
+        "provisioner": {"taskRunner": "aws"},
+        "edge": _edge_values(config, terraform_outputs),
         "network": {
             "enabled": True,
             "ingressSourceCidrs": _cidr_output(terraform_outputs, "ingress_source_cidrs"),
@@ -1096,7 +1137,11 @@ def render_aws_values(
             "rangeAccessCidrs": [runtime_env["RANGE_VPC_CIDR"]] if runtime_env.get("RANGE_VPC_CIDR") else [],
             "rangeAccessPorts": [22, 3389],
         },
-        "identity": {"serviceAccountRoleArns": {key: roles[key] for key in sorted(_WORKLOAD_ROLE_KEYS)}},
+        "identity": {
+            "serviceAccountRoleArns": {
+                key: roles[key] for key in sorted(_WORKLOAD_ROLE_KEYS | (_OPTIONAL_WORKLOAD_ROLE_KEYS & set(roles)))
+            }
+        },
         "guacamoleRuntimeSecret": {"name": _GUACAMOLE_RUNTIME_SECRET_NAME},
         "runtimeEnv": runtime_env,
         "runtime": {
@@ -1833,11 +1878,15 @@ def _migration_job(platform_image: str) -> dict[str, object]:
                             "image": platform_image,
                             "imagePullPolicy": "IfNotPresent",
                             # Passed to entrypoint.sh as "$@": it migrates first, then
-                            # execs these content-convergence commands.
+                            # execs these content-convergence commands. The last one
+                            # claims registered packs' feature artifacts so they are
+                            # acquired before any range needs them (ADR-034-R12).
                             "args": [
                                 "/bin/sh",
                                 "-c",
-                                "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+                                "python manage.py bootstrap_inbox_catalog"
+                                " && python manage.py seed_raes_image_registry"
+                                " && python manage.py acquire_feature_artifacts",
                             ],
                             "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
                             "env": [{"name": "SKIP_MIGRATIONS", "value": ""}],

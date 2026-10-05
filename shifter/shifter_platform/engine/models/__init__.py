@@ -30,6 +30,7 @@ exactly as before the split.
 from ._capacity import CapacityDeclaration
 from ._capacity_assessment import CapacityAssessment, CapacityDraw, CapacityReservation
 from ._cleanup_verification import CleanupVerificationOutcome, RangeCleanupVerification
+from ._feature_artifacts import AcquiredFeatureArtifact
 from ._launch import InterruptState, ProvisionerLaunchIntent, ProvisionerLaunchStatus
 from ._model_allocation import (
     ModelAliasAssignment,
@@ -97,6 +98,7 @@ from ._vpn_session import VpnSession, VpnSessionEndReason, VpnSessionState
 from ._warm_pool import WarmRangeGeneration
 
 __all__ = [
+    "AcquiredFeatureArtifact",
     "AllocationGroup",
     "App",
     "CapacityAssessment",
