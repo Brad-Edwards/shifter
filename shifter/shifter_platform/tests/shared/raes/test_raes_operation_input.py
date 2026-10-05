@@ -11,6 +11,8 @@ than asserting the dataclass has fields.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from shared.raes.artifact_binding import ArtifactBinding
@@ -21,11 +23,14 @@ from shared.raes.operation_input import (
     RaesInputBindings,
     RaesOperationInputError,
     RaesRangeIdentity,
+    RaesRemoteAccess,
     build_raes_operation_input,
     image_lookup_key,
     parse_raes_operation_input,
     plan_image_lookup_keys,
 )
+from shared.raes.participant_access import ParticipantAccessBinding
+from shared.remote_access import build_openvpn_capability
 
 
 def _artifact_binding(target: str = "provision.node.web") -> ArtifactBinding:
@@ -125,6 +130,7 @@ def _built(**overrides: object) -> dict:
         delivery=kwargs.pop("delivery_bindings"),  # type: ignore[arg-type]
         access=kwargs.pop("access_bindings", ()),  # type: ignore[arg-type]
         artifact=kwargs.pop("artifact_bindings", ()),  # type: ignore[arg-type]
+        remote_access=kwargs.pop("remote_access", None),  # type: ignore[arg-type]
     )
     kwargs["identity"] = RaesRangeIdentity(kwargs.pop("legacy_range_id"), kwargs.pop("resource_generation", None))  # type: ignore[arg-type]
     return build_raes_operation_input(bindings=bindings, **kwargs)  # type: ignore[arg-type]
@@ -269,6 +275,62 @@ class TestArtifactBindings:
         duplicate = [_artifact_binding(), _artifact_binding()]
         with pytest.raises(RaesOperationInputError, match="duplicates target"):
             _built(artifact_bindings=duplicate)
+
+
+class TestRemoteAccess:
+    """The range's OpenVPN capability and gateway slot ride the input (#2030)."""
+
+    _NODE = "provision.node.kali"
+
+    def _access(self) -> tuple[ParticipantAccessBinding, ...]:
+        return (
+            ParticipantAccessBinding(
+                target_address=self._NODE, channel="ssh", account_address="provision.account.kali"
+            ),
+        )
+
+    def _remote(self, target: str | None = None, slot: int = 2) -> RaesRemoteAccess:
+        capability = build_openvpn_capability(target or f"{self._NODE}#0", datetime.now(UTC) + timedelta(days=1))
+        return RaesRemoteAccess(capability=capability, gateway_pool_slot=slot)
+
+    def test_absent_without_a_capability_and_round_trips_with_one(self):
+        assert "remote_access" not in _built()
+        assert parse_raes_operation_input(_built()).remote_access is None
+
+        remote = self._remote()
+        parsed = parse_raes_operation_input(_built(access_bindings=self._access(), remote_access=remote))
+        assert parsed.remote_access == remote
+        assert parsed.remote_access.target_ref == f"{self._NODE}#0"
+
+    def test_a_target_outside_the_declared_participant_access_is_rejected(self):
+        with pytest.raises(RaesOperationInputError, match="declared participant-access target"):
+            _built(access_bindings=self._access(), remote_access=self._remote(target="provision.node.other#0"))
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("gateway_pool_slot", -1),
+            ("gateway_pool_slot", True),
+            ("gateway_pool_slot", "2"),
+            ("capability", {"version": "openvpn-capability-v1"}),
+        ],
+    )
+    def test_a_tampered_projection_is_rejected(self, field, value):
+        payload = _built(access_bindings=self._access(), remote_access=self._remote())
+        payload["remote_access"][field] = value
+        with pytest.raises(RaesOperationInputError, match="remote access"):
+            parse_raes_operation_input(payload)
+
+    def test_an_extra_remote_access_key_is_rejected(self):
+        payload = _built(access_bindings=self._access(), remote_access=self._remote())
+        payload["remote_access"]["owner_user_id"] = 7
+        with pytest.raises(RaesOperationInputError, match="remote access"):
+            parse_raes_operation_input(payload)
+
+    def test_an_expired_capability_still_parses_so_destroy_can_clean_up(self):
+        payload = _built(access_bindings=self._access(), remote_access=self._remote())
+        payload["remote_access"]["capability"]["teardown_at"] = "2020-01-01T00:00:00Z"
+        assert parse_raes_operation_input(payload).remote_access is not None
 
 
 class TestFailsClosed:

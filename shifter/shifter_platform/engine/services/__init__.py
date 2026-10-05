@@ -145,7 +145,13 @@ from ._raes_image import (
     list_raes_image_mappings,
     upsert_raes_image_mapping,
 )
-from ._raes_range import RaesRangeRef, RangeBindings, create_raes_range, dispatch_created_raes_range
+from ._raes_range import (
+    RaesRangeRef,
+    RangeBindings,
+    create_raes_range,
+    dispatch_created_raes_range,
+    grant_raes_remote_access,
+)
 from ._raes_status import project_raes_operation_status
 from ._range import (
     cancel_range,
@@ -196,6 +202,7 @@ from ._sharing import (
     publish_membership_projection,
     publish_sharing_binding,
     resolve_model_access_range_page,
+    resolve_model_access_range_reference,
     resolve_model_access_range_views,
     validate_sharing_binding,
 )
@@ -359,6 +366,7 @@ __all__ = (
     "get_ssh_connection_info",
     "get_ssh_key",
     "get_user_ready_range_instances",
+    "grant_raes_remote_access",
     "has_openvpn_profile",
     "has_runtime_plugin_binding",
     "install_preparation_adapter",
@@ -427,6 +435,7 @@ __all__ = (
     "reserve_request",
     "reserve_subnet_cidrs",
     "resolve_model_access_range_page",
+    "resolve_model_access_range_reference",
     "resolve_model_access_range_views",
     "resume_range",
     "retire_generation",

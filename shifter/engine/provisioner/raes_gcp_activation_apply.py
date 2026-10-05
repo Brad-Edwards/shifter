@@ -20,6 +20,7 @@ from raes_gcp_apply import (
 )
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_verification import _realize_directory
+from raes_gcp_vpn_apply import ensure_vpn_gateway, publish_vpn_access, remote_access_plan
 from raes_guest_plan import assert_management_login_separate
 from raes_operating_system import validate_operating_systems
 from raes_participant_host_keys import observe_participant_host_keys
@@ -52,6 +53,7 @@ def realize_existing_cell(
             access_bindings=realized_access,
             egress_policy=GceEgressPolicy(mode=resolved_options.egress_mode),
             allocated_network_cidrs=runtime.allocated_network_cidrs,
+            remote_access=remote_access_plan(resolved_options),
         ),
     )
     for instance in plan["instances"]:
@@ -64,6 +66,9 @@ def realize_existing_cell(
         _accounts_by_node(raes_plan),
         _access_by_node(realized_access),
     )
+    # The claimant's OpenVPN gateway (#2030): created now so it boots while the
+    # cell is verified, then probed and its profile published below.
+    vpn_gateway = ensure_vpn_gateway(plan, runtime)
     verified = set(_realize_directory(plan, raes_plan, outputs, runtime))
     realize_raes_content_delivery(
         raes_plan=raes_plan,
@@ -85,4 +90,5 @@ def realize_existing_cell(
         "composition_verified_addresses": sorted(verified),
         "operating_systems": operating_systems,
         "compute_substrates": compute_substrates,
+        **publish_vpn_access(runtime, vpn_gateway),
     }

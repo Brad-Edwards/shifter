@@ -50,6 +50,7 @@ from gcp_range_cell_types import (
     FirewallPlan,
     GceEgressPolicy,
     InstancePlan,
+    OpenVpnGatewayPlan,
     RangeCellPlan,
     RouterNatPlan,
     SubnetPlan,
@@ -66,6 +67,7 @@ from raes_gcp_firewall import (
     service_base_priority,
 )
 from raes_gcp_plan_errors import RaesGcePlanError
+from raes_gcp_vpn_plan import RaesGceRemoteAccess, vpn_gateway_plan
 from raes_plan import RaesPlan, RaesPlanNetwork, RaesPlanNode
 
 #: Default guest login user the provisioner injects (management reachability). The
@@ -90,6 +92,7 @@ class RaesGcePlanOptions:
     egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
     reconstruct_for_teardown: bool = False
+    remote_access: RaesGceRemoteAccess | None = None
 
 
 def build_raes_range_cell_plan(
@@ -170,6 +173,9 @@ def build_raes_range_cell_plan(
             )
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
+    vpn_gateway = vpn_gateway_plan(
+        range_id, instance_plans, subnet_plans, resolved_config, resolved_options.remote_access
+    )
 
     plan: RangeCellPlan = {
         "project_id": resolved_config.project_id,
@@ -190,8 +196,11 @@ def build_raes_range_cell_plan(
             raes_plan,
             resolved_config,
             resolved_options.egress_policy,
+            vpn_gateway,
         ),
     }
+    if vpn_gateway is not None:
+        plan["vpn_gateway"] = vpn_gateway
     # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
     # a `none` (zero-egress) range omits it so its subnets carry no NAT path.
     if (resolved_options.egress_policy.mode or "status-quo").strip().lower() != "none":
@@ -215,6 +224,7 @@ def _plan_options(
     if set(legacy) - allowed:
         raise TypeError("unknown GCE plan option")
     return RaesGcePlanOptions(
+        remote_access=resolved.remote_access,
         config=cast(GCERangeCellConfig | None, legacy.get("config", resolved.config)),
         access_bindings=cast(Sequence[RealizedAccessBinding], legacy.get("access_bindings", resolved.access_bindings)),
         egress_policy=cast(GceEgressPolicy, legacy.get("egress_policy", resolved.egress_policy)),
@@ -233,17 +243,20 @@ def _all_firewalls(
     raes_plan: RaesPlan,
     config: GCERangeCellConfig,
     egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY,
+    vpn_gateway: OpenVpnGatewayPlan | None = None,
 ) -> list[FirewallPlan]:
     """Base range firewalls (reused, neutral) plus authored node ACL and service firewalls.
 
     Authored ``services`` are realized as fail-closed, range-scoped per-node-tag ingress
     (ADR-032-R8): admitted only from the concrete CIDRs of networks in *this* compiled
     range, at a priority strictly above the node's ACL band so authored ACL denies win.
+    The OpenVPN gateway envelope (#2030) is included when the range realizes one.
     """
     firewalls = build_firewall_plan(
         range_id,
         subnet_plans,
         config,
+        vpn_gateway,
         instance_plans=instance_plans,
         egress_policy=egress_policy,
     )

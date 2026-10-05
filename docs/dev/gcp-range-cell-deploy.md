@@ -375,6 +375,41 @@ the default for all ranges, including CTF ranges. No provider service-account
 keys or shared model keys are minted into guests; legacy key revocation remains
 part of teardown.
 
+## Participant OpenVPN access
+
+Participants can reach their range through a native OpenVPN client instead of
+the browser (ADR-039-R10). The range-access page offers an `.ovpn` download; the
+tunnel reaches exactly one range member, the scenario's participant-access
+target, and only on its declared participant channels (SSH 22, RDP 3389). Every
+other range member is reachable only by attacking the range from that target.
+
+Enable it per deployment:
+
+1. Set the deployment variable `RANGE_OPENVPN_ENABLED=true` (default `false`).
+2. Keep `GCP_RANGE_PRIVATE_GOOGLE_ACCESS=true`; the gateway reads its identity
+   from Secret Manager over Private Google Access.
+3. Keep the Terraform gateway identity pool (`vpn_gateway_pool_size`, default
+   24, `sh-vpn-pool-<slot>`) equal to `VPN_GATEWAY_POOL_SIZE`. It bounds the
+   number of concurrent OpenVPN ranges; a launch fails while the pool is
+   exhausted.
+
+A launch then requests OpenVPN when the scenario's compiled participant access
+names exactly one target node; other scenarios launch without it. The
+credential window ends at the range lease ceiling. Each such range gets a
+gateway VM in the target's subnet with one external address that accepts UDP
+1194 from the internet, a health responder on TCP 1195 reachable only from the
+portal network, and egress only to the target's channel ports and the Google
+API VIP. The range becomes ready only after the gateway reports healthy, and
+teardown deletes the gateway, its address and firewall rules, and every VPN
+secret.
+
+Warm-pool generations carry no VPN; a claim mints the claimant's access and
+activation realizes the gateway. A CTF spare is provisioned with its gateway for
+its managed spare identity, and recovery hands the binding to the participant,
+because that identity can never authenticate and so could never have downloaded
+the profile. A range whose owner could have downloaded the profile never changes
+owner in place. The EC2 range-cell gateway is tracked by #2443.
+
 ## Baking a new pre-promoted DC image
 
 Domain controllers are **pre-promoted at bake time** so a range boots an
