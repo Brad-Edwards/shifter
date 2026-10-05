@@ -18,8 +18,9 @@ counterpart: it
    storage config (the binding never carries the bucket) *before* touching any
    guest -- :func:`realize_raes_content_delivery`, called after instances +
    directory realization succeed;
-3. delivers the verified bytes to every concrete instance of the content's
-   target node over the authenticated guest transport
+3. streams the verified payload file to every concrete instance of the
+   content's target node over the authenticated guest transport, with
+   constant memory and no fixed size cap (ADR-032-R9)
    (``plans.raes_content_delivery.RaesContentDeliveryPlan``), and treats a
    missing/failed in-guest verify-step readback as a hard failure -- fail
    closed before ``publish_ready`` triggers ``_cleanup_failed_apply``.
@@ -37,11 +38,10 @@ even though the exception raised onward uses ``from None``.
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import io
 import logging
 import os
+import shutil
 import tarfile
 import tempfile
 from collections.abc import Callable
@@ -76,8 +76,12 @@ __all__ = ["assert_content_delivery_bindings_complete"]
 
 logger = logging.getLogger(__name__)
 
-#: Streaming/read chunk size for the downloaded-payload digest + base64 pass.
+#: Read chunk size for hashing downloaded payloads and archive members.
 _READ_CHUNK_BYTES = 1024 * 1024
+
+#: Local staging directory prefix; one directory per delivered payload, removed
+#: once every instance of the target node has received it.
+_STAGING_PREFIX = "raes-content-delivery-"
 
 #: Guest readiness wait before attempting delivery (content delivery runs
 #: after instance + directory realization, so the guest is normally already
@@ -142,48 +146,51 @@ def _platform_for(node: RaesPlanNode) -> str:
     return "windows" if (node.os_family or "linux").lower() == "windows" else "linux"
 
 
-def _read_downloaded_payload(path: str) -> tuple[str, bytes]:
-    """Return ``(hex_sha256, raw_bytes)`` for a downloaded payload, one read pass."""
+def _sha256_file(path: str) -> str:
+    """Return the hex sha256 of a file, read in bounded chunks."""
     hasher = hashlib.sha256()
-    chunks: list[bytes] = []
     with open(path, "rb") as handle:
         while chunk := handle.read(_READ_CHUNK_BYTES):
             hasher.update(chunk)
-            chunks.append(chunk)
-    return hasher.hexdigest(), b"".join(chunks)
+    return hasher.hexdigest()
 
 
-def _installed_tree_sha256(tar_bytes: bytes) -> str:
+def _installed_tree_sha256(tar_path: str) -> str:
     """Return the deterministic installed-tree digest for a directory payload.
 
     Computed over every regular file member's ``(sha256, name)`` pair, sorted by
     tar member name (the same sorted, POSIX-relative names
     ``shared.raes.content_delivery._materialize_directory`` writes), from the tar
-    bytes already digest-verified against the binding in this same call --
-    never from an untrusted or partially-extracted source. A fresh in-guest
-    readback that independently walks the *installed* destination tree and
-    recomputes the identical manifest can therefore prove the extraction is
+    file already digest-verified against the binding in this same call --
+    never from an untrusted or partially-extracted source. Members are hashed in
+    bounded chunks, so memory stays constant for any archive size. A fresh
+    in-guest readback that independently walks the *installed* destination tree
+    and recomputes the identical manifest can therefore prove the extraction is
     byte-exact. Hashing the tar bytes themselves (the binding's own ``sha256``)
     only proves the *received* archive was intact before extraction -- it
     cannot detect an install that later dropped, altered, or misplaced a
     member, which is the defect this closes (ADR-034-R6).
     """
     hasher = hashlib.sha256()
-    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tar:
+    with tarfile.open(tar_path, mode="r:") as tar:
         members = sorted((member for member in tar.getmembers() if member.isfile()), key=lambda member: member.name)
         for member in members:
+            member_hasher = hashlib.sha256()
             extracted = tar.extractfile(member)
-            data = extracted.read() if extracted is not None else b""
-            hasher.update(f"{hashlib.sha256(data).hexdigest()}  {member.name}\n".encode())
+            if extracted is not None:
+                while chunk := extracted.read(_READ_CHUNK_BYTES):
+                    member_hasher.update(chunk)
+            hasher.update(f"{member_hasher.hexdigest()}  {member.name}\n".encode())
     return hasher.hexdigest()
 
 
 @dataclass(frozen=True)
 class _DownloadedPayload:
-    """One binding's downloaded, fully-verified payload, ready to deliver."""
+    """One binding's downloaded, fully-verified payload file, ready to deliver."""
 
     sha256: str
-    payload_b64: str
+    path: str
+    byte_count: int
     #: Only set for ``directory`` content -- the expected installed-tree digest
     #: the guest verify_step readback must independently reproduce.
     installed_tree_sha256: str | None
@@ -206,15 +213,19 @@ def _download_and_verify(
     config: RaesContentDeliveryConfig,
     content_type: str,
     raw_binding: dict[str, Any],
+    staging_dir: str,
 ) -> _DownloadedPayload:
-    """Download one binding's payload, verify it, and return it ready to deliver.
+    """Download one binding's payload into ``staging_dir`` and verify it.
 
     Fails closed before any guest is touched: a binding that fails the shared
-    producer contract (:func:`validated_binding`), an unconfigured bucket, an
-    out-of-bound ``byte_count``, a downloaded-payload digest mismatch, or a
-    downloaded size that disagrees with the binding's declared ``byte_count``
-    all raise here. The download itself is bound to the object's identity
-    (``head_object``) so a replacement mid-flight fails closed too.
+    producer contract (:func:`validated_binding`), an unconfigured bucket, a
+    staging filesystem without room for the payload, a downloaded-payload
+    digest mismatch, or a downloaded size that disagrees with the binding's
+    declared ``byte_count`` all raise here. There is no fixed size cap
+    (ADR-032-R9): the download is bounded by the binding's exact byte count and
+    bound to the object's identity (``head_object``), so a replacement
+    mid-flight fails closed too. Memory stays constant: the payload is hashed
+    from disk in chunks and later streamed to the guest from the same file.
     """
     if not config.bucket:
         raise RaesContentDeliveryError("RAES content delivery bucket is not configured")
@@ -222,20 +233,24 @@ def _download_and_verify(
         binding = validated_binding(raw_binding)
     except ContentDeliveryError:
         raise RaesContentDeliveryError("RAES content delivery binding is invalid") from None
-    if binding.byte_count > config.max_bytes:
-        raise RaesContentDeliveryError("RAES content delivery payload exceeds the configured size bound")
+    if shutil.disk_usage(staging_dir).free < binding.byte_count:
+        raise RaesContentDeliveryError("RAES content delivery staging space is insufficient")
 
     storage = ops.object_storage_factory()
+    payload_path = os.path.join(staging_dir, "payload")
     try:
         identity = storage.head_object(config.bucket, binding.storage_key)
-        with tempfile.TemporaryDirectory(prefix="raes-content-delivery-") as staging_dir:
-            tmp_path = os.path.join(staging_dir, "payload")
-            storage.download_object(
-                config.bucket, binding.storage_key, tmp_path, max_bytes=config.max_bytes, expected_identity=identity
-            )
-            actual_sha256, raw_bytes = _read_downloaded_payload(tmp_path)
-    except RaesContentDeliveryError:
-        raise
+        storage.download_object(
+            config.bucket,
+            binding.storage_key,
+            payload_path,
+            # Storage requires a positive bound; a zero-byte payload is still
+            # held to its exact size by the check below.
+            max_bytes=max(binding.byte_count, 1),
+            expected_identity=identity,
+        )
+        actual_sha256 = _sha256_file(payload_path)
+        actual_bytes = os.path.getsize(payload_path)
     except CloudError as exc:
         # logger.exception()/exc_info would attach exc's own traceback -- and
         # therefore exc's message, which provider adapters render with the
@@ -249,12 +264,14 @@ def _download_and_verify(
 
     if actual_sha256 != binding.sha256:
         raise RaesContentDeliveryError("RAES content delivery downloaded payload digest mismatch")
-    if len(raw_bytes) != binding.byte_count:
+    if actual_bytes != binding.byte_count:
         raise RaesContentDeliveryError("RAES content delivery downloaded payload size mismatch")
-    installed_tree_sha256 = _installed_tree_sha256(raw_bytes) if content_type == "directory" else None
-    payload_b64 = base64.b64encode(raw_bytes).decode("ascii")
+    installed_tree_sha256 = _installed_tree_sha256(payload_path) if content_type == "directory" else None
     return _DownloadedPayload(
-        sha256=binding.sha256, payload_b64=payload_b64, installed_tree_sha256=installed_tree_sha256
+        sha256=binding.sha256,
+        path=payload_path,
+        byte_count=binding.byte_count,
+        installed_tree_sha256=installed_tree_sha256,
     )
 
 
@@ -287,7 +304,8 @@ def _deliver_to_instance(
             platform=delivery.platform,
             target=delivery.target,
             sha256=delivery.downloaded.sha256,
-            payload_b64=delivery.downloaded.payload_b64,
+            payload_path=delivery.downloaded.path,
+            byte_count=delivery.downloaded.byte_count,
             installed_tree_sha256=delivery.downloaded.installed_tree_sha256,
             install_options=RaesContentInstallOptions(
                 sensitive=delivery.sensitive,
@@ -378,17 +396,17 @@ def _realize_content_item(
 ) -> None:
     """Download, verify, and install one source-backed content item."""
     raw_binding = _binding_for(bindings, "content-placement", item.address)
-    downloaded = _download_and_verify(ops, config, item.content_type, raw_binding)
     node = nodes_by_address[item.target_address]
-    delivery = _GuestDelivery(
-        content_type=item.content_type,
-        target=_target_path(item),
-        sensitive=item.sensitive,
-        file_mode=None,
-        platform=_platform_for(node),
-        downloaded=downloaded,
-    )
-    _deliver_to_node(ops, outputs_by_key, node, delivery)
+    with tempfile.TemporaryDirectory(prefix=_STAGING_PREFIX) as staging_dir:
+        delivery = _GuestDelivery(
+            content_type=item.content_type,
+            target=_target_path(item),
+            sensitive=item.sensitive,
+            file_mode=None,
+            platform=_platform_for(node),
+            downloaded=_download_and_verify(ops, config, item.content_type, raw_binding, staging_dir),
+        )
+        _deliver_to_node(ops, outputs_by_key, node, delivery)
 
 
 def _realize_feature(
@@ -413,15 +431,16 @@ def _realize_feature(
     content_type = binding.payload_kind or ""
     if content_type not in SUPPORTED_DELIVERY_CONTENT_TYPES or not feature.destination or config is None:
         raise RaesContentDeliveryError("RAES feature delivery contract is invalid")
-    delivery = _GuestDelivery(
-        content_type=content_type,
-        target=feature.destination,
-        sensitive=binding.install_policy == "configuration",
-        file_mode="755" if binding.install_policy == "executable" else None,
-        platform=platform,
-        downloaded=_download_and_verify(ops, config, content_type, raw_binding),
-    )
-    _deliver_to_node(ops, outputs_by_key, node, delivery)
+    with tempfile.TemporaryDirectory(prefix=_STAGING_PREFIX) as staging_dir:
+        delivery = _GuestDelivery(
+            content_type=content_type,
+            target=feature.destination,
+            sensitive=binding.install_policy == "configuration",
+            file_mode="755" if binding.install_policy == "executable" else None,
+            platform=platform,
+            downloaded=_download_and_verify(ops, config, content_type, raw_binding, staging_dir),
+        )
+        _deliver_to_node(ops, outputs_by_key, node, delivery)
 
 
 def _realize_source_content(

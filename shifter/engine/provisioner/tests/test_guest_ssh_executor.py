@@ -282,3 +282,70 @@ class TestGuestSSHExecutorProbeBranches:
                 executor.run_command(instance_id="10.10.1.5", script="echo ok")
         finally:
             executor.close()
+
+
+class _LocalStreamingExecutor(GuestSSHExecutor):
+    """Runs the would-be remote command locally (as sshd would, joined by spaces)."""
+
+    def __init__(self, local_command: list[str] | None = None) -> None:
+        super().__init__(private_key="PRIVATE KEY", username="ubuntu")
+        self._local_command = local_command
+        self.remote_commands: list[list[str]] = []
+
+    def _build_ssh_args(self, host: str, remote_command: list[str]) -> list[str]:
+        self.remote_commands.append(remote_command)
+        if self._local_command is not None:
+            return self._local_command
+        command = remote_command[2:] if remote_command[:2] == ["sudo", "-n"] else remote_command
+        return ["bash", "-c", " ".join(command)]
+
+
+class TestGuestSSHExecutorStreaming:
+    """Streamed stdin: prefix then file bytes, constant memory, bounded time."""
+
+    def test_streams_prefix_then_file_bytes_with_the_script_in_argv(self, tmp_path):
+        payload = bytes(range(256)) * 9000  # binary, multi-chunk
+        source = tmp_path / "payload"
+        source.write_bytes(payload)
+        received = tmp_path / "received"
+        script = f"cat > {received}"
+
+        with _LocalStreamingExecutor() as executor:
+            result = executor.run_command_streaming(
+                "10.10.1.5", script, stdin_path=str(source), stdin_prefix="HEADER\n", timeout_seconds=30
+            )
+
+        assert result.success, result.stderr
+        assert received.read_bytes() == b"HEADER\n" + payload
+        remote = executor.remote_commands[0]
+        assert remote[:2] == ["sudo", "-n"]
+        assert base64.b64decode(remote[-1]).decode() == script
+
+    def test_a_remote_that_exits_without_reading_reports_its_failure(self, tmp_path):
+        source = tmp_path / "payload"
+        source.write_bytes(b"x" * (8 * 1024 * 1024))
+
+        with _LocalStreamingExecutor() as executor:
+            result = executor.run_command_streaming(
+                "10.10.1.5", "echo 'no space' >&2; exit 3", stdin_path=str(source), timeout_seconds=30
+            )
+
+        assert (result.success, result.exit_code) == (False, 3)
+        assert "no space" in result.stderr
+
+    def test_a_stalled_transfer_times_out(self, tmp_path):
+        source = tmp_path / "payload"
+        source.write_bytes(b"x")
+
+        with _LocalStreamingExecutor() as executor, pytest.raises(TimeoutError, match="timed out after 1s"):
+            executor.run_command_streaming("10.10.1.5", "sleep 30", stdin_path=str(source), timeout_seconds=1)
+
+    def test_missing_ssh_binary_maps_to_connection_error(self, tmp_path):
+        source = tmp_path / "payload"
+        source.write_bytes(b"x")
+
+        with (
+            _LocalStreamingExecutor(local_command=[str(tmp_path / "no-such-ssh")]) as executor,
+            pytest.raises(GuestSSHConnectionError),
+        ):
+            executor.run_command_streaming("10.10.1.5", "true", stdin_path=str(source))
