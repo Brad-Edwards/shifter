@@ -668,3 +668,42 @@ With `--range-backend gdc`, the flow first builds or reconciles the GDC substrat
 The GCP path requires a real hostname and managed TLS. Point the configured
 hostname to the reserved global ingress IP so the Google-managed certificate can
 become active.
+
+### 6. Optional: participant OpenVPN access
+
+Participant OpenVPN (ADR-039-R10) is off by default. When it is on, every
+deployment runs one shared, autoscaled OpenVPN server pool, and participants
+download an `.ovpn` profile for their range. The local `gdc-bootstrap` path never
+deploys the pool, so turn it on after bootstrap through the CI deploy:
+
+1. Apply `platform/terraform/gcp/global/cicd-oidc` for the tenant's identity
+   profile from a revision that includes the pool. The apply adds the deploy and
+   destroy roles `<prefix>_deploy_vpn_pool` and `<prefix>_destroy_vpn_pool`. Each
+   role covers the pool's instance templates, regional instance group, and
+   autoscaler, and its VM, disk, and template permissions apply only to the
+   pool's `shifter-<environment>-vpn-` names. Without these roles the deploy
+   fails when it creates the pool's instance template. Confirm both bindings:
+
+   ```bash
+   gcloud projects get-iam-policy <project> --format=json \
+     | jq -r '.bindings[] | select(.role | test("vpn_pool")) | .role'
+   ```
+
+2. Set the GitHub Environment variable `RANGE_OPENVPN_ENABLED=true` for the
+   tenant.
+3. Run the CI deploy:
+   `gh workflow run deploy.yml --ref <branch> -f environment=<environment>`.
+   It creates the pool, the tenant OpenVPN CA, and the pool server certificate.
+   It also records the scanned image digest, starts the servers, and waits until
+   every server is healthy behind the load balancer.
+4. Plan quota for the pool: it adds `e2-standard-2` VMs (two vCPUs each) up to
+   the capacity profile's maximum, plus one external address for the endpoint
+   and one for the pool's NAT.
+
+Do not set `openvpn_pool_enabled = true` in `local.auto.tfvars` for a local
+bootstrap. The local path does not build the server image or write the PKI and
+release record, so those servers never start. Launches stay safe either way: the
+runtime switch is off unless the CI deploy renders `RANGE_OPENVPN_ENABLED=true`,
+and that render fails if no pool exists. See "Participant OpenVPN access" in
+[`docs/dev/gcp-range-cell-deploy.md`](../../dev/gcp-range-cell-deploy.md) for
+the network design, sizing, and session rules.

@@ -3,17 +3,24 @@
 Any failure of OpenVPN, the management connection or the controller ends the
 process; the VM restarts the container, and clients reconnect to a healthy
 server. A restarted controller starts with no sessions and a fresh ruleset.
+
+On SIGTERM (``docker stop`` when the VM is replaced, scaled in or shut down)
+the controller, which is PID 1, passes the signal to OpenVPN. OpenVPN's
+``explicit-exit-notify`` then tells every client to reconnect at once, so a
+planned removal costs participants seconds rather than a keepalive timeout.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 
 from . import gcp
 from .config import load_config
@@ -58,6 +65,22 @@ def _serve_health(port: int) -> None:
             connection.close()
 
 
+def _forward_stop(process: subprocess.Popen[bytes], stopping: threading.Event) -> Callable[[int, object], None]:
+    """Return a signal handler that asks OpenVPN to notify its clients and exit."""
+
+    def handler(_signum: int, _frame: object) -> None:
+        stopping.set()
+        process.terminate()
+
+    return handler
+
+
+def _watch_openvpn(process: subprocess.Popen[bytes], stopping: threading.Event) -> None:
+    """End the server when OpenVPN exits: cleanly when asked to stop, as a failure otherwise."""
+    process.wait()
+    os._exit(0 if stopping.is_set() else 1)
+
+
 def _heartbeat(controller: Controller) -> None:
     """Renew live sessions with the portal for the life of the process."""
     while True:
@@ -78,7 +101,10 @@ def main() -> int:
     portal = PortalClient(config.portal_url, config.control_audience, config.server_name, gcp.identity_token)
     controller = Controller(management, portal, Firewall(), log=_log)
     threading.Thread(target=_heartbeat, args=(controller,), daemon=True, name="heartbeat").start()
-    threading.Thread(target=lambda: (process.wait(), os._exit(1)), daemon=True, name="openvpn-watch").start()
+    stopping = threading.Event()
+    for stop_signal in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(stop_signal, _forward_stop(process, stopping))
+    threading.Thread(target=_watch_openvpn, args=(process, stopping), daemon=True, name="openvpn-watch").start()
     threading.Thread(target=_serve_health, args=(config.health_port,), daemon=True, name="health").start()
     _log(f"pool server {config.server_name} ready")
     while (event := management.events.get()) is not None:
