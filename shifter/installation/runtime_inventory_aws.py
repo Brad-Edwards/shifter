@@ -90,6 +90,10 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
         # must not supply it.
         "ENGINE_TASK_IMAGE",
+        # Platform image for isolated feature-artifact acquisition Jobs (#2463);
+        # generated from the attested platform digest, empty where the environment
+        # does not define the artifactAcquirer identity.
+        "FEATURE_ARTIFACT_JOB_IMAGE",
         # Provisioner-Job admission contract (restrict-provisioner-jobs, #1826): the
         # policy pins the Job's imagePullPolicy and DB_USER to these renderer-owned
         # values, which the launcher also applies when building the Job.
