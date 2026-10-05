@@ -23,9 +23,9 @@ from uuid import UUID, uuid4
 from django.db import transaction
 from django.utils import timezone
 
-from cms.feature_artifacts.npm import FetchedFile, NpmAcquisitionError, clear_workdir, fetch_file
-from cms.feature_artifacts.recipes import NpmBinaryRecipe, RecipeError, recipe_for
-from cms.models import AcquiredFeatureArtifact
+from engine.models import AcquiredFeatureArtifact
+from shared.feature_artifacts.npm import FetchedFile, NpmAcquisitionError, clear_workdir, fetch_file
+from shared.feature_artifacts.recipes import NpmBinaryRecipe, RecipeError, recipe_for
 from shared.raes.content_delivery import normalized_storage_key
 
 logger = logging.getLogger(__name__)

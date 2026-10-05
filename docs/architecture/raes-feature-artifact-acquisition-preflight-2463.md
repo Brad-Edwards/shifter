@@ -46,13 +46,15 @@ upstream, and the provisioner reads a whole payload into memory, which is why
    is recorded in the range binding and evidence. Declared `permitted_routes` are
    honored; a requirement that does not permit backend acquisition fails
    satisfaction.
-4. **Tracked in CMS, stored where delivery already reads.** A CMS inventory row
-   records each acquired artifact: source name, resolved version, platform,
+4. **Tracked in the platform database, stored where delivery already reads.** An
+   Engine-owned inventory row records each acquired artifact: source name, resolved version, platform,
    content-addressed object key, sha256, byte count, upstream reference and
    integrity, state, and attempt timestamps. The bytes live in the existing
    provider-neutral object storage under the existing content-addressed delivery
-   prefix. The row is an inventory of backend-owned artifacts, in the same role
-   as `RaesImageMapping` for images; it is not a parallel artifact store.
+   prefix. The row is an inventory of backend-owned artifacts, owned by Engine
+   beside `RaesImageMapping` for images (the layering lets CMS call
+   `engine.services`, not the reverse, and the launcher that runs acquisition
+   Jobs is Engine); it is not a parallel artifact store.
 5. **Acquire once, before ranges need it.** Registering or updating a pack
    triggers acquisition for its declared feature sources, and deploy bootstrap
    does the same for registered packs. A request first checks for a `ready` row
