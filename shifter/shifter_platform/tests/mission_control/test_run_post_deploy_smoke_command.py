@@ -262,3 +262,31 @@ def test_tcp_reachable_success(monkeypatch) -> None:
 
 def test_probe_rdp_endpoint_success() -> None:
     probe_rdp_endpoint("10.0.0.2", 3389, connect_fn=lambda _h, _p, _t: True)
+
+
+def test_run_post_deploy_smoke_reports_the_ranges_recorded_failure_reason(
+    smoke_user,
+    monkeypatch,
+    fast_clock,
+    smoke_command_mocks,
+) -> None:
+    """A failed range's recorded reason reaches the smoke log, so CI shows why it failed."""
+    from engine.models import Range, Request
+
+    monkeypatch.setenv("SMOKE_TEST_USER_EMAIL", smoke_user.email)
+    request_id = uuid4()
+    request = Request.objects.create(request_id=request_id, request_type="range", user=smoke_user)
+    Range.objects.create(
+        uuid=uuid4(),
+        user=smoke_user,
+        request=request,
+        workspace_id=1,
+        status=Range.Status.FAILED,
+        error_message="RAES content delivery in-guest digest verification failed",
+    )
+    smoke_command_mocks.cms.create_range.return_value = SimpleNamespace(request_id=str(request_id))
+    smoke_command_mocks.cms.find_range_instance_id_by_request.return_value = 1
+    smoke_command_mocks.cms.get_range_status_by_id.return_value = ResourceStatus.FAILED.value
+
+    with pytest.raises(CommandError, match=r"terminal status failed .*: RAES content delivery in-guest digest"):
+        call_command("run_post_deploy_smoke", "--variant", "linux", "--poll-interval", "1")
