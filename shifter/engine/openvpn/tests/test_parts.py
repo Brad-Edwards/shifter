@@ -146,6 +146,8 @@ class TestServerFiles:
             "auth-user-pass-optional",
             f"management-client-user {pwd.getpwuid(os.geteuid()).pw_name}",
             "max-clients 250",
+            "keepalive 5 30",
+            "explicit-exit-notify 1",
         ):
             assert directive in text
         # The server is already unprivileged; a user/group switch would need CAP_SETUID/SETGID.

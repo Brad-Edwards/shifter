@@ -398,6 +398,9 @@ Every participant connects to one shared OpenVPN server pool per deployment
   connection replaces the older one), and returns the target address and ports.
   The server then allows that client to reach only that address and those ports
   and pushes only that route.
+- Clients ping every 5 seconds and reconnect after 30 seconds of silence, so an
+  unplanned server loss costs about 30 seconds. A server that is stopped (deploy,
+  scale-in, replacement) tells its clients to reconnect immediately.
 - Servers renew their sessions every 15 seconds. Destroy, pause, owner change,
   the deadline, or a newer session disconnects a tunnel within one heartbeat. A
   server that cannot confirm its sessions with the portal disconnects every
