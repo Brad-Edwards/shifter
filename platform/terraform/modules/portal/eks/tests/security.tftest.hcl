@@ -6,35 +6,8 @@ override_data {
   }
 }
 
-# Portal-stack resources for platform application access (#2466).
-override_data {
-  target = data.aws_sqs_queue.platform_tasks["cms"]
-  values = {
-    arn = "arn:aws:sqs:us-east-2:123456789012:test-portal-cms-tasks"
-  }
-}
-
-override_data {
-  target = data.aws_sqs_queue.platform_tasks["engine"]
-  values = {
-    arn = "arn:aws:sqs:us-east-2:123456789012:test-portal-engine-tasks"
-  }
-}
-
-override_data {
-  target = data.aws_sqs_queue.platform_tasks["mc"]
-  values = {
-    arn = "arn:aws:sqs:us-east-2:123456789012:test-portal-mc-tasks"
-  }
-}
-
-override_data {
-  target = data.aws_sns_topic.range_events
-  values = {
-    arn = "arn:aws:sns:us-east-2:123456789012:test-portal-range-events"
-  }
-}
-
+# Portal-stack keys for platform application access (#2466); queue and topic
+# ARNs are built from their stable names, so they need no lookup.
 override_data {
   target = data.aws_kms_alias.portal_messaging
   values = {
@@ -504,8 +477,8 @@ run "security_contract" {
 
   assert {
     condition = (
-      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[0].Resource == ["arn:aws:sqs:us-east-2:123456789012:test-portal-cms-tasks", "arn:aws:sqs:us-east-2:123456789012:test-portal-engine-tasks", "arn:aws:sqs:us-east-2:123456789012:test-portal-mc-tasks"] &&
-      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[1].Resource == "arn:aws:sns:us-east-2:123456789012:test-portal-range-events" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[0].Resource == ["arn:aws:sqs:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-cms-tasks", "arn:aws:sqs:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-engine-tasks", "arn:aws:sqs:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-mc-tasks"] &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[1].Resource == "arn:aws:sns:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-range-events" &&
       jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[2].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-messaging" &&
       jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[2].Condition.StringEquals["kms:ViaService"] == ["sqs.us-east-2.amazonaws.com", "sns.us-east-2.amazonaws.com"] &&
       jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[3].Resource == "arn:aws:s3:::test-storage-bucket/*" &&
