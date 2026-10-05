@@ -1179,6 +1179,14 @@ jobs:
             -kubernetes-version 1.31.0 \
             "${RUNNER_TEMP}/rendered-k8s/"*.yaml
 
+      # The roots check above skips schema-less kinds (-ignore-missing-schemas),
+      # so on its own it passes manifests the GCP deploy gate rejects. Run the
+      # deploy gate's exact validation (shared action) over every GCP tenant.
+      - name: Validate GCP tenants exactly as the deploy gate does
+        uses: ./.github/actions/validate-gcp-manifests
+        with:
+          environments: all
+
   # ===========================================================================
   # Type Checking (blocking quality gate, #564)
   #

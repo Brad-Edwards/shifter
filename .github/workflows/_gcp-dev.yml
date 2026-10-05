@@ -73,9 +73,6 @@ jobs:
     name: Validate (${{ inputs.environment }})
     # Validation does not need deploy-network access; keep PR checks off the deploy runner pool.
     runs-on: ubuntu-latest
-    env:
-      GCP_ENVIRONMENT: ${{ inputs.environment }}
-      KUBECONFORM_VERSION: v0.7.0
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -83,33 +80,17 @@ jobs:
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: "1.16.1"
-      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
-        with:
-          version: v1.34.1
-      - name: Install kubeconform
-        run: |
-          # ADR-037-R3: verify the download against the release CHECKSUMS
-          # manifest before extraction. The archive is saved under the exact name
-          # the manifest references so `sha256sum -c` matches.
-          curl -fsSL -o /tmp/kubeconform-linux-amd64.tar.gz \
-            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
-          curl -fsSL -o /tmp/kubeconform.CHECKSUMS \
-            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS"
-          (cd /tmp && grep "kubeconform-linux-amd64.tar.gz" kubeconform.CHECKSUMS | sha256sum -c -)
-          tar -xzf /tmp/kubeconform-linux-amd64.tar.gz -C /tmp kubeconform
       - run: terraform fmt -check -recursive
         working-directory: platform/terraform/gcp
       - run: terraform init -backend=false
         working-directory: platform/terraform/gcp/environments/${{ inputs.environment }}
       - run: terraform validate
         working-directory: platform/terraform/gcp/environments/${{ inputs.environment }}
-      - run: |
-          (
-            kubectl kustomize "platform/k8s/gcp/overlays/${GCP_ENVIRONMENT}"
-            printf '\n---\n'
-            cat "platform/k8s/gcp/overlays/${GCP_ENVIRONMENT}/platform-edge.generated.yaml"
-          ) > /tmp/gcp-platform.yaml
-      - run: /tmp/kubeconform -strict -summary /tmp/gcp-platform.yaml
+      # Shared with the PR-tier Lint (k8s schemas) job so a PR is rejected for
+      # exactly what this deploy gate rejects.
+      - uses: ./.github/actions/validate-gcp-manifests
+        with:
+          environments: ${{ inputs.environment }}
 
   prepare:
     # Runs on the requested GCP tenant's same-named runner, provisioned by
