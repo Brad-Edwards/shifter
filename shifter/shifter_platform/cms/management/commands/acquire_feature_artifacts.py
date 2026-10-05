@@ -17,9 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
+    """Claim feature-artifact acquisition for every registered pack (deploy bootstrap)."""
+
     help = "Request acquisition of registered packs' declared feature artifacts"
 
     def handle(self, *args: Any, **options: Any) -> None:
+        """Request each pack's artifacts; one unassessable pack never blocks the rest."""
         from cms.models import RaesPackageSource
         from cms.raes.feature_artifacts import acquisition_enabled, request_pack_feature_artifacts
 

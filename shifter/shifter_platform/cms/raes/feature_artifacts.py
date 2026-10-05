@@ -14,11 +14,16 @@ import logging
 from collections.abc import Callable, Mapping
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
 from shared.raes.content_delivery import FEATURE_BINDING_VERSION, ContentDeliveryError, DeliveryBinding
+
+if TYPE_CHECKING:
+    from engine.services import StorageTarget
+    from shared.raes.content_delivery_prep import ContentRef
+    from shared.raes.realizability import FeatureArtifactDemand
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +35,18 @@ _ACQUIRABLE_MECHANISMS = {"exact-artifact", "backend-owned-artifact"}
 
 
 def _resources(plan: Mapping[str, Any]) -> Mapping[str, Any]:
+    """The compiled plan's resources by address (empty when malformed)."""
     resources = plan.get("resources")
     return resources if isinstance(resources, Mapping) else {}
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
+    """``value`` when it is a mapping, else an empty one."""
     return value if isinstance(value, Mapping) else {}
 
 
 def _payload(resource: object) -> Mapping[str, Any]:
+    """A plan resource's payload mapping."""
     return _mapping(_mapping(resource).get("payload"))
 
 
@@ -76,14 +84,15 @@ def _check_requirement(plan: Mapping[str, Any], resource_address: str, source_na
 
 
 def feature_artifact_resolver(
-    plan: Mapping[str, Any], *, target: Any | None = None
-) -> Callable[[Any], DeliveryBinding]:
+    plan: Mapping[str, Any], *, target: StorageTarget | None = None
+) -> Callable[[ContentRef], DeliveryBinding]:
     """Return the ``acquire_feature`` resolver for one compiled plan.
 
     ``target`` (the delivery storage location) defaults to the deployment's.
     """
 
-    def acquire(ref: Any) -> DeliveryBinding:
+    def acquire(ref: ContentRef) -> DeliveryBinding:
+        """Resolve one unprojected feature to its ready acquired artifact, or fail this range."""
         from engine.services import (
             ArtifactRequest,
             FeatureArtifactUnavailableError,
@@ -103,6 +112,8 @@ def feature_artifact_resolver(
             )
         except FeatureArtifactUnavailableError as exc:
             raise ContentDeliveryError(f"feature artifact '{ref.source_name}' is unavailable: {exc}") from None
+        if row.byte_count is None or not row.sha256:
+            raise ContentDeliveryError(f"feature artifact '{ref.source_name}' has an incomplete inventory record")
         return DeliveryBinding(
             content_address=None,
             sha256=row.sha256,
@@ -133,7 +144,7 @@ def _pack_root(scenario_path: Path) -> Path | None:
     return None
 
 
-def _projected(pack_root: Path | None, demand: Any) -> bool:
+def _projected(pack_root: Path | None, demand: FeatureArtifactDemand) -> bool:
     """Whether the pack itself projects (and therefore carries) this feature."""
     from shared.raes.content_delivery_prep import pack_projects_feature
 
@@ -142,7 +153,7 @@ def _projected(pack_root: Path | None, demand: Any) -> bool:
     )
 
 
-def request_pack_feature_artifacts(scenario_id: str, *, target: Any | None = None) -> int:
+def request_pack_feature_artifacts(scenario_id: str, *, target: StorageTarget | None = None) -> int:
     """Claim acquisition for every unprojected artifact feature a registered pack declares.
 
     Runs before any range needs the artifacts (pack registration, deploy
@@ -152,32 +163,40 @@ def request_pack_feature_artifacts(scenario_id: str, *, target: Any | None = Non
     """
     from cms.models import RaesPackageSource
     from cms.scenarios.realizability import _trusted_scenario_path
-    from engine.services import ArtifactRequest, default_storage_target, request_acquisition
-    from shared.feature_artifacts.recipes import RecipeError
-    from shared.raes.realizability import assess_scenario_capability
 
-    if not acquisition_enabled():
-        return 0
-    source = RaesPackageSource.objects.filter(scenario_id=scenario_id).first()
+    source = RaesPackageSource.objects.filter(scenario_id=scenario_id).first() if acquisition_enabled() else None
     if source is None:
         return 0
-    requested = 0
+    # The pack is read only inside the trusted staging context; claims need no files.
     with _trusted_scenario_path(source) as (scenario_path, _gap):
-        if scenario_path is None:
-            return 0
-        demands = assess_scenario_capability(scenario_path).feature_artifact_demands
-        pack_root = _pack_root(Path(scenario_path))
-        for demand in demands:
-            platform = _GUEST_PLATFORMS.get(demand.os_family.lower())
-            if platform is None or _projected(pack_root, demand):
-                continue
-            try:
-                request_acquisition(
-                    ArtifactRequest(demand.source_name, demand.source_version, platform),
-                    target=target or default_storage_target(),
-                )
-            except RecipeError:
-                logger.info("feature artifact has no platform recipe source=%s", demand.source_name)
-                continue
-            requested += 1
-    return requested
+        demands = _unprojected_demands(Path(scenario_path)) if scenario_path is not None else []
+    return sum(_request(demand, platform, target) for demand, platform in demands)
+
+
+def _unprojected_demands(scenario_path: Path) -> list[tuple[FeatureArtifactDemand, str]]:
+    """The scenario's artifact features on acquirable guests that its pack does not carry."""
+    from shared.raes.realizability import assess_scenario_capability
+
+    pack_root = _pack_root(scenario_path)
+    demands: list[tuple[FeatureArtifactDemand, str]] = []
+    for demand in assess_scenario_capability(scenario_path).feature_artifact_demands:
+        platform = _GUEST_PLATFORMS.get(demand.os_family.lower())
+        if platform is not None and not _projected(pack_root, demand):
+            demands.append((demand, platform))
+    return demands
+
+
+def _request(demand: FeatureArtifactDemand, platform: str, target: StorageTarget | None) -> int:
+    """Claim one acquisition; 1 if claimed, 0 when no platform recipe covers the source."""
+    from engine.services import ArtifactRequest, default_storage_target, request_acquisition
+    from shared.feature_artifacts.recipes import RecipeError
+
+    try:
+        request_acquisition(
+            ArtifactRequest(demand.source_name, demand.source_version, platform),
+            target=target or default_storage_target(),
+        )
+    except RecipeError:
+        logger.info("feature artifact has no platform recipe source=%s", demand.source_name)
+        return 0
+    return 1

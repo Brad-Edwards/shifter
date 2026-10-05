@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from django.db import transaction
@@ -27,6 +27,10 @@ from shared.cloud.exceptions import CloudStorageError
 from shared.feature_artifacts.job import AcquisitionResult
 from shared.feature_artifacts.recipes import NpmBinaryRecipe, RecipeError, recipe_for
 from shared.raes.content_delivery import normalized_storage_key
+
+if TYPE_CHECKING:
+    from engine.models import AcquiredFeatureArtifact
+    from shared.cloud.types import ObjectStorage
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,8 @@ FAILURE_BACKOFF = timedelta(seconds=60)
 _ACQUIRING, _READY, _FAILED = "acquiring", "ready", "failed"
 
 
-def _model() -> Any:
+def _model() -> type[AcquiredFeatureArtifact]:
+    """The inventory model, imported lazily (engine.services loads before the app registry)."""
     from engine.models import AcquiredFeatureArtifact
 
     return AcquiredFeatureArtifact
@@ -63,12 +68,13 @@ class ArtifactRequest:
 class StorageTarget:
     """Where acquired bytes live: the existing content-addressed delivery location."""
 
-    storage: Any
+    storage: ObjectStorage
     bucket: str
     prefix: str
 
 
 def _resolve(request: ArtifactRequest) -> tuple[NpmBinaryRecipe, str]:
+    """The request's recipe and resolved exact version; raises ``RecipeError``."""
     recipe = recipe_for(request.source_name)
     recipe.package_for(request.platform)
     return recipe, recipe.resolve_version(request.version)
@@ -86,7 +92,8 @@ def _object_matches(target: StorageTarget, key: str, byte_count: int) -> bool:
     return int(meta.get("content_length", -1)) == byte_count
 
 
-def _claim(row: Any, now: datetime) -> None:
+def _claim(row: AcquiredFeatureArtifact, now: datetime) -> None:
+    """Start a fresh attempt on ``row`` (caller holds its row lock)."""
     row.state = _ACQUIRING
     row.attempt_id = uuid4()
     row.attempt_started_at = now
@@ -96,7 +103,7 @@ def _claim(row: Any, now: datetime) -> None:
     row.save()
 
 
-def request_acquisition(request: ArtifactRequest, *, target: StorageTarget) -> Any:
+def request_acquisition(request: ArtifactRequest, *, target: StorageTarget) -> AcquiredFeatureArtifact:
     """Ensure the artifact is ready or being acquired; never two attempts at once.
 
     Raises :class:`RecipeError` when no platform recipe can satisfy the request.
@@ -184,7 +191,7 @@ def await_ready(
     timeout: timedelta,
     poll: timedelta = timedelta(seconds=5),
     sleep: Callable[[float], None] = time.sleep,
-) -> Any:
+) -> AcquiredFeatureArtifact:
     """Launch gate: return the ready artifact or fail this range (never other ranges).
 
     Requests acquisition (claiming a fresh attempt if none is usable), then waits

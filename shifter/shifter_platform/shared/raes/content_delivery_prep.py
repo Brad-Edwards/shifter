@@ -57,9 +57,11 @@ _READ_CHUNK_BYTES = 1024 * 1024
 
 __all__ = [
     "PROJECTION_RELPATH",
+    "ContentRef",
     "DeliveryTarget",
     "InventoryEntry",
     "has_source_backed_content",
+    "pack_projects_feature",
     "prepare_content_delivery",
 ]
 
@@ -82,7 +84,7 @@ class InventoryEntry:
 
 
 @dataclass(frozen=True)
-class _ContentRef:
+class ContentRef:
     """A source-backed content-placement extracted from the serialized plan."""
 
     address: str
@@ -120,7 +122,7 @@ def prepare_content_delivery(
     target: DeliveryTarget,
     projection_loader: Callable[[Path], DeliveryProjection] | None = None,
     inventory_loader: Callable[[Path], dict[str, InventoryEntry]] | None = None,
-    acquire_feature: Callable[[_ContentRef], DeliveryBinding] | None = None,
+    acquire_feature: Callable[[ContentRef], DeliveryBinding] | None = None,
 ) -> tuple[DeliveryBinding, ...]:
     """Return the delivery bindings for every source-backed content in the plan.
 
@@ -188,7 +190,7 @@ def _pack_projection_present(pack_root: Path | None) -> bool:
     return pack_root is not None and (Path(pack_root) / PROJECTION_RELPATH).is_file()
 
 
-def _acquired(ref: _ContentRef, acquire_feature: Callable[[_ContentRef], DeliveryBinding] | None) -> DeliveryBinding:
+def _acquired(ref: ContentRef, acquire_feature: Callable[[ContentRef], DeliveryBinding] | None) -> DeliveryBinding:
     """Resolve a feature the pack does not carry to a recipe-acquired artifact."""
     if acquire_feature is None:
         raise ContentDeliveryError(f"no delivery source for feature '{ref.source_name}' ({ref.feature_type})")
@@ -199,7 +201,7 @@ def _acquired(ref: _ContentRef, acquire_feature: Callable[[_ContentRef], Deliver
 
 
 def _prepare_one(
-    ref: _ContentRef,
+    ref: ContentRef,
     pack_root: Path,
     projection: DeliveryProjection,
     inventory: dict[str, InventoryEntry],
@@ -246,7 +248,7 @@ def _prepare_one(
     return DeliveryBinding(content_address=ref.address, sha256=digest, storage_key=key, byte_count=byte_count)
 
 
-def _source_backed_content_refs(serialized_plan: Mapping[str, object]) -> list[_ContentRef]:
+def _source_backed_content_refs(serialized_plan: Mapping[str, object]) -> list[ContentRef]:
     """Extract source-backed content-placement resources from the serialized plan.
 
     Inline (``text``) files and source-less directories carry no ``source`` and
@@ -256,7 +258,7 @@ def _source_backed_content_refs(serialized_plan: Mapping[str, object]) -> list[_
     resources = serialized_plan.get("resources") if isinstance(serialized_plan, Mapping) else None
     if not isinstance(resources, Mapping):
         return []
-    refs: list[_ContentRef] = []
+    refs: list[ContentRef] = []
     for address, resource in resources.items():
         ref = _content_ref_from_resource(address, resource)
         if ref is not None:
@@ -280,7 +282,7 @@ def _feature_template_from_resource(address: object, resource: object) -> tuple[
     return template, str(resource.get("address") or address)
 
 
-def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef | None:
+def _feature_ref_from_resource(address: object, resource: object) -> ContentRef | None:
     """Return one source-backed artifact/configuration delivery reference."""
     resolved = _feature_template_from_resource(address, resource)
     if resolved is None:
@@ -299,7 +301,7 @@ def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef
     name, version = _parse_source(template.get("source"))
     if not name:
         raise ContentDeliveryError("source-backed feature has an unresolvable source name")
-    return _ContentRef(
+    return ContentRef(
         address=resource_address,
         source_name=name,
         source_version=version,
@@ -312,8 +314,8 @@ def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef
     )
 
 
-def _content_ref_from_resource(address: object, resource: object) -> _ContentRef | None:
-    """Return the ``_ContentRef`` for one plan resource, or None if not deliverable.
+def _content_ref_from_resource(address: object, resource: object) -> ContentRef | None:
+    """Return the ``ContentRef`` for one plan resource, or None if not deliverable.
 
     A resource is deliverable only when it is a content-placement carrying a
     ``source``; inline (``text``) files and source-less directories return None
@@ -334,7 +336,7 @@ def _content_ref_from_resource(address: object, resource: object) -> _ContentRef
     name, version = _parse_source(source)
     if not name:
         raise ContentDeliveryError("source-backed content has an unresolvable source name")
-    return _ContentRef(
+    return ContentRef(
         address=str(resource.get("address") or address),
         source_name=name,
         source_version=version,

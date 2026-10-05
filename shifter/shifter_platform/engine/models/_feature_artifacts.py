@@ -55,6 +55,8 @@ class AcquiredFeatureArtifact(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """One row per artifact identity; a ready row always names its stored object."""
+
         constraints = [
             models.UniqueConstraint(
                 fields=["source_name", "resolved_version", "platform"],

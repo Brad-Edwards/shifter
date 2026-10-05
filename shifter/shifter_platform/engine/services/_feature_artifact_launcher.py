@@ -5,13 +5,17 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.utils import timezone
 
 from engine.services._feature_artifacts import StorageTarget, finalize_attempt
 from shared.cloud import feature_artifact_jobs as jobs
+
+if TYPE_CHECKING:
+    from engine.models import AcquiredFeatureArtifact
+    from shared.cloud.kubernetes import KubernetesTaskRunner
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +40,8 @@ def _job_env() -> dict[str, str]:
         "AWS_REGION": os.environ.get("AWS_REGION", ""),
         "STORAGE_BUCKET_NAME": str(settings.STORAGE_BUCKET_NAME),
         "RAES_CONTENT_DELIVERY_PREFIX": str(settings.RAES_CONTENT_DELIVERY_PREFIX),
-        "HOME": "/tmp",  # noqa: S108 # nosec B108 - the Job's only writable mount
-        "TMPDIR": "/tmp",  # noqa: S108 # nosec B108
+        "HOME": jobs.ACQUISITION_WORKDIR,
+        "TMPDIR": jobs.ACQUISITION_WORKDIR,
         "PYTHONDONTWRITEBYTECODE": "1",
     }
 
@@ -48,7 +52,7 @@ def reconcile_feature_artifact_acquisitions(
     image: str | None = None,
     target: StorageTarget | None = None,
     now: datetime | None = None,
-    runner: Any | None = None,
+    runner: KubernetesTaskRunner | None = None,
 ) -> int:
     """Launch, observe and finalize one isolated Job per in-flight attempt.
 
@@ -74,7 +78,10 @@ def reconcile_feature_artifact_acquisitions(
     return len(rows)
 
 
-def _reconcile(row: Any, image: str, target: StorageTarget | None, runner: Any | None) -> None:
+def _reconcile(
+    row: AcquiredFeatureArtifact, image: str, target: StorageTarget | None, runner: KubernetesTaskRunner | None
+) -> None:
+    """Advance one attempt: launch or observe its Job, then finalize and clean up."""
     attempt = row.attempt_id
     if attempt is None or target is None:
         return

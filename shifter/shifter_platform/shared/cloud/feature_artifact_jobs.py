@@ -24,6 +24,9 @@ ACQUISITION_NAMESPACE = "shifter-acquisition"
 ACQUISITION_CONTAINER = "feature-artifact-acquisition"
 ACQUISITION_SERVICE_ACCOUNT = "artifact-acquirer"
 ACQUISITION_COMMAND = ("python", "-m", "shared.feature_artifacts.job")
+#: The Job's only writable path: a dedicated disk-backed scratch volume, not a
+#: shared temporary directory. HOME and TMPDIR point here.
+ACQUISITION_WORKDIR = "/work"
 _PLATFORM_UID = 1000
 
 
@@ -41,7 +44,7 @@ def acquisition_task_profile() -> KubernetesTaskProfile:
             run_as_gid=_PLATFORM_UID,
             # Disk-backed scratch for the downloaded tarball and extracted artifact;
             # the root filesystem stays read-only.
-            writable_mounts=(("work", "/tmp", None, "4Gi"),),  # noqa: S108 # nosec B108 # NOSONAR(S5443)
+            writable_mounts=(("work", ACQUISITION_WORKDIR, None, "4Gi"),),
         ),
         resource_requests={"cpu": "250m", "memory": "256Mi", "ephemeral-storage": "1Gi"},
         resource_limits={"cpu": "2", "memory": "1Gi", "ephemeral-storage": "4Gi"},

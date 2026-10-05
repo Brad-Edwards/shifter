@@ -18,15 +18,19 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from shared.feature_artifacts.npm import NpmAcquisitionError, clear_workdir, fetch_file
+from shared.feature_artifacts.npm import FetchedFile, NpmAcquisitionError, clear_workdir, fetch_file
 from shared.feature_artifacts.recipes import RecipeError, recipe_for
 
 RESULT_MARKER = "SHIFTER_FEATURE_ARTIFACT_RESULT "
 _OCTET_STREAM = "application/octet-stream"
+
+#: Upstream fetch: (package, version, member, workdir) -> verified local file.
+Fetch = Callable[[str, str, str, Path], FetchedFile]
 
 
 class ArtifactStore(Protocol):
@@ -57,7 +61,8 @@ class S3ArtifactStore:
     """Minimal S3 writer for the content-addressed prefix (no Django settings)."""
 
     def __init__(self, bucket: str, region: str, client: Any | None = None) -> None:
-        import boto3  # local import keeps the module importable without boto3 in tests
+        # Local import keeps the module importable without boto3 in tests.
+        import boto3
 
         self._bucket = bucket
         self._client = client or boto3.client("s3", region_name=region)
@@ -67,28 +72,37 @@ class S3ArtifactStore:
             self._client.upload_fileobj(handle, self._bucket, key, ExtraArgs={"ContentType": _OCTET_STREAM})
 
 
+def _fetch_and_store(
+    source_name: str, version: str, platform: str, *, store: ArtifactStore, prefix: str, fetch: Fetch, workdir: Path
+) -> AcquisitionResult:
+    """Fetch through the source's recipe, store under the content key, and report it."""
+    recipe = recipe_for(source_name)
+    if recipe.resolve_version(version) != version:
+        raise RecipeError("acquisition requires a resolved exact version")
+    fetched = fetch(recipe.package_for(platform), version, recipe.member, workdir)
+    key = content_key(prefix, fetched.sha256)
+    # The key is the content digest, so rewriting an existing object stores the
+    # same bytes. Writing unconditionally keeps the Job's grant to PutObject: a
+    # HEAD on a missing key without ListBucket answers 403, not 404.
+    store.put(fetched.path, key)
+    return AcquisitionResult(
+        ok=True,
+        storage_key=key,
+        sha256=fetched.sha256,
+        byte_count=fetched.byte_count,
+        upstream_ref=fetched.upstream_ref,
+        upstream_integrity=fetched.upstream_integrity,
+    )
+
+
 def acquire(
-    source_name: str, version: str, platform: str, *, store: ArtifactStore, prefix: str, fetch=fetch_file
+    source_name: str, version: str, platform: str, *, store: ArtifactStore, prefix: str, fetch: Fetch = fetch_file
 ) -> AcquisitionResult:
     """Fetch, verify and store one artifact; never raises for an acquisition failure."""
     workdir = Path(tempfile.mkdtemp(prefix="feature-artifact-"))
     try:
-        recipe = recipe_for(source_name)
-        if recipe.resolve_version(version) != version:
-            return AcquisitionResult(ok=False, reason="acquisition requires a resolved exact version")
-        fetched = fetch(recipe.package_for(platform), version, recipe.member, workdir)
-        key = content_key(prefix, fetched.sha256)
-        # The key is the content digest, so rewriting an existing object stores the
-        # same bytes. Writing unconditionally keeps the Job's grant to PutObject: a
-        # HEAD on a missing key without ListBucket answers 403, not 404.
-        store.put(fetched.path, key)
-        return AcquisitionResult(
-            ok=True,
-            storage_key=key,
-            sha256=fetched.sha256,
-            byte_count=fetched.byte_count,
-            upstream_ref=fetched.upstream_ref,
-            upstream_integrity=fetched.upstream_integrity,
+        return _fetch_and_store(
+            source_name, version, platform, store=store, prefix=prefix, fetch=fetch, workdir=workdir
         )
     except (RecipeError, NpmAcquisitionError) as exc:
         return AcquisitionResult(ok=False, reason=str(exc)[:256])
