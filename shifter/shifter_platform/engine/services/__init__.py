@@ -56,6 +56,7 @@ from ._feature_artifact_launcher import default_storage_target, reconcile_featur
 from ._feature_artifacts import (
     ArtifactRequest,
     FeatureArtifactUnavailableError,
+    StorageTarget,
     await_ready,
     request_acquisition,
 )
@@ -303,6 +304,7 @@ __all__ = (
     "SSHConnection",
     "SecretsError",
     "SharingError",
+    "StorageTarget",
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",

@@ -14,7 +14,8 @@ from dataclasses import dataclass
 # RAES ``Source.version`` default: the author left the version open.
 OPEN_VERSION = "*"
 
-_EXACT_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
+# ASCII-only: \d must not admit non-ASCII Unicode digits into a version.
+_EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:-[\dA-Za-z.-]+)?$", re.ASCII)
 
 
 class RecipeError(ValueError):

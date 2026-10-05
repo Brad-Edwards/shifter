@@ -194,7 +194,7 @@ spec:
         variables.pod.volumes[0].emptyDir.sizeLimit == '4Gi' &&
         variables.container.volumeMounts.size() == 1 &&
         variables.container.volumeMounts[0].name == 'work' &&
-        variables.container.volumeMounts[0].mountPath == '/tmp'
+        variables.container.volumeMounts[0].mountPath == '/work'
       message: Acquisition jobs require the restricted filesystem and process profile.
     - expression: >-
         object.spec.backoffLimit == 0 && object.spec.activeDeadlineSeconds == 1800 &&
