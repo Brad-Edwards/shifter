@@ -6,6 +6,49 @@ override_data {
   }
 }
 
+# Portal-stack resources for platform application access (#2466).
+override_data {
+  target = data.aws_sqs_queue.platform_tasks["cms"]
+  values = {
+    arn = "arn:aws:sqs:us-east-2:123456789012:test-portal-cms-tasks"
+  }
+}
+
+override_data {
+  target = data.aws_sqs_queue.platform_tasks["engine"]
+  values = {
+    arn = "arn:aws:sqs:us-east-2:123456789012:test-portal-engine-tasks"
+  }
+}
+
+override_data {
+  target = data.aws_sqs_queue.platform_tasks["mc"]
+  values = {
+    arn = "arn:aws:sqs:us-east-2:123456789012:test-portal-mc-tasks"
+  }
+}
+
+override_data {
+  target = data.aws_sns_topic.range_events
+  values = {
+    arn = "arn:aws:sns:us-east-2:123456789012:test-portal-range-events"
+  }
+}
+
+override_data {
+  target = data.aws_kms_alias.portal_messaging
+  values = {
+    target_key_arn = "arn:aws:kms:us-east-2:123456789012:key/mock-portal-messaging"
+  }
+}
+
+override_data {
+  target = data.aws_kms_alias.portal_storage
+  values = {
+    target_key_arn = "arn:aws:kms:us-east-2:123456789012:key/mock-portal-storage"
+  }
+}
+
 # Portal Secrets Manager CMK the provisioner encrypts range guest credentials with.
 override_data {
   target = data.aws_kms_alias.range_credential_secrets
@@ -238,10 +281,12 @@ variables {
       service_account               = "shifter-portal"
       policy_arns                   = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
       range_participant_secret_read = true
+      platform_application_access   = true
     }
     workers = {
-      namespace       = "shifter-platform"
-      service_account = "shifter-workers"
+      namespace                   = "shifter-platform"
+      service_account             = "shifter-workers"
+      platform_application_access = true
     }
     provisionerLauncher = {
       namespace       = "shifter-platform"
@@ -264,6 +309,7 @@ variables {
       policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"]
     }
   }
+  storage_bucket_name = "test-storage-bucket"
   secret_names = [
     "database",
     "django",
@@ -437,6 +483,28 @@ run "security_contract" {
       jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringLike["kms:EncryptionContext:SecretARN"] == jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[0].Resource
     )
     error_message = "Range-credential Decrypt must be confined to the key the provisioner encrypts with, via Secrets Manager, for exactly the participant-delivery secret ARNs."
+  }
+
+  # Platform application access (#2466): only opted-in Django identities, exact
+  # portal-stack resources, KMS confined by service, metrics by namespace.
+  assert {
+    condition     = toset(keys(aws_iam_role_policy.workload_platform_application)) == toset(["portal", "workers"])
+    error_message = "Platform application access must be granted only to identities that opt in."
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[0].Resource == ["arn:aws:sqs:us-east-2:123456789012:test-portal-cms-tasks", "arn:aws:sqs:us-east-2:123456789012:test-portal-engine-tasks", "arn:aws:sqs:us-east-2:123456789012:test-portal-mc-tasks"] &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[1].Resource == "arn:aws:sns:us-east-2:123456789012:test-portal-range-events" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[2].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-messaging" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[2].Condition.StringEquals["kms:ViaService"] == ["sqs.us-east-2.amazonaws.com", "sns.us-east-2.amazonaws.com"] &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[3].Resource == "arn:aws:s3:::test-storage-bucket/*" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[4].Resource == "arn:aws:s3:::test-storage-bucket" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[5].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-storage" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[5].Condition.StringEquals["kms:ViaService"] == "s3.us-east-2.amazonaws.com" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[6].Condition.StringEquals["cloudwatch:namespace"] == ["Shifter/PortalCapacity", "Shifter/WarmPool", "Shifter/CtfCommunication"]
+    )
+    error_message = "Platform application access must target exactly the portal-stack queues, topic, storage bucket and their keys, and the application metric namespaces."
   }
 
   assert {

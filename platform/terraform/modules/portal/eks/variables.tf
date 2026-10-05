@@ -173,6 +173,12 @@ variable "workload_identities" {
     # participant-prefix-conditioned secretAccessor: host-management keys, host
     # identities, and directory admin material are never readable through it.
     range_participant_secret_read = optional(bool, false)
+    # The platform application's AWS service access (#2466): SQS consume/publish on
+    # the platform task queues, SNS publish to range events, read/write on the
+    # storage bucket, and CloudWatch metrics in the Shifter application namespaces.
+    # Restores what the retired portal EC2 role granted to the same Django
+    # processes; requires storage_bucket_name.
+    platform_application_access = optional(bool, false)
   }))
 
   validation {
@@ -230,4 +236,17 @@ variable "enable_runtime_plugins" {
   EOT
   type        = bool
   default     = false
+}
+
+variable "storage_bucket_name" {
+  description = "Platform storage bucket (runtime STORAGE_BUCKET_NAME) for workloads with platform_application_access. Empty when no workload needs it."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = var.storage_bucket_name != "" || !anytrue([
+      for identity in values(var.workload_identities) : identity.platform_application_access
+    ])
+    error_message = "storage_bucket_name is required when any workload identity sets platform_application_access."
+  }
 }

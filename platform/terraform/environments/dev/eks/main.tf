@@ -49,6 +49,7 @@ module "eks" {
   domain_name              = var.domain_name
   oidc_thumbprints         = var.oidc_thumbprints
   secret_names             = local.secret_names
+  storage_bucket_name      = var.runtime_env["STORAGE_BUCKET_NAME"]
   workload_identities = {
     cni = {
       namespace       = "kube-system"
@@ -75,6 +76,8 @@ module "eks" {
         ? []
         : ["${var.ctf_content_bucket_arn}/${var.ctf_content_prefix}*"]
       )
+      # SQS/SNS/storage/metrics for the platform application (#2466).
+      platform_application_access = true
     }
     workers = {
       namespace       = "shifter-platform"
@@ -82,6 +85,8 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
       rds_iam_db_user = "portal_runtime"
+      # SQS/SNS/storage/metrics for the platform application (#2466).
+      platform_application_access = true
     }
     ctfScheduler = {
       namespace       = "shifter-platform"
@@ -89,6 +94,8 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
       rds_iam_db_user = "portal_runtime"
+      # SQS/SNS/storage/metrics for the platform application (#2466).
+      platform_application_access = true
     }
     # Dedicated provisioner Job launcher + the privileged provisioner Job (#1826).
     # The provisioner's range-provisioning permission set is attached separately
@@ -100,6 +107,8 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
       rds_iam_db_user = "portal_runtime"
+      # SQS/SNS/storage/metrics for the platform application (#2466).
+      platform_application_access = true
     }
     provisioner = {
       namespace       = "shifter-jobs"

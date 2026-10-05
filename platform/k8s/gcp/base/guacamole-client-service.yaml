@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/component: guacamole-client
   annotations:
     cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default":"guacamole-client-backendconfig"}'
 spec:
   type: ClusterIP
   selector:
