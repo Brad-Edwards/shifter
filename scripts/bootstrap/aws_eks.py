@@ -977,6 +977,31 @@ def _guacamole_db_endpoint(terraform_outputs: Mapping[str, object]) -> tuple[str
     return host, str(port)
 
 
+def _validated_workload_roles(terraform_outputs: Mapping[str, object]) -> Mapping[str, str]:
+    """The workload IRSA role map, required to cover every chart workload identity."""
+    roles = _output(terraform_outputs, "workload_role_arns")
+    if not isinstance(roles, Mapping) or not all(isinstance(k, str) and isinstance(v, str) for k, v in roles.items()):
+        raise ValueError("workload_role_arns must map exact service-account names to IAM role ARNs")
+    missing_roles = sorted(_WORKLOAD_ROLE_KEYS.difference(roles))
+    if missing_roles:
+        raise ValueError("workload_role_arns is missing chart workload roles: " + ", ".join(missing_roles))
+    return roles
+
+
+def _feature_artifact_job_image(roles: Mapping[str, str], validated_images: Mapping[str, str]) -> str:
+    """The image isolated feature-artifact acquisition Jobs run (#2463), or "" when disabled.
+
+    Acquisition is enabled only where the environment defines the
+    artifactAcquirer identity; an empty image keeps the launcher's acquisition
+    reconcile a no-op elsewhere. The Jobs run the platform image.
+    """
+    if "artifactAcquirer" not in roles:
+        return ""
+    if "platform" not in validated_images:
+        raise ValueError("images must include the digest-pinned 'platform' identity for feature-artifact acquisition")
+    return validated_images["platform"]
+
+
 def render_aws_values(
     config: RootConfig,
     terraform_outputs: Mapping[str, object],
@@ -984,12 +1009,7 @@ def render_aws_values(
 ) -> dict[str, object]:
     """Render non-secret AWS values from validated config, outputs, and digests."""
     _validate_config(config)
-    roles = _output(terraform_outputs, "workload_role_arns")
-    if not isinstance(roles, Mapping) or not all(isinstance(k, str) and isinstance(v, str) for k, v in roles.items()):
-        raise ValueError("workload_role_arns must map exact service-account names to IAM role ARNs")
-    missing_roles = sorted(_WORKLOAD_ROLE_KEYS.difference(roles))
-    if missing_roles:
-        raise ValueError("workload_role_arns is missing chart workload roles: " + ", ".join(missing_roles))
+    roles = _validated_workload_roles(terraform_outputs)
     validated_images = _validated_images(images)
     if "provisioner" not in validated_images:
         raise ValueError("images must include a digest-pinned 'provisioner' identity for the Kubernetes Job launcher")
@@ -1003,13 +1023,7 @@ def render_aws_values(
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
-    # Isolated feature-artifact acquisition Jobs run the platform image (#2463).
-    # Enabled only where the environment defines the artifactAcquirer identity; an
-    # empty image keeps the launcher's acquisition reconcile a no-op elsewhere.
-    acquisition_enabled = "artifactAcquirer" in roles
-    if acquisition_enabled and "platform" not in validated_images:
-        raise ValueError("images must include the digest-pinned 'platform' identity for feature-artifact acquisition")
-    runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"] = validated_images["platform"] if acquisition_enabled else ""
+    runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"] = _feature_artifact_job_image(roles, validated_images)
     # Provisioner-Job admission contract (restrict-provisioner-jobs, #1826). The
     # launcher builds the Job with imagePullPolicy = ENGINE_TASK_IMAGE_PULL_POLICY
     # (GCPTaskRunner default IfNotPresent) and DB_USER = provisioner_lambda
@@ -1058,7 +1072,10 @@ def render_aws_values(
         "provider": {"name": "aws"},
         "modelBroker": broker,
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
-        "capabilities": {"kubernetesJobLauncher": True, "featureArtifactAcquisition": acquisition_enabled},
+        "capabilities": {
+            "kubernetesJobLauncher": True,
+            "featureArtifactAcquisition": bool(runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"]),
+        },
         "provisioner": {"taskRunner": "aws"},
         "edge": {
             "hostname": config.deployment.domain,
