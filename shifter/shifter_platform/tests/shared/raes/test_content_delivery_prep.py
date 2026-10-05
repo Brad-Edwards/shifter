@@ -18,7 +18,9 @@ from pathlib import Path
 import pytest
 
 from shared.raes.content_delivery import (
+    FEATURE_BINDING_VERSION,
     ContentDeliveryError,
+    DeliveryBinding,
     DeliveryProjection,
     DeliveryProjectionEntry,
     sha256_hex,
@@ -386,4 +388,91 @@ def test_no_bucket_configured_fails_closed(tmp_path: Path):
             target=target,
             projection_loader=lambda _root: projection,
             inventory_loader=lambda _root: inventory,
+        )
+
+
+def _acquired_binding(ref) -> DeliveryBinding:
+    digest = "a" * 64
+    return DeliveryBinding(
+        content_address=None,
+        sha256=digest,
+        storage_key=f"raes/content/{digest[:2]}/{digest}",
+        byte_count=4096,
+        binding_version=FEATURE_BINDING_VERSION,
+        resource_type="feature-binding",
+        resource_address=ref.address,
+        payload_kind="file",
+        install_policy="executable",
+    )
+
+
+def _claude_feature() -> dict:
+    return _feature_resource(
+        "provision.feature.claude", feature_type="artifact", source="claude-code", destination="/usr/local/bin/claude"
+    )
+
+
+def test_unprojected_feature_resolves_to_a_recipe_acquired_artifact(tmp_path: Path):
+    """A pack never carries such software: no projection document, no bytes (ADR-034-R11)."""
+    pack = tmp_path / "pack-without-projection"
+    pack.mkdir()
+    seen = []
+
+    def acquire(ref):
+        seen.append((ref.address, ref.source_name, ref.source_version, ref.feature_type, ref.target_address))
+        return _acquired_binding(ref)
+
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content", max_payload_bytes=10)
+    bindings = prepare_content_delivery(
+        pack_root=pack, serialized_plan=_plan(_claude_feature()), target=target, acquire_feature=acquire
+    )
+
+    assert seen == [("provision.feature.claude", "claude-code", "*", "artifact", "node.web")]
+    assert [binding.resource_address for binding in bindings] == ["provision.feature.claude"]
+    with pytest.raises(ContentDeliveryError, match="no delivery source for feature 'claude-code'"):
+        prepare_content_delivery(pack_root=pack, serialized_plan=_plan(_claude_feature()), target=target)
+    with pytest.raises(ContentDeliveryError, match="pack root is unavailable"):
+        prepare_content_delivery(
+            pack_root=None,
+            serialized_plan=_plan(_content_resource("cf.x", ctype="file", source="flag-pkg")),
+            target=target,
+            acquire_feature=acquire,
+        )
+
+
+def test_projected_pack_content_and_acquired_features_combine(tmp_path: Path):
+    pack, inventory, projection = _pack(tmp_path)
+    plan = _plan(
+        _content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}),
+        _claude_feature(),
+    )
+    target = DeliveryTarget(
+        storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content", max_payload_bytes=10_000_000
+    )
+
+    bindings = prepare_content_delivery(
+        pack_root=pack,
+        serialized_plan=plan,
+        target=target,
+        projection_loader=lambda _root: projection,
+        inventory_loader=lambda _root: inventory,
+        acquire_feature=_acquired_binding,
+    )
+
+    assert {(b.content_address, b.resource_address) for b in bindings} == {
+        ("cf.flag", None),
+        (None, "provision.feature.claude"),
+    }
+
+    def wrong_resource(ref):
+        return _acquired_binding(type(ref)(**{**ref.__dict__, "address": "provision.feature.other"}))
+
+    with pytest.raises(ContentDeliveryError, match="does not match its plan resource"):
+        prepare_content_delivery(
+            pack_root=pack,
+            serialized_plan=plan,
+            target=target,
+            projection_loader=lambda _root: projection,
+            inventory_loader=lambda _root: inventory,
+            acquire_feature=wrong_resource,
         )
