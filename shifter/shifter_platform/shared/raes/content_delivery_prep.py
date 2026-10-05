@@ -130,12 +130,8 @@ def prepare_content_delivery(
     refs = _source_backed_content_refs(serialized_plan)
     if not refs:
         return ()
-    if not isinstance(target.bucket, str) or not target.bucket.strip():
-        raise ContentDeliveryError("content delivery bucket is not configured")
-    pack_projects = _pack_projection_present(pack_root) or projection_loader is not None
-    if not pack_projects and any(ref.resource_type != _FEATURE_BINDING_RESOURCE_TYPE for ref in refs):
-        raise ContentDeliveryError("pack root is unavailable for source-backed content delivery")
-    if not pack_projects or pack_root is None:
+    _require_bucket(target)
+    if not _uses_pack_projection(refs, pack_root, projection_loader) or pack_root is None:
         return tuple(_acquired(ref, acquire_feature) for ref in refs)
     inventory = (inventory_loader or build_inventory_index)(pack_root)
     projection = _projection_for(pack_root, inventory, projection_loader)
@@ -145,6 +141,22 @@ def prepare_content_delivery(
         else _acquired(ref, acquire_feature)
         for ref in refs
     )
+
+
+def _require_bucket(target: DeliveryTarget) -> None:
+    """Fail closed when no delivery bucket is configured."""
+    if not isinstance(target.bucket, str) or not target.bucket.strip():
+        raise ContentDeliveryError("content delivery bucket is not configured")
+
+
+def _uses_pack_projection(
+    refs: list[ContentRef], pack_root: Path | None, projection_loader: Callable[[Path], DeliveryProjection] | None
+) -> bool:
+    """Whether the pack projects content; content placements require that it does."""
+    pack_projects = _pack_projection_present(pack_root) or projection_loader is not None
+    if not pack_projects and any(ref.resource_type != _FEATURE_BINDING_RESOURCE_TYPE for ref in refs):
+        raise ContentDeliveryError("pack root is unavailable for source-backed content delivery")
+    return pack_projects
 
 
 def _projection_for(

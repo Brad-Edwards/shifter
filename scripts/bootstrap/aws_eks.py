@@ -1002,6 +1002,41 @@ def _feature_artifact_job_image(roles: Mapping[str, str], validated_images: Mapp
     return validated_images["platform"]
 
 
+def _edge_values(config: RootConfig, terraform_outputs: Mapping[str, object]) -> dict[str, object]:
+    """Public edge: ALB ingress with ACM TLS and WAF, restricted to the edge client CIDRs."""
+    edge_client_cidrs = _cidr_output(terraform_outputs, "edge_client_cidrs")
+    return {
+        "hostname": config.deployment.domain,
+        "certificateArn": _output(terraform_outputs, "certificate_arn"),
+        "wafAclArn": _output(terraform_outputs, "waf_acl_arn"),
+        "ingress": {
+            "enabled": True,
+            "className": "alb",
+            "annotations": {
+                "alb.ingress.kubernetes.io/scheme": "internet-facing",
+                "alb.ingress.kubernetes.io/target-type": "ip",
+                "alb.ingress.kubernetes.io/listen-ports": '[{"HTTPS":443}]',
+                "alb.ingress.kubernetes.io/ssl-redirect": "443",
+                "alb.ingress.kubernetes.io/load-balancer-name": (
+                    f"{_output(terraform_outputs, 'cluster_name')}-platform"
+                ),
+                "alb.ingress.kubernetes.io/certificate-arn": _output(terraform_outputs, "certificate_arn"),
+                "alb.ingress.kubernetes.io/wafv2-acl-arn": _output(terraform_outputs, "waf_acl_arn"),
+                "alb.ingress.kubernetes.io/inbound-cidrs": ",".join(edge_client_cidrs),
+            },
+            "host": config.deployment.domain,
+            # TLS terminates at the AWS Load Balancer Controller using ACM,
+            # so no Kubernetes TLS Secret is created or placed in values.
+            "tls": {"enabled": False, "secretName": ""},
+            "gcpManagedTls": {
+                "enabled": False,
+                "certificateName": "platform-managed-cert",
+                "frontendConfigName": "platform-frontend-config",
+            },
+        },
+    }
+
+
 def render_aws_values(
     config: RootConfig,
     terraform_outputs: Mapping[str, object],
@@ -1067,7 +1102,6 @@ def render_aws_values(
             **broker.get("enrollment_env", {}),
         }
     )
-    edge_client_cidrs = _cidr_output(terraform_outputs, "edge_client_cidrs")
     return {
         "provider": {"name": "aws"},
         "modelBroker": broker,
@@ -1077,36 +1111,7 @@ def render_aws_values(
             "featureArtifactAcquisition": bool(runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"]),
         },
         "provisioner": {"taskRunner": "aws"},
-        "edge": {
-            "hostname": config.deployment.domain,
-            "certificateArn": _output(terraform_outputs, "certificate_arn"),
-            "wafAclArn": _output(terraform_outputs, "waf_acl_arn"),
-            "ingress": {
-                "enabled": True,
-                "className": "alb",
-                "annotations": {
-                    "alb.ingress.kubernetes.io/scheme": "internet-facing",
-                    "alb.ingress.kubernetes.io/target-type": "ip",
-                    "alb.ingress.kubernetes.io/listen-ports": '[{"HTTPS":443}]',
-                    "alb.ingress.kubernetes.io/ssl-redirect": "443",
-                    "alb.ingress.kubernetes.io/load-balancer-name": (
-                        f"{_output(terraform_outputs, 'cluster_name')}-platform"
-                    ),
-                    "alb.ingress.kubernetes.io/certificate-arn": _output(terraform_outputs, "certificate_arn"),
-                    "alb.ingress.kubernetes.io/wafv2-acl-arn": _output(terraform_outputs, "waf_acl_arn"),
-                    "alb.ingress.kubernetes.io/inbound-cidrs": ",".join(edge_client_cidrs),
-                },
-                "host": config.deployment.domain,
-                # TLS terminates at the AWS Load Balancer Controller using ACM,
-                # so no Kubernetes TLS Secret is created or placed in values.
-                "tls": {"enabled": False, "secretName": ""},
-                "gcpManagedTls": {
-                    "enabled": False,
-                    "certificateName": "platform-managed-cert",
-                    "frontendConfigName": "platform-frontend-config",
-                },
-            },
-        },
+        "edge": _edge_values(config, terraform_outputs),
         "network": {
             "enabled": True,
             "ingressSourceCidrs": _cidr_output(terraform_outputs, "ingress_source_cidrs"),
