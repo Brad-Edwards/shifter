@@ -97,7 +97,8 @@ class PortalClient:
                 status, raw = response.status, response.read(_MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as error:
             status, raw = error.code, error.read(_MAX_RESPONSE_BYTES + 1)
-        except OSError as error:  # URLError and timeouts are OSErrors
+        except OSError as error:
+            # URLError and socket timeouts are both OSError subclasses.
             raise PortalUnavailable(type(error).__name__) from None
         if len(raw) > _MAX_RESPONSE_BYTES:
             raise PortalUnavailable("response too large")
