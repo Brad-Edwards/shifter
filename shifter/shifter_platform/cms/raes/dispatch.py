@@ -208,7 +208,6 @@ class CmsRaesDispatchPort:
             storage=get_object_storage(),
             bucket=settings.STORAGE_BUCKET_NAME,
             prefix=settings.RAES_CONTENT_DELIVERY_PREFIX,
-            max_payload_bytes=settings.RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES,
         )
         from cms.raes.feature_artifacts import feature_artifact_resolver
 
