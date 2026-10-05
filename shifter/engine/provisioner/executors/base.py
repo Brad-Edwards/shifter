@@ -44,6 +44,15 @@ class ExecutorTimeoutError(ExecutorError):
     """Raised when an operation times out."""
 
 
+class GuestReadinessTimeoutError(ExecutorTimeoutError):
+    """A guest's management transport never became ready.
+
+    The message is authored: the wait and one fixed category of the last probe
+    failure, never an address or raw transport output, so it may cross the
+    operation-result boundary for triage.
+    """
+
+
 # =============================================================================
 # Shared Types
 # =============================================================================
