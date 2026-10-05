@@ -281,6 +281,16 @@ class DeliveryProjection:
             raise ContentDeliveryError(f"ambiguous delivery projection for source '{source_name}' ({content_type})")
         return matches[0]
 
+    def has_feature(self, *, source_name: str, source_version: str, feature_type: str) -> bool:
+        """Return whether the pack projects this exact feature source shape."""
+        return any(
+            entry.resource_type == "feature-binding"
+            and entry.source_name == source_name
+            and entry.feature_type == feature_type
+            and entry.source_version == source_version
+            for entry in self.entries
+        )
+
     def resolve_feature(
         self,
         *,

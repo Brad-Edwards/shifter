@@ -195,4 +195,11 @@ class CmsRaesDispatchPort:
             prefix=settings.RAES_CONTENT_DELIVERY_PREFIX,
             max_payload_bytes=settings.RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES,
         )
-        return prepare_content_delivery(pack_root=self.pack_root, serialized_plan=compiled_plan, target=target)
+        from cms.raes.feature_artifacts import feature_artifact_resolver
+
+        return prepare_content_delivery(
+            pack_root=self.pack_root,
+            serialized_plan=compiled_plan,
+            target=target,
+            acquire_feature=feature_artifact_resolver(compiled_plan),
+        )

@@ -91,6 +91,8 @@ class _ContentRef:
     resource_type: str = _CONTENT_PLACEMENT_RESOURCE_TYPE
     feature_type: str = ""
     install_policy: str = ""
+    # Compiled node address a feature binds to (feature-binding refs only).
+    target_address: str = ""
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,7 @@ def prepare_content_delivery(
     target: DeliveryTarget,
     projection_loader: Callable[[Path], DeliveryProjection] | None = None,
     inventory_loader: Callable[[Path], dict[str, InventoryEntry]] | None = None,
+    acquire_feature: Callable[[_ContentRef], DeliveryBinding] | None = None,
 ) -> tuple[DeliveryBinding, ...]:
     """Return the delivery bindings for every source-backed content in the plan.
 
@@ -126,14 +129,21 @@ def prepare_content_delivery(
     byte-free binding. Any failure raises ``ContentDeliveryError`` (the caller
     marks the range reservation FAILED); nothing is dispatched on a partial
     preparation.
+
+    A feature source the pack does not project is never carried by the pack: it
+    resolves through ``acquire_feature`` to a backend-owned artifact acquired by a
+    platform recipe (ADR-034-R11). Without a resolver such a source fails closed.
     """
     refs = _source_backed_content_refs(serialized_plan)
     if not refs:
         return ()
-    if pack_root is None:
-        raise ContentDeliveryError("pack root is unavailable for source-backed content delivery")
     if not isinstance(target.bucket, str) or not target.bucket.strip():
         raise ContentDeliveryError("content delivery bucket is not configured")
+    pack_projects = _pack_projection_present(pack_root) or projection_loader is not None
+    if not pack_projects and any(ref.resource_type != _FEATURE_BINDING_RESOURCE_TYPE for ref in refs):
+        raise ContentDeliveryError("pack root is unavailable for source-backed content delivery")
+    if not pack_projects or pack_root is None:
+        return tuple(_acquired(ref, acquire_feature) for ref in refs)
     inventory = (inventory_loader or build_inventory_index)(pack_root)
     if projection_loader is None:
         # Only the real, file-reading default loader needs the inventory
@@ -145,7 +155,30 @@ def prepare_content_delivery(
         projection = _load_pack_projection(pack_root)
     else:
         projection = projection_loader(pack_root)
-    return tuple(_prepare_one(ref, pack_root, projection, inventory, target) for ref in refs)
+    return tuple(
+        _prepare_one(ref, pack_root, projection, inventory, target)
+        if ref.resource_type != _FEATURE_BINDING_RESOURCE_TYPE
+        or projection.has_feature(
+            source_name=ref.source_name, source_version=ref.source_version, feature_type=ref.feature_type
+        )
+        else _acquired(ref, acquire_feature)
+        for ref in refs
+    )
+
+
+def _pack_projection_present(pack_root: Path | None) -> bool:
+    """Whether the pack ships a delivery projection document."""
+    return pack_root is not None and (Path(pack_root) / PROJECTION_RELPATH).is_file()
+
+
+def _acquired(ref: _ContentRef, acquire_feature: Callable[[_ContentRef], DeliveryBinding] | None) -> DeliveryBinding:
+    """Resolve a feature the pack does not carry to a recipe-acquired artifact."""
+    if acquire_feature is None:
+        raise ContentDeliveryError(f"no delivery source for feature '{ref.source_name}' ({ref.feature_type})")
+    binding = acquire_feature(ref)
+    if binding.resource_type != _FEATURE_BINDING_RESOURCE_TYPE or binding.resource_address != ref.address:
+        raise ContentDeliveryError("acquired feature binding does not match its plan resource")
+    return binding
 
 
 def _prepare_one(
@@ -239,6 +272,10 @@ def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef
     if resolved is None:
         return None
     template, resource_address = resolved
+    payload = resource.get("payload") if isinstance(resource, Mapping) else None
+    target = ""
+    if isinstance(payload, Mapping):
+        target = str(payload.get("node_address") or payload.get("node_name") or "")
     feature_type = template.get("type")
     feature_type = feature_type.lower() if isinstance(feature_type, str) else ""
     if feature_type == "service":
@@ -257,6 +294,7 @@ def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef
         resource_type=_FEATURE_BINDING_RESOURCE_TYPE,
         feature_type=feature_type,
         install_policy="",
+        target_address=target,
     )
 
 
