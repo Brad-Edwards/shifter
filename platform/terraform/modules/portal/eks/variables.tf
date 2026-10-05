@@ -162,6 +162,17 @@ variable "workload_identities" {
     policy_arns      = optional(set(string), [])
     secret_names     = optional(set(string), [])
     object_read_arns = optional(set(string), [])
+    # Postgres role this workload assumes for its long-running RDS IAM-auth
+    # connection (entrypoint.sh switches DB_USER to it after migrations). When
+    # set, the IRSA role is granted rds-db:connect for exactly that dbuser so the
+    # process can mint a short-lived auth token; empty means no RDS IAM access.
+    rds_iam_db_user = optional(string, "")
+    # Read-only access to range participant-delivery credentials (participant SSH
+    # keys, RDP/account passwords, directory account passwords) so the workload can
+    # broker a participant's connection to a realized guest. Mirrors the GCP portal's
+    # participant-prefix-conditioned secretAccessor: host-management keys, host
+    # identities, and directory admin material are never readable through it.
+    range_participant_secret_read = optional(bool, false)
   }))
 
   validation {
@@ -205,4 +216,18 @@ variable "secret_names" {
 variable "tags" {
   description = "Common tags."
   type        = map(string)
+}
+
+variable "enable_runtime_plugins" {
+  description = <<-EOT
+    Create the exclusive gVisor runtime-plugin node group. Default false on EKS:
+    the pool identity keys on the node-restriction.kubernetes.io/shifter-pool
+    label, which NodeRestriction forbids a kubelet from self-registering. EKS
+    applies managed-node-group labels through the kubelet (unlike GKE, whose
+    control plane applies them via a trusted path), so the node fails to join
+    with that label. Enabling it requires a trusted node-labeler for EKS parity
+    with GKE (tracked follow-up). Keep false until that lands.
+  EOT
+  type        = bool
+  default     = false
 }

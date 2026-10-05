@@ -1,8 +1,18 @@
 override_data {
   target = data.aws_ssm_parameters_by_path.range_network
   values = {
-    names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
-    values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
+    names = [
+      "/shifter/test/range/vpc_id",
+      "/shifter/test/range/vpc_cidr",
+      "/shifter/test/range/private_route_table_id",
+      "/shifter/test/range/engine_secrets_kms_key_arn",
+    ]
+    values = [
+      "vpc-mock-range",
+      "10.50.0.0/16",
+      "rtb-mock-range",
+      "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets",
+    ]
   }
 }
 
@@ -22,6 +32,23 @@ override_data {
   target = data.aws_route_tables.portal_private
   values = {
     ids = ["rtb-mock-portal-a", "rtb-mock-portal-b"]
+  }
+}
+
+# GitHub Actions runner VPC discovered by name for the runner<->EKS peering
+# (runner_network.tf). Disjoint from portal/eks/range CIDRs.
+override_data {
+  target = data.aws_vpc.runner
+  values = {
+    id         = "vpc-mock-runner"
+    cidr_block = "10.20.0.0/24"
+  }
+}
+
+override_data {
+  target = data.aws_route_tables.runner
+  values = {
+    ids = ["rtb-mock-runner"]
   }
 }
 
@@ -162,14 +189,14 @@ override_resource {
 }
 
 override_resource {
-  target = aws_eks_node_group.runtime_plugins
+  target = aws_eks_node_group.runtime_plugins[0]
   values = {
     resources = [{ autoscaling_groups = [{ name = "eks-shifter-test-plugins-asg" }] }]
   }
 }
 
 override_resource {
-  target = aws_launch_template.runtime_plugins
+  target = aws_launch_template.runtime_plugins[0]
   values = {
     id             = "lt-22222222222222222"
     latest_version = 1
@@ -209,9 +236,10 @@ variables {
       service_account = "aws-load-balancer-controller"
     }
     portal = {
-      namespace       = "shifter-platform"
-      service_account = "shifter-portal"
-      policy_arns     = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
+      namespace                     = "shifter-platform"
+      service_account               = "shifter-portal"
+      policy_arns                   = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
+      range_participant_secret_read = true
     }
     workers = {
       namespace       = "shifter-platform"
@@ -241,7 +269,13 @@ variables {
   secret_names = [
     "database",
     "django",
+    "guacamole-db",
+    "guacamole-json-auth",
   ]
+  # Validate the runtime-plugin sandbox pool contract even though it defaults off
+  # on EKS (see variables.tf: needs a trusted node-labeler for the restricted
+  # pool label before it can join).
+  enable_runtime_plugins = true
   tags = {
     Environment = "test"
     Project     = "shifter"
@@ -253,30 +287,30 @@ run "security_contract" {
 
   assert {
     condition = (
-      aws_eks_node_group.runtime_plugins.ami_type == "AL2023_x86_64_STANDARD" &&
-      aws_eks_node_group.runtime_plugins.labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
-      one(aws_eks_node_group.runtime_plugins.taint).key == "shifter.dev/runtime-plugin" &&
-      one(aws_eks_node_group.runtime_plugins.taint).effect == "NO_SCHEDULE" &&
-      aws_eks_node_group.runtime_plugins.scaling_config[0].min_size == 1
+      aws_eks_node_group.runtime_plugins[0].ami_type == "AL2023_x86_64_STANDARD" &&
+      aws_eks_node_group.runtime_plugins[0].labels["node-restriction.kubernetes.io/shifter-pool"] == "runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins[0].taint).key == "shifter.dev/runtime-plugin" &&
+      one(aws_eks_node_group.runtime_plugins[0].taint).effect == "NO_SCHEDULE" &&
+      aws_eks_node_group.runtime_plugins[0].scaling_config[0].min_size == 1
     )
     error_message = "Tenant runtime plugins require a warm, exclusive AL2023 sandbox pool."
   }
 
   assert {
     condition = (
-      aws_launch_template.runtime_plugins.metadata_options[0].http_tokens == "required" &&
-      aws_launch_template.runtime_plugins.metadata_options[0].http_put_response_hop_limit == 1 &&
-      aws_launch_template.runtime_plugins.block_device_mappings[0].ebs[0].encrypted
+      aws_launch_template.runtime_plugins[0].metadata_options[0].http_tokens == "required" &&
+      aws_launch_template.runtime_plugins[0].metadata_options[0].http_put_response_hop_limit == 1 &&
+      aws_launch_template.runtime_plugins[0].block_device_mappings[0].ebs[0].encrypted
     )
     error_message = "Sandbox node storage and metadata must preserve the hardened node boundary."
   }
 
   assert {
     condition = (
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "sha512sum --check --status") &&
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "release/20260914.0/") &&
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "io.containerd.runsc.v1") &&
-      strcontains(base64decode(aws_launch_template.runtime_plugins.user_data), "node.eks.aws/v1alpha1")
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "sha512sum --check --status") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "release/20260914.0/") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "io.containerd.runsc.v1") &&
+      strcontains(base64decode(aws_launch_template.runtime_plugins[0].user_data), "node.eks.aws/v1alpha1")
     )
     error_message = "Node bootstrap must verify the pinned gVisor archive and configure the runtime through nodeadm."
   }
@@ -375,6 +409,38 @@ run "security_contract" {
     error_message = "The provisioner IRSA role must bind the exact shifter-jobs/provisioner subject."
   }
 
+  # Only identities that opt in may read range participant-delivery credentials.
+  assert {
+    condition     = keys(aws_iam_role_policy.workload_range_participant_secrets) == ["portal"]
+    error_message = "Range participant-secret read must be granted only to identities that opt in (the portal)."
+  }
+
+  # GCP parity: participant-delivery kinds only. Provisioner management keys, host
+  # identities and directory admin material must never be readable by the portal.
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[0].Resource == [
+        "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:shifter/test/range/*/raes/account-key/*",
+        "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:shifter/test/range/*/raes/account-password/*",
+        "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:shifter/test/range/*/raes/domain-account/*",
+      ] &&
+      alltrue([
+        for kind in ["host-ssh", "host-identity", "domain-dsrm", "domain-authority"] :
+        !strcontains(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy, "/raes/${kind}/")
+      ])
+    )
+    error_message = "The portal may read only participant-delivery range secrets, never host-management or directory-admin secrets."
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets" &&
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-2.amazonaws.com" &&
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringLike["kms:EncryptionContext:SecretARN"] == jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[0].Resource
+    )
+    error_message = "Range-secret Decrypt must be confined to the range key, via Secrets Manager, for exactly the participant-delivery secret ARNs."
+  }
+
   assert {
     condition     = strcontains(aws_iam_role.workload["provisionerLauncher"].assume_role_policy, "system:serviceaccount:shifter-platform:provisioner-launcher")
     error_message = "The provisioner-launcher IRSA role must bind the exact shifter-platform/provisioner-launcher subject."
@@ -393,10 +459,16 @@ run "security_contract" {
   }
 
   # The VPC CNI network-policy agent must be enabled so the chart's default-deny
-  # NetworkPolicies are actually enforced on EKS, not merely rendered.
+  # NetworkPolicies are actually enforced on EKS, not merely rendered. Mode is
+  # "standard", not "strict": standard enforces every policy that selects a pod
+  # (the chart's shifter-namespace default-deny applies in full) while leaving
+  # unselected kube-system pods (coredns, CSI) reachable. strict default-denies
+  # ALL pod traffic until an allow-policy exists, which severs coredns/CSI from
+  # the API server and DNS cluster-wide. GKE Dataplane V2 parity likewise
+  # default-allows pods no policy selects.
   assert {
-    condition     = strcontains(aws_eks_addon.vpc_cni.configuration_values, "enableNetworkPolicy") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "NETWORK_POLICY_ENFORCING_MODE") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "strict")
-    error_message = "The vpc-cni add-on must enable the NetworkPolicy agent in strict startup mode."
+    condition     = strcontains(aws_eks_addon.vpc_cni.configuration_values, "enableNetworkPolicy") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "NETWORK_POLICY_ENFORCING_MODE") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "standard")
+    error_message = "The vpc-cni add-on must enable the NetworkPolicy agent in standard enforcement mode."
   }
 
   assert {
@@ -506,11 +578,17 @@ run "enabled_broker_routes" {
     error_message = "Every private EKS route table must reach the portal data plane (RDS/Redis) over the portal peering."
   }
   assert {
+    condition = alltrue([for table in aws_route_table.private :
+      length([for route in table.route : route if route.cidr_block == data.aws_vpc.runner.cidr_block && route.vpc_peering_connection_id == aws_vpc_peering_connection.runner.id]) == 1
+    ])
+    error_message = "Every private EKS route table must return eks-deploy/smoke traffic to the runner VPC over the runner peering."
+  }
+  assert {
     condition = alltrue(flatten([for table in aws_route_table.private : [
       for route in table.route :
-      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16" || route.cidr_block == data.aws_vpc.portal.cidr_block
+      (route.vpc_peering_connection_id == null || route.vpc_peering_connection_id == "") || route.cidr_block == "10.50.0.0/16" || route.cidr_block == data.aws_vpc.portal.cidr_block || route.cidr_block == data.aws_vpc.runner.cidr_block
     ]]))
-    error_message = "Peering routes must stay bounded to the range + portal CIDRs; the default route uses NAT."
+    error_message = "Peering routes must stay bounded to the range + portal + runner CIDRs; the default route uses NAT."
   }
   assert {
     condition = (

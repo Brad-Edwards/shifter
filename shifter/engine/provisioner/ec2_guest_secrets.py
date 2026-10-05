@@ -106,8 +106,12 @@ class Ec2GuestSecrets:
             if not isinstance(value, str) or not 1 <= len(value.encode()) <= 65536:
                 raise Ec2SecretError("EC2 credential payload is unavailable")
             return arn, value
-        except (BotoCoreError, ClientError):
-            raise Ec2SecretError("EC2 credential operation failed") from None
+        except ClientError as exc:
+            raise Ec2SecretError(
+                f"EC2 credential operation failed ({exc.response.get('Error', {}).get('Code')})"
+            ) from None
+        except BotoCoreError as exc:
+            raise Ec2SecretError(f"EC2 credential operation failed ({type(exc).__name__})") from None
 
     def _create(self, name: str, range_id: int, factory: Callable[[], str]) -> None:
         """Atomically create bounded credential bytes, accepting a concurrent winner."""
@@ -132,10 +136,11 @@ class Ec2GuestSecrets:
             arn = self._owned(name, range_id)
             self.client.delete_secret(SecretId=arn, ForceDeleteWithoutRecovery=True)
         except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
-                raise Ec2SecretError("EC2 credential deletion failed") from None
-        except BotoCoreError:
-            raise Ec2SecretError("EC2 credential deletion failed") from None
+            code = exc.response.get("Error", {}).get("Code")
+            if code != "ResourceNotFoundException":
+                raise Ec2SecretError(f"EC2 credential deletion failed ({code})") from None
+        except BotoCoreError as exc:
+            raise Ec2SecretError(f"EC2 credential deletion failed ({type(exc).__name__})") from None
 
     def host_ssh(self, range_id: int, instance_key: str, *, create: bool = True) -> tuple[str, str]:
         ref, value = self.ensure(

@@ -50,9 +50,29 @@ output "vpc_id" {
   value       = aws_vpc.this.id
 }
 
+output "portal_vpc_cidr" {
+  description = "CIDR of the peered portal VPC that hosts the shared RDS/Redis data plane (ADR-044-R6)."
+  value       = data.aws_vpc.portal.cidr_block
+}
+
+output "portal_db_address" {
+  description = "Endpoint address of the shared portal RDS instance (guacamole PostgreSQL host)."
+  value       = data.aws_db_instance.portal.address
+}
+
+output "portal_db_port" {
+  description = "Endpoint port of the shared portal RDS instance."
+  value       = data.aws_db_instance.portal.port
+}
+
 output "private_subnet_ids" {
   description = "Private node and pod subnet IDs."
   value       = [for subnet in aws_subnet.private : subnet.id]
+}
+
+output "service_ipv4_cidr" {
+  description = "Cluster service (ClusterIP) CIDR. In-cluster clients reach the Kubernetes API at the kubernetes.default ClusterIP in this range, so it is the launcher's real API-egress target and the range the broad provider-API egress must exclude (#1826)."
+  value       = aws_eks_cluster.this.kubernetes_network_config[0].service_ipv4_cidr
 }
 
 output "secret_arns" {

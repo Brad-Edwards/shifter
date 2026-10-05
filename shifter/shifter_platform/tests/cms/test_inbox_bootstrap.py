@@ -67,9 +67,29 @@ class TestShippedManifest:
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
         assert isinstance(packs, list)
 
-    def test_shipped_manifest_contains_the_smoke_linux_pack(self):
+    def test_shipped_manifest_contains_the_smoke_linux_packs(self):
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
-        assert [pack.scenario_id for pack in packs] == ["smoke-linux"]
+        # smoke-linux is the GCP-authored scenario; smoke-linux-aws is its
+        # portable-addressing variant for the AWS EC2 range backend (#1826).
+        assert [pack.scenario_id for pack in packs] == ["smoke-linux", "smoke-linux-aws"]
+
+    def test_shipped_packs_register_and_pass_release_conformance(self, admin_actor, monkeypatch):
+        """Every shipped in-box pack has a valid byte-bound digest and conforms.
+
+        Registering the real shipped manifest under the repo package root exercises
+        each pack's digest verification and the trusted release-conformance gate
+        (RAES load + plan + Shifter target + apply-contract) that the deploy's
+        bootstrap_inbox_catalog runs -- so a bad pack fails here, not at deploy.
+        """
+        from django.conf import settings
+
+        platform_root = Path(__file__).resolve().parents[2]
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(platform_root))
+
+        register_inbox_packs(actor=admin_actor, manifest_path=SHIPPED_INBOX_MANIFEST)
+
+        assert RaesPackageSource.objects.filter(scenario_id="smoke-linux").exists()
+        assert RaesPackageSource.objects.filter(scenario_id="smoke-linux-aws").exists()
 
 
 class TestRegisterInboxPacks:

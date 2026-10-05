@@ -108,6 +108,13 @@ identity:
 provisioner:
   taskRunner: gcp
 
+provisionerAdmission:
+  # When true, restrict-provisioner-jobs inlines its param values into the policy CEL
+  # instead of a ConfigMap paramRef. Set true only on backends whose control plane
+  # cannot resolve ValidatingAdmissionPolicy ConfigMap params (AWS EKS); GCP resolves
+  # them, so it keeps the paramRef.
+  inlineParams: false
+
 runtime:
   secretReferences: {}
 
@@ -354,6 +361,12 @@ network:
   enabled: true
   ingressSourceCidrs: []
   providerApiCidrs: []
+  # CIDRs excluded from the broad provider-API (443) egress via ipBlock.except so
+  # the wildcard AWS-API allow cannot also reach the in-cluster Kubernetes API.
+  # Empty by default (GKE): the parity target reaches provider APIs on narrow
+  # ranges that never include the control plane. AWS sets this to the service
+  # CIDR so only the launcher policy grants API access (#1826).
+  providerApiEgressExcept: []
   privateServiceCidrs: []
   # GKE service CIDR containing kubernetes.default.svc. Scoped only to the
   # dedicated launcher pod so other platform workloads remain API-tokenless.

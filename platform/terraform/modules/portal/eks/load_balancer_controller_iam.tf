@@ -77,18 +77,24 @@ resource "aws_iam_role_policy" "load_balancer_controller" {
         Resource = "arn:aws:elasticloadbalancing:${var.aws_region}:${data.aws_caller_identity.current.account_id}:loadbalancer/app/${var.cluster_name}-platform/*"
       },
       {
-        Sid      = "CreateTaggedSecurityGroupInClusterVpc"
-        Effect   = "Allow"
-        Action   = ["ec2:CreateSecurityGroup"]
-        Resource = "*"
-        Condition = {
-          ArnEquals = {
-            "ec2:Vpc" = aws_vpc.this.arn
-          }
-          StringEquals = {
-            "aws:RequestTag/elbv2.k8s.aws/cluster" = var.cluster_name
-          }
-        }
+        # CreateSecurityGroup authorizes two resource legs: the VPC the group is
+        # created in, and the (pre-create, unnamed) security-group resource itself.
+        # The controller's backend-sg-provider does not tag-on-create (verified via
+        # the decoded authorization context: no aws:RequestTag/* keys are present),
+        # and the VPC leg exposes ec2:VpcID rather than the ec2:Vpc ARN key, so an
+        # aws:RequestTag / ArnEquals ec2:Vpc condition never matches either leg and
+        # every create was denied. Scope by resource ARN instead: groups may be
+        # created only inside this cluster's VPC (the group id is unknowable before
+        # creation, hence security-group/*). Cluster-ownership tagging and the
+        # modify/delete gate remain enforced by TagSecurityGroupOnCreate and the
+        # ManageOwnedSecurityGroup* statements below.
+        Sid    = "CreateSecurityGroupInClusterVpc"
+        Effect = "Allow"
+        Action = ["ec2:CreateSecurityGroup"]
+        Resource = [
+          aws_vpc.this.arn,
+          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:security-group/*",
+        ]
       },
       {
         Sid      = "TagSecurityGroupOnCreate"

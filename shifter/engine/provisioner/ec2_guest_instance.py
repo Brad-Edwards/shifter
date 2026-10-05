@@ -294,7 +294,12 @@ def ensure_ec2_guest(plan: Ec2GuestPlan, ec2: BaseClient, secrets: Ec2GuestSecre
     filters.append(
         {"Name": "instance-state-name", "Values": ["pending", "running", "stopping", "stopped", "shutting-down"]}
     )
-    rows = _instances(ec2.describe_instances(Filters=filters, MaxResults=5))
+    # No MaxResults: EC2 derives NextToken from its account-wide instance scan, not
+    # these tag filters, so a bounded page spuriously reports incompleteness once the
+    # account holds more instances than the page. The server-side filters already scope
+    # the result to this range's few instances; _instances still rejects a genuine
+    # NextToken (a result set larger than one default page).
+    rows = _instances(ec2.describe_instances(Filters=filters))
     if len(rows) > 1:
         raise Ec2GuestError("EC2 guest ownership is ambiguous")
     if rows:

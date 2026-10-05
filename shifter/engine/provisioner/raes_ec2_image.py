@@ -199,8 +199,24 @@ def _verify_root_disk(image: dict[str, Any], profile: Ec2ImageProfile) -> tuple[
     root = image.get("RootDeviceName")
     if not isinstance(root, str) or not re.fullmatch(r"/dev/[a-z][a-z0-9]{1,30}", root):
         raise Ec2ImageError("EC2 root device is invalid")
-    # Refuse extra disks until their lifecycle and evidence are represented.
-    disk = _only(image.get("BlockDeviceMappings"), "root disk")
+    mappings = image.get("BlockDeviceMappings")
+    if not isinstance(mappings, list):
+        raise Ec2ImageError("EC2 root disk observation is unavailable or ambiguous")
+    # Only EBS mappings are disks with a snapshot and lifecycle to attest. Virtual
+    # (instance-store / ephemeral) mappings carry no snapshot and only materialise
+    # when the instance type provides instance-store volumes, so they are not extra
+    # disks. Refuse extra EBS disks until their lifecycle and evidence are
+    # represented, but ignore ephemeral mappings that AMIs commonly declare.
+    ebs_disks = [m for m in mappings if isinstance(m, dict) and isinstance(m.get("Ebs"), dict)]
+    size, snapshot = _validated_root_ebs(_only(ebs_disks, "root disk"), root)
+    requested_size = profile.disk_size_gb if profile.disk_size_gb is not None else max(30, size)
+    if requested_size < size:
+        raise Ec2ImageError("EC2 boot volume cannot be smaller than the source snapshot")
+    return root, snapshot, requested_size
+
+
+def _validated_root_ebs(disk: dict[str, Any], root: str) -> tuple[int, str]:
+    """Return the (size, snapshot) of the sole EBS root mapping, or raise."""
     ebs = disk.get("Ebs", {})
     size, snapshot = ebs.get("VolumeSize"), ebs.get("SnapshotId")
     if (
@@ -211,7 +227,4 @@ def _verify_root_disk(image: dict[str, Any], profile: Ec2ImageProfile) -> tuple[
         or not re.fullmatch(r"snap-(?:[0-9a-f]{8}|[0-9a-f]{17})", snapshot)
     ):
         raise Ec2ImageError("EC2 root snapshot observation is invalid")
-    requested_size = profile.disk_size_gb if profile.disk_size_gb is not None else max(30, size)
-    if requested_size < size:
-        raise Ec2ImageError("EC2 boot volume cannot be smaller than the source snapshot")
-    return root, snapshot, requested_size
+    return size, snapshot

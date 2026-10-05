@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -13,7 +14,7 @@ from ec2_guest_instance import Ec2GuestPlan, ensure_ec2_guest, observe_ec2_guest
 from ec2_guest_secrets import Ec2GuestSecrets
 from ec2_network_apply import Ec2NetworkResources, ensure_ec2_network
 from ec2_range_cleanup import Ec2CleanupScope, destroy_ec2_resources
-from ec2_range_network import Ec2NetworkConfig, Ec2NetworkPlan, plan_ec2_network
+from ec2_range_network import Ec2NetworkConfig, Ec2NetworkPlan, allocation_networks, plan_ec2_network
 from executors.factory import GuestExecutionContext, build_guest_execution_context
 from raes_access import RealizedAccessBinding, join_participant_access
 from raes_account_credentials import delete_instance_account_credentials, install_instance_account_credentials
@@ -120,6 +121,10 @@ def _guests(
     nodes = {node.address: node for node in plan.nodes}
     accounts = _accounts_by_node(plan)
     bindings = _access_by_node(access)
+    # The realized member projection requires each guest's authored subnet name
+    # (#1710); map the placement's network address back to the authored name so
+    # the terminal-ready result parses (GCP sets this from its subnet outputs).
+    subnet_names = {network_intent.address: network_intent.name for network_intent in allocation_networks(plan)}
     outputs, guests = [], []
     for placement in network.guests:
         node = nodes[placement.node_address]
@@ -154,6 +159,7 @@ def _guests(
         _publish_participant_access(output, node_access, refs)
         output["participant_access_channels"] = [binding.channel for binding in node_access]
         output["participant_access_usernames"] = {binding.channel: binding.username for binding in node_access}
+        output["subnet_name"] = subnet_names.get(placement.subnet_address, "")
         outputs.append(output)
         guests.append(guest)
     return outputs, guests, resources
@@ -252,5 +258,10 @@ def apply_raes_ec2_range(
         }
         return result
     except Exception:
-        destroy_raes_ec2_range(request_id, range_id, plan, options)
+        # Compensate the failed launch, but never let a teardown failure mask the
+        # original provision error (a `raise ... from None` in the cleanup path
+        # otherwise suppresses it). The cleanup failure still surfaces on the
+        # explicit destroy path; the original error is what must propagate here.
+        with contextlib.suppress(Exception):
+            destroy_raes_ec2_range(request_id, range_id, plan, options)
         raise
