@@ -114,7 +114,7 @@ def test_policy_admits_the_launcher_built_job_and_denies_tampering():
         "identity": lambda j: j["spec"]["template"]["spec"].__setitem__("serviceAccountName", "provisioner"),
         "budget": lambda j: j["spec"].__setitem__("activeDeadlineSeconds", 86400),
         "writable-root": lambda j: _container(j)["securityContext"].__setitem__("readOnlyRootFilesystem", False),
-        "shared-scratch": lambda j: _container(j)["volumeMounts"][0].__setitem__("mountPath", "/tmp"),
+        "scratch-elsewhere": lambda j: _container(j)["volumeMounts"][0].__setitem__("mountPath", "/scratch"),
     }
     for name, mutate in mutations.items():
         assert not _allows(policy, tampered(mutate)), name
