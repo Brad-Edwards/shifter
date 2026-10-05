@@ -68,6 +68,7 @@ from engine.services import (
 from engine.services import release_capacity_reservations as engine_release_capacity_reservations
 from engine.services import release_range_capacity as engine_release_range_capacity
 from engine.services import resolve_model_access_range_page as engine_resolve_model_access_range_page
+from engine.services import resolve_model_access_range_reference as engine_resolve_model_access_range_reference
 from engine.services import resolve_model_access_range_views as engine_resolve_model_access_range_views
 from engine.services import resume_range as engine_resume_range
 from engine.services import validate_sharing_binding as engine_validate_sharing_binding
@@ -96,6 +97,7 @@ from ._model_access_sharing import (
     ModelAccessSelectorError,
     find_model_access_selected_ranges,
     resolve_model_access_range_instances,
+    resolve_model_access_range_reference,
     resolve_model_access_range_views,
     resolve_model_access_selected_ranges,
     resolve_model_access_selector,
@@ -311,6 +313,7 @@ __all__ = (
     "engine_release_capacity_reservations",
     "engine_release_range_capacity",
     "engine_resolve_model_access_range_page",
+    "engine_resolve_model_access_range_reference",
     "engine_resolve_model_access_range_views",
     "engine_resume_range",
     "engine_validate_sharing_binding",
@@ -375,6 +378,7 @@ __all__ = (
     "reset_tenant_lease_policy",
     "resolve_mission_control_lease_policy",
     "resolve_model_access_range_instances",
+    "resolve_model_access_range_reference",
     "resolve_model_access_range_views",
     "resolve_model_access_selected_ranges",
     "resolve_model_access_selector",

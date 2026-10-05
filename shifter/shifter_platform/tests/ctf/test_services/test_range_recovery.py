@@ -223,16 +223,25 @@ class TestRebuildRecovery:
     """``strategy=rebuild``: provision a fresh range for the participant."""
 
     @pytest.mark.django_db
+    @pytest.mark.parametrize("old_range_status", [ResourceStatus.READY.value, ResourceStatus.FAILED.value])
     def test_rebuild_admits_against_realized_range_subject_not_draw(
-        self, rich_participant, organizer_user, monkeypatch
+        self, rich_participant, organizer_user, monkeypatch, old_range_status
     ):
         # PLAT-202 (#2119): the replacement must be admitted against the realized
-        # range's membership subject captured BEFORE teardown, not the draw — else a
-        # binding published against the range would be silently dropped on rebuild.
+        # range's membership subject, not the draw — else a binding published
+        # against the range would be silently dropped on rebuild. A FAILED range is
+        # the organizer's main reason to rebuild and must hand over its identity
+        # too, though its CMS instance is already soft-deleted (#2462).
         import cms.services._model_admission as gate
         from shared.model_access import OwnedReference
 
-        participant, _old_range = rich_participant
+        participant, old_range = rich_participant
+        if old_range_status == ResourceStatus.FAILED.value:
+            EngineRange.objects.filter(pk=old_range.engine_range.pk).update(status=EngineRange.Status.FAILED)
+            old_range.status = old_range_status
+            old_range.save(update_fields=["status"])
+            participant.range_status = old_range_status
+            participant.save(update_fields=["range_status", "updated_at"])
         captured: dict[str, object] = {}
         original = gate.assert_launch_model_access
 
@@ -242,10 +251,14 @@ class TestRebuildRecovery:
 
         monkeypatch.setattr(gate, "assert_launch_model_access", _spy)
 
-        recover_participant_range(participant.pk, strategy=RecoveryStrategy.REBUILD.value, operator=organizer_user)
+        result = recover_participant_range(
+            participant.pk, strategy=RecoveryStrategy.REBUILD.value, operator=organizer_user
+        )
 
-        assert captured["subject"] is not None
-        assert captured["subject"] != OwnedReference(owner="ctf", reference=f"draw:{participant.pk}")
+        assert result["phase"] == RecoveryPhase.COMPLETED.value
+        assert captured["subject"] == OwnedReference(
+            owner="deployment", reference=f"range:{old_range.engine_range.uuid}"
+        )
 
     @pytest.mark.django_db
     def test_rebuild_preserves_identity_and_scoring_state(self, rich_participant, submission_and_award, organizer_user):
