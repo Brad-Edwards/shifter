@@ -310,18 +310,23 @@ def rename_own_participant_username(
 
 
 def anonymize_participant_account(participant_id: UUID) -> bool:
-    """Disable and anonymize one temporary account while retaining ownership."""
+    """Disable and anonymize one temporary account while retaining ownership.
+
+    Soft-deleted participations are included (``all_objects``) so event force
+    deletion can release every account it is about to cascade away; an account
+    that is already anonymized is left untouched.
+    """
     with transaction.atomic():
         try:
             participant = (
-                CTFParticipant.objects.select_for_update(of=("self",))
+                CTFParticipant.all_objects.select_for_update(of=("self",))
                 .select_related("user", "user__profile")
                 .get(pk=participant_id)
             )
         except CTFParticipant.DoesNotExist:
             return False
         user = participant.user
-        if user is None or not user.profile.is_ctf_account:
+        if user is None or not user.profile.is_ctf_account or user.profile.anonymized_at is not None:
             return False
         now = timezone.now()
         user.username = f"ctf-tombstone-{user.pk}-{secrets.token_hex(4)}"
