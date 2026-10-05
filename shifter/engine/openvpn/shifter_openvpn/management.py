@@ -24,6 +24,10 @@ class ManagementError(RuntimeError):
     """The management interface refused a command or went away."""
 
 
+_CLIENT = ">CLIENT:"
+_CLIENT_ENV = ">CLIENT:ENV,"
+
+
 @dataclass(frozen=True)
 class ClientEvent:
     """One ``>CLIENT:`` notification with its environment."""
@@ -36,9 +40,9 @@ class ClientEvent:
 
 def parse_event_header(line: str) -> tuple[str, int, int | None] | None:
     """Parse ``>CLIENT:KIND,CID[,KID]``; return None for anything else."""
-    if not line.startswith(">CLIENT:") or line.startswith(">CLIENT:ENV,"):
+    if not line.startswith(_CLIENT) or line.startswith(_CLIENT_ENV):
         return None
-    kind, _, rest = line[len(">CLIENT:") :].partition(",")
+    kind, _, rest = line[len(_CLIENT) :].partition(",")
     parts = rest.split(",")
     try:
         cid = int(parts[0])
@@ -74,8 +78,8 @@ class Management:
             header = parse_event_header(line)
             if header is not None:
                 pending, env = header, {}
-            elif line.startswith(">CLIENT:ENV,") and pending is not None:
-                entry = line[len(">CLIENT:ENV,") :]
+            elif line.startswith(_CLIENT_ENV) and pending is not None:
+                entry = line[len(_CLIENT_ENV) :]
                 if entry == "END":
                     kind, cid, kid = pending
                     self.events.put(ClientEvent(kind=kind, cid=cid, kid=kid, env=env))
@@ -85,7 +89,8 @@ class Management:
                     env[key] = value
             elif line.startswith(("SUCCESS:", "ERROR:")):
                 self._replies.put(line)
-        self.events.put(None)  # the socket closed
+        # The socket closed: tell the consumer there will be no more events.
+        self.events.put(None)
 
     def _command(self, *lines: str) -> str:
         with self._lock:

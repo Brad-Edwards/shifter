@@ -1,4 +1,4 @@
-"""The server's metadata identity, Secret Manager reads, health endpoint and startup wait (#2480)."""
+"""The server's metadata identity, Secret Manager reads, health listener and startup wait (#2480)."""
 
 from __future__ import annotations
 
@@ -64,29 +64,23 @@ def test_secrets_are_read_with_the_attached_identity(network):
     assert access.get_header("Authorization") == "Bearer ya29.test"
 
 
-def test_the_health_endpoint_reflects_readiness(monkeypatch):
+def test_the_health_port_accepts_connections_once_serving(monkeypatch):
     monkeypatch.setattr(entry.socket, "gethostbyname", lambda _name: "127.0.0.1")
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    healthy = threading.Event()
-    threading.Thread(target=entry._serve_health, args=(port, healthy), daemon=True).start()
+    with pytest.raises(OSError):
+        socket.create_connection(("127.0.0.1", port), timeout=1).close()
 
-    def status(path: str = "/healthz") -> int:
-        for _ in range(50):
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as response:
-                    return response.status
-            except urllib.error.HTTPError as error:
-                return error.code
-            except OSError:
-                time.sleep(0.05)
-        raise AssertionError("health server did not start")
-
-    assert status() == 503
-    healthy.set()
-    assert status() == 200
-    assert status("/other") == 503
+    threading.Thread(target=entry._serve_health, args=(port,), daemon=True).start()
+    for _ in range(50):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+                assert connection.recv(1) == b""  # accepted, then closed with no data
+                return
+        except ConnectionRefusedError:
+            time.sleep(0.05)
+    raise AssertionError("health listener did not start")
 
 
 class _Process:

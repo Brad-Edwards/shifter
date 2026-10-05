@@ -27,6 +27,8 @@ _LOGGER = logging.getLogger("shifter_openvpn")
 
 
 class ManagementPort(Protocol):
+    """The OpenVPN management commands the policy issues."""
+
     def allow(self, cid: int, kid: int, config_lines: list[str]) -> None: ...
     def allow_unchanged(self, cid: int, kid: int) -> None: ...
     def deny(self, cid: int, kid: int, reason: str) -> None: ...
@@ -34,12 +36,16 @@ class ManagementPort(Protocol):
 
 
 class PortalPort(Protocol):
+    """The portal's session decisions."""
+
     def authorize(self, common_name: str, client_id: int, client_address: str) -> Grant: ...
     def heartbeat(self, sessions: list[str]) -> tuple[set[str], int]: ...
     def end(self, session: str) -> None: ...
 
 
 class FirewallPort(Protocol):
+    """Per-client forwarding allowances."""
+
     def allow(self, client: str, target: str, ports: tuple[int, ...]) -> None: ...
     def revoke(self, client: str, target: str, ports: tuple[int, ...]) -> None: ...
 
@@ -48,7 +54,7 @@ class FirewallPort(Protocol):
 class Session:
     """One admitted client and what it may reach."""
 
-    session: str
+    session_id: str
     target: str
     ports: tuple[int, ...]
     address: str | None = None
@@ -127,7 +133,8 @@ class Controller:
             return
         try:
             self._firewall.allow(address, session.target, session.ports)
-        except Exception as error:  # an allowance that cannot be installed is a session that cannot work
+        except Exception as error:
+            # An allowance that cannot be installed is a session that cannot work.
             self._log(f"kill cid={event.cid} reason=firewall ({type(error).__name__})")
             self._management.kill(event.cid)
             return
@@ -145,10 +152,10 @@ class Controller:
             except Exception as error:
                 self._log(f"revoke failed cid={event.cid} ({type(error).__name__})")
         try:
-            self._portal.end(session.session)
+            self._portal.end(session.session_id)
         except (PortalRefused, PortalUnavailable) as error:
-            self._log(f"end not recorded session={session.session} ({error}); the heartbeat reconciles it")
-        self._log(f"disconnect cid={event.cid} session={session.session}")
+            self._log(f"end not recorded session={session.session_id} ({error}); the heartbeat reconciles it")
+        self._log(f"disconnect cid={event.cid} session={session.session_id}")
 
     def _kill(self, cid: int, reason: str) -> None:
         self._log(f"kill cid={cid} reason={reason}")
@@ -160,7 +167,7 @@ class Controller:
     def heartbeat(self) -> int:
         """Renew live sessions, apply revocations, and return the seconds until the next beat."""
         with self._lock:
-            live = {cid: session.session for cid, session in self._sessions.items()}
+            live = {cid: session.session_id for cid, session in self._sessions.items()}
         try:
             disconnect, interval = self._portal.heartbeat(sorted(live.values()))
         except (PortalRefused, PortalUnavailable) as error:

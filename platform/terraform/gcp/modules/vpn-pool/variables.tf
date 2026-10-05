@@ -113,6 +113,17 @@ variable "max_clients_per_vm" {
   default     = 250
 }
 
+variable "tunnel_network" {
+  description = "Client address pool inside each server's own network namespace; masqueraded, never routed in the VPC."
+  type        = string
+  default     = "100.96.0.0/22"
+
+  validation {
+    condition     = can(cidrhost(var.tunnel_network, 0)) && tonumber(split("/", var.tunnel_network)[1]) >= 16 && tonumber(split("/", var.tunnel_network)[1]) <= 24
+    error_message = "tunnel_network must be an IPv4 CIDR between /16 and /24."
+  }
+}
+
 variable "health_port" {
   description = "Controller health endpoint port."
   type        = number

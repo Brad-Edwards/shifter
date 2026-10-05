@@ -59,6 +59,11 @@ run "public_exposure_is_one_udp_listener_and_probe_ranges" {
   }
 
   assert {
+    condition     = length(google_compute_region_health_check.pool.tcp_health_check) == 1 && length(google_compute_region_health_check.pool.http_health_check) == 0
+    error_message = "Health is a TCP handshake on the health port; the server exposes no HTTP endpoint."
+  }
+
+  assert {
     condition     = alltrue([for nic in google_compute_region_instance_template.pool.network_interface : length(nic.access_config) == 0])
     error_message = "Pool servers must not have public addresses."
   }

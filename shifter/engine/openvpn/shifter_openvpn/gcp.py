@@ -20,7 +20,9 @@ _TIMEOUT = 5
 
 
 def _metadata(path: str) -> str:
-    request = urllib.request.Request(f"{_METADATA}/{path}", headers=_HEADERS)  # noqa: S310 (opened via transport: http/https only)
+    """Return one metadata-server value for the attached service account."""
+    # Fixed metadata URL, opened only through the http/https-only transport.
+    request = urllib.request.Request(f"{_METADATA}/{path}", headers=_HEADERS)  # noqa: S310
     with transport.OPENER.open(request, timeout=_TIMEOUT) as response:
         return str(response.read().decode("utf-8"))
 

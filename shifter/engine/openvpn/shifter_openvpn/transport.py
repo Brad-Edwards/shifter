@@ -7,7 +7,6 @@ ignores proxy environment variables.
 
 from __future__ import annotations
 
-import ssl
 import urllib.request
 
 
@@ -16,7 +15,8 @@ def closed_opener() -> urllib.request.OpenerDirector:
     opener = urllib.request.OpenerDirector()
     for handler in (
         urllib.request.HTTPHandler(),
-        urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+        # The default context verifies certificates and host names.
+        urllib.request.HTTPSHandler(),
         urllib.request.HTTPDefaultErrorHandler(),
         urllib.request.HTTPErrorProcessor(),
         # Without this, an unsupported scheme silently returns None.

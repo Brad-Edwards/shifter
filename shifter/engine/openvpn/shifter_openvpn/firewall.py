@@ -53,7 +53,8 @@ def _elements(client: str, target: str, ports: tuple[int, ...]) -> str:
 
 def _nft(script: str) -> None:
     """Apply one nft script atomically."""
-    subprocess.run([_NFT, "-f", "-"], input=script, text=True, check=True, capture_output=True)  # noqa: S603 (fixed argv, no shell; script built from validated values)
+    # Fixed argv with no shell; the script on stdin is built from validated values.
+    subprocess.run([_NFT, "-f", "-"], input=script, text=True, check=True, capture_output=True)  # noqa: S603
 
 
 class Firewall:

@@ -14,7 +14,6 @@ import subprocess
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import gcp
 from .config import load_config
@@ -31,10 +30,12 @@ _LOGGER = logging.getLogger("shifter_openvpn")
 
 
 def _log(message: str) -> None:
+    """Write one operational line to the container log."""
     _LOGGER.info(message)
 
 
 def _wait_for_socket(path: str, process: subprocess.Popen[bytes], timeout: float = 30) -> None:
+    """Wait for OpenVPN's management socket, failing if OpenVPN exits or stalls."""
     deadline = time.monotonic() + timeout
     while not os.path.exists(path):
         if process.poll() is not None or time.monotonic() > deadline:
@@ -42,43 +43,43 @@ def _wait_for_socket(path: str, process: subprocess.Popen[bytes], timeout: float
         time.sleep(0.2)
 
 
-def _serve_health(port: int, healthy: threading.Event) -> None:
-    class Health(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            ok = self.path == "/healthz" and healthy.is_set()
-            self.send_response(200 if ok else 503)
-            self.end_headers()
-            self.wfile.write(b"ok\n" if ok else b"unavailable\n")
+def _serve_health(port: int) -> None:
+    """Accept and close TCP connections on the health port for the load balancer.
 
-        def log_message(self, *_args: object) -> None:
-            return
-
-    # Bind the container's own interface only: tunnel clients never reach the health endpoint.
+    The listener opens only once the server is ready and closes with the
+    process, so a completed handshake is the health signal; no data is
+    exchanged. It binds the container's own interface, which tunnel clients
+    cannot reach (their input is dropped by the firewall).
+    """
     address = socket.gethostbyname(socket.gethostname())
-    ThreadingHTTPServer((address, port), Health).serve_forever()
+    with socket.create_server((address, port), backlog=64) as listener:
+        while True:
+            connection, _peer = listener.accept()
+            connection.close()
 
 
 def _heartbeat(controller: Controller) -> None:
+    """Renew live sessions with the portal for the life of the process."""
     while True:
         time.sleep(controller.heartbeat())
 
 
 def main() -> int:
+    """Start the server; return only when the management connection closes."""
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(message)s")
     config = load_config()
     write_material(config.runtime_dir, gcp.read_secret(config.server_secret))
     paths = write_config(config)
     Firewall().install(config.tunnel_network)
-    process = subprocess.Popen([_OPENVPN, "--config", paths.config])  # noqa: S603 (fixed argv, no shell, no external input)
+    # Fixed argv with no shell; the only argument is the config path written above.
+    process = subprocess.Popen([_OPENVPN, "--config", paths.config])  # noqa: S603
     _wait_for_socket(paths.management_socket, process)
     management = Management(paths.management_socket)
     portal = PortalClient(config.portal_url, config.control_audience, config.server_name, gcp.identity_token)
     controller = Controller(management, portal, Firewall(), log=_log)
-    healthy = threading.Event()
-    threading.Thread(target=_serve_health, args=(config.health_port, healthy), daemon=True).start()
     threading.Thread(target=_heartbeat, args=(controller,), daemon=True, name="heartbeat").start()
     threading.Thread(target=lambda: (process.wait(), os._exit(1)), daemon=True, name="openvpn-watch").start()
-    healthy.set()
+    threading.Thread(target=_serve_health, args=(config.health_port,), daemon=True, name="health").start()
     _log(f"pool server {config.server_name} ready")
     while (event := management.events.get()) is not None:
         controller.handle(event)
