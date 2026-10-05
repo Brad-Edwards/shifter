@@ -82,6 +82,10 @@ _IRSA_PROBE_IDENTITIES = {
     "provisionerLauncher": ("shifter-platform", "provisioner-launcher"),
     "provisioner": ("shifter-jobs", "provisioner"),
 }
+# Probed only when the environment defines the role (see _OPTIONAL_WORKLOAD_ROLE_KEYS).
+_OPTIONAL_IRSA_PROBE_IDENTITIES = {
+    "artifactAcquirer": ("shifter-acquisition", "artifact-acquirer"),
+}
 _IRSA_PROBE_SCRIPT = """import json, os
 import boto3
 from botocore.exceptions import ClientError
@@ -114,6 +118,10 @@ print(f"IRSA_OK:{identity}")
 # controllers directly (EKS add-on service_account_role_arn / Helm SA annotation),
 # not projected into the chart's identity.serviceAccountRoleArns.
 _WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner", "migrator"})
+# Workload roles an environment may define. Their presence enables the matching
+# capability: artifactAcquirer turns on isolated feature-artifact acquisition
+# Jobs (ADR-034-R12, #2463).
+_OPTIONAL_WORKLOAD_ROLE_KEYS = frozenset({"artifactAcquirer"})
 # Single source of truth in the installation package (installation.runtime_inventory_aws),
 # so the renderer and the backend bundle's generated-output projection cannot drift.
 _RENDERER_OWNED_RUNTIME_ENV = AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS
@@ -579,13 +587,17 @@ def _verify_effective_irsa(roles: Mapping[str, object], platform_image: str) -> 
     missing = sorted(set(_IRSA_PROBE_IDENTITIES).difference(roles))
     if missing:
         raise ValueError("workload_role_arns is missing IRSA probe identities: " + ", ".join(missing))
-    if not all(isinstance(roles[name], str) for name in _IRSA_PROBE_IDENTITIES):
+    identities = {
+        **_IRSA_PROBE_IDENTITIES,
+        **{name: target for name, target in _OPTIONAL_IRSA_PROBE_IDENTITIES.items() if name in roles},
+    }
+    if not all(isinstance(roles[name], str) for name in identities):
         raise ValueError("IRSA probe role ARNs must be strings")
 
-    role_arns = {name: str(roles[name]) for name in _IRSA_PROBE_IDENTITIES}
+    role_arns = {name: str(roles[name]) for name in identities}
     with tempfile.TemporaryDirectory(prefix="shifter-irsa-readiness-") as staging:
         staging_path = Path(staging)
-        for identity, (namespace, service_account) in _IRSA_PROBE_IDENTITIES.items():
+        for identity, (namespace, service_account) in identities.items():
             pod_name = "shifter-irsa-check-" + re.sub(r"[^a-z0-9-]", "-", identity.lower())
             sibling_roles = [role_arns[name] for name in sorted(role_arns) if name != identity]
             manifest = {
@@ -991,6 +1003,13 @@ def render_aws_values(
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
+    # Isolated feature-artifact acquisition Jobs run the platform image (#2463).
+    # Enabled only where the environment defines the artifactAcquirer identity; an
+    # empty image keeps the launcher's acquisition reconcile a no-op elsewhere.
+    acquisition_enabled = "artifactAcquirer" in roles
+    if acquisition_enabled and "platform" not in validated_images:
+        raise ValueError("images must include the digest-pinned 'platform' identity for feature-artifact acquisition")
+    runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"] = validated_images["platform"] if acquisition_enabled else ""
     # Provisioner-Job admission contract (restrict-provisioner-jobs, #1826). The
     # launcher builds the Job with imagePullPolicy = ENGINE_TASK_IMAGE_PULL_POLICY
     # (GCPTaskRunner default IfNotPresent) and DB_USER = provisioner_lambda
@@ -1039,7 +1058,7 @@ def render_aws_values(
         "provider": {"name": "aws"},
         "modelBroker": broker,
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
-        "capabilities": {"kubernetesJobLauncher": True},
+        "capabilities": {"kubernetesJobLauncher": True, "featureArtifactAcquisition": acquisition_enabled},
         "provisioner": {"taskRunner": "aws"},
         "edge": {
             "hostname": config.deployment.domain,
@@ -1096,7 +1115,11 @@ def render_aws_values(
             "rangeAccessCidrs": [runtime_env["RANGE_VPC_CIDR"]] if runtime_env.get("RANGE_VPC_CIDR") else [],
             "rangeAccessPorts": [22, 3389],
         },
-        "identity": {"serviceAccountRoleArns": {key: roles[key] for key in sorted(_WORKLOAD_ROLE_KEYS)}},
+        "identity": {
+            "serviceAccountRoleArns": {
+                key: roles[key] for key in sorted(_WORKLOAD_ROLE_KEYS | (_OPTIONAL_WORKLOAD_ROLE_KEYS & set(roles)))
+            }
+        },
         "guacamoleRuntimeSecret": {"name": _GUACAMOLE_RUNTIME_SECRET_NAME},
         "runtimeEnv": runtime_env,
         "runtime": {
