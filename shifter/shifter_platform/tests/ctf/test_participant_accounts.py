@@ -590,3 +590,11 @@ def test_public_registration_form_exposes_username_with_scoreboard_notice():
     assert "username" in form.fields
     assert "name" not in form.fields
     assert "scoreboard" in form.fields["username"].help_text.lower()
+
+
+def test_public_registration_form_rejects_invalid_username():
+    from ctf.forms import PublicRegistrationForm
+
+    form = PublicRegistrationForm(data={"username": "has a space", "email": "someone@example.com"})
+    assert not form.is_valid()
+    assert "username" in form.errors
