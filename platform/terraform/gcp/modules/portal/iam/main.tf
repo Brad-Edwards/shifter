@@ -52,6 +52,8 @@ locals {
     "migrator",
     "provisioner-launcher",
     "provisioner",
+    # Isolated feature-artifact acquisition Jobs (#2479).
+    "artifact-acquirer",
   ])
 
   # GCP service-account account_id is capped at 30 chars. The account_id is
@@ -64,6 +66,7 @@ locals {
   # reference resolves through google_service_account.workload[key].email.
   workload_account_id_suffix = {
     "provisioner-launcher" = "prov-launcher"
+    "artifact-acquirer"    = "artifact-acq"
   }
 
   workload_identity_members = {
@@ -73,6 +76,18 @@ locals {
     migrator             = "serviceAccount:${var.workload_identity_pool}[shifter-platform/migrator]"
     provisioner-launcher = "serviceAccount:${var.workload_identity_pool}[shifter-platform/provisioner-launcher]"
     provisioner          = "serviceAccount:${var.workload_identity_pool}[shifter-jobs/provisioner]"
+    artifact-acquirer    = "serviceAccount:${var.workload_identity_pool}[shifter-acquisition/artifact-acquirer]"
+  }
+
+  # Feature-artifact delivery prefix on the assets bucket (ADR-034-R12, #2479): the
+  # acquisition Job may only create objects there; the launcher (which verifies
+  # what the Job stored) and the migrator (deploy bootstrap reuse checks) may only
+  # read there. Nothing else in the bucket is reachable to them.
+  feature_artifact_object_prefix = "projects/_/buckets/${var.assets_bucket_name}/objects/${trim(var.feature_artifact_prefix, "/")}/"
+  feature_artifact_delivery_access = {
+    artifact-acquirer    = "roles/storage.objectCreator"
+    provisioner-launcher = "roles/storage.objectViewer"
+    migrator             = "roles/storage.objectViewer"
   }
 
   node_roles = toset([
@@ -281,6 +296,20 @@ resource "google_storage_bucket_iam_member" "workload_buckets" {
   bucket = each.value.bucket
   role   = each.value.role
   member = "serviceAccount:${google_service_account.workload[each.value.workload].email}"
+}
+
+resource "google_storage_bucket_iam_member" "feature_artifact_delivery" {
+  for_each = local.feature_artifact_delivery_access
+
+  bucket = var.assets_bucket_name
+  role   = each.value
+  member = "serviceAccount:${google_service_account.workload[each.key].email}"
+
+  condition {
+    title       = "feature-artifact-delivery-prefix"
+    description = "Only objects under the content-addressed feature-artifact delivery prefix."
+    expression  = "resource.name.startsWith(\"${local.feature_artifact_object_prefix}\")"
+  }
 }
 
 # Secret creation is authorized on the parent project before a Secret resource
