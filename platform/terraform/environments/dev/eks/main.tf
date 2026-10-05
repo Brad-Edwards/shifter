@@ -139,6 +139,8 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
       rds_iam_db_user = "portal_runtime"
+      # acquire_feature_artifacts verifies inventoried artifacts still exist.
+      feature_artifact_store_read = true
     }
     # One-shot guacamole database/role provisioner (AWS EKS parity with the GCP
     # cloud-sql module). RDS has no native terraform user/database resource and the
