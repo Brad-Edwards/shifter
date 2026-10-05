@@ -61,7 +61,9 @@ def test_base_aws_smoke_pack_claims_one_single_flight_claude_code_acquisition(re
 
     assert request_pack_feature_artifacts("smoke-linux-aws", target=target) == 1
     assert AcquiredFeatureArtifact.objects.get().attempt_id == first.attempt_id  # joined, never re-claimed
-    assert request_pack_feature_artifacts("smoke-linux", target=target) == 0  # declares no artifact features
+    # The GCP base pack declares the same artifact: it joins the one attempt.
+    assert request_pack_feature_artifacts("smoke-linux", target=target) == 1
+    assert AcquiredFeatureArtifact.objects.get().attempt_id == first.attempt_id
     assert request_pack_feature_artifacts("not-registered", target=target) == 0
 
 
@@ -74,7 +76,8 @@ def test_bootstrap_command_requests_every_registered_packs_artifacts(registered_
     out = StringIO()
     call_command("acquire_feature_artifacts", stdout=out)
 
-    assert "requested 1 feature artifact acquisition(s)" in out.getvalue()
+    # Both base packs declare Claude Code; they share one inventory row.
+    assert "requested 2 feature artifact acquisition(s)" in out.getvalue()
     assert AcquiredFeatureArtifact.objects.get().source_name == "claude-code"
 
 
