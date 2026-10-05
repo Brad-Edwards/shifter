@@ -28,6 +28,7 @@ from cms.models.catalogs import (
     InstanceType,
     OperatingSystem,
 )
+from cms.models.feature_artifacts import AcquiredFeatureArtifact
 from cms.models.lease_policy import (
     MissionControlGroupLeasePolicy,
     MissionControlGroupLeasePolicyRevision,
@@ -46,6 +47,7 @@ from cms.models.scenarios import RaesPackageSource, ScenarioMetadata, ScenarioMo
 
 __all__ = [
     "ACTIVE_RANGE_UNIQUE_CONSTRAINT",
+    "AcquiredFeatureArtifact",
     "AgentConfig",
     "AgentType",
     "App",
