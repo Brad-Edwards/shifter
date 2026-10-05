@@ -25,7 +25,7 @@ def rich_challenge(ctf_event):
     )
     CTFFlag.objects.create(
         challenge=challenge,
-        flag_hash="$2b$12$exported-hash",
+        value="FLAG{portable}",
         flag_type="static",
         case_sensitive=True,
         order=0,
@@ -39,8 +39,9 @@ class TestChallengeExportImport:
         exported = call_json(
             authenticated_organizer_client, "get", "api_challenge_export", kwargs={"event_id": ctf_event.id}
         ).json()
-        assert exported["format"] == "shifter-challenges/v2"
-        assert exported["challenges"][0]["flags"][0]["flag_hash"] == "$2b$12$exported-hash"
+        assert exported["format"] == "shifter-challenges/v3"
+        # Static flags are stored, and so exported, as their normalized plaintext value.
+        assert exported["challenges"][0]["flags"][0]["value"] == "portable"
         assert exported["challenges"][0]["hints"] == [{"text": "look closer", "penalty": 10, "order": 1}]
 
         imported = call_json(
@@ -53,7 +54,7 @@ class TestChallengeExportImport:
         assert imported["created"] == ["Portable"]
         assert imported["errors"] == []
         clone = CTFChallenge.objects.get(event=ctf_event_draft, name="Portable")
-        assert clone.flags.get().flag_hash == "$2b$12$exported-hash"
+        assert clone.flags.get().value == "portable"
         assert clone.hints.count() == 1
 
     def test_ctfd_export_omits_flags(self, ctf_event, rich_challenge, authenticated_organizer_client):
@@ -120,28 +121,59 @@ class TestChallengeExportImport:
             "Unset": ChallengeDifficulty.MEDIUM.value,
         }
 
-    def test_import_rejects_legacy_v1_format(self, ctf_event_draft):
-        """Legacy shifter-challenges/v1 exports are rejected outright (#532):
-        the discriminator was advanced to v2 and there is no v1 adapter."""
+    @pytest.mark.parametrize("legacy_format", ["shifter-challenges/v1", "shifter-challenges/v2"])
+    def test_import_rejects_legacy_formats(self, ctf_event_draft, legacy_format):
+        """v1 (challenge-level hash, #532) and v2 (one-way flag hashes) exports
+        cannot verify anything once flags are plaintext: rejected, no adapter."""
         from ctf.exceptions import CTFValidationError
         from ctf.services.transfer import import_challenges
 
         payload = {
-            "format": "shifter-challenges/v1",
-            "challenges": [{"name": "Old", "flag_hash": "$2b$12$legacy", "flags": []}],
+            "format": legacy_format,
+            "challenges": [{"name": "Old", "flags": [{"flag_type": "static", "flag_hash": "$2b$12$legacy"}]}],
         }
         with pytest.raises(CTFValidationError) as exc:
             import_challenges(ctf_event_draft.pk, payload, actor_id=ctf_event_draft.created_by_id)
         assert exc.value.code == "CTF_UNSUPPORTED_FORMAT"
 
+    def test_shifter_import_validates_flags_through_the_canonical_path(self, ctf_event_draft):
+        """Imported v3 flags are validated like organizer-added flags: static
+        values are normalized and unsafe regex patterns fail the entry."""
+        from ctf.services.transfer import import_challenges
+
+        payload = {
+            "format": "shifter-challenges/v3",
+            "challenges": [
+                {
+                    "name": "Wrapped",
+                    "description": "x",
+                    "category": "web",
+                    "points": 100,
+                    "flags": [{"flag_type": "static", "value": "FLAG{inner}"}],
+                },
+                {
+                    "name": "Unsafe",
+                    "description": "x",
+                    "category": "web",
+                    "points": 100,
+                    "flags": [{"flag_type": "regex", "value": "flag(["}],
+                },
+            ],
+        }
+        result = import_challenges(ctf_event_draft.pk, payload, actor_id=ctf_event_draft.created_by_id)
+
+        assert result["created"] == ["Wrapped"]
+        assert [error["name"] for error in result["errors"]] == ["Unsafe"]
+        assert CTFChallenge.objects.get(event=ctf_event_draft, name="Wrapped").flags.get().value == "inner"
+
     def test_shifter_import_rejects_entry_without_flags(self, ctf_event_draft):
-        """A shifter (v2) entry with no flag material is invalid (#532): CTFFlag
+        """A shifter-format entry with no flag material is invalid (#532): CTFFlag
         rows are the sole source of truth, so an imported challenge must carry
         at least one flag."""
         from ctf.services.transfer import import_challenges
 
         payload = {
-            "format": "shifter-challenges/v2",
+            "format": "shifter-challenges/v3",
             "challenges": [{"name": "Flagless", "description": "x", "category": "web", "points": 100, "flags": []}],
         }
         result = import_challenges(ctf_event_draft.pk, payload, actor_id=ctf_event_draft.created_by_id)
