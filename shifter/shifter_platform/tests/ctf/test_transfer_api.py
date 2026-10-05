@@ -90,6 +90,35 @@ class TestChallengeExportImport:
         fresh = CTFChallenge.objects.get(event=ctf_event, name="Fresh")
         assert fresh.points == 200
 
+    def test_ctfd_import_maps_difficulty(self, ctf_event_draft):
+        """CTFd has no native difficulty field: it travels as a top-level key or
+        a ``difficulty:<level>`` tag, and ``insane`` maps to the top tier."""
+        from ctf.services.transfer import import_challenges
+
+        payload = {
+            "format": "ctfd",
+            "challenges": [
+                {"name": "Tagged", "value": 100, "flags": ["FLAG{a}"], "tags": ["team:x", "difficulty:hard"]},
+                {"name": "TagObject", "value": 100, "flags": ["FLAG{b}"], "tags": [{"value": "difficulty:Easy"}]},
+                {"name": "TopLevel", "value": 100, "flags": ["FLAG{c}"], "difficulty": "easy"},
+                {"name": "Insane", "value": 100, "flags": ["FLAG{d}"], "tags": ["difficulty:insane"]},
+                {"name": "Unset", "value": 100, "flags": ["FLAG{e}"]},
+                {"name": "Bogus", "value": 100, "flags": ["FLAG{f}"], "tags": ["difficulty:legendary"]},
+            ],
+        }
+        result = import_challenges(ctf_event_draft.pk, payload, actor_id=ctf_event_draft.created_by_id)
+
+        assert result["created"] == ["Tagged", "TagObject", "TopLevel", "Insane", "Unset"]
+        assert [error["name"] for error in result["errors"]] == ["Bogus"]
+        difficulty = dict(CTFChallenge.objects.filter(event=ctf_event_draft).values_list("name", "difficulty"))
+        assert difficulty == {
+            "Tagged": ChallengeDifficulty.HARD.value,
+            "TagObject": ChallengeDifficulty.EASY.value,
+            "TopLevel": ChallengeDifficulty.EASY.value,
+            "Insane": ChallengeDifficulty.EXPERT.value,
+            "Unset": ChallengeDifficulty.MEDIUM.value,
+        }
+
     def test_import_rejects_legacy_v1_format(self, ctf_event_draft):
         """Legacy shifter-challenges/v1 exports are rejected outright (#532):
         the discriminator was advanced to v2 and there is no v1 adapter."""
