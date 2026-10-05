@@ -288,6 +288,11 @@ variables {
       service_account             = "shifter-workers"
       platform_application_access = true
     }
+    artifactAcquirer = {
+      namespace                    = "shifter-acquisition"
+      service_account              = "artifact-acquirer"
+      feature_artifact_store_write = true
+    }
     provisionerLauncher = {
       namespace       = "shifter-platform"
       service_account = "provisioner-launcher"
@@ -505,6 +510,21 @@ run "security_contract" {
       jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[6].Condition.StringEquals["cloudwatch:namespace"] == ["Shifter/PortalCapacity", "Shifter/WarmPool", "Shifter/CtfCommunication"]
     )
     error_message = "Platform application access must target exactly the portal-stack queues, topic, storage bucket and their keys, and the application metric namespaces."
+  }
+
+  # Isolated acquisition Job (#2463): only the opted-in identity, object get/put
+  # under the delivery prefix only (no list, no delete), storage key via S3 only.
+  assert {
+    condition = (
+      keys(aws_iam_role_policy.workload_feature_artifact_store) == ["artifactAcquirer"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[0].Action == ["s3:GetObject", "s3:PutObject"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[0].Resource == "arn:aws:s3:::test-storage-bucket/raes/content-delivery/*" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-storage" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[1].Condition.StringEquals["kms:ViaService"] == "s3.us-east-2.amazonaws.com" &&
+      !contains(keys(aws_iam_role_policy.workload_platform_application), "artifactAcquirer") &&
+      !contains(keys(aws_iam_role_policy.workload_rds_iam), "artifactAcquirer")
+    )
+    error_message = "The acquisition Job may only get/put objects under the delivery prefix, with no database or platform application access."
   }
 
   assert {

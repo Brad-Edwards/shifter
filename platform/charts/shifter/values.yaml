@@ -25,6 +25,10 @@ capabilities:
   # profiles enable this; AWS/neutral profiles leave it false so no GCP node
   # label/taint toleration leaks into their manifests.
   gcpAccessNodePool: false
+  # Isolated feature-artifact acquisition Jobs (ADR-034-R12, #2463). The AWS
+  # renderer enables this only when the environment defines the artifactAcquirer
+  # workload identity.
+  featureArtifactAcquisition: false
 
 namespaces:
   platform: shifter-platform
