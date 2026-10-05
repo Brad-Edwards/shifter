@@ -12,6 +12,10 @@ Options follow the OpenVPN 2.6 reference manual:
   client by its verified certificate common name only. ``username-as-common-name``
   must never be set: it would let a client choose its own identity.
 * ``max-clients`` and ``connect-freq`` bound one server's load.
+* ``keepalive 5 30``: clients ping every 5 seconds and reconnect after 30 seconds
+  of silence, so an unplanned server loss costs about 30 seconds; a planned
+  removal is announced at once by ``explicit-exit-notify``. Shorter timeouts
+  would turn brief Wi-Fi loss into reconnects that drop open SSH/RDP sessions.
 * No ``client-to-client``, no pushed default gateway: each client is pushed a
   route to its single target by the controller.
 * No ``user``/``group``: the whole server already runs as the unprivileged
@@ -70,7 +74,7 @@ topology subnet
 server {network.network_address} {network.netmask}
 max-clients {config.max_clients}
 connect-freq 20 10
-keepalive 10 60
+keepalive 5 30
 explicit-exit-notify 1
 ca {run}/ca.crt
 cert {run}/server.crt
