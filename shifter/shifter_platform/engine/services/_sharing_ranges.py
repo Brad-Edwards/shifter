@@ -12,6 +12,7 @@ from ._sharing_persistence import SharingError
 
 _RANGE_RESOLUTION_SHAPE = "sharing.range_resolution_shape"
 _RANGE_MEMBERSHIP_CHANGED = "sharing.range_membership_changed"
+_RANGE_MEMBERSHIP_UNAVAILABLE = "sharing.range_membership_unavailable"
 
 
 def model_access_range_reference(range_uuid: UUID) -> OwnedReference:
@@ -31,14 +32,14 @@ def resolve_model_access_range_reference(request_uuid: UUID) -> OwnedReference:
 
     range_uuids = tuple(Range.objects.filter(request__request_id=request_uuid).values_list("uuid", flat=True)[:2])
     if len(range_uuids) != 1:
-        raise SharingError("sharing.range_membership_unavailable")
+        raise SharingError(_RANGE_MEMBERSHIP_UNAVAILABLE)
     return model_access_range_reference(range_uuids[0])
 
 
 def _legacy_workspace_id(workspace_id: int | None) -> int:
     """Reject ranges whose account scope cannot use the legacy workspace projection."""
     if workspace_id is None:
-        raise SharingError("sharing.range_membership_unavailable")
+        raise SharingError(_RANGE_MEMBERSHIP_UNAVAILABLE)
     return workspace_id
 
 
@@ -137,7 +138,7 @@ def resolve_model_access_range_page(
             eligible.select_for_update(of=("self",)).select_related("request").order_by("uuid")[: page_size + 1]
         )
         if explicit_values is not None and assessment_count != len(explicit_values):
-            raise SharingError("sharing.range_membership_unavailable")
+            raise SharingError(_RANGE_MEMBERSHIP_UNAVAILABLE)
         rows = page_rows[:page_size]
         items = tuple(
             ModelAccessRangeView(
