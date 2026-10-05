@@ -570,6 +570,31 @@ def _helm_service_account_values(service_accounts: dict[str, str]) -> dict[str, 
     }
 
 
+# The acquisition Job reaches public package registries and object storage on 443
+# through the portal VPC's Cloud NAT; private, carrier-grade NAT and link-local
+# ranges are carved out so it cannot reach the cluster, the VPC or the metadata
+# server through this rule (Workload Identity's metadata access is a separate,
+# port-scoped chart policy).
+_ACQUISITION_EGRESS_EXCEPT = (
+    "10.0.0.0/8",  # NOSONAR - RFC 1918 private range, excluded.
+    "172.16.0.0/12",  # NOSONAR - RFC 1918 private range, excluded.
+    "192.168.0.0/16",  # NOSONAR - RFC 1918 private range, excluded.
+    "100.64.0.0/10",  # NOSONAR - carrier-grade NAT range, excluded.
+    "169.254.0.0/16",  # NOSONAR - link-local range, excluded.
+)
+
+
+def _gcp_feature_artifact_acquisition_values(acquirer: object) -> dict[str, object]:
+    """Acquisition Job identity and egress values (#2479); empty when disabled."""
+    if not acquirer:
+        return {"serviceAccountAnnotations": {}, "egressCidrs": [], "egressExcept": []}
+    return {
+        "serviceAccountAnnotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: str(acquirer)},
+        "egressCidrs": ["0.0.0.0/0"],  # NOSONAR - public 443 for the acquisition namespace only.
+        "egressExcept": list(_ACQUISITION_EGRESS_EXCEPT),
+    }
+
+
 def _helm_image_values(image_identities: dict[str, str]) -> dict[str, str]:
     """Return exact attested image identities for chart workloads."""
     required = {"platform", "guacd", "guacamoleClient"}
@@ -716,20 +741,28 @@ def render_gcp_helm_values(
         runtime_settings=artifacts.model_broker_runtime,
     )
     runtime_env.update(broker.get("enrollment_env", {}))
+    images = _helm_image_values(
+        image_identities
+        if image_identities is not None
+        else _get_string_mapping_output(outputs, "attested_image_identities")
+    )
+    acquirer = service_accounts.get("artifact-acquirer") if isinstance(service_accounts, Mapping) else None
+    if acquirer:
+        # Isolated acquisition Jobs run exactly the attested platform image, which
+        # their admission policy pins (#2479).
+        runtime_env["FEATURE_ARTIFACT_JOB_IMAGE"] = images["platform"]
     values: dict[str, object] = {
         "releaseNamespace": "shifter-system",
         "modelBroker": broker,
+        "capabilities": {"featureArtifactAcquisition": bool(acquirer)},
+        "featureArtifactAcquisition": _gcp_feature_artifact_acquisition_values(acquirer),
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
         # Reference only: the guacamole-runtime Kubernetes Secret is synced out
         # of band from Secret Manager (see sync_gcp_guacamole_runtime_secret).
         # Secret values must never enter Helm values or release history (#1180).
         "guacamoleRuntimeSecret": {"name": _GUACAMOLE_RUNTIME_RESOURCE_NAME},
-        "images": _helm_image_values(
-            image_identities
-            if image_identities is not None
-            else _get_string_mapping_output(outputs, "attested_image_identities")
-        ),
+        "images": images,
         "edge": {
             "ingress": {
                 "enabled": True,
@@ -1996,7 +2029,9 @@ def _gcp_migration_job(platform_image: str) -> dict[str, object]:
                             "args": [
                                 "/bin/sh",
                                 "-c",
-                                "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+                                "python manage.py bootstrap_inbox_catalog"
+                                " && python manage.py seed_raes_image_registry"
+                                " && python manage.py acquire_feature_artifacts",
                             ],
                             "envFrom": [{"configMapRef": {"name": "platform-runtime"}}],
                             "env": [

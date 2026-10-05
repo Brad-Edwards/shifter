@@ -112,6 +112,10 @@ GCP_CAPACITY_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
 
 GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        # Isolated feature-artifact acquisition Jobs (#2479): emitted by the Helm-values
+        # renderer from the attested platform image only when the environment defines
+        # the artifact-acquirer identity; absent means acquisition is disabled.
+        "FEATURE_ARTIFACT_JOB_IMAGE",
         "IDENTITY_ALLOWED_EMAILS",
         "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
         "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
