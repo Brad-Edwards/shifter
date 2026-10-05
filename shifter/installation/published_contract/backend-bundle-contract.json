@@ -824,6 +824,19 @@
           "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
+          "description": "Public AWS runtime configuration value (FEATURE_ARTIFACT_JOB_IMAGE) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "FEATURE_ARTIFACT_JOB_IMAGE",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public AWS runtime configuration value (FIREWALL_ENDPOINT_ID) emitted into the platform runtime environment.",
           "destination": "runtime-env",
           "kind": "runtime-env",
@@ -1579,7 +1592,8 @@
           "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
           "process_roles": [
             "portal",
-            "worker"
+            "worker",
+            "provisioner"
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"

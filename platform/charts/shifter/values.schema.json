@@ -203,7 +203,8 @@
         "gcpBackendConfig": { "type": "boolean" },
         "gcpManagedTls": { "type": "boolean" },
         "kubernetesJobLauncher": { "type": "boolean" },
-        "gcpAccessNodePool": { "type": "boolean" }
+        "gcpAccessNodePool": { "type": "boolean" },
+        "featureArtifactAcquisition": { "type": "boolean" }
       }
     },
     "namespaces": {

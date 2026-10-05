@@ -37,7 +37,8 @@ packs:
     contract_kind: raes
     contract_profile: shifter
     package_ref: cms/scenarios/inbox_packs/smoke-linux-aws
-    package_version: "0.2.0"
-    package_digest: sha256:6dc1e07209c64bf2b4d558c68bf1df4cf2b6d52e27624b2dd1d1e02bebed8410
+    package_version: "0.3.0"
+    expected_package_digest: sha256:6dc1e07209c64bf2b4d558c68bf1df4cf2b6d52e27624b2dd1d1e02bebed8410
+    package_digest: sha256:dc71d76107a54be22f0e32f17802678f3f893ebfbe3d6ccf135f8b586a1a72ff
     provenance:
       repo: Brad-Edwards/shifter

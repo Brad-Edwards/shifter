@@ -665,6 +665,10 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     )
     job_env = {e["name"]: e.get("value") for e in migrate_job["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert job_env["SKIP_MIGRATIONS"] == ""
+    assert migrate_job["spec"]["template"]["spec"]["containers"][0]["args"][-1] == (
+        "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry"
+        " && python manage.py acquire_feature_artifacts"
+    )
     # Guacamole provisioning: the guacamole-db + json-auth secrets are read, and the
     # provisioner Job is awaited to completion before Helm runs.
     read_secret_ids = [
@@ -951,3 +955,39 @@ def test_populate_eks_workload_secrets_copies_sources_via_file(monkeypatch):
     for cmd in puts:
         assert any(isinstance(a, str) and a.startswith("file://") for a in cmd)
         assert not any("supersecretvalue12345" in a for a in cmd)
+
+
+def test_feature_artifact_acquisition_is_enabled_only_by_the_acquirer_identity(monkeypatch):
+    """The artifactAcquirer role enables acquisition Jobs (#2463); without it they stay off."""
+    disabled = aws_eks.render_aws_values(_config(), _terraform_outputs(), _images())
+    assert disabled["capabilities"]["featureArtifactAcquisition"] is False
+    assert disabled["runtimeEnv"]["FEATURE_ARTIFACT_JOB_IMAGE"] == ""
+    assert "artifactAcquirer" not in disabled["identity"]["serviceAccountRoleArns"]
+
+    outputs = _terraform_outputs()
+    acquirer = "arn:aws:iam::123456789012:role/shifter-dev-artifact-acquirer"
+    outputs["workload_role_arns"]["value"]["artifactAcquirer"] = acquirer
+    enabled = aws_eks.render_aws_values(_config(), outputs, _images())
+    assert enabled["capabilities"]["featureArtifactAcquisition"] is True
+    assert enabled["runtimeEnv"]["FEATURE_ARTIFACT_JOB_IMAGE"] == _images()["platform"]
+    assert enabled["identity"]["serviceAccountRoleArns"]["artifactAcquirer"] == acquirer
+
+    images = _images()
+    images.pop("platform")
+    with pytest.raises(ValueError, match="platform"):
+        aws_eks.render_aws_values(_config(), outputs, images)
+
+    probed: list[tuple[str, str]] = []
+
+    def runner(cmd, **_kwargs):
+        if cmd[:3] == ["kubectl", "apply", "-f"]:
+            manifest = json.loads(Path(cmd[3]).read_text())
+            probed.append((manifest["metadata"]["namespace"], manifest["spec"]["serviceAccountName"]))
+            runner.identity = manifest["metadata"]["labels"]["shifter.dev/irsa-check"]
+        if cmd[:2] == ["kubectl", "logs"]:
+            return SimpleNamespace(stdout=f"IRSA_OK:{runner.identity}\n")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(aws_eks, "run_cmd", runner)
+    aws_eks._verify_effective_irsa(outputs["workload_role_arns"]["value"], _images()["platform"])
+    assert ("shifter-acquisition", "artifact-acquirer") in probed
