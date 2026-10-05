@@ -1042,6 +1042,19 @@ def _edge_values(config: RootConfig, terraform_outputs: Mapping[str, object]) ->
     }
 
 
+def _aws_feature_artifact_acquisition_values(terraform_outputs: Mapping[str, object]) -> dict[str, object]:
+    """Acquisition Job egress: the provider-API HTTPS egress minus the service CIDR.
+
+    The Job's identity rides the IRSA role annotation the chart sets from
+    identity.serviceAccountRoleArns, so no extra service-account annotations.
+    """
+    return {
+        "serviceAccountAnnotations": {},
+        "egressCidrs": _cidr_output(terraform_outputs, "provider_api_cidrs"),
+        "egressExcept": _cidr_output(terraform_outputs, "provider_api_egress_except"),
+    }
+
+
 def render_aws_values(
     config: RootConfig,
     terraform_outputs: Mapping[str, object],
@@ -1117,6 +1130,7 @@ def render_aws_values(
         },
         "provisioner": {"taskRunner": "aws"},
         "edge": _edge_values(config, terraform_outputs),
+        "featureArtifactAcquisition": _aws_feature_artifact_acquisition_values(terraform_outputs),
         "services": {
             service: {"annotations": {"alb.ingress.kubernetes.io/healthcheck-path": path}}
             for service, path in _ALB_HEALTH_CHECK_PATHS.items()
