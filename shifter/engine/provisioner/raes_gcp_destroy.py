@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_destroy import _destroy_vpn_gateway, _mark_disks_auto_delete
+from gcp_range_cell_destroy import _mark_disks_auto_delete
 from gcp_range_cell_firewall import public_web_firewall_name
 from gcp_range_cell_model_broker import broker_firewall_name
 from gcp_range_cell_ops import _delete_resource
@@ -37,7 +37,7 @@ from raes_active_directory import (
 )
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
-from raes_gcp_vpn_plan import RaesGceRemoteAccess
+from raes_gcp_vpn_plan import RaesGceVpnAccess
 from raes_plan import RaesPlan, RaesPlanAccount, RaesPlanNode
 
 __all__ = ["RaesGceDestroyOptions", "destroy_raes_range_cell"]
@@ -55,7 +55,7 @@ class RaesGceDestroyOptions:
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
     reconstruct_without_allocation: bool = False
     # The range's OpenVPN gateway names (#2030), when it holds a capability.
-    remote_access: RaesGceRemoteAccess | None = None
+    remote_access: RaesGceVpnAccess | None = None
 
 
 @dataclass(frozen=True)
@@ -108,10 +108,9 @@ def destroy_raes_range_cell(
             remote_access=resolved_options.remote_access,
         ),
     )
+    # The pool ingress rule, when the range has OpenVPN access, is part of
+    # ``plan["firewalls"]`` and goes with the network resources.
     _destroy_instances(plan, raes_plan, runtime)
-    # The gateway VM and its address live in the target's subnet, so they go
-    # before the subnet; its firewall envelope is part of ``plan["firewalls"]``.
-    _destroy_vpn_gateway(plan, runtime.clients)
     delete_raes_directory_secrets(plan["range_id"], raes_plan, runtime.directory_secret_ops)
     _destroy_network_resources(plan, runtime.clients)
 

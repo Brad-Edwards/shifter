@@ -58,10 +58,10 @@ class _FakeVpnOps:
         self._present = present
         sink.append(self)
 
-    def delete_generation(self, range_id, generation, *, delete_identity=True):
-        self.deleted.append((range_id, generation, delete_identity))
+    def delete_profile(self, range_id, generation):
+        self.deleted.append((range_id, generation))
 
-    def issuer_present(self, range_id, generation):
+    def profile_present(self, range_id, generation):
         if isinstance(self._present, Exception):
             raise self._present
         return self._present
@@ -75,7 +75,7 @@ def _install_fake_vpn(monkeypatch, *, present=False):
 
 
 class TestScrubPreClaimAccess:
-    def test_deletes_every_node_account_and_vpn_generation(self, monkeypatch):
+    def test_deletes_every_node_account_and_vpn_profile(self, monkeypatch):
         plan = SimpleNamespace(
             nodes=[SimpleNamespace(address="n1"), SimpleNamespace(address="n2")],
             accounts=[
@@ -99,7 +99,7 @@ class TestScrubPreClaimAccess:
 
         assert ssh == [(1001, "n1"), (1001, "n2")]
         assert acct == [(1001, "n1", "alice", "password")]  # the empty-auth account is skipped
-        assert vpn_ops[-1].deleted == [(1001, prepared, True)]
+        assert vpn_ops[-1].deleted == [(1001, prepared)]
 
 
 class TestRealizeClaimantAccess:
@@ -133,14 +133,14 @@ class TestRealizeClaimantAccess:
 
 
 class TestPriorAccessRevoked:
-    def test_true_when_issuer_absent(self, monkeypatch):
+    def test_true_when_profile_absent(self, monkeypatch):
         vpn_ops = _install_fake_vpn(monkeypatch, present=False)
         prepared = uuid4()
         assert GceActivationOps.prior_access_revoked(_activation(), prepared) is True
-        # It scrubs (belt-and-suspenders) then checks the issuer is absent.
-        assert vpn_ops[-1].deleted == [(1001, prepared, True)]
+        # It scrubs (belt-and-suspenders) then checks the profile is absent.
+        assert vpn_ops[-1].deleted == [(1001, prepared)]
 
-    def test_false_when_issuer_still_present(self, monkeypatch):
+    def test_false_when_profile_still_present(self, monkeypatch):
         _install_fake_vpn(monkeypatch, present=True)
         assert GceActivationOps.prior_access_revoked(_activation(), uuid4()) is False
 
@@ -444,7 +444,7 @@ class _NotFound(Exception):
     pass
 
 
-class TestIssuerPresent:
+class TestProfilePresent:
     @pytest.fixture(autouse=True)
     def _explicit_dynamic_secret_project(self, monkeypatch):
         """Exercise the supported same-project migration posture explicitly."""
@@ -456,18 +456,18 @@ class TestIssuerPresent:
 
         client = SimpleNamespace(access_secret_version=access)
         exceptions = SimpleNamespace(NotFound=_NotFound)
-        return vpn_secrets.GCPVpnSecretOps(client=client, exceptions=exceptions, project_id="proj-1")
+        return vpn_secrets.GCPVpnSecretOps(client=client, exceptions=exceptions, project_id="proj-1", issuer_secret="")
 
-    def test_true_when_issuer_secret_resolves(self):
-        ops = self._ops(access=lambda request: SimpleNamespace(payload=SimpleNamespace(data=b"issuer-material")))
-        assert ops.issuer_present(1001, uuid4()) is True
+    def test_true_when_profile_secret_resolves(self):
+        ops = self._ops(access=lambda request: SimpleNamespace(payload=SimpleNamespace(data=b"profile")))
+        assert ops.profile_present(1001, uuid4()) is True
 
-    def test_false_when_issuer_secret_absent(self):
+    def test_false_when_profile_secret_absent(self):
         def _raise(request):
             raise _NotFound
 
         ops = self._ops(access=_raise)
-        assert ops.issuer_present(1001, uuid4()) is False
+        assert ops.profile_present(1001, uuid4()) is False
 
 
 class TestGetActivationOperationInput:

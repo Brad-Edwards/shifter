@@ -58,9 +58,9 @@ from raes_gcp_network_allocation import (
 from raes_openvpn import (
     cleanup_failed_provision_openvpn,
     cleanup_raes_openvpn,
-    names_only_remote_access,
     prepare_raes_openvpn,
     vpn_access_fragment,
+    vpn_access_names,
 )
 from raes_plan import RaesPlan, parse_plan
 from raes_range_contract import _classify_failure, _require_gce_live_fire_binding
@@ -193,7 +193,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             from raes_ec2_runtime import provision_ec2_run
 
             if operation_input.remote_access is not None:
-                # The EC2 range-cell gateway is #2443; never launch without it silently.
+                # The EC2 shared pool is #2481; never launch without it silently.
                 raise RaesRealizationError("OpenVPN access is not realized by the EC2 range backend")
             apply_result = provision_ec2_run(run, plugin_plans, enrollment)
         else:
@@ -403,7 +403,7 @@ def _destroy_options(
         config=config,
         allocated_network_cidrs=network_allocation.network_cidrs or None,
         reconstruct_without_allocation=network_allocation.required and not network_allocation.network_cidrs,
-        remote_access=names_only_remote_access(operation_input.remote_access),
+        remote_access=vpn_access_names(operation_input.remote_access),
     )
 
 

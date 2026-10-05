@@ -1,66 +1,69 @@
-"""Plan the participant OpenVPN gateway of an RAES GCE range cell (ADR-039-R10, #2030).
+"""Admit the shared OpenVPN pool to an RAES range's participant target (ADR-039-R10, #2480).
 
-Split out of ``raes_gcp_plan`` (Sonar S104). The gateway is planned beside the
-capability's target member and forwards only that member's declared participant
-channels, so the tunnel reaches exactly what portal access reaches.
+The pool servers live in the shared range VPC. A range that holds an OpenVPN
+capability gets one ingress rule: the pool's source networks may reach the
+target node, and only on that node's declared participant channels. No other
+range host admits the pool, so a domain controller or a second guest is
+unreachable from the pool at the cloud layer whatever the servers do.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from config import GCERangeCellConfig
 from gcp_range_cell_firewall import PARTICIPANT_CHANNEL_PORTS
-from gcp_range_cell_plan import OpenVpnGatewayRequest, _openvpn_gateway_plan
-from gcp_range_cell_types import InstancePlan, OpenVpnGatewayPlan, SubnetPlan
+from gcp_range_cell_naming import _short_resource_name
+from gcp_range_cell_types import FirewallPlan, InstancePlan
+from raes_gcp_firewall import node_tag
 from raes_gcp_plan_errors import RaesGcePlanError
 
-__all__ = ["RaesGceRemoteAccess", "vpn_gateway_plan"]
+__all__ = ["RaesGceVpnAccess", "vpn_pool_firewall_name", "vpn_pool_firewalls"]
+
+_VPN_POOL_PRIORITY = 900
 
 
 @dataclass(frozen=True)
-class RaesGceRemoteAccess:
-    """The range's OpenVPN gateway planning inputs.
+class RaesGceVpnAccess:
+    """The range's OpenVPN target member and the pool's source networks.
 
-    ``server_secret_ref`` is the exact identity secret the gateway reads. It is
-    present only when the plan realizes the gateway; destroy and inventory plan
-    resource names only and leave it empty.
+    Destroy and inventory reconstruct the rule name only and leave
+    ``pool_cidrs`` empty; such a plan is never used to create the rule.
     """
 
     target_ref: str
-    gateway_pool_slot: int
-    server_secret_ref: str = ""
+    pool_cidrs: tuple[str, ...] = ()
 
-    def names_only(self) -> RaesGceRemoteAccess:
-        """Return the inputs destroy and inventory need: resource names, no identity secret."""
-        return RaesGceRemoteAccess(target_ref=self.target_ref, gateway_pool_slot=self.gateway_pool_slot)
+    def names_only(self) -> RaesGceVpnAccess:
+        """Return the input teardown needs: the rule name, never a creatable rule."""
+        return RaesGceVpnAccess(target_ref=self.target_ref)
 
 
-def vpn_gateway_plan(
+def vpn_pool_firewall_name(range_id: int) -> str:
+    """Return the deterministic name of the range's pool ingress rule."""
+    return _short_resource_name("shifter-r", range_id, "vpn-pool")
+
+
+def vpn_pool_firewalls(
     range_id: int,
     instance_plans: list[InstancePlan],
-    subnet_plans: list[SubnetPlan],
-    config: GCERangeCellConfig,
-    remote_access: RaesGceRemoteAccess | None,
-) -> OpenVpnGatewayPlan | None:
-    """Plan the OpenVPN gateway beside the authorized member, or ``None`` without one."""
-    if remote_access is None:
-        return None
-    realizing = bool(remote_access.server_secret_ref)
-    target = next((instance for instance in instance_plans if instance["uuid"] == remote_access.target_ref), None)
+    access: RaesGceVpnAccess | None,
+) -> list[FirewallPlan]:
+    """Return the pool ingress rule for the authorized target, or nothing without one."""
+    if access is None:
+        return []
+    realizing = bool(access.pool_cidrs)
+    target = next((instance for instance in instance_plans if instance["uuid"] == access.target_ref), None)
     channels = target.get("participant_access_channels", []) if target is not None else []
-    ports = tuple(sorted({PARTICIPANT_CHANNEL_PORTS[channel] for channel in channels}, key=int))
-    if realizing and not ports:
-        raise RaesGcePlanError("the OpenVPN target declares no participant channel to forward")
-    request = OpenVpnGatewayRequest(
-        target_ref=remote_access.target_ref,
-        pool_slot=remote_access.gateway_pool_slot,
-        target_ports=ports,
-        server_secret_ref=remote_access.server_secret_ref,
-    )
-    try:
-        return _openvpn_gateway_plan(
-            range_id, instance_plans, subnet_plans, config, request, require_provision_values=realizing
-        )
-    except RuntimeError as exc:
-        raise RaesGcePlanError(str(exc)) from None
+    ports = sorted({PARTICIPANT_CHANNEL_PORTS[channel] for channel in channels}, key=int)
+    if realizing and (target is None or not ports):
+        raise RaesGcePlanError("the OpenVPN target declares no participant channel the pool can reach")
+    return [
+        {
+            "name": vpn_pool_firewall_name(range_id),
+            "direction": "INGRESS",
+            "priority": _VPN_POOL_PRIORITY,
+            "target_tags": [node_tag(range_id, access.target_ref.rsplit("#", 1)[0])],
+            "source_ranges": list(access.pool_cidrs),
+            "allowed": [{"IPProtocol": "tcp", "ports": ports or list(PARTICIPANT_CHANNEL_PORTS.values())}],
+        }
+    ]

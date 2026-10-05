@@ -50,6 +50,8 @@ _HOST_RE = re.compile(
     r"(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)"
     r"(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*\Z"
 )
+#: Subject common name of the shared pool server certificate; clients pin it (#2480).
+OPENVPN_SERVER_NAME = "shifter-openvpn-server"
 _INLINE_BLOCKS = frozenset({"ca", "cert", "key", "tls-crypt"})
 _NO_ARGUMENT_DIRECTIVES = frozenset({"client", "nobind", "persist-key", "persist-tun", "auth-nocache"})
 _ONE_ARGUMENT_DIRECTIVES = {
@@ -370,6 +372,7 @@ def _allowed_directive_forms(endpoint: str, port: int) -> dict[str, set[tuple[st
     )
     forms["remote"] = {(endpoint, str(port))}
     forms["data-ciphers"] = {("AES-256-GCM:AES-128-GCM",)}
+    forms["verify-x509-name"] = {(OPENVPN_SERVER_NAME, "name")}
     return forms
 
 
@@ -433,7 +436,16 @@ def validate_openvpn_profile_for_endpoint(profile: str, endpoint: str, port: int
     if len(encoded) > OPENVPN_PROFILE_MAX_BYTES:
         raise OpenVpnBindingError("profile exceeds the maximum size")
     seen_blocks, seen_directives = _scan_profile(profile, endpoint, port)
-    required_directives = {"client", "dev", "proto", "remote", "nobind", "remote-cert-tls", "auth-nocache"}
+    required_directives = {
+        "client",
+        "dev",
+        "proto",
+        "remote",
+        "nobind",
+        "remote-cert-tls",
+        "verify-x509-name",
+        "auth-nocache",
+    }
     if not required_directives.issubset(seen_directives) or seen_blocks != _INLINE_BLOCKS:
         raise OpenVpnBindingError("profile is missing required directives or inline credentials")
     return encoded

@@ -18,17 +18,17 @@ from raes_preconfigured_host_readiness import verify_preconfigured_hosts
 from raes_substrate_observation import observe_gce_substrates
 
 if TYPE_CHECKING:
-    from raes_gcp_vpn_plan import RaesGceRemoteAccess
+    from raes_gcp_vpn_plan import RaesGceVpnAccess
 
 
 class RaesGceOpenVpn(Protocol):
     """A generation's prepared participant OpenVPN access (#2030, ``raes_openvpn``)."""
 
-    def plan_remote_access(self) -> RaesGceRemoteAccess:
-        """Return the gateway planning inputs, including the exact identity secret."""
+    def plan_access(self) -> RaesGceVpnAccess:
+        """Return the pool firewall inputs for this range."""
 
-    def publish(self, gateway: object) -> dict[str, object]:
-        """Verify the realized gateway and return the owner-free realization."""
+    def publish(self) -> dict[str, object]:
+        """Mint the generation's profile and return the owner-free realization."""
 
 
 @dataclass(frozen=True)
