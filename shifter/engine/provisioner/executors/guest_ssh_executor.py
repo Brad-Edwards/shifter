@@ -45,6 +45,7 @@ _MAX_STREAMED_OUTPUT_BYTES = 1024 * 1024
 
 
 def _command_result(returncode: int, stdout_bytes: bytes, stderr_bytes: bytes) -> CommandResult:
+    """Decode one ssh invocation's outcome into a ``CommandResult``."""
     return CommandResult(
         success=returncode == 0,
         exit_code=returncode,
@@ -332,8 +333,9 @@ class GuestSSHExecutor:
 
         return result.returncode, result.stdout, result.stderr
 
+    @staticmethod
     def _invoke_ssh_streaming(
-        self, ssh_args: list[str], stdin_prefix: bytes, stdin_path: str, timeout_seconds: int
+        ssh_args: list[str], stdin_prefix: bytes, stdin_path: str, timeout_seconds: int
     ) -> tuple[int, bytes, bytes]:
         """Run the ssh client locally, streaming ``stdin_prefix`` + the file to its stdin.
 

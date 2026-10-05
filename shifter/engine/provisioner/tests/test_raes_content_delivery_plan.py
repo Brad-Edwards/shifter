@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from executors.base import CommandResult
 from executors.guest_ssh_executor import GuestSSHExecutor
 from orchestrators.setup_orchestrator import SetupOrchestrator
-from plans.raes_content_delivery import RaesContentDeliveryPlan, RaesContentInstallOptions
+from plans.raes_content_delivery import RaesContentDeliveryPlan, RaesContentInstallOptions, RaesContentPayload
 
 _PAYLOAD_PATH = "/staging/payload"
 
@@ -46,6 +46,17 @@ _PAYLOAD_PATH = "/staging/payload"
 def _b64(value: bytes | str) -> str:
     raw = value.encode("utf-8") if isinstance(value, str) else value
     return base64.b64encode(raw).decode("ascii")
+
+
+def _plan(**kwargs) -> RaesContentDeliveryPlan:
+    """Build a plan from flat test inputs, folding the payload fields into ``RaesContentPayload``."""
+    payload = RaesContentPayload(
+        path=kwargs.pop("payload_path"),
+        byte_count=kwargs.pop("byte_count"),
+        sha256=kwargs.pop("sha256"),
+        installed_tree_sha256=kwargs.pop("installed_tree_sha256", None),
+    )
+    return RaesContentDeliveryPlan(payload=payload, **kwargs)
 
 
 def _payload_file(directory: Path, payload: bytes) -> str:
@@ -58,7 +69,7 @@ def _payload_file(directory: Path, payload: bytes) -> str:
 class TestConstruction:
     def test_rejects_unsupported_content_type(self):
         with pytest.raises(ValueError, match="content_type"):
-            RaesContentDeliveryPlan(
+            _plan(
                 content_type="dataset",
                 platform="linux",
                 target="/x",
@@ -69,7 +80,7 @@ class TestConstruction:
 
     def test_rejects_unknown_platform(self):
         with pytest.raises(ValueError, match="platform"):
-            RaesContentDeliveryPlan(
+            _plan(
                 content_type="file",
                 platform="solaris",
                 target="/x",
@@ -80,7 +91,7 @@ class TestConstruction:
 
     def test_rejects_empty_target(self):
         with pytest.raises(ValueError, match="target"):
-            RaesContentDeliveryPlan(
+            _plan(
                 content_type="file",
                 platform="linux",
                 target="",
@@ -92,7 +103,7 @@ class TestConstruction:
     def test_allows_an_empty_payload_for_a_zero_byte_file(self):
         # The producer materializer and DeliveryBinding contract both permit
         # byte_count == 0 for a genuine zero-byte source-backed `file`.
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="linux",
             target="/x",
@@ -106,7 +117,7 @@ class TestConstruction:
         # Unlike `file`, a directory's tar payload is never legitimately
         # empty (even a zero-entry tar carries non-zero trailer bytes).
         with pytest.raises(ValueError, match="payload"):
-            RaesContentDeliveryPlan(
+            _plan(
                 content_type="directory",
                 platform="linux",
                 target="/x",
@@ -119,7 +130,7 @@ class TestConstruction:
     @pytest.mark.parametrize(("payload_path", "byte_count"), [("", 2), (_PAYLOAD_PATH, -1), (_PAYLOAD_PATH, True)])
     def test_rejects_a_missing_payload_file_or_invalid_size(self, payload_path, byte_count):
         with pytest.raises(ValueError, match=r"payload file|byte_count"):
-            RaesContentDeliveryPlan(
+            _plan(
                 content_type="file",
                 platform="linux",
                 target="/x",
@@ -131,7 +142,7 @@ class TestConstruction:
     @pytest.mark.parametrize("bad_sha256", ["", "not-hex", "A" * 64, "a" * 63, "a" * 65])
     def test_rejects_non_hex_sha256(self, bad_sha256):
         with pytest.raises(ValueError, match="sha256"):
-            RaesContentDeliveryPlan(
+            _plan(
                 content_type="file",
                 platform="linux",
                 target="/x",
@@ -143,7 +154,7 @@ class TestConstruction:
     @pytest.mark.parametrize("bad_tree_sha256", [None, "", "not-hex", "a" * 63])
     def test_rejects_missing_or_non_hex_installed_tree_sha256_for_directory(self, bad_tree_sha256):
         with pytest.raises(ValueError, match="installed_tree_sha256"):
-            RaesContentDeliveryPlan(
+            _plan(
                 content_type="directory",
                 platform="linux",
                 target="/srv/data",
@@ -156,7 +167,7 @@ class TestConstruction:
 
 class TestLinuxStepShape:
     def test_script_carries_no_value_and_streams_the_payload_file(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="linux",
             target="/srv/x.bin",
@@ -178,7 +189,7 @@ class TestLinuxStepShape:
         assert plan.verify_step.stdin_path == ""
 
     def test_deliver_budget_scales_with_payload_size(self):
-        small = RaesContentDeliveryPlan(
+        small = _plan(
             content_type="file",
             platform="linux",
             target="/x",
@@ -186,7 +197,7 @@ class TestLinuxStepShape:
             payload_path=_PAYLOAD_PATH,
             byte_count=2,
         )
-        large = RaesContentDeliveryPlan(
+        large = _plan(
             content_type="file",
             platform="linux",
             target="/x",
@@ -198,7 +209,7 @@ class TestLinuxStepShape:
         assert large.steps[0].timeout_seconds == 4600
 
     def test_get_context_shell_quotes_target_and_carries_size(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="linux",
             target="/srv/needs quoting.bin",
@@ -217,7 +228,7 @@ class TestLinuxStepShape:
         assert context["raes_byte_count"] == "5"
 
     def test_non_sensitive_file_uses_mode_644(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="linux",
             target="/srv/x.bin",
@@ -228,7 +239,7 @@ class TestLinuxStepShape:
         assert plan.get_context({})["raes_mode_quoted"] == "644"
 
     def test_directory_context_has_no_meaningful_mode(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="directory",
             platform="linux",
             target="/srv/data",
@@ -242,7 +253,7 @@ class TestLinuxStepShape:
         assert "{{ raes_mode_quoted }}" not in plan.steps[0].script
 
     def test_directory_verify_context_carries_installed_tree_digest(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="directory",
             platform="linux",
             target="/srv/data",
@@ -259,7 +270,7 @@ class TestLinuxStepShape:
 
 class TestWindowsStepShape:
     def test_script_carries_no_authored_value(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="directory",
             platform="windows",
             target="C:\\data",
@@ -277,7 +288,7 @@ class TestWindowsStepShape:
         assert plan.verify_step.name == "raes_verify_content_directory_windows"
 
     def test_deliver_stdin_orders_target_digest_sensitivity_size_headers(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="windows",
             target="C:\\x.bin",
@@ -291,7 +302,7 @@ class TestWindowsStepShape:
         assert lines == [_b64("C:\\x.bin"), _b64("a" * 64), _b64("1"), _b64("5")]
 
     def test_deliver_stdin_marks_non_sensitive_file(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="windows",
             target="C:\\x.bin",
@@ -306,7 +317,7 @@ class TestWindowsStepShape:
         """Sensitivity now reaches the directory dialect too (#1564 security
         review): the Windows directory deliver script applies it as a
         protected ACL on the private extraction tree before publishing."""
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="directory",
             platform="windows",
             target="C:\\data",
@@ -320,7 +331,7 @@ class TestWindowsStepShape:
         assert lines == [_b64("C:\\data"), _b64("c" * 64), _b64("1"), _b64("2")]
 
     def test_verify_stdin_carries_only_target_and_digest(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="windows",
             target="C:\\x.bin",
@@ -332,7 +343,7 @@ class TestWindowsStepShape:
         assert lines == [_b64("C:\\x.bin"), _b64("a" * 64)]
 
     def test_directory_verify_stdin_carries_installed_tree_digest_not_tar_digest(self):
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="directory",
             platform="windows",
             target="C:\\data",
@@ -363,7 +374,7 @@ class TestWindowsStepShape:
         wired into every Windows deliver/verify script -- real PowerShell
         execution is out of reach in this Linux test environment (see the
         module docstring), so this is a structural, not behavioral, check."""
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="file",
             platform="windows",
             target=unsafe_target,
@@ -374,7 +385,7 @@ class TestWindowsStepShape:
         assert "Assert-RaesTargetPath" in plan.steps[0].script
         assert "Assert-RaesTargetPath -Target $TargetPath" in plan.steps[0].script
 
-        dir_plan = RaesContentDeliveryPlan(
+        dir_plan = _plan(
             content_type="directory",
             platform="windows",
             target=unsafe_target,
@@ -432,7 +443,7 @@ def _file_plan(tmp_path: Path, target: Path, payload: bytes, **overrides) -> Rae
         "byte_count": len(payload),
     }
     kwargs.update(overrides)
-    return RaesContentDeliveryPlan(**kwargs)
+    return _plan(**kwargs)
 
 
 def _install_fake_df(tmp_path: Path, monkeypatch, available_kib: int) -> None:
@@ -548,7 +559,7 @@ def _deterministic_tar(entries: dict[str, bytes]) -> bytes:
 
 def _expected_tree_sha256(entries: dict[str, bytes]) -> str:
     """Compute the same installed-tree manifest digest the guest verify script
-    (and ``raes_content_delivery._installed_tree_sha256``) computes, directly
+    (and ``raes_content_payload.installed_tree_sha256``) computes, directly
     from the file entries -- sorted-relpath order, one "<sha256>  <relpath>\\n"
     line each -- so real-bash execution tests can assert a genuine happy-path
     readback match without duplicating tar-parsing plumbing here."""
@@ -568,7 +579,7 @@ def _directory_plan(destination: Path, entries: dict[str, bytes], **overrides) -
         "installed_tree_sha256": _expected_tree_sha256(entries),
     }
     kwargs.update(overrides)
-    return RaesContentDeliveryPlan(**kwargs)
+    return _plan(**kwargs)
 
 
 @pytest.mark.skipif(_BASH is None, reason="bash not available")
@@ -621,7 +632,7 @@ class TestLinuxDirectoryExecution:
             info.linkname = "/etc/passwd"
             tar.addfile(info)
         payload = buffer.getvalue()
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="directory",
             platform="linux",
             target=str(destination),
@@ -639,7 +650,7 @@ class TestLinuxDirectoryExecution:
     def test_rejects_absolute_and_traversal_entries_before_extraction(self, tmp_path, unsafe_name):
         destination = tmp_path / "data"
         payload = _deterministic_tar({unsafe_name: b"x"})
-        plan = RaesContentDeliveryPlan(
+        plan = _plan(
             content_type="directory",
             platform="linux",
             target=str(destination),

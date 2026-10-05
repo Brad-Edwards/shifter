@@ -53,7 +53,7 @@ authoritative in-guest readback gating ``publish_ready``:
   misplaced a member, or a destination tampered with between the deliver and
   verify round trips. The expected installed-tree digest is computed
   server-side, once, from the same already downloaded-and-verified tar bytes
-  (``raes_content_delivery._installed_tree_sha256``), so no new wire/DB
+  (``raes_content_payload.installed_tree_sha256``), so no new wire/DB
   contract is needed -- it rides down to the guest as an ordinary runtime
   value alongside the existing tar-bytes ``sha256``.
 """
@@ -222,7 +222,7 @@ fi
 # (symlinks are never followed and never counted as "type f"), sorted by
 # byte-value path order (LC_ALL=C), each contributing one
 # "<sha256>  <relpath>\n" line -- mirrors
-# raes_content_delivery._installed_tree_sha256 exactly, so the server-computed
+# raes_content_payload.installed_tree_sha256 exactly, so the server-computed
 # expected value and this fresh guest readback are directly comparable. Any
 # extraction that dropped, altered, added, or misplaced a member changes this
 # digest, unlike hashing a retained copy of the original archive.
@@ -258,6 +258,21 @@ def _b64(value: str) -> str:
 
 
 @dataclass(frozen=True)
+class RaesContentPayload:
+    """A verified local payload file the deliver step streams, with its digests.
+
+    ``sha256`` covers the payload bytes (the tar, for ``directory``);
+    ``installed_tree_sha256`` (``directory`` only) is the digest the guest's
+    fresh readback of the installed tree must reproduce.
+    """
+
+    path: str
+    byte_count: int
+    sha256: str
+    installed_tree_sha256: str | None = None
+
+
+@dataclass(frozen=True)
 class RaesContentInstallOptions:
     """Guest-side permissions applied while publishing delivered content."""
 
@@ -277,17 +292,18 @@ def _validate_delivery_identity(content_type: str, platform: str, target: str, s
         raise ValueError("RaesContentDeliveryPlan requires a lowercase hex sha256")
 
 
-def _validate_payload(content_type: str, payload_path: str, byte_count: int, installed_tree_sha256: str | None) -> None:
+def _validate_payload(content_type: str, payload: RaesContentPayload) -> None:
     """Validate the streamed payload reference and directory-only invariants."""
-    if not payload_path:
+    if not payload.path:
         raise ValueError("RaesContentDeliveryPlan requires a payload file")
+    byte_count = payload.byte_count
     if isinstance(byte_count, bool) or not isinstance(byte_count, int) or byte_count < 0:
         raise ValueError("RaesContentDeliveryPlan requires a non-negative byte_count")
     if content_type != "directory":
         return
     if byte_count == 0:
         raise ValueError("RaesContentDeliveryPlan requires a non-empty payload for directory content")
-    if not _HEX_SHA256.fullmatch(installed_tree_sha256 or ""):
+    if not _HEX_SHA256.fullmatch(payload.installed_tree_sha256 or ""):
         raise ValueError("RaesContentDeliveryPlan requires a lowercase hex installed_tree_sha256 for directory content")
 
 
@@ -301,19 +317,16 @@ class RaesContentDeliveryPlan:
 
     ``content_type`` is ``"file"`` or ``"directory"``; ``platform`` is
     ``"linux"`` or ``"windows"``; ``target`` is the content's ``path`` (file)
-    or ``destination`` (directory); ``sha256`` is the expected lowercase-hex
-    digest of the delivered payload bytes (the tar, for ``directory``);
-    ``payload_path`` is the local, already digest-verified payload file and
-    ``byte_count`` its exact size; the deliver step streams the file to the
-    guest's stdin with constant memory (ADR-032-R9), so no payload bytes are
-    held in memory or rendered into a script (zero bytes is a legitimate
-    ``file``).
-    ``install_options`` requests guest-side permissions, including the
-    least-permissive sensitive mode. ``installed_tree_sha256`` is required for
-    ``directory`` only: the expected digest of the *installed tree*
-    (``raes_content_delivery._installed_tree_sha256``) that ``verify_step``
-    independently reproduces from a fresh readback of the destination --
-    distinct from ``sha256``, which only covers the transient tar transport.
+    or ``destination`` (directory). ``payload`` is the local, already
+    digest-verified payload file with its exact size and digests; the deliver
+    step streams the file to the guest's stdin with constant memory
+    (ADR-032-R9), so no payload bytes are held in memory or rendered into a
+    script (zero bytes is a legitimate ``file``). For ``directory``, the
+    payload's ``installed_tree_sha256`` (``raes_content_payload.installed_tree_sha256``)
+    is what ``verify_step`` independently reproduces from a fresh readback of
+    the destination, distinct from ``sha256``, which only covers the transient
+    tar transport. ``install_options`` requests guest-side permissions,
+    including the least-permissive sensitive mode.
     """
 
     def __init__(
@@ -322,25 +335,22 @@ class RaesContentDeliveryPlan:
         content_type: str,
         platform: str,
         target: str,
-        sha256: str,
-        payload_path: str,
-        byte_count: int,
-        installed_tree_sha256: str | None = None,
+        payload: RaesContentPayload,
         install_options: RaesContentInstallOptions | None = None,
     ) -> None:
-        _validate_delivery_identity(content_type, platform, target, sha256)
-        _validate_payload(content_type, payload_path, byte_count, installed_tree_sha256)
+        _validate_delivery_identity(content_type, platform, target, payload.sha256)
+        _validate_payload(content_type, payload)
         self._content_type = content_type
         self._platform = platform
         self._scripts = _SCRIPTS[(platform, content_type)]
         self._target = target
-        self._sha256 = sha256
-        self._payload_path = payload_path
-        self._byte_count = byte_count
+        self._sha256 = payload.sha256
+        self._payload_path = payload.path
+        self._byte_count = payload.byte_count
         options = install_options or RaesContentInstallOptions()
         self._sensitive = options.sensitive
         self._file_mode = options.file_mode
-        self._installed_tree_sha256 = installed_tree_sha256
+        self._installed_tree_sha256 = payload.installed_tree_sha256
 
     @property
     def steps(self) -> list[SetupStep]:

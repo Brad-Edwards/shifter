@@ -251,7 +251,7 @@ try {
     $DestItem = Get-Item -LiteralPath $Destination -Force
     if ($DestItem.LinkType) { throw "destination is a reparse point" }
     # Deterministic installed-tree manifest -- mirrors the Linux verify script
-    # and raes_content_delivery._installed_tree_sha256 exactly: every regular
+    # and raes_content_payload.installed_tree_sha256 exactly: every regular
     # file under $Destination (reparse points excluded), ordinal-sorted by its
     # forward-slash-normalized relative path, one "<sha256>  <relpath>`n" line
     # each.
