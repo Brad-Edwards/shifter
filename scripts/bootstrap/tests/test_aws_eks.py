@@ -127,6 +127,28 @@ def _terraform_inputs() -> dict[str, object]:
     }
 
 
+def test_alb_health_checks_use_each_services_readiness_probe_path():
+    """ALB target health must probe the same endpoint Kubernetes readiness does."""
+    import yaml
+
+    values = aws_eks.render_aws_values(_config(), _terraform_outputs(), _images())
+    templates = Path(__file__).resolve().parents[3] / "platform/charts/shifter/templates"
+
+    def readiness_path(template: str) -> str:
+        text = (templates / template).read_text(encoding="utf-8")
+        body = "\n".join(line for line in text.splitlines() if "{{" not in line and "}}" not in line)
+        deployment = next(doc for doc in yaml.safe_load_all(body) if isinstance(doc, dict))
+        return deployment["spec"]["template"]["spec"]["containers"][0]["readinessProbe"]["httpGet"]["path"]
+
+    annotations = {name: service["annotations"] for name, service in values["services"].items()}
+    assert annotations == {
+        "portal": {"alb.ingress.kubernetes.io/healthcheck-path": readiness_path("web-deployment.yaml")},
+        "guacamoleClient": {
+            "alb.ingress.kubernetes.io/healthcheck-path": readiness_path("guacamole-client-deployment.yaml")
+        },
+    }
+
+
 def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     values = aws_eks.render_aws_values(_config(), _terraform_outputs(), _images())
 

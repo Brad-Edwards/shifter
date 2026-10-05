@@ -123,6 +123,11 @@ _RENDERER_OWNED_RUNTIME_ENV = AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS
 # provision_guacamole_database; the guacamole-runtime k8s Secret carrying
 # POSTGRESQL_USER/POSTGRESQL_PASSWORD/JSON_SECRET_KEY is synced before Helm runs.
 _GUACAMOLE_DATABASE_NAME = "guacamole"
+# ALB target health checks use each service's readiness-probe path (the chart's
+# web and guacamole-client Deployments), so the load balancer and Kubernetes
+# judge a pod by the same endpoint. The ALB default, "/", answers with a
+# redirect or not-found and never matches 200.
+_ALB_HEALTH_CHECK_PATHS = {"portal": "/health/", "guacamoleClient": "/guacamole/"}
 _GUACAMOLE_RUNTIME_SECRET_NAME = "guacamole-runtime"  # noqa: S105 - Secret container name.  # nosec B105
 _GUACAMOLE_DB_SECRET_NAME = "guacamole-db"  # noqa: S105 - Secret container name.  # nosec B105
 _GUACAMOLE_JSON_AUTH_SECRET_NAME = "guacamole-json-auth"  # noqa: S105 - Secret container name.  # nosec B105
@@ -1070,6 +1075,10 @@ def render_aws_values(
                     "frontendConfigName": "platform-frontend-config",
                 },
             },
+        },
+        "services": {
+            service: {"annotations": {"alb.ingress.kubernetes.io/healthcheck-path": path}}
+            for service, path in _ALB_HEALTH_CHECK_PATHS.items()
         },
         "network": {
             "enabled": True,
