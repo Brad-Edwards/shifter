@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import subprocess  # nosec B404 - only the fixed gcloud CLI is invoked, with argv and no shell.
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -41,7 +41,11 @@ Runner = Callable[[list[str], str | None], subprocess.CompletedProcess[str]]
 
 
 def _gcloud(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gcloud", *args], input=stdin, text=True, capture_output=True, check=False)
+    # Closed argv built in this module, no shell; key material only on stdin. gcloud
+    # comes from the operator/CI toolchain PATH (setup-gcloud), not from input.
+    return subprocess.run(  # nosec B603 B607
+        ["gcloud", *args], input=stdin, text=True, capture_output=True, check=False
+    )
 
 
 @dataclass(frozen=True)

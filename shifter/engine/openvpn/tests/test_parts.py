@@ -187,7 +187,7 @@ class TestPortalClient:
                     raise urllib.error.HTTPError(request.full_url, status, "x", {}, io.BytesIO(body))
                 return _Response(status, body)
 
-        monkeypatch.setattr(portal_module, "_OPENER", Opener())
+        monkeypatch.setattr(portal_module.transport, "OPENER", Opener())
         client = PortalClient("https://portal.example.com", "aud", "vpn-a", lambda audience: f"token-for-{audience}")
         return client, sent, replies
 
@@ -230,7 +230,3 @@ class TestPortalClient:
         assert portal.heartbeat(["s"]) == ({"s"}, 15)
         portal.end("s")
         assert [request.full_url.rsplit("/vpn-control/", 1)[1] for request in sent] == ["heartbeat/", "sessions/end/"]
-
-    def test_redirects_are_refused(self):
-        handler = portal_module._NoRedirect()
-        assert handler.redirect_request() is None

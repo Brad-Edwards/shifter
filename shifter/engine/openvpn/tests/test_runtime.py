@@ -7,6 +7,7 @@ import json
 import socket
 import threading
 import time
+import urllib.error
 import urllib.request
 
 import pytest
@@ -31,10 +32,10 @@ class _Response:
 
 @pytest.fixture
 def network(monkeypatch):
-    """Replace only urllib's network call; record every request."""
+    """Replace only the opener's network call; record every request."""
     seen: list[urllib.request.Request] = []
 
-    def urlopen(request, timeout):
+    def open_(request, timeout):
         seen.append(request)
         url = request.full_url
         if url.endswith("/token"):
@@ -45,7 +46,7 @@ def network(monkeypatch):
             return _Response(json.dumps({"payload": {"data": base64.b64encode(b"material").decode()}}).encode())
         raise AssertionError(url)
 
-    monkeypatch.setattr(gcp.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(gcp.transport.OPENER, "open", open_)
     return seen
 
 
@@ -103,3 +104,13 @@ def test_startup_waits_for_the_management_socket(tmp_path):
 
     with pytest.raises(RuntimeError, match="management socket"):
         entry._wait_for_socket(str(tmp_path / "never"), _Process(exited=True), timeout=5)
+
+
+def test_the_http_client_opens_only_http_and_never_follows_redirects():
+    from shifter_openvpn import transport
+
+    opener = transport.closed_opener()
+    with pytest.raises(urllib.error.URLError, match="unknown url type"):
+        opener.open("file:///etc/passwd")
+    assert not any(isinstance(h, urllib.request.HTTPRedirectHandler) for h in opener.handlers)
+    assert not any(isinstance(h, urllib.request.ProxyHandler) for h in opener.handlers)
