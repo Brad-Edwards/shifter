@@ -13,6 +13,8 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from . import transport
+
 _MAX_RESPONSE_BYTES = 65_536
 _TIMEOUT = 10
 
@@ -60,14 +62,6 @@ def _grant(payload: dict[str, object]) -> Grant:
     return Grant(session=session, target=target, ports=tuple(ports), heartbeat_seconds=interval)
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-
-_OPENER = urllib.request.build_opener(_NoRedirect)
-
-
 class PortalClient:
     """Authorize, renew and end sessions for this server."""
 
@@ -78,14 +72,14 @@ class PortalClient:
         self._token = token
 
     def _post(self, path: str, body: dict[str, object]) -> tuple[int, dict[str, object]]:
-        request = urllib.request.Request(  # noqa: S310 (base is validated as an https origin at startup)
+        request = urllib.request.Request(  # noqa: S310 (https origin validated at startup; opened via transport)
             f"{self._base}/{path}",
             data=json.dumps(body).encode(),
             headers={"Authorization": f"Bearer {self._token(self._audience)}", "Content-Type": "application/json"},
             method="POST",
         )
         try:
-            with _OPENER.open(request, timeout=_TIMEOUT) as response:
+            with transport.OPENER.open(request, timeout=_TIMEOUT) as response:
                 status, raw = response.status, response.read(_MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as error:
             status, raw = error.code, error.read(_MAX_RESPONSE_BYTES + 1)
