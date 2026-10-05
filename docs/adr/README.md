@@ -59,6 +59,14 @@ how the deployed boundaries are exercised.
 The documentation coverage manifest links the operator guide and technical
 design from the feature and platform indexes under GEN-001.
 
+The [#2463 feature-artifact acquisition preflight](../architecture/raes-feature-artifact-acquisition-preflight-2463.md)
+records ADR-034-R11 and ADR-034-R12 (platform-owned recipe acquisition of
+backend-owned feature artifacts, tracked in CMS, acquired once before ranges
+need them, failing per range) and the matching ADR-034-R4, R6 and R7 and
+ADR-032-R3 and R9 amendments (streaming delivery with no fixed payload cap). It
+introduces no new check; the rules are design policy until the implementation
+lands with its behavioral tests.
+
 The same qualification corrected ADR-008-R7's GCP dynamic-secret conditions.
 The closed roles contain only Secret Manager permissions; fully qualified
 secret-name prefixes constrain their resource access. The conditions omit the
