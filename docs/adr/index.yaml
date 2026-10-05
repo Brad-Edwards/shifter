@@ -1777,7 +1777,7 @@
       },
       {
         "id": "ADR-032-R3",
-        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized RAES compiled ProvisioningPlan; the provisioner reads it with a standalone, version-gated plain-data accessor whose semantics mirror released public RAES accessors (spec.node.source, spec.node.resources, spec.infrastructure) without importing the RAES module family. For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and bounded byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces RAES.",
+        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized RAES compiled ProvisioningPlan; the provisioner reads it with a standalone, version-gated plain-data accessor whose semantics mirror released public RAES accessors (spec.node.source, spec.node.resources, spec.infrastructure) without importing the RAES module family. For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and the stored object's exact byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces RAES.",
         "checks": []
       },
       {
@@ -1807,7 +1807,7 @@
       },
       {
         "id": "ADR-032-R9",
-        "description": "RAES feature bindings use an honest, shape-aware realization ledger. Package/baked services require package presence plus enabled/running in-guest verification before READY; source-backed artifact/configuration bytes reuse the immutable content-addressed delivery channel and independent in-guest digest readback. Unsupported feature types or values fail through the common validate/apply path before dispatch. A versioned server-owned delivery binding may identify a compiled content-placement or feature-binding by resource type plus resource address and bounded payload kind, but remains byte-free and separate from the serialized RAES plan. Feature types must not be modeled as content/account capabilities, features must not masquerade in a legacy content_address, and the backend must not execute pack-supplied commands or installer hooks.",
+        "description": "RAES feature bindings use an honest, shape-aware realization ledger. Package/baked services require package presence plus enabled/running in-guest verification before READY; source-backed artifact/configuration bytes reuse the immutable content-addressed delivery channel and independent in-guest digest readback. Delivery streams the payload with constant provisioner memory (download to a temporary file while hashing, transfer to the guest in chunks over the authenticated channel) and imposes no fixed payload-size policy cap; the only bounds are the stored object's exact size and the destination's free space, checked before transfer. Unsupported feature types or values fail through the common validate/apply path before dispatch. A versioned server-owned delivery binding may identify a compiled content-placement or feature-binding by resource type plus resource address and bounded payload kind, but remains byte-free and separate from the serialized RAES plan. Feature types must not be modeled as content/account capabilities, features must not masquerade in a legacy content_address, and the backend must not execute pack-supplied commands or installer hooks.",
         "checks": []
       },
       {
@@ -1853,7 +1853,8 @@
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/raes/domain_topology.py",
       "shifter/shifter_platform/shared/raes/runtime_target.py",
-      "docs/architecture/native-ec2-runtime.md"
+      "docs/architecture/native-ec2-runtime.md",
+      "docs/architecture/raes-feature-artifact-acquisition-preflight-2463.md"
     ]
   },
   {
@@ -1914,7 +1915,7 @@
       },
       {
         "id": "ADR-034-R4",
-        "description": "The portable RAES artifact requirement is semantic authority. An upstream-published artifact may be the exact required artifact, an allowed candidate, or an optimization over a reproducible path; it is not inherently a cache, substitute, or rebuildable output. Entitlement for restricted or privately distributed content is resolved at acquisition, outside the platform; the platform contains no entitlement system.",
+        "description": "The portable RAES artifact requirement is semantic authority. An upstream-published artifact may be the exact required artifact, an allowed candidate, or an optimization over a reproducible path; it is not inherently a cache, substitute, or rebuildable output. Entitlement for restricted or privately distributed content is resolved at acquisition, outside the platform; the platform contains no entitlement system. Platform-owned recipe acquisition under ADR-034-R11 fetches only publicly available packages without credentials and is not an entitlement system: the license relationship stays with the deploying organization, and Shifter never republishes acquired bytes in an image, pack, or registry.",
         "checks": []
       },
       {
@@ -1924,12 +1925,12 @@
       },
       {
         "id": "ADR-034-R6",
-        "description": "Source-backed RAES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
+        "description": "Source-backed RAES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format, except that a feature artifact source with no pack projection entry may instead bind to a backend-owned artifact acquired under ADR-034-R11; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
         "checks": []
       },
       {
         "id": "ADR-034-R7",
-        "description": "Source-backed RAES feature artifacts reuse the uniform pack trust and delivery machinery without becoming content placements. A versioned discriminated projection binds feature type plus source name/version to an inventory-covered deterministic payload and bounded data-only install policy; content and feature entries keep distinct match semantics while sharing containment, size, digest, content-addressed storage, authenticated guest transport, and readback. Filename/extension inference, ambiguous wildcard resolution, contributor-supplied executable installers/probes, and a parallel feature artifact store are prohibited.",
+        "description": "Source-backed RAES feature artifacts reuse the uniform pack trust and delivery machinery without becoming content placements. A versioned discriminated projection binds feature type plus source name/version to an inventory-covered deterministic payload and bounded data-only install policy; content and feature entries keep distinct match semantics while sharing containment, size, digest, content-addressed storage, authenticated guest transport, and readback. Filename/extension inference, ambiguous wildcard resolution, contributor-supplied executable installers/probes, and a parallel feature artifact store are prohibited. The ADR-034-R11 acquired-artifact inventory is not a parallel store: it records backend-owned artifacts whose bytes use the same content-addressed storage, delivery binding, authenticated guest transport, and readback.",
         "checks": []
       },
       {
@@ -1945,6 +1946,16 @@
       {
         "id": "ADR-034-R10",
         "description": "Tenant organization admins may install and update content packs through the tenant UI and session API. Uploads reuse uniform registration and canonical validation, with bounded containment-checked extraction before immutable object storage. Ownership is a Shifter sidecar separate from portable pack identity: organization membership gates catalog reads, organization-admin authority gates mutation, and launch binds the owning organization to the workspace. Staff status alone never overrides tenant ownership. Revision updates require the current digest, preserve previous objects and immutable range inputs, and require adapter rebinding when the digest changes. Content upload never installs executable adapters or grants provider authority.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R11",
+        "description": "A source-backed feature artifact with no matching pack projection entry may be satisfied by a backend-owned artifact (RAES mechanism backend-owned-artifact, or exact-artifact for an exact requirement; acquisition pull; timing backend-preparation) that Shifter acquires with a platform-owned recipe. A recipe is reviewed platform code mapping one known source name to an upstream location, an integrity check, and an extraction rule; unknown source names fail, and generic URL fetch, pack- or scenario-supplied recipes, and credentialed upstream sources are prohibited. RAES semantics choose the version: exact is honored exactly, constrained admits only a conforming version, and an unspecified version with an open scope resolves deterministically to a platform-configured default per source (never latest-at-fetch-time); the resolved version is recorded in the range binding and evidence, and declared permitted_routes are honored. Acquired bytes are verified against the upstream integrity, stored under the existing provider-neutral content-addressed delivery key, and recorded in an Engine-owned platform inventory row, beside the backend image inventory (source name, resolved version, platform, object key, sha256, byte count, upstream reference and integrity, state, attempt timestamps). Packs and scenarios declare such software by name and version only and never bundle its bytes.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R12",
+        "description": "Recipe acquisition runs before ranges need it and never needs an operator step: registering or updating a pack triggers acquisition for its declared feature sources, and deploy bootstrap does the same for registered packs. A request first reuses a ready inventory row whose object is present with a matching digest and downloads nothing; otherwise the first requester claims the row and starts exactly one dedicated, isolated acquisition Job, and concurrent requesters wait on that attempt rather than downloading again. Materialization requires every declared feature to resolve to a ready artifact; a launch waits a bounded time for an in-flight attempt, and an artifact that cannot be acquired fails that range's materialization before any cloud mutation. Failure is per range and never sticky: one range failing does not fail other ranges stamped from the same scenario, and a later request starts a fresh attempt after a bounded backoff.",
         "checks": []
       }
     ],
@@ -1969,7 +1980,8 @@
       "docs/ops/content-ingestion.md",
       "docs/adr/index.yaml",
       "shifter/shifter_platform/cms/services/_tenant_pack_upload.py",
-      "shifter/shifter_platform/tests/cms/test_tenant_pack_upload.py"
+      "shifter/shifter_platform/tests/cms/test_tenant_pack_upload.py",
+      "docs/architecture/raes-feature-artifact-acquisition-preflight-2463.md"
     ]
   },
   {

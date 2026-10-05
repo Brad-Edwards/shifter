@@ -90,6 +90,10 @@ AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
         # must not supply it.
         "ENGINE_TASK_IMAGE",
+        # Platform image for isolated feature-artifact acquisition Jobs (#2463);
+        # generated from the attested platform digest, empty where the environment
+        # does not define the artifactAcquirer identity.
+        "FEATURE_ARTIFACT_JOB_IMAGE",
         # Provisioner-Job admission contract (restrict-provisioner-jobs, #1826): the
         # policy pins the Job's imagePullPolicy and DB_USER to these renderer-owned
         # values, which the launcher also applies when building the Job.
@@ -170,6 +174,10 @@ AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "KALI_INSTANCE_TYPE",
         "VICTIM_INSTANCE_TYPE",
         "AGENT_S3_BUCKET",
+        # Source-backed RAES content delivery downloads payloads from the platform
+        # storage bucket (provisioner config RAES_CONTENT_DELIVERY_BUCKET, falling
+        # back to STORAGE_BUCKET_NAME), at parity with the GCP provisioner.
+        "STORAGE_BUCKET_NAME",
         "S3_ENDPOINT_ID",
         "FIREWALL_ENDPOINT_ID",
         "SSM_ENDPOINTS_SUBNET_CIDR",

@@ -10,6 +10,7 @@ serialized RAES plan (self-describing via its ``kind``).
 """
 
 import json
+from unittest import mock
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -162,7 +163,7 @@ class TestCmsRaesDispatchPort:
         assert result.accepted is True
         # _prepare_delivery must thread the live pack root, the serialized plan, and
         # the configured storage identity through to prepare_content_delivery -- a
-        # regression here (wrong pack_root, wrong bucket/prefix/limit) would silently
+        # regression here (wrong pack_root, wrong bucket/prefix) would silently
         # break delivery without failing any other test in the diff.
         mock_prepare.assert_called_once_with(
             pack_root=tmp_path,
@@ -171,9 +172,11 @@ class TestCmsRaesDispatchPort:
                 storage=storage_sentinel,
                 bucket=settings.STORAGE_BUCKET_NAME,
                 prefix=settings.RAES_CONTENT_DELIVERY_PREFIX,
-                max_payload_bytes=settings.RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES,
             ),
+            acquire_feature=mock.ANY,
         )
+        # Unprojected feature sources resolve through the recipe-acquisition resolver (#2463).
+        assert callable(mock_prepare.call_args.kwargs["acquire_feature"])
         rows = list(RaesContentDeliveryBinding.objects.all())
         assert len(rows) == 1
         assert rows[0].content_address == "provision.content.flag"

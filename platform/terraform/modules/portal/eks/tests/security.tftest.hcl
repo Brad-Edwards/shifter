@@ -261,6 +261,16 @@ variables {
       service_account             = "shifter-workers"
       platform_application_access = true
     }
+    artifactAcquirer = {
+      namespace                    = "shifter-acquisition"
+      service_account              = "artifact-acquirer"
+      feature_artifact_store_write = true
+    }
+    migrator = {
+      namespace                   = "shifter-platform"
+      service_account             = "migrator"
+      feature_artifact_store_read = true
+    }
     provisionerLauncher = {
       namespace       = "shifter-platform"
       service_account = "provisioner-launcher"
@@ -480,6 +490,37 @@ run "security_contract" {
     error_message = "Platform application access must target exactly the portal-stack queues, topic, storage bucket and their keys, and the application metric namespaces."
   }
 
+  # Isolated acquisition Job (#2463): only the opted-in identity, object get/put
+  # under the delivery prefix only (no list, no delete), storage key via S3 only.
+  assert {
+    condition = (
+      keys(aws_iam_role_policy.workload_feature_artifact_store) == ["artifactAcquirer"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[0].Action == ["s3:PutObject"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[0].Resource == "arn:aws:s3:::test-storage-bucket/raes/content-delivery/*" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-storage" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[1].Condition.StringEquals["kms:ViaService"] == "s3.us-east-2.amazonaws.com" &&
+      !contains(keys(aws_iam_role_policy.workload_platform_application), "artifactAcquirer") &&
+      !contains(keys(aws_iam_role_policy.workload_rds_iam), "artifactAcquirer")
+    )
+    error_message = "The acquisition Job may only put objects under the delivery prefix, with no database or platform application access."
+  }
+
+  # Deploy content bootstrap checks inventoried artifacts exist: HEAD (s3:GetObject)
+  # under the delivery prefix plus ListBucket for 404s, and no storage-key KMS grant.
+  assert {
+    condition = (
+      keys(aws_iam_role_policy.workload_feature_artifact_store_read) == ["migrator"] &&
+      length(jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement) == 2 &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[0].Action == ["s3:GetObject"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[0].Resource == "arn:aws:s3:::test-storage-bucket/raes/content-delivery/*" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[1].Action == ["s3:ListBucket"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[1].Resource == "arn:aws:s3:::test-storage-bucket" &&
+      !contains(keys(aws_iam_role_policy.workload_feature_artifact_store), "migrator") &&
+      !contains(keys(aws_iam_role_policy.workload_platform_application), "migrator")
+    )
+    error_message = "The migrator may only check object existence under the delivery prefix, without decrypt or write access."
+  }
+
   assert {
     condition     = strcontains(aws_iam_role.workload["provisionerLauncher"].assume_role_policy, "system:serviceaccount:shifter-platform:provisioner-launcher")
     error_message = "The provisioner-launcher IRSA role must bind the exact shifter-platform/provisioner-launcher subject."
@@ -530,6 +571,17 @@ run "security_contract" {
   assert {
     condition     = aws_iam_role_policy.load_balancer_controller.role == aws_iam_role.workload["ingress"].id
     error_message = "The module-owned Load Balancer Controller policy must attach only to the exact ingress IRSA role."
+  }
+
+  # IP targets sit in the EKS-managed cluster security group; it carries the
+  # exact cluster ownership tag so the controller's tag-scoped rule edits reach it.
+  assert {
+    condition = (
+      aws_ec2_tag.cluster_security_group_lb_controller.resource_id == aws_eks_cluster.this.vpc_config[0].cluster_security_group_id &&
+      aws_ec2_tag.cluster_security_group_lb_controller.key == "elbv2.k8s.aws/cluster" &&
+      aws_ec2_tag.cluster_security_group_lb_controller.value == var.cluster_name
+    )
+    error_message = "The EKS cluster security group must carry the Load Balancer Controller's exact cluster ownership tag."
   }
 
   # EBS/EFS CSI drivers are installed as managed add-ons bound to their own

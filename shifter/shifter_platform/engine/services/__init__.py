@@ -52,6 +52,14 @@ from ._cleanup_verification import (
     record_cleanup_verification,
 )
 from ._common import EngineError
+from ._feature_artifact_launcher import default_storage_target, reconcile_feature_artifact_acquisitions
+from ._feature_artifacts import (
+    ArtifactRequest,
+    FeatureArtifactUnavailableError,
+    StorageTarget,
+    await_ready,
+    request_acquisition,
+)
 from ._lifecycle import dispatch_prepared_range_resume, pause_range, resume_range
 from ._model_admission import admit_range_model_access
 from ._model_broker_control import advance_model_call, commit_model_call, finish_model_call, reserve_model_call
@@ -167,6 +175,7 @@ from ._range_by_request import (
     cancel_range_by_request,
     destroy_range_by_request,
     get_pinned_range_egress_mode_by_request,
+    get_range_failure_reason_by_request,
     range_owner_reassignment_available_by_request,
     reassign_range_owner_by_request,
     rebind_range_workspace_by_request,
@@ -270,12 +279,14 @@ __all__ = (
     "DEFAULT_RETRY_TTL_SECONDS",
     "VPN_SESSION_HEARTBEAT_SECONDS",
     "VPN_SESSION_LEASE_SECONDS",
+    "ArtifactRequest",
     "CleanupObligation",
     "CleanupVerificationView",
     "DispatchGrant",
     "EngineError",
     "EventCapacityRequest",
     "EventCapacitySignal",
+    "FeatureArtifactUnavailableError",
     "GuestProbeError",
     "GuestProbeRequest",
     "MembershipEvidence",
@@ -304,6 +315,7 @@ __all__ = (
     "SSHConnection",
     "SecretsError",
     "SharingError",
+    "StorageTarget",
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
@@ -323,6 +335,7 @@ __all__ = (
     "assess_event_capacity",
     "authenticate_model_access",
     "authorize_vpn_session",
+    "await_ready",
     "begin_range_model_policy_change",
     "bind_public_operation",
     "bind_runtime_plugin",
@@ -345,6 +358,7 @@ __all__ = (
     "create_ngfw",
     "create_raes_range",
     "create_warm_generation",
+    "default_storage_target",
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",
@@ -371,6 +385,7 @@ __all__ = (
     "get_or_create_allocation_group",
     "get_owned_instance_request_ref",
     "get_pinned_range_egress_mode_by_request",
+    "get_range_failure_reason_by_request",
     "get_range_membership",
     "get_range_model_policy_status",
     "get_range_pause_resume_capability",
@@ -425,6 +440,7 @@ __all__ = (
     "rebind_range_workspace_by_request",
     "reconcile_capacity_budgets",
     "reconcile_expired_dispatches",
+    "reconcile_feature_artifact_acquisitions",
     "reconcile_model_allocations",
     "reconcile_model_requests",
     "reconcile_preparations",
@@ -446,6 +462,7 @@ __all__ = (
     "release_warm_generation_capacity",
     "renew_continuation_lease",
     "renew_vpn_sessions",
+    "request_acquisition",
     "request_artifact_preparation",
     "reserve_model_call",
     "reserve_request",

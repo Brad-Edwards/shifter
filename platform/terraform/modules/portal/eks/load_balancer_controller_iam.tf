@@ -313,3 +313,14 @@ resource "aws_iam_role_policy" "load_balancer_controller" {
     ]
   })
 }
+
+# IP-mode ALB targets are pod ENIs in the EKS-managed cluster security group.
+# The controller must add an ingress rule there admitting its backend security
+# group to the target ports, or every target times out. Its rule mutations are
+# scoped to groups carrying the exact cluster ownership tag (ADR-044-R7), which
+# EKS does not put on the group it creates, so tag it here.
+resource "aws_ec2_tag" "cluster_security_group_lb_controller" {
+  resource_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  key         = "elbv2.k8s.aws/cluster"
+  value       = var.cluster_name
+}
