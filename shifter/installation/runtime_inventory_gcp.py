@@ -110,6 +110,12 @@ GCP_CAPACITY_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     }
 )
 
+# Keys the GCP Helm-values renderer (scripts/bootstrap/gcp_control_plane.py) projects
+# from attested image identities, not from Terraform outputs. FEATURE_ARTIFACT_JOB_IMAGE
+# is the platform image isolated acquisition Jobs run (#2479), emitted only when the
+# environment defines the artifact-acquirer identity; absent means acquisition is off.
+GCP_HELM_RENDERED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset({"FEATURE_ARTIFACT_JOB_IMAGE"})
+
 GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "IDENTITY_ALLOWED_EMAILS",

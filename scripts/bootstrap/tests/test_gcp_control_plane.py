@@ -1042,6 +1042,27 @@ class TestGdcControlPlaneHelmValues:
             == "shiftergcpdev-provisioner@prod-rwctxzl6shxk.iam.gserviceaccount.com"
         )
 
+    def test_feature_artifact_acquisition_follows_the_acquirer_identity(self):
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+        disabled = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+        assert disabled["capabilities"]["featureArtifactAcquisition"] is False
+        assert disabled["featureArtifactAcquisition"]["egressCidrs"] == []
+        assert "FEATURE_ARTIFACT_JOB_IMAGE" not in disabled["runtimeEnv"]
+
+        acquirer = f"shiftergcpdev-artifact-acq@{config.project_id}.iam.gserviceaccount.com"
+        outputs["workload_service_accounts"]["value"]["artifact-acquirer"] = acquirer
+        enabled = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+
+        assert enabled["capabilities"]["featureArtifactAcquisition"] is True
+        # The Job runs exactly the attested platform image its admission policy pins.
+        assert enabled["runtimeEnv"]["FEATURE_ARTIFACT_JOB_IMAGE"] == enabled["images"]["platform"]
+        acquisition = enabled["featureArtifactAcquisition"]
+        assert acquisition["serviceAccountAnnotations"] == {"iam.gke.io/gcp-service-account": acquirer}
+        assert acquisition["egressCidrs"] == ["0.0.0.0/0"]
+        assert {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"} <= set(acquisition["egressExcept"])
+
     def test_migration_job_uses_the_dedicated_identity_and_owner_secret(self):
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
         outputs = _sample_gcp_control_plane_outputs(config.project_id)
@@ -1065,7 +1086,8 @@ class TestGdcControlPlaneHelmValues:
         assert container["args"] == [
             "/bin/sh",
             "-c",
-            "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry",
+            "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry"
+            " && python manage.py acquire_feature_artifacts",
         ]
         db_secret = next(item for item in container["env"] if item["name"] == "DB_SECRET_ID")
         assert db_secret["valueFrom"]["configMapKeyRef"]["key"] == "DB_MIGRATION_SECRET_ID"
