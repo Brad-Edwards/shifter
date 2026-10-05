@@ -23,6 +23,11 @@ locals {
     identity_name => identity.rds_iam_db_user
     if identity.rds_iam_db_user != ""
   }
+  workload_feature_artifact_store_write = toset([
+    for identity_name, identity in var.workload_identities :
+    identity_name
+    if identity.feature_artifact_store_write
+  ])
   workload_platform_application_access = toset([
     for identity_name, identity in var.workload_identities :
     identity_name
@@ -369,7 +374,7 @@ data "aws_kms_alias" "portal_messaging" {
 }
 
 data "aws_kms_alias" "portal_storage" {
-  count = length(local.workload_platform_application_access) > 0 ? 1 : 0
+  count = length(local.workload_platform_application_access) + length(local.workload_feature_artifact_store_write) > 0 ? 1 : 0
   name  = "alias/shifter-${var.environment}-portal-s3"
 }
 
@@ -447,6 +452,36 @@ resource "aws_iam_role_policy" "workload_platform_application" {
         Resource = "*"
         Condition = {
           StringEquals = { "cloudwatch:namespace" = local.platform_metric_namespaces }
+        }
+      },
+    ]
+  })
+}
+
+# Isolated feature-artifact acquisition Job (ADR-034-R12, #2463): it may only
+# store and read back objects under the content-addressed delivery prefix. It
+# cannot list, delete, or touch any other bucket path.
+resource "aws_iam_role_policy" "workload_feature_artifact_store" {
+  for_each = local.workload_feature_artifact_store_write
+
+  name = "feature-artifact-store-write"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "FeatureArtifactObjects"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}/${trim(var.feature_artifact_prefix, "/")}/*"
+      },
+      {
+        Sid      = "FeatureArtifactStorageKms"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = data.aws_kms_alias.portal_storage[0].target_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "s3.${var.aws_region}.amazonaws.com" }
         }
       },
     ]

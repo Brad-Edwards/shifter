@@ -179,6 +179,11 @@ variable "workload_identities" {
     # Restores what the retired portal EC2 role granted to the same Django
     # processes; requires storage_bucket_name.
     platform_application_access = optional(bool, false)
+    # Write-only access to the content-addressed feature-artifact delivery prefix
+    # for the isolated acquisition Job (ADR-034-R12, #2463): put/head objects under
+    # feature_artifact_prefix and the bucket key via S3. No other bucket path, no
+    # list, no delete. Requires storage_bucket_name.
+    feature_artifact_store_write = optional(bool, false)
   }))
 
   validation {
@@ -245,8 +250,14 @@ variable "storage_bucket_name" {
 
   validation {
     condition = var.storage_bucket_name != "" || !anytrue([
-      for identity in values(var.workload_identities) : identity.platform_application_access
+      for identity in values(var.workload_identities) : identity.platform_application_access || identity.feature_artifact_store_write
     ])
-    error_message = "storage_bucket_name is required when any workload identity sets platform_application_access."
+    error_message = "storage_bucket_name is required when any workload identity sets platform_application_access or feature_artifact_store_write."
   }
+}
+
+variable "feature_artifact_prefix" {
+  description = "Content-addressed delivery prefix (runtime RAES_CONTENT_DELIVERY_PREFIX) the acquisition Job may write."
+  type        = string
+  default     = "raes/content-delivery"
 }
