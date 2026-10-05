@@ -58,12 +58,12 @@ class AcquiredFeatureArtifact(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["source_name", "resolved_version", "platform"],
-                name="cms_feature_artifact_identity_unique",
+                name="engine_feature_artifact_identity_unique",
             ),
             models.CheckConstraint(
                 condition=~Q(state="ready")
                 | (~Q(storage_key="") & ~Q(sha256="") & Q(byte_count__gt=0) & Q(acquired_at__isnull=False)),
-                name="cms_feature_artifact_ready_has_identity",
+                name="engine_feature_artifact_ready_has_identity",
             ),
         ]
 

@@ -11,8 +11,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from cms.feature_artifacts.npm import NpmAcquisitionError, fetch_file
-from cms.feature_artifacts.recipes import OPEN_VERSION, RecipeError, recipe_for
+from shared.feature_artifacts.npm import NpmAcquisitionError, fetch_file
+from shared.feature_artifacts.recipes import OPEN_VERSION, RecipeError, recipe_for
 
 PACKAGE = "@anthropic-ai/claude-code-linux-x64"
 VERSION = "2.1.289"

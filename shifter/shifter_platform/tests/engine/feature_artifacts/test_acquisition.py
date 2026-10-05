@@ -11,7 +11,8 @@ import pytest
 from django.db import transaction
 from django.utils import timezone
 
-from cms.feature_artifacts.acquisition import (
+from engine.models import AcquiredFeatureArtifact
+from engine.services._feature_artifacts import (
     ArtifactRequest,
     FeatureArtifactUnavailableError,
     StorageTarget,
@@ -19,9 +20,8 @@ from cms.feature_artifacts.acquisition import (
     request_acquisition,
     run_attempt,
 )
-from cms.feature_artifacts.npm import FetchedFile, NpmAcquisitionError
-from cms.feature_artifacts.recipes import OPEN_VERSION, RecipeError
-from cms.models import AcquiredFeatureArtifact
+from shared.feature_artifacts.npm import FetchedFile, NpmAcquisitionError
+from shared.feature_artifacts.recipes import OPEN_VERSION, RecipeError
 
 State = AcquiredFeatureArtifact.State
 BINARY = b"claude-binary" * 1000
