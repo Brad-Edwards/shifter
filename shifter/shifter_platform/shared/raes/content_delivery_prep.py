@@ -17,43 +17,39 @@ paths are logged.
 
 from __future__ import annotations
 
-import hashlib
-import io
-import json
 import logging
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import unquote, urlsplit
 
-from shared.log_sanitize import safe_log_value
 from shared.raes.content_delivery import (
     FEATURE_BINDING_VERSION,
     ContentDeliveryError,
     DeliveryBinding,
     DeliveryProjection,
     normalized_storage_key,
-    parse_delivery_projection,
-    payload_chunks,
-    sha256_hex,
+)
+from shared.raes.content_payload import PayloadSource, measure, promote
+from shared.raes.pack_delivery_inputs import (
+    PROJECTION_RELPATH,
+    InventoryEntry,
+    build_inventory_index,
+    load_pack_projection,
+    resolve_pack_input,
+    verify_input_against_inventory,
+    verify_projection_against_inventory,
 )
 
 if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
-
     from shared.cloud.types import ObjectStorage
 
 logger = logging.getLogger(__name__)
 
 #: Pack-relative location of the author-declared delivery projection document.
-PROJECTION_RELPATH = "delivery/content-projection.json"
 _CONTENT_PLACEMENT_RESOURCE_TYPE = "content-placement"
 _FEATURE_BINDING_RESOURCE_TYPE = "feature-binding"
-_PACK_URI_SCHEME = "raes-environment-pack"
-_OCTET_STREAM = "application/octet-stream"
 #: Streaming read chunk for size-gated digesting (never buffers a whole file).
-_READ_CHUNK_BYTES = 1024 * 1024
 
 __all__ = [
     "PROJECTION_RELPATH",
@@ -73,14 +69,6 @@ def has_source_backed_content(serialized_plan: Mapping[str, object]) -> bool:
     resolution entirely for the common no-source-backed-content plan.
     """
     return bool(_source_backed_content_refs(serialized_plan))
-
-
-@dataclass(frozen=True)
-class InventoryEntry:
-    """One associated-artifact inventory record: expected digest + declared size."""
-
-    sha256: str
-    size_bytes: int
 
 
 @dataclass(frozen=True)
@@ -150,24 +138,38 @@ def prepare_content_delivery(
     if not pack_projects or pack_root is None:
         return tuple(_acquired(ref, acquire_feature) for ref in refs)
     inventory = (inventory_loader or build_inventory_index)(pack_root)
-    if projection_loader is None:
-        # Only the real, file-reading default loader needs the inventory
-        # cross-check: it is the projection *document's own bytes* that must be
-        # an inventory-covered artifact (ADR-034-R6), not whatever a caller's
-        # injected loader hands back (e.g. tests exercising resolution/materialize
-        # behavior against a canned DeliveryProjection with no on-disk document).
-        _verify_projection_against_inventory(pack_root, inventory)
-        projection = _load_pack_projection(pack_root)
-    else:
-        projection = projection_loader(pack_root)
+    projection = _projection_for(pack_root, inventory, projection_loader)
     return tuple(
         _prepare_one(ref, pack_root, projection, inventory, target)
-        if ref.resource_type != _FEATURE_BINDING_RESOURCE_TYPE
-        or projection.has_feature(
-            source_name=ref.source_name, source_version=ref.source_version, feature_type=ref.feature_type
-        )
+        if _pack_carries(ref, projection)
         else _acquired(ref, acquire_feature)
         for ref in refs
+    )
+
+
+def _projection_for(
+    pack_root: Path,
+    inventory: Mapping[str, InventoryEntry],
+    projection_loader: Callable[[Path], DeliveryProjection] | None,
+) -> DeliveryProjection:
+    """The pack's delivery projection, inventory-verified when read from the pack.
+
+    Only the real, file-reading default loader needs the inventory cross-check:
+    it is the projection *document's own bytes* that must be an
+    inventory-covered artifact (ADR-034-R6), not whatever a caller's injected
+    loader hands back (e.g. tests exercising resolution/materialize behavior
+    against a canned DeliveryProjection with no on-disk document).
+    """
+    if projection_loader is not None:
+        return projection_loader(pack_root)
+    verify_projection_against_inventory(pack_root, inventory)
+    return load_pack_projection(pack_root)
+
+
+def _pack_carries(ref: ContentRef, projection: DeliveryProjection) -> bool:
+    """Content placements always come from the pack; a feature only when projected."""
+    return ref.resource_type != _FEATURE_BINDING_RESOURCE_TYPE or projection.has_feature(
+        source_name=ref.source_name, source_version=ref.source_version, feature_type=ref.feature_type
     )
 
 
@@ -179,8 +181,8 @@ def pack_projects_feature(pack_root: Path, *, source_name: str, source_version: 
     """
     if not _pack_projection_present(pack_root):
         return False
-    _verify_projection_against_inventory(pack_root, build_inventory_index(pack_root))
-    return _load_pack_projection(pack_root).has_feature(
+    verify_projection_against_inventory(pack_root, build_inventory_index(pack_root))
+    return load_pack_projection(pack_root).has_feature(
         source_name=source_name, source_version=source_version, feature_type=feature_type
     )
 
@@ -223,16 +225,14 @@ def _prepare_one(
         )
     payload_kind = entry.payload_kind or ref.content_type
     content_format = entry.content_format
-    input_abs = _resolve_pack_input(pack_root, entry.input_path)
-    records = _verify_input_against_inventory(pack_root, input_abs, payload_kind, inventory)
-    source = _PayloadSource(payload_kind, content_format, input_abs)
+    input_abs = resolve_pack_input(pack_root, entry.input_path)
+    records = verify_input_against_inventory(pack_root, input_abs, payload_kind, inventory)
+    source = PayloadSource(payload_kind, content_format, input_abs)
     # A file payload is the verified pack file verbatim, so its inventory digest
     # names it; a directory's tar is measured by streaming it once.
-    digest, byte_count = (
-        (records[0][1].sha256, input_abs.stat().st_size) if payload_kind == "file" else _measure(source)
-    )
+    digest, byte_count = (records[0][1].sha256, input_abs.stat().st_size) if payload_kind == "file" else measure(source)
     key = normalized_storage_key(target.prefix, digest)
-    _promote(target.storage, target.bucket, key, source, digest, byte_count)
+    promote(target.storage, target.bucket, key, source, digest, byte_count)
     if ref.resource_type == _FEATURE_BINDING_RESOURCE_TYPE:
         return DeliveryBinding(
             content_address=None,
@@ -365,230 +365,3 @@ def _parse_source(source: object) -> tuple[str | None, str]:
         version = version if isinstance(version, str) and version.strip() else "*"
         return name, version
     return None, "*"
-
-
-def _resolve_pack_input(pack_root: Path, input_path: str) -> Path:
-    """Resolve a pack-relative input path, fail-closed on escape or absence."""
-    root = Path(pack_root).resolve()
-    candidate = (root / input_path).resolve()
-    if candidate != root and root not in candidate.parents:
-        raise ContentDeliveryError("content delivery input escapes the pack root")
-    if candidate.is_symlink() or not candidate.exists():
-        raise ContentDeliveryError("content delivery input does not exist in the pack")
-    return candidate
-
-
-def _verify_input_against_inventory(
-    pack_root: Path,
-    input_abs: Path,
-    content_type: str,
-    inventory: Mapping[str, InventoryEntry],
-) -> list[tuple[Path, InventoryEntry]]:
-    """Fail closed unless every delivered file is an inventory-matching pack file.
-
-    Each file's digest is streamed and its read is bounded by the inventory's
-    exact declared size, so a tampered, larger-than-declared input is rejected
-    mid-stream without buffering it (ADR-032-R9: the inventory's exact sizes are
-    the bound, not a fixed cap). Returns each file paired with its record.
-    """
-    root = Path(pack_root).resolve()
-    files = _deliverable_files(input_abs, content_type)
-    records = _matched_inventory_records(files, root, inventory)
-    for path, record in records:
-        if _sha256_file(path, record.size_bytes) != record.sha256:
-            raise ContentDeliveryError("content delivery input does not match the pack inventory digest")
-    return records
-
-
-def _deliverable_files(input_abs: Path, content_type: str) -> list[Path]:
-    """Return the concrete files backing one content input, failing closed if none."""
-    if content_type == "file":
-        files = [input_abs]
-    elif content_type == "directory":
-        files = [path for path in sorted(input_abs.rglob("*")) if not path.is_dir()]
-    else:
-        raise ContentDeliveryError(f"content type {content_type!r} cannot be delivered")
-    if not files:
-        raise ContentDeliveryError("content delivery input has no deliverable files")
-    return files
-
-
-def _matched_inventory_records(
-    files: list[Path], root: Path, inventory: Mapping[str, InventoryEntry]
-) -> list[tuple[Path, InventoryEntry]]:
-    """Return each file paired with its inventory record.
-
-    Fails closed on a non-regular file or an uninventoried file before any
-    bytes are read (the digest itself is checked separately, in
-    :func:`_sha256_file`).
-    """
-    records: list[tuple[Path, InventoryEntry]] = []
-    for path in files:
-        if path.is_symlink() or not path.is_file():
-            raise ContentDeliveryError("content delivery input contains a non-regular file")
-        rel = path.relative_to(root).as_posix()
-        record = inventory.get(rel)
-        if record is None:
-            raise ContentDeliveryError("content delivery input is not in the pack associated-artifact inventory")
-        records.append((path, record))
-    return records
-
-
-def _sha256_file(path: Path, declared_bytes: int) -> str:
-    """Stream a file's sha256, failing closed once it exceeds its declared size.
-
-    Never holds the whole file in memory, and stops reading as soon as the file
-    proves larger than its inventory record (a tamper that would otherwise be
-    caught only after reading it all).
-    """
-    hasher = hashlib.sha256()
-    read = 0
-    with path.open("rb") as handle:
-        while chunk := handle.read(_READ_CHUNK_BYTES):
-            read += len(chunk)
-            if read > declared_bytes:
-                raise ContentDeliveryError("content delivery input does not match the pack inventory digest")
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-
-@dataclass(frozen=True)
-class _PayloadSource:
-    """A deterministic delivery payload that can be re-read from the pack."""
-
-    content_type: str
-    content_format: str
-    path: Path
-
-    def chunks(self) -> Iterator[bytes]:
-        return payload_chunks(content_type=self.content_type, content_format=self.content_format, source_path=self.path)
-
-
-class _HashingReader(io.RawIOBase):
-    """Readable view over payload chunks that hashes and counts what it serves."""
-
-    def __init__(self, chunks: Iterator[bytes]) -> None:
-        self._chunks = chunks
-        self._pending = b""
-        self.hasher = hashlib.sha256()
-        self.byte_count = 0
-
-    def readable(self) -> bool:
-        return True
-
-    def readinto(self, buffer: WriteableBuffer, /) -> int:
-        while not self._pending:
-            chunk = next(self._chunks, None)
-            if chunk is None:
-                return 0
-            self._pending = chunk
-        view = memoryview(buffer).cast("B")
-        size = min(view.nbytes, len(self._pending))
-        served, self._pending = self._pending[:size], self._pending[size:]
-        view[:size] = served
-        self.hasher.update(served)
-        self.byte_count += size
-        return size
-
-
-def _measure(source: _PayloadSource) -> tuple[str, int]:
-    """Digest and size of a payload computed by streaming it once (no buffering)."""
-    hasher = hashlib.sha256()
-    byte_count = 0
-    for chunk in source.chunks():
-        hasher.update(chunk)
-        byte_count += len(chunk)
-    return hasher.hexdigest(), byte_count
-
-
-def _promote(
-    storage: ObjectStorage, bucket: str, key: str, source: _PayloadSource, digest: str, byte_count: int
-) -> None:
-    """Idempotently stream ``source`` to its content-addressed ``key``.
-
-    The upload is hashed as it streams; if the bytes stored are not the bytes
-    the key names (the source changed underneath), the object is removed and
-    promotion fails closed rather than leaving a mislabeled object for reuse.
-    """
-    if storage.object_exists(bucket, key):
-        return
-    reader = _HashingReader(source.chunks())
-    storage.upload_file(io.BufferedReader(reader, buffer_size=_READ_CHUNK_BYTES), bucket, key, _OCTET_STREAM)
-    if reader.hasher.hexdigest() != digest or reader.byte_count != byte_count:
-        storage.delete_object(bucket, key)
-        raise ContentDeliveryError("content delivery payload changed while it was promoted")
-
-
-def _verify_projection_against_inventory(pack_root: Path, inventory: Mapping[str, InventoryEntry]) -> None:
-    """Fail closed unless the projection document is itself an inventory artifact.
-
-    The projection controls which pack input each source identity resolves to.
-    Launch verification cross-checks the *selected* payload files against the
-    pack's associated-artifact inventory (:func:`_verify_input_against_inventory`),
-    but that alone does not detect a changed *mapping*: a contributor could edit
-    ``delivery/content-projection.json`` after the pack was registered, re-pointing
-    a source at a different (still inventory-covered) artifact, while the
-    advertised package digest stays unchanged. Requiring the projection
-    document's own bytes to match an inventory record makes the mapping itself
-    subject to the same whole-pack digest verification every other associated
-    artifact already is (ADR-034-R6).
-    """
-    record = inventory.get(PROJECTION_RELPATH)
-    if record is None:
-        raise ContentDeliveryError("delivery projection is not in the pack associated-artifact inventory")
-    path = Path(pack_root) / PROJECTION_RELPATH
-    if path.is_symlink() or not path.is_file():
-        raise ContentDeliveryError("pack declares source-backed content but ships no delivery projection")
-    if sha256_hex(path.read_bytes()) != record.sha256:
-        raise ContentDeliveryError("delivery projection does not match the pack inventory digest")
-
-
-def _load_pack_projection(pack_root: Path) -> DeliveryProjection:
-    """Load + parse the pack's delivery-projection document, fail-closed.
-
-    Called only after :func:`_verify_projection_against_inventory` has already
-    confirmed the document's bytes match its inventory record, so the existence
-    check here is defense in depth, not the primary guard.
-    """
-    path = Path(pack_root) / PROJECTION_RELPATH
-    if path.is_symlink() or not path.is_file():
-        raise ContentDeliveryError("pack declares source-backed content but ships no delivery projection")
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ContentDeliveryError(f"delivery projection could not be read: {safe_log_value(exc)}") from exc
-    return parse_delivery_projection(raw)
-
-
-def build_inventory_index(pack_root: Path) -> dict[str, InventoryEntry]:
-    """Return a pack-relative-path -> ``InventoryEntry`` index from the pack manifest.
-
-    Derived from the canonical associated-artifact manifest, so every entry is a
-    real, digest-bound payload file (path + sha256 + size). Fails closed on an
-    invalid manifest or an unsupported checksum algorithm.
-    """
-    from raes_env_packs import PackDigestError, validate_pack_content_manifest
-
-    try:
-        manifest = validate_pack_content_manifest(pack_root)
-    except PackDigestError as exc:
-        raise ContentDeliveryError(f"pack associated-artifact inventory is invalid: {safe_log_value(exc)}") from exc
-    index: dict[str, InventoryEntry] = {}
-    for artifact in manifest.artifacts.values():
-        rel = _uri_to_relpath(artifact.uri)
-        checksum = artifact.checksum
-        if getattr(checksum, "algorithm", "").lower() != "sha256":
-            raise ContentDeliveryError("pack inventory uses an unsupported checksum algorithm")
-        index[rel] = InventoryEntry(sha256=checksum.value.lower(), size_bytes=int(artifact.size_bytes))
-    return index
-
-
-def _uri_to_relpath(uri: str) -> str:
-    """Resolve a canonical ``raes-environment-pack:`` artifact URI to a pack relpath."""
-    parts = urlsplit(uri)
-    if parts.scheme != _PACK_URI_SCHEME:
-        raise ContentDeliveryError("pack inventory artifact has an unexpected uri scheme")
-    rel = unquote(f"{parts.netloc}{parts.path}").lstrip("/")
-    if not rel or ".." in rel.split("/"):
-        raise ContentDeliveryError("pack inventory artifact has an invalid path")
-    return rel

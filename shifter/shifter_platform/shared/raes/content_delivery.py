@@ -25,10 +25,9 @@ on plain values and a local materialization source path handed in by the caller.
 from __future__ import annotations
 
 import hashlib
-import tarfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import TypeGuard
 
 #: Rolling-deploy seam: persisted / transported bindings carry this version, and
@@ -45,11 +44,6 @@ _HEX_DIGITS = frozenset("0123456789abcdef")
 #: capability declaration and the provisioner realized-content policy are
 #: independent envelopes that must agree with it in production (ADR-032-R6).
 SUPPORTED_DELIVERY_CONTENT_TYPES = frozenset({"file", "directory"})
-_FILE_FORMATS = frozenset({"", "raw", "file"})
-_DIRECTORY_FORMATS = frozenset({"", "tree", "directory"})
-_FILE_MODE = 0o644
-#: Read size for streaming payload sources.
-_CHUNK_BYTES = 1024 * 1024
 
 _BINDING_V1_KEYS = frozenset({"content_address", "sha256", "storage_key", "byte_count", "binding_version"})
 _BINDING_V2_KEYS = frozenset(
@@ -75,7 +69,6 @@ __all__ = [
     "DeliveryProjectionEntry",
     "normalized_storage_key",
     "parse_delivery_projection",
-    "payload_chunks",
     "sha256_hex",
 ]
 
@@ -407,104 +400,3 @@ def _reject_unsafe_input_path(path: str) -> None:
         raise ContentDeliveryError("delivery projection input_path must be pack-relative")
     if ".." in pure.parts:
         raise ContentDeliveryError("delivery projection input_path must not traverse")
-
-
-def payload_chunks(*, content_type: str, content_format: str, source_path: Path) -> Iterator[bytes]:
-    """Yield the deterministic delivery payload for one content item in bounded chunks.
-
-    ``file`` yields the file bytes verbatim; ``directory`` yields a reproducible
-    (sorted, identity-normalized, uncompressed) tar of the subtree, byte-identical
-    to what :mod:`tarfile` writes for the same members. Memory stays constant for
-    any payload size and there is no size cap (ADR-032-R9): every member is read
-    for exactly its recorded size, so a source that changes underneath fails
-    closed. Any other content type or format is non-realizable and fails closed
-    before anything is yielded.
-    """
-    if content_type == "file":
-        return _file_chunks(content_format, source_path)
-    if content_type == "directory":
-        return _directory_chunks(content_format, source_path)
-    raise ContentDeliveryError(f"content type {content_type!r} has no deterministic materializer")
-
-
-def _read_exact(path: Path, size: int) -> Iterator[bytes]:
-    """Yield exactly ``size`` bytes of ``path``, failing closed if it is shorter or longer."""
-    remaining = size
-    with path.open("rb") as handle:
-        while remaining:
-            chunk = handle.read(min(_CHUNK_BYTES, remaining))
-            if not chunk:
-                raise ContentDeliveryError("content delivery source changed while it was read")
-            remaining -= len(chunk)
-            yield chunk
-        if handle.read(1):
-            raise ContentDeliveryError("content delivery source changed while it was read")
-
-
-def _file_chunks(content_format: str, source_path: Path) -> Iterator[bytes]:
-    """Validate a source-backed file, then return its bytes as a chunk iterator."""
-    if content_format not in _FILE_FORMATS:
-        raise ContentDeliveryError(f"file format {content_format!r} has no deterministic materializer")
-    if source_path.is_symlink() or not source_path.is_file():
-        raise ContentDeliveryError("file delivery source is missing or not a regular file")
-    return _read_exact(source_path, source_path.stat().st_size)
-
-
-def _directory_chunks(content_format: str, source_path: Path) -> Iterator[bytes]:
-    """Validate a source-backed directory, then return its deterministic tar as chunks."""
-    if content_format not in _DIRECTORY_FORMATS:
-        raise ContentDeliveryError(f"directory format {content_format!r} has no deterministic materializer")
-    if source_path.is_symlink() or not source_path.is_dir():
-        raise ContentDeliveryError("directory delivery source is missing or not a directory")
-    return _tar_chunks(_collect_regular_files(source_path))
-
-
-def _tar_chunks(files: list[tuple[str, Path]]) -> Iterator[bytes]:
-    """Emit the tar :mod:`tarfile` would write for ``files``, one block run at a time.
-
-    Same header encoding, member padding, end-of-archive blocks and record
-    padding as ``tarfile.open(mode="w")``, so payload digests are unchanged.
-    """
-    offset = 0
-    for rel, abspath in files:
-        size = abspath.stat().st_size
-        header = _tar_info(rel, size).tobuf(tarfile.DEFAULT_FORMAT, tarfile.ENCODING, "surrogateescape")
-        yield header
-        yield from _read_exact(abspath, size)
-        padding = -size % tarfile.BLOCKSIZE
-        if padding:
-            yield b"\0" * padding
-        offset += len(header) + size + padding
-    trailer = 2 * tarfile.BLOCKSIZE
-    yield b"\0" * (trailer + (-(offset + trailer) % tarfile.RECORDSIZE))
-
-
-def _tar_info(rel: str, size: int) -> tarfile.TarInfo:
-    """Identity-normalized member header: no timestamps, owners or source modes."""
-    info = tarfile.TarInfo(name=rel)
-    info.size = size
-    info.mtime = 0
-    info.mode = _FILE_MODE
-    info.uid = info.gid = 0
-    info.uname = info.gname = ""
-    info.type = tarfile.REGTYPE
-    return info
-
-
-def _collect_regular_files(root: Path) -> list[tuple[str, Path]]:
-    """Return sorted (relative-posix, absolute) regular files under ``root``.
-
-    Fails closed on any symlink or special file so a source tree cannot smuggle
-    a link or device into the delivered payload.
-    """
-    resolved = root.resolve()
-    collected: list[tuple[str, Path]] = []
-    for path in sorted(resolved.rglob("*"), key=lambda entry: entry.relative_to(resolved).as_posix()):
-        if path.is_symlink():
-            raise ContentDeliveryError("directory delivery source contains a symlink")
-        if path.is_dir():
-            continue
-        if not path.is_file():
-            raise ContentDeliveryError("directory delivery source contains a non-regular file")
-        collected.append((path.relative_to(resolved).as_posix(), path))
-    return collected

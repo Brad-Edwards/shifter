@@ -33,9 +33,9 @@ from shared.raes.content_delivery import (
     DeliveryProjectionEntry,
     normalized_storage_key,
     parse_delivery_projection,
-    payload_chunks,
     sha256_hex,
 )
+from shared.raes.content_payload import payload_chunks
 
 _DIGEST = "a" * 64
 

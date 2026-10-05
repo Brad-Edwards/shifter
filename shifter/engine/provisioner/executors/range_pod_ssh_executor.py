@@ -328,8 +328,9 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         )
         return self._exec([_SHELL, "-c", wrapper], timeout_seconds=timeout_seconds)
 
+    @staticmethod
     def _invoke_ssh_streaming(
-        self, ssh_args: list[str], stdin_prefix: bytes, stdin_path: str, timeout_seconds: int
+        ssh_args: list[str], stdin_prefix: bytes, stdin_path: str, timeout_seconds: int
     ) -> tuple[int, bytes, bytes]:
         # The inherited implementation would run ssh from the provisioner, which has
         # no route to pod-range guests, and the runner exec channel carries the
