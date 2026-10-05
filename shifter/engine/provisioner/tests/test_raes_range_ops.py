@@ -23,6 +23,7 @@ from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import RaesOperationInput
 from shared.raes.participant_access import ParticipantAccessBinding
 
+import raes_gce_image
 import raes_gcp_network_allocation
 import raes_range_ops
 import range_placement
@@ -180,6 +181,23 @@ class TestProvision:
             ResultStep.RAES_PROVISION_SNAPSHOT,
             ResultStep.RAES_TERMINAL_READY,
         ]
+
+    def test_rejected_ready_result_still_reports_terminal_failure(self, patched):
+        # The append validates the result contract; a rejected realized result must
+        # still end the generation (otherwise the range stays PROVISIONING forever and
+        # blocks the owner's next launch). Realized resources are left for destroy.
+        def append(*_args, **kwargs):
+            if kwargs["step"] is ResultStep.RAES_TERMINAL_READY:
+                raise ValueError("result payload members[0] subnet_name must be a non-empty string")
+
+        patched.append.side_effect = append
+
+        with pytest.raises(ValueError):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        assert _steps(patched)[-1] == ResultStep.RAES_TERMINAL_FAILED
+        assert "subnet_name" not in _payload_for(patched, ResultStep.RAES_TERMINAL_FAILED)["diagnostic"]
+        patched.release_subnet.assert_not_called()
 
     @pytest.mark.parametrize("instances", [{"not": "a-list"}, ["not-a-mapping"]])
     def test_malformed_realized_instances_fail_before_ready(self, patched, instances):
@@ -639,10 +657,10 @@ class TestRegistryResolver:
         candidates = [{"source_version": None, "image_ref": "projects/x/global/images/ubuntu-1"}]
         projection = _projection(_image_candidates={"gce:ubuntu": tuple(candidates)})
         resolve = MagicMock(return_value=GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1"))
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", resolve)
 
         node = _node(RaesPlanImage(name="ubuntu"))
-        profile = raes_range_ops._registry_resolver(projection)(node)
+        profile = raes_gce_image.registry_image_resolver(projection)(node)
 
         resolve.assert_called_once_with(node, candidates)
         assert profile.source_image == "projects/x/global/images/ubuntu-1"
@@ -652,10 +670,10 @@ class TestRegistryResolver:
         candidates = [{"source_version": "", "image_ref": "projects/x/global/images/ubuntu-base"}]
         projection = _projection(_image_candidates={"gce:linux": tuple(candidates)})
         resolve = MagicMock(return_value=GCERangeImageProfile())
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", resolve)
 
         node = _node(None)  # os_family linux, no image
-        raes_range_ops._registry_resolver(projection)(node)
+        raes_gce_image.registry_image_resolver(projection)(node)
 
         resolve.assert_called_once_with(node, candidates)
 
@@ -663,9 +681,9 @@ class TestRegistryResolver:
         # Fail-loud stays with the existing image policy, which receives an empty
         # candidate list exactly as the direct read produced for an unmapped source.
         resolve = MagicMock(return_value=GCERangeImageProfile())
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", resolve)
 
-        raes_range_ops._registry_resolver(_projection())(_node(RaesPlanImage(name="nope")))
+        raes_gce_image.registry_image_resolver(_projection())(_node(RaesPlanImage(name="nope")))
 
         resolve.assert_called_once_with(_node(RaesPlanImage(name="nope")), [])
 
@@ -693,9 +711,9 @@ class TestRegistryResolver:
             _image_candidates={"gce:ubuntu": (legacy_candidate,)},
         )
         legacy = MagicMock()
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", legacy)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", legacy)
 
-        profile = raes_range_ops._registry_resolver(projection)(_node(RaesPlanImage(name="ubuntu")))
+        profile = raes_gce_image.registry_image_resolver(projection)(_node(RaesPlanImage(name="ubuntu")))
 
         legacy.assert_not_called()
         assert profile.source_image == "projects/x/global/images/fenced"

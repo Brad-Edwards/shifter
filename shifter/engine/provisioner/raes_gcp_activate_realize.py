@@ -31,11 +31,12 @@ from shared.warm_pool.activation_input import ActivationInput
 
 from cloud.exceptions import CloudError
 from config import GCERangeCellConfig
+from raes_gce_image import registry_image_resolver
 from raes_gcp_activate import ActivationResult
 from raes_gcp_apply import RaesGceApplyOptions, realize_access_on_existing_cell
 from raes_gcp_apply_types import RaesGceOpenVpn
 from raes_plan import parse_plan
-from raes_range_ops import _realized_members, _registry_resolver
+from raes_range_ops import _realized_members
 from raes_snapshot import snapshot_resources
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def realize_claimant_access_on_cell(
             str(activate_generation),
             activation.legacy_range_id,
             raes_plan,
-            _registry_resolver(operation_input),
+            registry_image_resolver(operation_input),
             options=RaesGceApplyOptions(
                 config=config,
                 egress_mode=operation_input.egress_mode,

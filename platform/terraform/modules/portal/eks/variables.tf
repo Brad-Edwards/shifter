@@ -167,6 +167,12 @@ variable "workload_identities" {
     # set, the IRSA role is granted rds-db:connect for exactly that dbuser so the
     # process can mint a short-lived auth token; empty means no RDS IAM access.
     rds_iam_db_user = optional(string, "")
+    # Read-only access to range participant-delivery credentials (participant SSH
+    # keys, RDP/account passwords, directory account passwords) so the workload can
+    # broker a participant's connection to a realized guest. Mirrors the GCP portal's
+    # participant-prefix-conditioned secretAccessor: host-management keys, host
+    # identities, and directory admin material are never readable through it.
+    range_participant_secret_read = optional(bool, false)
   }))
 
   validation {

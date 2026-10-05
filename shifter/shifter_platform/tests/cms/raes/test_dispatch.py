@@ -256,7 +256,7 @@ class TestOpenVpnAdmission:
         )
         RangeInstance.objects.create(
             request=cms_request,
-            scenario_id="polaris",
+            scenario_id="ctf-openvpn-test",
             user_id=user.id,
             workspace_id=_WORKSPACE_ID,
             range_source="ctf",

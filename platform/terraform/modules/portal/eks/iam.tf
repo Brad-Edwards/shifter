@@ -23,6 +23,19 @@ locals {
     identity_name => identity.rds_iam_db_user
     if identity.rds_iam_db_user != ""
   }
+  workload_range_participant_secret_access = toset([
+    for identity_name, identity in var.workload_identities :
+    identity_name
+    if identity.range_participant_secret_read
+  ])
+  # Participant-delivery kinds the provisioner stores under
+  # shifter/<env>/range/<range_id>/raes/<kind>/<digest> (ec2_guest_secrets._KINDS).
+  # host-ssh / host-identity (provisioner management) and domain-dsrm /
+  # domain-authority (directory admin) are deliberately absent.
+  range_participant_secret_arns = [
+    for kind in ["account-key", "account-password", "domain-account"] :
+    "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter/${var.environment}/range/*/raes/${kind}/*"
+  ]
 }
 
 # The shared portal RDS instance is created by the portal core stack and read by
@@ -204,6 +217,49 @@ resource "aws_iam_role_policy" "workload_rds_iam" {
       Action   = "rds-db:connect"
       Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${data.aws_db_instance.portal.resource_id}/${each.value}"
     }]
+  })
+}
+
+# The provisioner encrypts range guest credentials with the portal Secrets Manager
+# CMK (eks-provisioner-env SECRETS_KMS_KEY_ARN). Resolve it by the same alias so the
+# reader's Decrypt grant and the writer's key can never diverge.
+data "aws_kms_alias" "range_credential_secrets" {
+  count = length(local.workload_range_participant_secret_access) > 0 ? 1 : 0
+  name  = "alias/shifter-${var.environment}-secrets-manager"
+}
+
+# Read-only participant-delivery credentials for brokering a participant's SSH/RDP
+# connection to a realized range guest (#1826; GCP parity with the portal's
+# participant-prefix-conditioned secretAccessor). Decrypt is confined to Secrets
+# Manager calls on exactly the participant-delivery secret ARNs via the SecretARN
+# encryption context.
+resource "aws_iam_role_policy" "workload_range_participant_secrets" {
+  for_each = local.workload_range_participant_secret_access
+
+  name = "range-participant-secret-read"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
+        Resource = local.range_participant_secret_arns
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = data.aws_kms_alias.range_credential_secrets[0].target_key_arn
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "secretsmanager.${var.aws_region}.amazonaws.com"
+          }
+          StringLike = {
+            "kms:EncryptionContext:SecretARN" = local.range_participant_secret_arns
+          }
+        }
+      },
+    ]
   })
 }
 

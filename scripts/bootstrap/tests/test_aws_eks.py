@@ -74,6 +74,7 @@ def _terraform_outputs() -> dict[str, object]:
                 # the eks-provisioner-env Terraform module and arrives merged into
                 # this output; the mgmt-plane keys below are the deploy-tooling input.
                 "RANGE_VPC_ID": "vpc-xxxxxxxxxxxxxxxxx",
+                "RANGE_VPC_CIDR": "10.1.0.0/16",
                 "OIDC_AUTH_DOMAIN": "https://shifter-dev.auth.us-east-2.amazoncognito.com",
                 "OIDC_ISSUER_URL": "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_example",
                 "OIDC_RP_CLIENT_ID": "example-client-id",
@@ -150,6 +151,11 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     # The service CIDR is carved out of the wildcard provider-API egress so the
     # broad 443 allow cannot reach the in-cluster Kubernetes API (#1826).
     assert values["network"]["providerApiEgressExcept"] == ["172.20.0.0/16"]
+    # The provisioner Job must reach range guests over SSH to bootstrap them; the
+    # range-access egress policy renders only when the range CIDR is populated,
+    # sourced from the same RANGE_VPC_CIDR the provisioner targets (#1826).
+    assert values["network"]["rangeAccessCidrs"] == ["10.1.0.0/16"]
+    assert values["network"]["rangeAccessPorts"] == [22, 3389]
     assert values["identity"]["serviceAccountRoleArns"]["portal"].endswith("shifter-dev-portal")
     assert values["identity"]["serviceAccountRoleArns"]["workers"].endswith("shifter-dev-workers")
     assert values["identity"]["serviceAccountRoleArns"]["ctfScheduler"].endswith("shifter-dev-ctf-scheduler")
