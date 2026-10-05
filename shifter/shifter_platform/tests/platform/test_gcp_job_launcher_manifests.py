@@ -667,6 +667,40 @@ def test_admission_policy_accepts_compatible_operation_id_command_forms(loader: 
         assert _semantic_policy_allows(policy, PROVISIONER_LAUNCHER_USERNAME, job, image), args
 
 
+@pytest.mark.parametrize("loader", [_load_base_documents, _load_helm_documents])
+def test_admission_policy_admits_exactly_the_launcher_operation_grammar(loader: Any) -> None:
+    """Every operation the launcher may enqueue is admitted; nothing else is.
+
+    Derived from ``engine.launch_intents._OPERATIONS`` so the admission grammar
+    cannot drift from the launcher again (warm-pool ``raes-range activate`` was
+    enqueued but denied at admission, #2467).
+    """
+    from engine.launch_intents import _OPERATIONS
+
+    policy = _policy(loader())
+    canonical = _canonical_admission_job()
+    image = "registry.example/provisioner:sha"
+    ids = [
+        "--request-id",
+        "11111111-1111-1111-1111-111111111111",
+        "--operation-id",
+        "22222222-2222-2222-2222-222222222222",
+    ]
+
+    def allows(resource: str, operation: str) -> bool:
+        job = copy.deepcopy(canonical)
+        job["spec"]["template"]["spec"]["containers"][0]["args"] = [resource, operation, *ids]
+        return _semantic_policy_allows(policy, PROVISIONER_LAUNCHER_USERNAME, job, image)
+
+    for resource, operations in _OPERATIONS.items():
+        for operation in operations:
+            assert allows(resource, operation), (resource, operation)
+    # activate is a raes-range-only (ownership-neutral) operation.
+    assert "activate" not in _OPERATIONS["range"]
+    assert not allows("range", "activate")
+    assert not allows("ngfw", "activate")
+
+
 @pytest.mark.parametrize(
     ("source_name", "loader"),
     [
