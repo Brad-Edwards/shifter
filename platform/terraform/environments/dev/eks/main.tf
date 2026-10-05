@@ -116,6 +116,16 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
     }
+    # Isolated feature-artifact acquisition Job (ADR-034-R12, #2463): public HTTPS
+    # egress, no database access, write-only to the content-addressed delivery
+    # prefix. Its presence enables acquisition for this environment.
+    artifactAcquirer = {
+      namespace                    = "shifter-acquisition"
+      service_account              = "artifact-acquirer"
+      policy_arns                  = []
+      secret_names                 = []
+      feature_artifact_store_write = true
+    }
     # One-shot schema-migration + content-bootstrap Job (AWS EKS parity with the GCP
     # platform-migrate Job, #1826). aws_eks.py runs it once before the chart install so
     # the workloads deploy with SKIP_MIGRATIONS=1 and never race per-pod migrations on
@@ -129,6 +139,8 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
       rds_iam_db_user = "portal_runtime"
+      # acquire_feature_artifacts verifies inventoried artifacts still exist.
+      feature_artifact_store_read = true
     }
     # One-shot guacamole database/role provisioner (AWS EKS parity with the GCP
     # cloud-sql module). RDS has no native terraform user/database resource and the
