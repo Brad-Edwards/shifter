@@ -47,14 +47,14 @@ metadata:
 """
 
 _IMAGE_ROOTS = {
-    "portal": "us-central1-docker.pkg.dev/prod-lk3ssb/shifter-orthanc-portal/portal",
-    "guacd": "us-central1-docker.pkg.dev/prod-lk3ssb/shifter-orthanc-guacd/guacd",
-    "guacamole-client": "us-central1-docker.pkg.dev/prod-lk3ssb/shifter-orthanc-guacamole-client/guacamole-client",
+    "portal": "us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-portal/portal",
+    "guacd": "us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-guacd/guacd",
+    "guacamole-client": "us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-guacamole-client/guacamole-client",
 }
 
 _WORKLOAD_SERVICE_ACCOUNTS = {
-    "portal": "shifterorthanc-portal@prod-lk3ssb.iam.gserviceaccount.com",
-    "provisioner-launcher": "shifterorthanc-prov-launcher@prod-lk3ssb.iam.gserviceaccount.com",
+    "portal": "shifterorthanc-portal@example-gcp-project.iam.gserviceaccount.com",
+    "provisioner-launcher": "shifterorthanc-prov-launcher@example-gcp-project.iam.gserviceaccount.com",
 }
 
 
@@ -64,8 +64,8 @@ def test_render_kustomization_images_rewrites_newname_from_outputs():
     rendered = module.render_kustomization_images(_PLACEHOLDER_KUSTOMIZATION, _IMAGE_ROOTS)
 
     assert "shifter-orthanc/shifter-orthanc-portal/portal" not in rendered
-    assert "newName: us-central1-docker.pkg.dev/prod-lk3ssb/shifter-orthanc-portal/portal" in rendered
-    assert "newName: us-central1-docker.pkg.dev/prod-lk3ssb/shifter-orthanc-guacd/guacd" in rendered
+    assert "newName: us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-portal/portal" in rendered
+    assert "newName: us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-guacd/guacd" in rendered
     # newTag lines are left for the digest-pin step.
     assert rendered.count("newTag: 0.0.0") == 2
 
@@ -83,9 +83,9 @@ def test_render_service_account_patch_rewrites_email_preserving_localparts():
     rendered = module.render_service_account_patch(_PLACEHOLDER_SA_PATCH, _WORKLOAD_SERVICE_ACCOUNTS)
 
     assert "@shifter-orthanc.iam.gserviceaccount.com" not in rendered
-    assert "shifterorthanc-portal@prod-lk3ssb.iam.gserviceaccount.com" in rendered
+    assert "shifterorthanc-portal@example-gcp-project.iam.gserviceaccount.com" in rendered
     # The shortened prov-launcher localpart is preserved, not regenerated.
-    assert "shifterorthanc-prov-launcher@prod-lk3ssb.iam.gserviceaccount.com" in rendered
+    assert "shifterorthanc-prov-launcher@example-gcp-project.iam.gserviceaccount.com" in rendered
     # Comments and structure survive the rewrite.
     assert 'name: provisioner-launcher' in rendered
     assert "GCP 30-char SA id cap" in rendered
@@ -116,8 +116,8 @@ def test_render_overlay_writes_both_files(tmp_path, monkeypatch):
     }
     module.render_overlay("orthanc", outputs)
 
-    assert "prod-lk3ssb" in (overlay / "kustomization.yaml").read_text(encoding="utf-8")
-    assert "prod-lk3ssb" in (overlay / "patch-serviceaccounts.patch").read_text(encoding="utf-8")
+    assert "example-gcp-project" in (overlay / "kustomization.yaml").read_text(encoding="utf-8")
+    assert "example-gcp-project" in (overlay / "patch-serviceaccounts.patch").read_text(encoding="utf-8")
 
 
 def test_render_overlay_rejects_path_traversal_environment(tmp_path, monkeypatch):
