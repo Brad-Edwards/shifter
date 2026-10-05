@@ -1554,7 +1554,7 @@ class TestLoadRaesContentDeliveryConfig:
 
         config = load_raes_content_delivery_config()
 
-        assert config == RaesContentDeliveryConfig(bucket="", max_bytes=268435456)
+        assert config == RaesContentDeliveryConfig(bucket="")
 
     def test_prefers_dedicated_bucket_env_var(self, mocker):
         mocker.patch.dict(
@@ -1572,10 +1572,11 @@ class TestLoadRaesContentDeliveryConfig:
 
         assert load_raes_content_delivery_config().bucket == "platform-assets"
 
-    def test_reads_max_bytes_override(self, mocker):
+    def test_no_payload_size_setting_exists(self, mocker):
+        """ADR-032-R9: no fixed payload cap may come back through a setting."""
         mocker.patch.dict(os.environ, {"RAES_CONTENT_DELIVERY_MAX_BYTES": "1024"}, clear=True)
 
-        assert load_raes_content_delivery_config().max_bytes == 1024
+        assert load_raes_content_delivery_config() == RaesContentDeliveryConfig(bucket="")
 
 
 class TestDecryptField:
