@@ -1579,7 +1579,8 @@
           "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
           "process_roles": [
             "portal",
-            "worker"
+            "worker",
+            "provisioner"
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"
