@@ -363,16 +363,6 @@ resource "aws_iam_role_policy_attachment" "cluster_autoscaler" {
 # are the portal stack's, resolved by stable name (ADR-044-R6); every KMS key
 # policy delegates to account IAM, and the storage bucket policy still enforces
 # TLS and its own SSE-KMS key on every write.
-data "aws_sqs_queue" "platform_tasks" {
-  for_each = length(local.workload_platform_application_access) > 0 ? local.platform_queue_keys : toset([])
-  name     = "${var.environment}-portal-${each.key}-tasks"
-}
-
-data "aws_sns_topic" "range_events" {
-  count = length(local.workload_platform_application_access) > 0 ? 1 : 0
-  name  = "${var.environment}-portal-range-events"
-}
-
 data "aws_kms_alias" "portal_messaging" {
   count = length(local.workload_platform_application_access) > 0 ? 1 : 0
   name  = "alias/${var.environment}-portal-portal-messaging"
@@ -402,13 +392,13 @@ resource "aws_iam_role_policy" "workload_platform_application" {
           "sqs:ReceiveMessage",
           "sqs:SendMessage",
         ]
-        Resource = sort([for queue in data.aws_sqs_queue.platform_tasks : queue.arn])
+        Resource = sort([for queue in local.platform_queue_keys : "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.environment}-portal-${queue}-tasks"])
       },
       {
         Sid      = "RangeEventsPublish"
         Effect   = "Allow"
         Action   = ["sns:Publish"]
-        Resource = data.aws_sns_topic.range_events[0].arn
+        Resource = "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.environment}-portal-range-events"
       },
       {
         Sid      = "MessagingKms"
