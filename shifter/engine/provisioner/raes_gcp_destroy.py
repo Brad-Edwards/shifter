@@ -54,7 +54,7 @@ class RaesGceDestroyOptions:
     directory_secret_ops: RaesDirectorySecretOps | None = None
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
     reconstruct_without_allocation: bool = False
-    # The range's OpenVPN gateway names (#2030), when it holds a capability.
+    # The range's OpenVPN access names (#2480: pool firewall, profile secret), when it holds a capability.
     remote_access: RaesGceVpnAccess | None = None
 
 

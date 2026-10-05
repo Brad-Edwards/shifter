@@ -202,7 +202,7 @@ class TestRealizeClaimantAccessOnCell:
 
 
 class TestRealizeClaimantOpenVpn:
-    """Activation realizes the claimant's OpenVPN gateway with the cell (#2030)."""
+    """Activation realizes the claimant's OpenVPN access with the cell (#2030, #2480)."""
 
     def _patch(self, monkeypatch, result: dict) -> list:
         seen: list = []

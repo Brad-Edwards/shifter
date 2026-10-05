@@ -1,4 +1,4 @@
-"""Bind a realized participant OpenVPN gateway to its range owner (#2030, ADR-039-R10).
+"""Bind realized participant OpenVPN access to its range owner (#2030, #2480, ADR-039-R10).
 
 Split out of ``_operation_apply_raes`` (Sonar S104). The provisioner reports an
 owner-free realization on the terminal READY result (ADR-043: ownership never
@@ -19,9 +19,9 @@ __all__ = ["bound_vpn_access"]
 def bound_vpn_access(
     row: OperationResultInbox, realization: dict[str, Any] | None, range_obj: Range
 ) -> dict[str, object] | None:
-    """Return the owner-bound binding for this generation's realized gateway.
+    """Return the owner-bound binding for this generation's realized OpenVPN access.
 
-    A range holding a capability must report exactly its authorized gateway, and a
+    A range holding a capability must report exactly its authorized target, and a
     range without one must report none; anything else is a permanent contract
     violation, refused once rather than retried.
     """
