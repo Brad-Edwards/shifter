@@ -78,6 +78,7 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "QUEUE_MC_CONSUMER_ID",
         "QUEUE_MC_PUBLISHER_ID",
         "RANGE_EVENTS_TOPIC_ID",
+        "RANGE_OPENVPN_ENABLED",
         "RANGE_NETWORK_CIDR",
         "RANGE_NETWORK_ID",
         "RANGE_NETWORK_REGION",

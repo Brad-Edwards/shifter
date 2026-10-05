@@ -425,7 +425,8 @@
         "rangeClusterApiCidrs",
         "rangeClusterApiPort",
         "rangeAccessCidrs",
-        "rangeAccessPorts"
+        "rangeAccessPorts",
+        "rangeProvisionerPorts"
       ],
       "properties": {
         "enabled": { "const": true },
@@ -442,6 +443,15 @@
         },
         "rangeAccessCidrs": { "$ref": "#/$defs/cidrList" },
         "rangeAccessPorts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "rangeProvisionerPorts": {
           "type": "array",
           "uniqueItems": true,
           "items": {

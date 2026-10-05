@@ -346,6 +346,25 @@ def test_render_env_rejects_incomplete_model_access_projection(monkeypatch):
         module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
 
 
+@pytest.mark.parametrize(("configured", "rendered_value"), [(None, "false"), ("", "false"), ("TRUE", "true")])
+def test_render_env_always_renders_the_openvpn_opt_in(monkeypatch, configured, rendered_value):
+    """Unset renders false, so turning the opt-in off revokes a stale true (#2030)."""
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    if configured is None:
+        monkeypatch.delenv("RANGE_OPENVPN_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("RANGE_OPENVPN_ENABLED", configured)
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    assert f"RANGE_OPENVPN_ENABLED={rendered_value}\n" in rendered
+
+
+def test_render_env_rejects_a_non_boolean_openvpn_opt_in(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("RANGE_OPENVPN_ENABLED", "yes")
+    with pytest.raises(ValueError, match="RANGE_OPENVPN_ENABLED"):
+        module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+
+
 def test_render_env_omits_mission_control_lease_when_unset():
     module = _load_module("render_runtime_env.py", "render_runtime_env")
     rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)

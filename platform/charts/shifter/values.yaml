@@ -389,6 +389,17 @@ network:
   rangeAccessPorts:
     - 22
     - 3389
+  # Ports the provisioner Jobs dial on range guests: guest SSH (22), the
+  # container-host management sshd (2222), RDP (3389), WinRM (5985/5986), and the
+  # participant OpenVPN gateway health responder (1195, #2030). Kept in step with
+  # scripts/gcp/render_private_service_netpol.py for the kustomize deploy path.
+  rangeProvisionerPorts:
+    - 22
+    - 2222
+    - 3389
+    - 5985
+    - 5986
+    - 1195
 
 edge:
   hostname: ""

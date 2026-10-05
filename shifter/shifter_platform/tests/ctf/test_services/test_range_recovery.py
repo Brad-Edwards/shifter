@@ -281,33 +281,6 @@ class TestReassignSpareRecovery:
         assert recovery.replacement_request_id is None
 
     @pytest.mark.django_db
-    def test_vpn_bound_spare_is_rejected_before_old_range_teardown(
-        self, event_with_scenario, rich_participant, organizer_user
-    ):
-        participant, old_range = rich_participant
-        spare_user = create_managed_spare_user()
-        spare, spare_range = _make_pooled_spare(event_with_scenario, owner=spare_user)
-        spare_engine_range = EngineRange.objects.get(pk=spare_range.engine_range.pk)
-        spare_engine_range.vpn_access_binding = {"generation": str(spare_range.request.request_id)}
-        spare_engine_range.save(update_fields=["vpn_access_binding"])
-
-        with pytest.raises(CTFRangeError, match="No compatible spare"):
-            recover_participant_range(
-                participant.pk,
-                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
-                operator=organizer_user,
-                spare_range_instance_id=spare_range.pk,
-            )
-
-        old_range.refresh_from_db()
-        spare.refresh_from_db()
-        assert old_range.deleted_at is None
-        assert old_range.status == ResourceStatus.READY.value
-        assert EngineRange.resolve_active_for_instance(participant.user, old_range.instance_uuid) is not None
-        assert spare.status == SpareRangeStatus.READY.value
-        assert spare.consumed_by_id is None
-
-    @pytest.mark.django_db
     def test_reassign_spare_uses_live_status_when_local_status_stale(
         self, event_with_scenario, rich_participant, second_participant_user, organizer_user
     ):
@@ -482,6 +455,63 @@ class TestReassignSpareRecovery:
         # The foreign range's ownership is untouched.
         foreign_spare_range.refresh_from_db()
         assert foreign_spare_range.user_id == second_participant_user.id
+
+
+class TestReassignSpareVpnCustody:
+    """A spare's OpenVPN binding moves only when its profile never left custody (#2030)."""
+
+    @pytest.mark.django_db
+    def test_vpn_bound_spare_held_by_an_interactive_owner_is_rejected_before_old_range_teardown(
+        self, event_with_scenario, rich_participant, second_participant_user, organizer_user
+    ):
+        participant, old_range = rich_participant
+        spare, spare_range = _make_pooled_spare(event_with_scenario, owner=second_participant_user)
+        spare_engine_range = EngineRange.objects.get(pk=spare_range.engine_range.pk)
+        spare_engine_range.vpn_access_binding = {"generation": str(spare_range.request.request_id)}
+        spare_engine_range.save(update_fields=["vpn_access_binding"])
+
+        with pytest.raises(CTFRangeError, match="No compatible spare"):
+            recover_participant_range(
+                participant.pk,
+                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+                operator=organizer_user,
+                spare_range_instance_id=spare_range.pk,
+            )
+
+        old_range.refresh_from_db()
+        spare.refresh_from_db()
+        assert old_range.deleted_at is None
+        assert old_range.status == ResourceStatus.READY.value
+        assert EngineRange.resolve_active_for_instance(participant.user, old_range.instance_uuid) is not None
+        assert spare.status == SpareRangeStatus.READY.value
+        assert spare.consumed_by_id is None
+
+    @pytest.mark.django_db
+    def test_vpn_bound_managed_spare_moves_its_binding_to_the_participant(
+        self, event_with_scenario, rich_participant, organizer_user
+    ):
+        """A managed spare identity never authenticates, so its profile never left custody (#2030)."""
+        participant, _old_range = rich_participant
+        spare, spare_range = _make_pooled_spare(event_with_scenario, owner=create_managed_spare_user())
+        spare_engine_range = EngineRange.objects.get(pk=spare_range.engine_range.pk)
+        spare_engine_range.vpn_access_binding = {
+            "generation": str(spare_range.request.request_id),
+            "owner_user_id": spare_engine_range.user_id,
+        }
+        spare_engine_range.save(update_fields=["vpn_access_binding"])
+
+        recover_participant_range(
+            participant.pk,
+            strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+            operator=organizer_user,
+            spare_range_instance_id=spare_range.pk,
+        )
+
+        spare_engine_range.refresh_from_db()
+        spare.refresh_from_db()
+        assert spare_engine_range.user_id == participant.user.id
+        assert spare_engine_range.vpn_access_binding["owner_user_id"] == participant.user.id
+        assert spare.consumed_by_id == participant.pk
 
 
 class TestRebuildFallbackWhenPoolEmpty:

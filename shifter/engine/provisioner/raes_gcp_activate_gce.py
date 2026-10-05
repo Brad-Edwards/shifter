@@ -13,12 +13,16 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from shared.warm_pool.activation_input import ActivationInput
 
 from config import GCERangeCellConfig
 from raes_gcp_activate import ActivationResult
+
+if TYPE_CHECKING:
+    from raes_gcp_apply_types import RaesGceOpenVpn
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,8 @@ class GceActivationOps:
 
     config: GCERangeCellConfig | None = None
     allocated_network_cidrs: Sequence[tuple[str, str]] | None = None
+    # The claimant's prepared OpenVPN access (#2030), realized with the cell.
+    openvpn: RaesGceOpenVpn | None = None
 
     @staticmethod
     def scrub_pre_claim_access(activation: ActivationInput, prepared_generation: UUID) -> None:
@@ -77,6 +83,7 @@ class GceActivationOps:
             activate_generation,
             config=self.config,
             allocated_network_cidrs=self.allocated_network_cidrs,
+            openvpn=self.openvpn,
         )
 
     @staticmethod

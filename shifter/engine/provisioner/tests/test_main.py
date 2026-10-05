@@ -858,7 +858,7 @@ class TestGdcProvisioning:
         parsed = parse_openvpn_binding(binding)
         assert parsed.generation == generation
         assert parsed.owner_user_id == 7
-        assert parsed.target_ref == target_ref
+        assert parsed.target_ref == str(target_ref)
         assert parsed.endpoint == "vpn.example.test"
         assert parsed.port == 1194
         assert parsed.secret_ref == f"profile:42:{generation}"
