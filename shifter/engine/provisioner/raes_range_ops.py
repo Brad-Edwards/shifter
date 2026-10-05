@@ -29,21 +29,20 @@ rather than by direct SQL.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import Any
 
 from shared.operation_results import MAX_DIAGNOSTIC_CHARS, ResultStep
 from shared.raes.completion_evidence import build_completion_evidence
-from shared.raes.operation_input import RaesOperationInput, image_lookup_key
+from shared.raes.operation_input import RaesOperationInput
 
-from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
+from config import GCERangeCellConfig, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_operation_input import (
     RaesOperationRun,
     get_activation_operation_input,
     get_raes_operation_input,
 )
-from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding, resolve_gce_image_from_runtime_profile
+from raes_gce_image import registry_image_resolver
 from raes_gcp_apply import RaesGceApplyOptions, RaesGceDestroyOptions, apply_raes_range_cell, destroy_raes_range_cell
 from raes_gcp_inventory import VERIFIED_ABSENT, inventory_raes_range_cell
 from raes_gcp_network_allocation import (
@@ -63,7 +62,7 @@ from raes_openvpn import (
     prepare_raes_openvpn,
     vpn_access_fragment,
 )
-from raes_plan import RaesPlan, RaesPlanNode, parse_plan
+from raes_plan import RaesPlan, parse_plan
 from raes_range_contract import _classify_failure, _require_gce_live_fire_binding
 from raes_range_members import realized_members as _realized_members
 from raes_snapshot import snapshot_resources
@@ -72,9 +71,6 @@ from range_subnet_allocation import _release_subnet_allocations_best_effort
 
 logger = logging.getLogger(__name__)
 _GceNetworkAllocation = GceNetworkAllocation
-
-#: Registry provider key for the GCE realization backend (engine_raes_image_mapping).
-_GCE_REGISTRY_PROVIDER = "gce"
 
 #: The single closed failure code an RAES realization/teardown failure reports.
 #: The bounded diagnostic rides the result payload; only this code reaches the
@@ -107,36 +103,6 @@ def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> 
     zone returns the config unchanged, preserving single-region behaviour.
     """
     return resolve_range_cell_placement(request_id, config)
-
-
-def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
-    """Return an image resolver bound to the projected candidates + GCE policy."""
-
-    def resolve(node: RaesPlanNode) -> GCERangeImageProfile:
-        """Resolve one node's image profile: a fenced artifact binding first, else the registry projection."""
-        # A generation-fenced artifact binding means the Engine already resolved
-        # this node's authored artifact requirement to an exact backend image at
-        # launch; realize it verbatim and never re-resolve (ADR-034-R8). Only a
-        # node with no artifact requirement falls through to the legacy
-        # source-alias registry projection.
-        binding = operation_input.artifact_binding_for(node.address)
-        if binding is not None:
-            return resolve_gce_image_from_binding(node, binding)
-        if operation_input.runtime_plugin is not None:
-            runtime_profile = operation_input.runtime_plugin.bindings.image_profile_for(node.address)
-            if runtime_profile is not None:
-                return resolve_gce_image_from_runtime_profile(node, runtime_profile)
-        # The lookup key rule is shared with the Engine that scoped the
-        # projection; deriving it separately here is what would make an image
-        # silently go missing.
-        name = image_lookup_key(
-            source_name=node.image.name if node.image else None,
-            os_family=node.os_family,
-        )
-        candidates = operation_input.image_candidates_for(_GCE_REGISTRY_PROVIDER, name) if name else []
-        return resolve_gce_image(node, candidates)
-
-    return resolve
 
 
 def _require_generation(request_id: str, operation_id: str | None, operation: str) -> tuple[OperationRef, str]:
@@ -253,7 +219,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
                 request_id,
                 range_id,
                 raes_plan,
-                _registry_resolver(operation_input),
+                registry_image_resolver(operation_input),
                 options=RaesGceApplyOptions(
                     config=config,
                     egress_mode=operation_input.egress_mode,
@@ -290,23 +256,31 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         logger.error("RAES range provision failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
         raise
+    # The realized member/access projection rides the terminal result itself, so
+    # the Engine validates it and transitions READY in one transaction against
+    # this generation's own state (#1710, ADR-032-R10). So does the owner-free
+    # OpenVPN realization, which the Engine binds to the range owner (#2030).
+    _report_realized_provision(
+        ref,
+        request_id,
+        resources,
+        {
+            "raes_status": "succeeded",
+            "members": members,
+            "completion": completion,
+            **vpn_access_fragment(apply_result.get("vpn_access")),
+        },
+    )
+
+
+def _report_realized_provision(
+    ref: OperationRef, request_id: str, resources: list[dict[str, str]], ready: dict[str, Any]
+) -> None:
+    """Append the realized snapshot and terminal ready result for a provision generation."""
+    operation = "provision"
     try:
         _report(ref, operation, ResultStep.RAES_PROVISION_SNAPSHOT, {"resources": resources})
-        # The realized member/access projection rides the terminal result itself, so
-        # the Engine validates it and transitions READY in one transaction against
-        # this generation's own state (#1710, ADR-032-R10). So does the owner-free
-        # OpenVPN realization, which the Engine binds to the range owner (#2030).
-        _report(
-            ref,
-            operation,
-            ResultStep.RAES_TERMINAL_READY,
-            {
-                "raes_status": "succeeded",
-                "members": members,
-                "completion": completion,
-                **vpn_access_fragment(apply_result.get("vpn_access")),
-            },
-        )
+        _report(ref, operation, ResultStep.RAES_TERMINAL_READY, ready)
     except Exception as exc:
         # The appends validate the result contract. A rejected realized result must
         # still end the generation with a terminal failure; otherwise the range stays
