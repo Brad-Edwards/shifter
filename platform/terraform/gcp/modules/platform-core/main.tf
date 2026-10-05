@@ -28,6 +28,7 @@ locals {
     access_pods      = var.gke_access_pods_cidr
     control_plane    = var.gke_master_ipv4_cidr
     range_network    = var.range_network_cidr
+    openvpn_pool     = var.openvpn_pool_subnet_cidr
   }
   topology_cidr_names = keys(local.topology_cidrs)
   topology_cidr_bounds = {
@@ -69,6 +70,7 @@ locals {
     "guacd",
     "guacamole-client",
     "pulumi-provisioner",
+    "openvpn",
   ])
 
   platform_event_subscriptions = toset([
@@ -398,6 +400,34 @@ module "portal_iam" {
   deploy_service_account_email   = var.deploy_service_account_email
 
   depends_on = [module.portal_secrets, module.portal_gcs, module.dynamic_secret_project_services]
+}
+
+# Shared participant OpenVPN server pool (#2480): deployed only when the tenant
+# opts in to participant OpenVPN access.
+module "vpn_pool" {
+  source = "../vpn-pool"
+  count  = var.openvpn_pool_enabled ? 1 : 0
+
+  project_id                        = var.project_id
+  region                            = var.region
+  name_prefix                       = local.name_prefix
+  common_labels                     = local.common_labels
+  network_id                        = module.range_vpc.range_network_id
+  network_name                      = module.range_vpc.range_network_name
+  subnet_cidr                       = var.openvpn_pool_subnet_cidr
+  range_network_cidr                = var.range_network_cidr
+  public_hostname                   = local.normalized_public_hostname
+  portal_ingress_ip                 = module.portal_ingress.public_ingress_ip_address
+  artifact_registry_location        = var.artifact_registry_location
+  artifact_repository               = module.portal_artifact_registry.artifact_registry_repositories["openvpn"]
+  provisioner_service_account_email = module.portal_iam.workload_service_accounts["provisioner"]
+  deploy_service_account_email      = var.deploy_service_account_email
+  machine_type                      = var.openvpn_pool_machine_type
+  min_vms                           = var.openvpn_pool_min_vms
+  max_vms                           = var.openvpn_pool_max_vms
+  cpu_target_pct                    = var.openvpn_pool_cpu_target_pct
+
+  depends_on = [module.project_services]
 }
 
 module "portal_gke" {

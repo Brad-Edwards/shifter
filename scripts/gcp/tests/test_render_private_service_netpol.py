@@ -186,9 +186,8 @@ def test_render_emits_range_access_egress_scoped_to_range_dialers():
         if doc["metadata"]["name"] == "allow-jobs-range-access-egress-generated"
     )
     jobs_ports = {entry["port"] for entry in jobs["spec"]["egress"][0]["ports"]}
-    # The provisioner, and only the provisioner, probes the OpenVPN gateway health
-    # responder before publishing a participant profile (#2030).
-    assert 1195 in jobs_ports
+    # Range VPN servers moved to the shared pool (#2480): no per-range health probe port.
+    assert 1195 not in jobs_ports
     assert {entry["port"] for entry in policy["spec"]["egress"][0]["ports"]} == {22, 3389}
 
 

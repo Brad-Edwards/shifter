@@ -47,8 +47,8 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #2305 after granting namespace-scoped pod listing for cancellation.
 # Regenerated after raising provisioner launcher memory for burst requests.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "28a10854e15f7d4f307901a462b2ea7e47e16f6fad1d91b4f87f91d2497b5f67",
-    "gcp-prod": "169d18f669b415eac87c90290265c91dc4d74cf2fa165fd2d2e782e9fa2570a4",
+    "gcp-dev": "0c85feed84ee648c61593ab50af90553b328331bd92d8a7dc90cfee176386635",
+    "gcp-prod": "6c56b2f5b1f3a9a6b077ad8a030b47ef3965704392a1add294d7bedf1c13fffe",
 }
 
 

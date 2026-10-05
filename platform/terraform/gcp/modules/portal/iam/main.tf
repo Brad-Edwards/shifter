@@ -386,34 +386,6 @@ resource "google_project_iam_member" "portal_legacy_dynamic_secret_accessor" {
   }
 }
 
-# OpenVPN gateway identity pool (ADR-008-R7). Each active range that requests
-# OpenVPN reserves one member of this pre-provisioned, no-role service-account
-# pool (Range.vpn_gateway_pool_slot -> sh-vpn-pool-<slot>) and the range VM runs
-# as it, isolated to that range's server secret. The provisioner holds
-# serviceAccountUser on each *specific* pool member (a resource-scoped binding),
-# so it can attach a pool identity WITHOUT any project-wide
-# create/delete/setIamPolicy grant. This deletes the former project-level
-# `vpnGatewayIdentityAdmin` custom role, which let the runtime provisioner call
-# setIamPolicy against any service account in the project (e.g. the build SA) and
-# escalate cross-identity -- GCP IAM cannot condition setIamPolicy on a service
-# account's resource name, so a dynamic-creation grant could not be name-scoped.
-# The pool assumes a single isolated tenant/project (no cross-project SA usage,
-# no org-policy change); `vpn_gateway_pool_size` bounds concurrent OpenVPN ranges
-# and must match VPN_GATEWAY_POOL_SIZE in the engine runtime env.
-resource "google_service_account" "vpn_gateway_pool" {
-  count        = var.vpn_gateway_pool_size
-  project      = var.project_id
-  account_id   = "sh-vpn-pool-${count.index}"
-  display_name = "Shifter OpenVPN gateway pool member ${count.index}"
-}
-
-resource "google_service_account_iam_member" "provisioner_vpn_gateway_pool_act_as" {
-  count              = var.vpn_gateway_pool_size
-  service_account_id = google_service_account.vpn_gateway_pool[count.index].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
-}
-
 resource "google_service_account" "range_host_pool" {
   count        = var.range_host_identity_pool_size
   project      = var.project_id

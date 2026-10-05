@@ -447,3 +447,41 @@ variable "gcp_bootstrap_admin_password" {
   default     = ""
   sensitive   = true
 }
+
+# Shared participant OpenVPN server pool (#2480). openvpn_pool_enabled comes from
+# RANGE_OPENVPN_ENABLED; the vpn_pool_* sizing comes from the capacity profile.
+variable "openvpn_pool_enabled" {
+  description = "Deploy the shared participant OpenVPN server pool."
+  type        = bool
+  default     = false
+}
+
+variable "openvpn_pool_subnet_cidr" {
+  description = "Pool subnet in the range VPC."
+  type        = string
+  default     = "10.49.0.0/24"
+}
+
+variable "vpn_pool_machine_type" {
+  description = "Pool server machine type; the selected capacity profile owns this value."
+  type        = string
+  default     = "e2-standard-2"
+}
+
+variable "vpn_pool_min_vms" {
+  description = "Minimum pool servers; the selected capacity profile owns this bound."
+  type        = number
+  default     = 2
+}
+
+variable "vpn_pool_max_vms" {
+  description = "Maximum pool servers; the selected capacity profile owns this bound."
+  type        = number
+  default     = 4
+}
+
+variable "vpn_pool_cpu_target_pct" {
+  description = "Pool autoscaler CPU target in percent; the selected capacity profile owns this value."
+  type        = number
+  default     = 30
+}

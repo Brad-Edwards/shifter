@@ -330,7 +330,7 @@ metadata:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
 spec:
   # The provisioner Job reaches range guests during provisioning (host/guest SSH
-  # setup, WinRM, and the OpenVPN gateway health probe). Range VMs are
+  # setup and WinRM). Range VMs are
   # private-only, so without this the default-deny blocks the provisioner -> range
   # path even though the per-range GCE firewall permits it. Kustomize parity:
   # render_private_service_netpol.py emits the same rule.
