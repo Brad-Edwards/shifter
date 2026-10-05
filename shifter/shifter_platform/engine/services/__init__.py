@@ -196,6 +196,7 @@ from ._sharing import (
     publish_membership_projection,
     publish_sharing_binding,
     resolve_model_access_range_page,
+    resolve_model_access_range_reference,
     resolve_model_access_range_views,
     validate_sharing_binding,
 )
@@ -427,6 +428,7 @@ __all__ = (
     "reserve_request",
     "reserve_subnet_cidrs",
     "resolve_model_access_range_page",
+    "resolve_model_access_range_reference",
     "resolve_model_access_range_views",
     "resume_range",
     "retire_generation",

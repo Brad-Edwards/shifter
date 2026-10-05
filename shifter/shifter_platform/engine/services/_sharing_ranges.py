@@ -14,6 +14,27 @@ _RANGE_RESOLUTION_SHAPE = "sharing.range_resolution_shape"
 _RANGE_MEMBERSHIP_CHANGED = "sharing.range_membership_changed"
 
 
+def model_access_range_reference(range_uuid: UUID) -> OwnedReference:
+    """Return the canonical model-access sharing identity of one Engine range."""
+    return OwnedReference(owner="deployment", reference=f"range:{range_uuid}")
+
+
+def resolve_model_access_range_reference(request_uuid: UUID) -> OwnedReference:
+    """Return the sharing identity of the range realized for ``request_uuid``, in any state.
+
+    Membership selectors resolve live ranges only. A replacement launch instead
+    needs the identity of the exact range it replaces, which may already be
+    FAILED or DESTROYING, so published restrictions bound to that range carry
+    over (PLAT-202, #2462). An unknown or ambiguous request fails closed.
+    """
+    from engine.models import Range
+
+    range_uuids = tuple(Range.objects.filter(request__request_id=request_uuid).values_list("uuid", flat=True)[:2])
+    if len(range_uuids) != 1:
+        raise SharingError("sharing.range_membership_unavailable")
+    return model_access_range_reference(range_uuids[0])
+
+
 def _legacy_workspace_id(workspace_id: int | None) -> int:
     """Reject ranges whose account scope cannot use the legacy workspace projection."""
     if workspace_id is None:
@@ -120,7 +141,7 @@ def resolve_model_access_range_page(
         rows = page_rows[:page_size]
         items = tuple(
             ModelAccessRangeView(
-                range_ref=OwnedReference(owner="deployment", reference=f"range:{row.uuid}"),
+                range_ref=model_access_range_reference(row.uuid),
                 authority_ref=OwnedReference(owner="engine", reference=f"range:{row.uuid}"),
                 range_uuid=row.uuid,
                 owner_user_id=row.user_id,
