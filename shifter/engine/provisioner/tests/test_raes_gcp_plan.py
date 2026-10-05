@@ -27,7 +27,7 @@ from raes_access import RealizedAccessBinding
 from raes_gce_image import resolve_gce_image_from_runtime_profile
 from raes_gcp_firewall import node_tag
 from raes_gcp_plan import RaesGcePlanError, RaesGcePlanOptions, build_raes_range_cell_plan
-from raes_gcp_vpn_plan import RaesGceRemoteAccess
+from raes_gcp_vpn_plan import RaesGceVpnAccess, vpn_pool_firewall_name
 from raes_identity import RESERVED_MANAGEMENT_LOGIN
 from raes_plan import RaesPlan, RaesPlanAcl, RaesPlanImage, RaesPlanNetwork, RaesPlanNode, RaesPlanServicePort
 
@@ -802,10 +802,10 @@ class TestParticipantAccess:
         assert instance["participant_access_usernames"]["ssh"] != RESERVED_MANAGEMENT_LOGIN
 
 
-class TestOpenVpnGateway:
-    """The participant OpenVPN gateway is planned beside its target (#2030)."""
+class TestVpnPoolFirewall:
+    """The shared OpenVPN pool reaches only the target node's declared channels (#2480)."""
 
-    _SECRET = "projects/secrets-proj/secrets/canonical-vpn-server"
+    _POOL = ("10.49.0.0/24",)
 
     @staticmethod
     def _capable_config() -> GCERangeCellConfig:
@@ -816,7 +816,6 @@ class TestOpenVpnGateway:
             network_mode="shared-vpc",
             network_id="projects/proj-1/global/networks/range",
             portal_network_cidrs=("203.0.113.0/24",),
-            private_google_access=True,
             linux=GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1"),
         )
 
@@ -847,42 +846,37 @@ class TestOpenVpnGateway:
             ),
         )
 
-    def test_the_gateway_forwards_only_the_targets_declared_channels(self):
-        plan = self._build(remote_access=RaesGceRemoteAccess("node.a#0", 4, self._SECRET))
+    def test_the_pool_reaches_only_the_target_node_on_its_channels(self):
+        plan = self._build(remote_access=RaesGceVpnAccess("node.a#0", self._POOL))
 
-        gateway = plan["vpn_gateway"]
+        rule = next(rule for rule in plan["firewalls"] if rule["name"] == vpn_pool_firewall_name(7))
         target = next(instance for instance in plan["instances"] if instance["uuid"] == "node.a#0")
-        assert (gateway["target_ref"], gateway["target_ip"]) == ("node.a#0", target["private_ip"])
-        assert gateway["target_ports"] == ["22", "3389"]
-        assert gateway["server_secret_ref"] == self._SECRET
-        assert gateway["service_account_email"].startswith("sh-vpn-pool-4@")
-        assert gateway["private_ip"] not in {instance["private_ip"] for instance in plan["instances"]}
-        target_egress = next(rule for rule in plan["firewalls"] if rule["name"].endswith("vpn-target"))
-        assert target_egress["destination_ranges"] == [f"{target['private_ip']}/32"]
-        assert target_egress["allowed"] == [{"IPProtocol": "tcp", "ports": ["22", "3389"]}]
-
-    def test_a_range_without_remote_access_plans_no_gateway(self):
-        plan = self._build(remote_access=None)
+        other = next(instance for instance in plan["instances"] if instance["uuid"] == "node.b#0")
+        assert rule["direction"] == "INGRESS"
+        assert rule["source_ranges"] == ["10.49.0.0/24"]
+        assert rule["allowed"] == [{"IPProtocol": "tcp", "ports": ["22", "3389"]}]
+        assert len(rule["target_tags"]) == 1
+        assert rule["target_tags"][0] in target["tags"]
+        assert rule["target_tags"][0] not in other["tags"]
         assert "vpn_gateway" not in plan
+        assert not any(instance["uuid"].endswith("vpn-gateway") for instance in plan["instances"])
+
+    def test_a_range_without_remote_access_admits_no_pool(self):
+        plan = self._build(remote_access=None)
         assert not [rule for rule in plan["firewalls"] if "vpn" in rule["name"]]
 
-    def test_teardown_plans_names_only_without_declared_access(self):
-        plan = self._build(remote_access=RaesGceRemoteAccess("node.a#0", 4), access=())
+    def test_teardown_reconstructs_the_rule_name_without_declared_access(self):
+        plan = self._build(remote_access=RaesGceVpnAccess("node.a#0"), access=())
 
-        gateway = plan["vpn_gateway"]
-        assert gateway["resource_name"].endswith("vpn-gateway")
-        assert "server_secret_ref" not in gateway
-        names = {rule["name"] for rule in plan["firewalls"]}
-        for suffix in ("vpn-in", "vpn-health", "vpn-target", "vpn-api", "vpn-deny"):
-            assert any(name.endswith(suffix) for name in names), suffix
+        assert vpn_pool_firewall_name(7) in {rule["name"] for rule in plan["firewalls"]}
 
-    def test_realizing_a_gateway_for_a_target_without_channels_fails_closed(self):
+    def test_a_target_without_channels_fails_closed(self):
         with pytest.raises(RaesGcePlanError, match="no participant channel"):
-            self._build(remote_access=RaesGceRemoteAccess("node.b#0", 4, self._SECRET))
+            self._build(remote_access=RaesGceVpnAccess("node.b#0", self._POOL))
 
     def test_an_unknown_target_fails_closed(self):
-        with pytest.raises(RaesGcePlanError, match="exactly one"):
-            self._build(remote_access=RaesGceRemoteAccess("node.zzz#0", 4))
+        with pytest.raises(RaesGcePlanError, match="no participant channel"):
+            self._build(remote_access=RaesGceVpnAccess("node.zzz#0", self._POOL))
 
 
 class TestRangeOwnedNat:

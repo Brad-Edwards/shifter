@@ -69,12 +69,8 @@ def _reconstructed_plan(
 
 
 def _owned_compute(plan: RangeCellPlan) -> list[tuple[str, str]]:
-    """Return every owned ``(instance, address)`` pair, the OpenVPN gateway included."""
-    owned = [(instance["resource_name"], instance["address_name"]) for instance in plan["instances"]]
-    vpn_gateway = plan.get("vpn_gateway")
-    if vpn_gateway is not None:
-        owned.append((vpn_gateway["resource_name"], vpn_gateway["address_name"]))
-    return owned
+    """Return every owned ``(instance, address)`` pair."""
+    return [(instance["resource_name"], instance["address_name"]) for instance in plan["instances"]]
 
 
 def _check_compute(tally: _Tally, clients: GCEClients, plan: RangeCellPlan) -> None:

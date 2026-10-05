@@ -5,19 +5,12 @@ Field names are the google-cloud-compute (proto-plus) message field names
 ``*_resource=`` kwargs of the Compute clients, which construct the proto messages
 from them. Note the proto-plus quirks ``I_p_protocol`` (REST ``IPProtocol``) and
 ``network_i_p`` (REST ``networkIP``).
-
-The OpenVPN forwarding-gateway bodies live in ``_gcp_range_cell_openvpn`` and are
-re-exported here, so importers see the same surface as before that split.
 """
 
 from __future__ import annotations
 
 from typing import Any, cast
 
-from _gcp_range_cell_openvpn import (
-    openvpn_gateway_address_resource,
-    openvpn_gateway_instance_resource,
-)
 from config import GCERangeCellConfig
 from gcp_range_cell_naming import (
     _disk_type_self_link,
@@ -40,8 +33,6 @@ __all__ = [
     "firewall_resource",
     "instance_resource",
     "network_resource",
-    "openvpn_gateway_address_resource",
-    "openvpn_gateway_instance_resource",
     "router_nat_resource",
     "subnetwork_resource",
 ]
