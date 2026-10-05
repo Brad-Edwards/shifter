@@ -52,6 +52,13 @@ from ._cleanup_verification import (
     record_cleanup_verification,
 )
 from ._common import EngineError
+from ._feature_artifact_launcher import default_storage_target, reconcile_feature_artifact_acquisitions
+from ._feature_artifacts import (
+    ArtifactRequest,
+    FeatureArtifactUnavailableError,
+    await_ready,
+    request_acquisition,
+)
 from ._lifecycle import dispatch_prepared_range_resume, pause_range, resume_range
 from ._model_admission import admit_range_model_access
 from ._model_broker_control import advance_model_call, commit_model_call, finish_model_call, reserve_model_call
@@ -260,12 +267,14 @@ __all__ = (
     "CLEANUP_UNKNOWN",
     "CLEANUP_VERIFIED_TERMINAL",
     "DEFAULT_RETRY_TTL_SECONDS",
+    "ArtifactRequest",
     "CleanupObligation",
     "CleanupVerificationView",
     "DispatchGrant",
     "EngineError",
     "EventCapacityRequest",
     "EventCapacitySignal",
+    "FeatureArtifactUnavailableError",
     "GuestProbeError",
     "GuestProbeRequest",
     "MembershipEvidence",
@@ -310,6 +319,7 @@ __all__ = (
     "assess_declared_event_capacity",
     "assess_event_capacity",
     "authenticate_model_access",
+    "await_ready",
     "begin_range_model_policy_change",
     "bind_public_operation",
     "bind_runtime_plugin",
@@ -332,6 +342,7 @@ __all__ = (
     "create_ngfw",
     "create_raes_range",
     "create_warm_generation",
+    "default_storage_target",
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",
@@ -412,6 +423,7 @@ __all__ = (
     "rebind_range_workspace_by_request",
     "reconcile_capacity_budgets",
     "reconcile_expired_dispatches",
+    "reconcile_feature_artifact_acquisitions",
     "reconcile_model_allocations",
     "reconcile_model_requests",
     "reconcile_preparations",
@@ -432,6 +444,7 @@ __all__ = (
     "release_subnet_reservation",
     "release_warm_generation_capacity",
     "renew_continuation_lease",
+    "request_acquisition",
     "request_artifact_preparation",
     "reserve_model_call",
     "reserve_request",
