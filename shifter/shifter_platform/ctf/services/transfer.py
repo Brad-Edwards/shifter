@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.db import transaction
 
+from ctf.enums import ChallengeDifficulty
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFHint
 from shared.log_sanitize import safe_log_value
@@ -91,6 +92,8 @@ def export_challenges(
                     "description": c.description,
                     "category": c.category,
                     "value": c.points,
+                    # Not a native CTFd field; the CTFd importer reads it back.
+                    "difficulty": c.difficulty,
                     "type": "standard",
                     "state": "visible" if c.visibility == "visible" else "hidden",
                     # Stored flags are verification material (hashes/patterns);
@@ -210,21 +213,45 @@ def _create_from_ctfd(event: CTFEvent, entry: dict[str, Any], *, actor_id: int) 
     from ctf.services.challenge import create_challenge
 
     first_flag = _first_ctfd_flag(entry)
-    challenge = create_challenge(
-        event.pk,
-        {
-            "name": str(entry.get("name")).strip(),
-            # The model requires a description; CTFd packs may omit it.
-            "description": str(entry.get("description") or "").strip() or str(entry.get("name")).strip(),
-            "category": str(entry.get("category") or "misc").lower(),
-            "points": int(entry.get("value") or 0),
-            "flag": first_flag,
-            "visibility": "visible" if entry.get("state", "visible") == "visible" else "hidden",
-        },
-        actor_id=actor_id,
-    )
+    data: dict[str, Any] = {
+        "name": str(entry.get("name")).strip(),
+        # The model requires a description; CTFd packs may omit it.
+        "description": str(entry.get("description") or "").strip() or str(entry.get("name")).strip(),
+        "category": str(entry.get("category") or "misc").lower(),
+        "points": int(entry.get("value") or 0),
+        "flag": first_flag,
+        "visibility": "visible" if entry.get("state", "visible") == "visible" else "hidden",
+    }
+    difficulty = _ctfd_difficulty(entry)
+    if difficulty is not None:
+        data["difficulty"] = difficulty
+    challenge = create_challenge(event.pk, data, actor_id=actor_id)
     _create_ctfd_hints(challenge, entry.get("hints") or [])
     return challenge
+
+
+# CTFd has no native difficulty field; packs carry it as a top-level key or a
+# ``difficulty:<level>`` tag. ``insane`` is the common CTFd name for the top tier.
+_CTFD_DIFFICULTY_TAG_PREFIX = "difficulty:"
+_CTFD_DIFFICULTY_ALIASES = {"insane": ChallengeDifficulty.EXPERT.value}
+
+
+def _ctfd_difficulty(entry: dict[str, Any]) -> str | None:
+    """Return the entry's difficulty, ``None`` when absent, or raise when unsupported."""
+    raw = entry.get("difficulty")
+    if not raw:
+        for tag in entry.get("tags") or []:
+            value = tag.get("value") if isinstance(tag, dict) else tag
+            if isinstance(value, str) and value.lower().startswith(_CTFD_DIFFICULTY_TAG_PREFIX):
+                raw = value[len(_CTFD_DIFFICULTY_TAG_PREFIX) :]
+                break
+    if not raw:
+        return None
+    normalized = str(raw).strip().lower()
+    normalized = _CTFD_DIFFICULTY_ALIASES.get(normalized, normalized)
+    if normalized not in {level.value for level in ChallengeDifficulty}:
+        raise CTFValidationError("Unsupported challenge difficulty", code="CTF_INVALID_IMPORT")
+    return normalized
 
 
 def _first_ctfd_flag(entry: dict[str, Any]) -> str:

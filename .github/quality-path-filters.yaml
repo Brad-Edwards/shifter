@@ -44,6 +44,8 @@ schema_version: 1
 
 force_full_matrix:
   - .github/workflows/**
+  # Local composite actions are CI control plane called by the workflows.
+  - .github/actions/**
   - .github/quality-path-filters.yaml
 
 quality_units:
