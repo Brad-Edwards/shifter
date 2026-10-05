@@ -1039,6 +1039,8 @@ jobs:
           GCP_RANGE_WINDOWS_IMAGE: ${{ vars.GCP_RANGE_WINDOWS_IMAGE }}
           GCP_RANGE_DC_IMAGE: ${{ vars.GCP_RANGE_DC_IMAGE }}
           GCP_RANGE_PRIVATE_GOOGLE_ACCESS: ${{ vars.GCP_RANGE_PRIVATE_GOOGLE_ACCESS }}
+          # Participant OpenVPN opt-in (#2030); unset renders false.
+          RANGE_OPENVPN_ENABLED: ${{ vars.RANGE_OPENVPN_ENABLED }}
           # Legacy cloud-enabled hosts only; native guests have no cloud identity.
           GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL: ${{ vars.GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL }}
         run: |

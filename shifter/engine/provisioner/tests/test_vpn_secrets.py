@@ -201,6 +201,33 @@ def test_gcp_dedicated_project_separates_secret_storage_from_gateway_identity(mo
     assert policy["bindings"][0]["members"] == [f"serviceAccount:{gateway_email}"]
 
 
+def test_gcp_server_ref_is_the_exact_location_the_gateway_reads_and_the_slot_is_projected(monkeypatch):
+    """The gateway bootstrap reads this ref, not a name it re-derives (#2030)."""
+    monkeypatch.setenv("ENVIRONMENT", "gcp-dev")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    db = MagicMock(side_effect=AssertionError("the projected slot must not be re-read from the database"))
+    monkeypatch.setattr("vpn_secrets.get_db_connection", db)
+    client = MagicMock()
+    client.access_secret_version.side_effect = _NotFound()
+    client.get_secret.side_effect = _NotFound()
+    client.get_iam_policy.return_value = {"bindings": []}
+    adapter = GCPVpnSecretOps(
+        client=client,
+        exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists, InvalidArgument=_InvalidArgument),
+        project_id="compute-project",
+        gateway_pool_slot=9,
+    )
+
+    ref = adapter.put_server(42, uuid4(), "server-material")
+
+    created = client.create_secret.call_args.kwargs["request"]
+    assert ref == f"{created['parent']}/secrets/{created['secret_id']}"
+    assert ref.startswith("projects/range-secrets/secrets/")
+    gateway_email = gcp_vpn_gateway_pool_service_account_email("compute-project", 9)
+    policy = client.set_iam_policy.call_args.kwargs["request"]["policy"]
+    assert policy["bindings"][0]["members"] == [f"serviceAccount:{gateway_email}"]
+
+
 def test_gcp_concurrent_creator_reuses_winner_without_publishing_competing_profile(monkeypatch):
     monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
     client = MagicMock()

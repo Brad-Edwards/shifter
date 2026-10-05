@@ -229,3 +229,99 @@ class TestParticipantAccessSidecar:
 
         range_obj = Range.objects.get(request__request_id=request_id)
         assert "account_address" not in json.dumps(range_obj.range_config)
+
+
+class TestOpenVpnAdmission:
+    """The port admits participant OpenVPN against the launch's lease ceiling (#2030)."""
+
+    _NODE = "provision.node.attacker"
+
+    @pytest.fixture(autouse=True)
+    def _ecs_noop(self, settings):
+        settings.LOCAL_PROVISIONER = None
+        settings.ENGINE_TASK_CLUSTER = ""
+        settings.ENGINE_ECS_CLUSTER_ARN = ""
+        settings.RANGE_OPENVPN_ENABLED = True
+
+    @staticmethod
+    def _gce():
+        from shared.range_instantiation_policy import BackendAdmission, InstantiationPurpose
+
+        return BackendAdmission(True, "gce", InstantiationPurpose.LIVE_FIRE, "", "")
+
+    def _launch(self, user, *, lease_ceiling, backend_admission) -> Range:
+        from cms.models import RangeInstance, Request
+        from shared.enums import RequestType
+
+        request_id = uuid4()
+        cms_request = Request.objects.create(
+            request_id=request_id, request_type=RequestType.RANGE.value, user=user, workspace_id=_WORKSPACE_ID
+        )
+        RangeInstance.objects.create(
+            request=cms_request,
+            scenario_id="ctf-openvpn-test",
+            user_id=user.id,
+            workspace_id=_WORKSPACE_ID,
+            range_source="ctf",
+            range_spec=None,
+            expires_at=lease_ceiling,
+            maximum_expires_at=lease_ceiling,
+        )
+        port = CmsRaesDispatchPort(
+            user_id=user.id,
+            workspace_id=_WORKSPACE_ID,
+            request_id=str(request_id),
+            backend_admission=backend_admission,
+        )
+        access = (
+            ParticipantAccessBinding(target_address=self._NODE, channel="rdp", account_address="provision.account.a"),
+        )
+        port.realize(make_compiled_plan(), access)
+        return Range.objects.get(request__request_id=request_id)
+
+    def test_an_admitted_launch_mints_vpn_bounded_by_the_lease_ceiling(self, user):
+        from datetime import UTC, datetime, timedelta
+
+        ceiling = datetime.now(UTC).replace(microsecond=0) + timedelta(days=2)
+        range_obj = self._launch(user, lease_ceiling=ceiling, backend_admission=self._gce())
+
+        assert range_obj.remote_access_capability["target_ref"] == f"{self._NODE}#0"
+        assert range_obj.remote_access_capability["teardown_at"] == ceiling.isoformat().replace("+00:00", "Z")
+        assert range_obj.vpn_gateway_pool_slot is not None
+
+    def test_a_launch_without_a_lease_ceiling_mints_nothing(self, user):
+        range_obj = self._launch(user, lease_ceiling=None, backend_admission=self._gce())
+        assert range_obj.remote_access_capability is None
+
+    def test_the_deployment_must_opt_in(self, user, settings):
+        from datetime import UTC, datetime, timedelta
+
+        settings.RANGE_OPENVPN_ENABLED = False
+        range_obj = self._launch(
+            user, lease_ceiling=datetime.now(UTC) + timedelta(days=2), backend_admission=self._gce()
+        )
+        assert range_obj.remote_access_capability is None
+
+
+class TestOpenVpnDeadline:
+    """The admission decision itself, independent of a launch (#2030)."""
+
+    @pytest.mark.parametrize(
+        ("enabled", "local", "backend", "admitted"),
+        [
+            (True, None, "gce", True),
+            (False, None, "gce", False),
+            (True, "subprocess", "gce", False),
+            (True, None, "ec2", False),
+            (True, None, None, False),
+        ],
+    )
+    def test_only_an_opted_in_gce_deployment_requests_vpn(self, settings, enabled, local, backend, admitted):
+        from datetime import UTC, datetime, timedelta
+
+        from cms.services._range_remote_access import openvpn_deadline
+
+        settings.RANGE_OPENVPN_ENABLED = enabled
+        settings.LOCAL_PROVISIONER = local
+        ceiling = datetime.now(UTC) + timedelta(days=1)
+        assert openvpn_deadline(backend, ceiling) == (ceiling if admitted else None)

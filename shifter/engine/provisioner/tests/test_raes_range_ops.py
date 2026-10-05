@@ -23,6 +23,7 @@ from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import RaesOperationInput
 from shared.raes.participant_access import ParticipantAccessBinding
 
+import raes_gce_image
 import raes_gcp_network_allocation
 import raes_range_ops
 import range_placement
@@ -570,9 +571,8 @@ class TestDestroy:
         assert patched.destroy.call_args.args[3].allocated_network_cidrs == (
             (raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS, "10.90.0.0/28"),
         )
-        assert patched.inventory.call_args.kwargs["allocated_network_cidrs"] == (
-            (raes_gcp_network_allocation.DEFAULT_NETWORK_ADDRESS, "10.90.0.0/28"),
-        )
+        # Inventory reads back exactly what destroy reconstructed.
+        assert patched.inventory.call_args.args[3] is patched.destroy.call_args.args[3]
         patched.release_subnet.assert_called_once_with("req-1", operation_id=_OPERATION_ID)
 
     def test_inventory_precedes_verified_allocation_release(self, patched):
@@ -657,10 +657,10 @@ class TestRegistryResolver:
         candidates = [{"source_version": None, "image_ref": "projects/x/global/images/ubuntu-1"}]
         projection = _projection(_image_candidates={"gce:ubuntu": tuple(candidates)})
         resolve = MagicMock(return_value=GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1"))
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", resolve)
 
         node = _node(RaesPlanImage(name="ubuntu"))
-        profile = raes_range_ops._registry_resolver(projection)(node)
+        profile = raes_gce_image.registry_image_resolver(projection)(node)
 
         resolve.assert_called_once_with(node, candidates)
         assert profile.source_image == "projects/x/global/images/ubuntu-1"
@@ -670,10 +670,10 @@ class TestRegistryResolver:
         candidates = [{"source_version": "", "image_ref": "projects/x/global/images/ubuntu-base"}]
         projection = _projection(_image_candidates={"gce:linux": tuple(candidates)})
         resolve = MagicMock(return_value=GCERangeImageProfile())
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", resolve)
 
         node = _node(None)  # os_family linux, no image
-        raes_range_ops._registry_resolver(projection)(node)
+        raes_gce_image.registry_image_resolver(projection)(node)
 
         resolve.assert_called_once_with(node, candidates)
 
@@ -681,9 +681,9 @@ class TestRegistryResolver:
         # Fail-loud stays with the existing image policy, which receives an empty
         # candidate list exactly as the direct read produced for an unmapped source.
         resolve = MagicMock(return_value=GCERangeImageProfile())
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", resolve)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", resolve)
 
-        raes_range_ops._registry_resolver(_projection())(_node(RaesPlanImage(name="nope")))
+        raes_gce_image.registry_image_resolver(_projection())(_node(RaesPlanImage(name="nope")))
 
         resolve.assert_called_once_with(_node(RaesPlanImage(name="nope")), [])
 
@@ -711,9 +711,9 @@ class TestRegistryResolver:
             _image_candidates={"gce:ubuntu": (legacy_candidate,)},
         )
         legacy = MagicMock()
-        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", legacy)
+        monkeypatch.setattr(raes_gce_image, "resolve_gce_image", legacy)
 
-        profile = raes_range_ops._registry_resolver(projection)(_node(RaesPlanImage(name="ubuntu")))
+        profile = raes_gce_image.registry_image_resolver(projection)(_node(RaesPlanImage(name="ubuntu")))
 
         legacy.assert_not_called()
         assert profile.source_image == "projects/x/global/images/fenced"
@@ -793,3 +793,88 @@ def test_ec2_destroy_dispatches_without_loading_plugin_or_gce_configuration(patc
     raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
     native.assert_called_once()
     patched.destroy.assert_not_called()
+
+
+_VPN_REALIZATION = {
+    "generation": _OPERATION_ID,
+    "target_ref": "node.web#0",
+    "endpoint": "34.1.2.3",
+    "port": 1194,
+    "secret_ref": "projects/p/secrets/profile",
+}
+
+
+class TestOpenVpnOrchestration:
+    """Participant OpenVPN rides provision, destroy, and failure handling (#2030)."""
+
+    @staticmethod
+    def _remote():
+        from datetime import UTC, datetime, timedelta
+
+        from shared.raes.operation_input import RaesRemoteAccess
+        from shared.remote_access import build_openvpn_capability
+
+        return RaesRemoteAccess(
+            capability=build_openvpn_capability("provision.node.web#0", datetime.now(UTC) + timedelta(days=1)),
+            gateway_pool_slot=3,
+        )
+
+    @pytest.fixture
+    def vpn(self, monkeypatch, patched):
+        remote = self._remote()
+        state = SimpleNamespace(remote=remote, session=object(), prepared=[], cleaned=[])
+        patched.read_input.side_effect = lambda *a, **k: _run(remote_access=remote)
+
+        def prepare(request_id, range_id, plan, remote_access):
+            state.prepared.append((request_id, range_id, remote_access))
+            return state.session
+
+        monkeypatch.setattr(raes_range_ops, "prepare_raes_openvpn", prepare)
+        monkeypatch.setattr(raes_range_ops, "cleanup_raes_openvpn", lambda *args: state.cleaned.append(args))
+        return state
+
+    def test_provision_realizes_the_gateway_inside_the_apply_and_reports_it(self, patched, vpn):
+        patched.apply.return_value = {**patched.apply.return_value, "vpn_access": dict(_VPN_REALIZATION)}
+
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        assert vpn.prepared == [("req-1", 7, vpn.remote)]
+        assert patched.apply.call_args.kwargs["options"].openvpn is vpn.session
+        assert _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["vpn_access"] == _VPN_REALIZATION
+        assert vpn.cleaned == []
+
+    def test_a_failed_provision_deletes_the_credentials_without_masking_its_failure(self, monkeypatch, patched, vpn):
+        patched.apply.side_effect = RuntimeError("apply failed")
+
+        def broken_cleanup(*args):
+            vpn.cleaned.append(args)
+            raise RuntimeError("secret store unavailable")
+
+        monkeypatch.setattr("raes_openvpn.cleanup_raes_openvpn", broken_cleanup)
+
+        with pytest.raises(RuntimeError, match="apply failed"):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert vpn.cleaned == [("req-1", 7, vpn.remote)]
+        assert str(ResultStep.RAES_TERMINAL_FAILED) in _steps(patched)
+
+    def test_the_ec2_backend_fails_closed_before_provisioning(self, monkeypatch, patched, vpn):
+        ec2 = MagicMock()
+        monkeypatch.setattr("raes_ec2_runtime.provision_ec2_run", ec2)
+        patched.read_input.side_effect = lambda *a, **k: _run(
+            remote_access=vpn.remote, range_backend="ec2", resource_generation=_OPERATION_ID
+        )
+
+        with pytest.raises(Exception, match="EC2"):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        ec2.assert_not_called()
+        assert str(ResultStep.RAES_TERMINAL_FAILED) in _steps(patched)
+
+    def test_destroy_removes_the_gateway_and_its_credentials_with_inventory(self, patched, vpn):
+        from raes_gcp_vpn_plan import RaesGceRemoteAccess
+
+        raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        names_only = RaesGceRemoteAccess("provision.node.web#0", 3)
+        assert patched.destroy.call_args.args[3].remote_access == names_only
+        assert patched.inventory.call_args.args[3].remote_access == names_only
+        assert vpn.cleaned == [("req-1", 7, vpn.remote)]
