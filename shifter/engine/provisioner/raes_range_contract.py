@@ -9,6 +9,7 @@ from shared.range_instantiation_policy import (
 )
 
 from cloud.exceptions import CloudError
+from raes_content_payload import RaesContentDeliveryError
 from raes_gcp_network_allocation import RaesRealizationError
 
 _FAILURE_REASON_CODE = "cloud_operation_failed"
@@ -68,6 +69,11 @@ def _classify_failure(exc: BaseException, stage: str) -> tuple[str, str]:
     if isinstance(exc, RaesRealizationError):
         # Authored by this module, so its text is already safe to report.
         return _INVALID_STATE_REASON_CODE, f"{stage}: {exc}"
+    if isinstance(exc, RaesContentDeliveryError):
+        # Content delivery raises only authored constant messages (enforced by
+        # test_content_delivery_errors_carry_only_authored_text), naming the
+        # failing delivery step without any payload, key, path or guest output.
+        return _FAILURE_REASON_CODE, f"{stage} failed: {exc}"
     if isinstance(exc, TimeoutError):
         return _TIMEOUT_REASON_CODE, f"{stage} timed out ({type(exc).__name__})"
     return _FAILURE_REASON_CODE, f"{stage} failed ({type(exc).__name__})"
