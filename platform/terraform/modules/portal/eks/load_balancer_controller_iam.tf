@@ -144,19 +144,6 @@ resource "aws_iam_role_policy" "load_balancer_controller" {
         }
       },
       {
-        # IP-mode targets are pod ENIs in the EKS-managed cluster security group,
-        # which the controller did not create and so cannot tag. It must still
-        # admit its own backend security group to the target ports there, or
-        # every target times out. Grant rule edits on that one group by exact ARN.
-        Sid    = "ManageTargetIngressOnClusterSecurityGroup"
-        Effect = "Allow"
-        Action = [
-          "ec2:AuthorizeSecurityGroupIngress",
-          "ec2:RevokeSecurityGroupIngress",
-        ]
-        Resource = "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:security-group/${aws_eks_cluster.this.vpc_config[0].cluster_security_group_id}"
-      },
-      {
         Sid    = "CreateTaggedLoadBalancersAndTargetGroups"
         Effect = "Allow"
         Action = [
@@ -325,4 +312,15 @@ resource "aws_iam_role_policy" "load_balancer_controller" {
       },
     ]
   })
+}
+
+# IP-mode ALB targets are pod ENIs in the EKS-managed cluster security group.
+# The controller must add an ingress rule there admitting its backend security
+# group to the target ports, or every target times out. Its rule mutations are
+# scoped to groups carrying the exact cluster ownership tag (ADR-044-R7), which
+# EKS does not put on the group it creates, so tag it here.
+resource "aws_ec2_tag" "cluster_security_group_lb_controller" {
+  resource_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  key         = "elbv2.k8s.aws/cluster"
+  value       = var.cluster_name
 }
