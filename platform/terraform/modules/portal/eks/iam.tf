@@ -220,12 +220,19 @@ resource "aws_iam_role_policy" "workload_rds_iam" {
   })
 }
 
+# The provisioner encrypts range guest credentials with the portal Secrets Manager
+# CMK (eks-provisioner-env SECRETS_KMS_KEY_ARN). Resolve it by the same alias so the
+# reader's Decrypt grant and the writer's key can never diverge.
+data "aws_kms_alias" "range_credential_secrets" {
+  count = length(local.workload_range_participant_secret_access) > 0 ? 1 : 0
+  name  = "alias/shifter-${var.environment}-secrets-manager"
+}
+
 # Read-only participant-delivery credentials for brokering a participant's SSH/RDP
 # connection to a realized range guest (#1826; GCP parity with the portal's
-# participant-prefix-conditioned secretAccessor). The secrets are encrypted with the
-# range-owned engine-secrets key published at /shifter/<env>/range/ (key policy
-# delegates to account IAM); Decrypt is confined to Secrets Manager calls on exactly
-# the participant-delivery secret ARNs via the SecretARN encryption context.
+# participant-prefix-conditioned secretAccessor). Decrypt is confined to Secrets
+# Manager calls on exactly the participant-delivery secret ARNs via the SecretARN
+# encryption context.
 resource "aws_iam_role_policy" "workload_range_participant_secrets" {
   for_each = local.workload_range_participant_secret_access
 
@@ -242,7 +249,7 @@ resource "aws_iam_role_policy" "workload_range_participant_secrets" {
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = local.range_network["engine_secrets_kms_key_arn"]
+        Resource = data.aws_kms_alias.range_credential_secrets[0].target_key_arn
         Condition = {
           StringEquals = {
             "kms:ViaService" = "secretsmanager.${var.aws_region}.amazonaws.com"
