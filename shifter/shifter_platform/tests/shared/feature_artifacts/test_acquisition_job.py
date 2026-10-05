@@ -114,7 +114,8 @@ def test_result_line_round_trips_and_malformed_output_is_rejected():
 def test_main_requires_three_arguments_and_refuses_unsupported_providers(monkeypatch, capsys):
     assert main(["claude-code"]) == 2
     monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
-    assert main(["claude-code", "2.1.289", "linux-x64-glibc"]) == 1
+    # A reported failure still exits 0 so the launcher can read its reason.
+    assert main(["claude-code", "2.1.289", "linux-x64-glibc"]) == 0
     reported = parse_result(capsys.readouterr().out)
     assert reported is not None
     assert not reported.ok
