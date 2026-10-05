@@ -122,7 +122,13 @@ def parse_result(log_text: str) -> AcquisitionResult | None:
 
 
 def main(argv: list[str]) -> int:
-    """Entry point: acquire, print one result line, exit non-zero on failure."""
+    """Entry point: acquire and write one result line.
+
+    Exits 0 whenever a result line was written, including an acquisition
+    failure, because Kubernetes withholds the output of a failed Job and the
+    launcher must read the failure reason. Only a crash (no result line) fails
+    the Job.
+    """
     if len(argv) != 3:
         sys.stderr.write("usage: python -m shared.feature_artifacts.job <source> <resolved-version> <platform>\n")
         return 2
@@ -134,7 +140,7 @@ def main(argv: list[str]) -> int:
     # The result line on stdout is the Job's output protocol (read from the pod log).
     sys.stdout.write(RESULT_MARKER + json.dumps(asdict(result), sort_keys=True) + "\n")
     sys.stdout.flush()
-    return 0 if result.ok else 1
+    return 0
 
 
 if __name__ == "__main__":
