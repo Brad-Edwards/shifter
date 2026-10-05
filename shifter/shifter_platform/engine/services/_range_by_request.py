@@ -87,6 +87,14 @@ def get_pinned_range_egress_mode_by_request(request_id: UUID) -> str | None:
     return Range.objects.filter(request__request_id=request_id).values_list("egress_mode", flat=True).first()
 
 
+def get_range_failure_reason_by_request(request_id: UUID) -> str:
+    """The failure reason recorded on the range for ``request_id`` (empty when none)."""
+    from engine.models import Range
+
+    reason = Range.objects.filter(request__request_id=request_id).values_list("error_message", flat=True).first()
+    return reason or ""
+
+
 def destroy_range_by_request(request_id: UUID) -> bool:
     """Tear down range infrastructure by request_id.
 
