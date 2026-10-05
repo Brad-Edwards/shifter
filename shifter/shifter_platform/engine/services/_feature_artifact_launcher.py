@@ -34,16 +34,23 @@ def default_storage_target() -> StorageTarget:
 
 
 def _job_env() -> dict[str, str]:
-    """The Job's whole environment: provider, region and the delivery location."""
-    return {
+    """The Job's whole environment: provider, delivery location and private scratch.
+
+    AWS_REGION rides only when set (AWS): Kubernetes drops empty env values, which
+    the acquisition admission policy would reject as value-less entries.
+    """
+    env = {
         "CLOUD_PROVIDER": str(getattr(settings, "CLOUD_PROVIDER", "")),
-        "AWS_REGION": os.environ.get("AWS_REGION", ""),
         "STORAGE_BUCKET_NAME": str(settings.STORAGE_BUCKET_NAME),
         "RAES_CONTENT_DELIVERY_PREFIX": str(settings.RAES_CONTENT_DELIVERY_PREFIX),
         "HOME": jobs.ACQUISITION_WORKDIR,
         "TMPDIR": jobs.ACQUISITION_WORKDIR,
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+    region = os.environ.get("AWS_REGION", "")
+    if region:
+        env["AWS_REGION"] = region
+    return env
 
 
 def reconcile_feature_artifact_acquisitions(

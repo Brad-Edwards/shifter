@@ -127,6 +127,18 @@ def _terraform_inputs() -> dict[str, object]:
     }
 
 
+def test_acquisition_egress_keeps_the_provider_api_posture():
+    """The acquisition Job gets the provider-API HTTPS egress with the service CIDR carved out."""
+    outputs = _terraform_outputs()
+    values = aws_eks.render_aws_values(_config(), outputs, _images())
+
+    assert values["featureArtifactAcquisition"] == {
+        "serviceAccountAnnotations": {},
+        "egressCidrs": outputs["provider_api_cidrs"]["value"],
+        "egressExcept": outputs["provider_api_egress_except"]["value"],
+    }
+
+
 def test_alb_health_checks_use_each_services_readiness_probe_path():
     """ALB target health must probe the same endpoint Kubernetes readiness does."""
     import yaml

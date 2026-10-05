@@ -1,4 +1,9 @@
 {{- if and .Values.capabilities.kubernetesJobLauncher .Values.capabilities.featureArtifactAcquisition }}
+{{- $acquisition := .Values.featureArtifactAcquisition }}
+{{- $acquirerAnnotations := deepCopy $acquisition.serviceAccountAnnotations }}
+{{- with .Values.identity.serviceAccountRoleArns.artifactAcquirer }}
+{{- $_ := set $acquirerAnnotations "eks.amazonaws.com/role-arn" . }}
+{{- end }}
 # Isolated feature-artifact acquisition Jobs (ADR-034-R12, #2463). The launcher
 # creates one Job per claimed attempt; the Job fetches a public upstream package,
 # verifies it, and writes only the content-addressed delivery prefix. It holds no
@@ -17,9 +22,9 @@ kind: ServiceAccount
 metadata:
   name: artifact-acquirer
   namespace: shifter-acquisition
-  {{- with .Values.identity.serviceAccountRoleArns.artifactAcquirer }}
+  {{- with $acquirerAnnotations }}
   annotations:
-    eks.amazonaws.com/role-arn: {{ . | quote }}
+    {{- toYaml . | nindent 4 }}
   {{- end }}
 automountServiceAccountToken: false
 ---
@@ -55,10 +60,31 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-{{- if .Values.network.providerApiCidrs }}
+---
+# GKE Workload Identity token mint from the node-local metadata server (same as
+# the platform and jobs namespaces). Inert on EKS, where IRSA uses a projected token.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acquisition-metadata-server-egress
+  namespace: shifter-acquisition
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32 # NOSONAR - GKE metadata server (Workload Identity).
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 988
+{{- if $acquisition.egressCidrs }}
 ---
 # HTTPS to the upstream registry, the identity provider, and object storage, with
-# the cluster service CIDR carved out so the Job cannot reach the Kubernetes API.
+# the cluster's own ranges carved out so the Job cannot reach the Kubernetes API
+# or in-cluster services.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -69,10 +95,10 @@ spec:
   policyTypes: [Egress]
   egress:
     - to:
-        {{- range .Values.network.providerApiCidrs }}
+        {{- range $acquisition.egressCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
-            {{- with $.Values.network.providerApiEgressExcept }}
+            {{- with $acquisition.egressExcept }}
             except:
               {{- toYaml . | nindent 14 }}
             {{- end }}
@@ -175,10 +201,12 @@ spec:
         variables.container.args[2].matches('^[a-z0-9][a-z0-9-]{0,63}$') &&
         (!has(variables.container.envFrom) || variables.container.envFrom.size() == 0) &&
         (!has(variables.container.lifecycle)) &&
-        variables.container.env.size() == 7 &&
+        variables.container.env.size() <= 7 &&
         variables.container.env.all(e,
           e.name in ['AWS_REGION', 'CLOUD_PROVIDER', 'HOME', 'PYTHONDONTWRITEBYTECODE', 'RAES_CONTENT_DELIVERY_PREFIX', 'STORAGE_BUCKET_NAME', 'TMPDIR'] &&
-          has(e.value) && !has(e.valueFrom))
+          has(e.value) && !has(e.valueFrom)) &&
+        ['CLOUD_PROVIDER', 'HOME', 'PYTHONDONTWRITEBYTECODE', 'RAES_CONTENT_DELIVERY_PREFIX', 'STORAGE_BUCKET_NAME', 'TMPDIR'].all(n,
+          variables.container.env.exists(e, e.name == n))
       message: Acquisition jobs run only the pinned platform image and command with literal, non-secret inputs.
     - expression: >-
         variables.container.securityContext.readOnlyRootFilesystem &&
