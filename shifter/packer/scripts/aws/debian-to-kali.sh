@@ -35,7 +35,7 @@ echo "=== Adding Kali official apt repository + keyring ==="
 # neither needed nor wanted).
 curl -fsS --proto =https https://archive.kali.org/archive-keyring.gpg \
   -o /usr/share/keyrings/kali-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" \
+echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] https://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" \
   > /etc/apt/sources.list.d/kali.list
 # Track Kali Rolling as the system distro: drop the Debian suite lists (and the
 # Debian CDN mirror lists they reference) so the upgrade moves the whole base.
@@ -51,7 +51,7 @@ for pkg in $BOOT_CANDIDATES; do
     BOOT_HOLDS="$BOOT_HOLDS $pkg"
   fi
 done
-if [ -z "$BOOT_HOLDS" ]; then
+if [[ -z "$BOOT_HOLDS" ]]; then
   echo "FATAL: no installed GRUB package found on the Debian base" >&2
   exit 1
 fi
@@ -105,7 +105,7 @@ usermod -aG sudo kali
 
 echo "=== Verifying the converted base ==="
 . /etc/os-release
-if [ "${ID:-}" != "kali" ]; then
+if [[ "${ID:-}" != "kali" ]]; then
   echo "FATAL: /etc/os-release reports ID=${ID:-unset}, not kali" >&2
   exit 1
 fi
@@ -116,6 +116,6 @@ for pkg in $BOOT_HOLDS; do
 done
 dpkg-query -W -f='${Package}\n' 'linux-image-*-cloud-amd64' 2>/dev/null | grep -qE 'linux-image-[0-9].*-cloud-amd64' \
   || { echo "FATAL: no concrete cloud kernel installed after conversion" >&2; exit 1; }
-test -f /boot/grub/grub.cfg || { echo "FATAL: /boot/grub/grub.cfg missing" >&2; exit 1; }
+[[ -f /boot/grub/grub.cfg ]] || { echo "FATAL: /boot/grub/grub.cfg missing" >&2; exit 1; }
 
 echo "=== Debian -> Kali Rolling conversion complete ==="
