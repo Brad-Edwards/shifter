@@ -70,7 +70,6 @@ def test_validation_package_feature_is_digest_bound_for_guest_delivery() -> None
             storage=storage,
             bucket="assets",
             prefix="raes/content",
-            max_payload_bytes=1024 * 1024,
         ),
     )
 

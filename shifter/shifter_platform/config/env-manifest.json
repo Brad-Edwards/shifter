@@ -743,11 +743,6 @@
       "source_file": "config/_ctf_content_settings.py"
     },
     {
-      "default": "'268435456'",
-      "name": "SHIFTER_RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
-      "source_file": "config/_raes_settings.py"
-    },
-    {
       "default": "'raes/content-delivery'",
       "name": "SHIFTER_RAES_CONTENT_DELIVERY_PREFIX",
       "source_file": "config/_raes_settings.py"

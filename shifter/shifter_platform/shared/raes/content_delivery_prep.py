@@ -21,7 +21,7 @@ import hashlib
 import io
 import json
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -33,13 +33,15 @@ from shared.raes.content_delivery import (
     ContentDeliveryError,
     DeliveryBinding,
     DeliveryProjection,
-    materialize_payload,
     normalized_storage_key,
     parse_delivery_projection,
+    payload_chunks,
     sha256_hex,
 )
 
 if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
+
     from shared.cloud.types import ObjectStorage
 
 logger = logging.getLogger(__name__)
@@ -99,15 +101,16 @@ class _ContentRef:
 class DeliveryTarget:
     """Where prepared content-delivery payloads are promoted to.
 
-    Bundles the object-storage boundary, the destination bucket/prefix, and the
-    materialized-payload size cap that :func:`prepare_content_delivery` needs to
-    promote each source-backed content resource (ADR-032-R3, ADR-034-R6).
+    Bundles the object-storage boundary and the destination bucket/prefix that
+    :func:`prepare_content_delivery` needs to promote each source-backed content
+    resource (ADR-032-R3, ADR-034-R6). There is no payload-size setting: payloads
+    stream with constant memory and are bounded by the pack inventory's exact
+    sizes (ADR-032-R9).
     """
 
     storage: ObjectStorage
     bucket: str
     prefix: str
-    max_payload_bytes: int
 
 
 def prepare_content_delivery(
@@ -219,31 +222,28 @@ def _prepare_one(
     payload_kind = entry.payload_kind or ref.content_type
     content_format = entry.content_format
     input_abs = _resolve_pack_input(pack_root, entry.input_path)
-    _verify_input_against_inventory(pack_root, input_abs, payload_kind, inventory, target.max_payload_bytes)
-    payload = materialize_payload(
-        content_type=payload_kind,
-        content_format=content_format,
-        source_path=input_abs,
-        max_bytes=target.max_payload_bytes,
+    records = _verify_input_against_inventory(pack_root, input_abs, payload_kind, inventory)
+    source = _PayloadSource(payload_kind, content_format, input_abs)
+    # A file payload is the verified pack file verbatim, so its inventory digest
+    # names it; a directory's tar is measured by streaming it once.
+    digest, byte_count = (
+        (records[0][1].sha256, input_abs.stat().st_size) if payload_kind == "file" else _measure(source)
     )
-    if len(payload) > target.max_payload_bytes:
-        raise ContentDeliveryError("materialized content payload exceeds the configured size bound")
-    digest = sha256_hex(payload)
     key = normalized_storage_key(target.prefix, digest)
-    _promote(target.storage, target.bucket, key, payload)
+    _promote(target.storage, target.bucket, key, source, digest, byte_count)
     if ref.resource_type == _FEATURE_BINDING_RESOURCE_TYPE:
         return DeliveryBinding(
             content_address=None,
             sha256=digest,
             storage_key=key,
-            byte_count=len(payload),
+            byte_count=byte_count,
             binding_version=FEATURE_BINDING_VERSION,
             resource_type=_FEATURE_BINDING_RESOURCE_TYPE,
             resource_address=ref.address,
             payload_kind=payload_kind,
             install_policy=entry.install_policy,
         )
-    return DeliveryBinding(content_address=ref.address, sha256=digest, storage_key=key, byte_count=len(payload))
+    return DeliveryBinding(content_address=ref.address, sha256=digest, storage_key=key, byte_count=byte_count)
 
 
 def _source_backed_content_refs(serialized_plan: Mapping[str, object]) -> list[_ContentRef]:
@@ -381,22 +381,21 @@ def _verify_input_against_inventory(
     input_abs: Path,
     content_type: str,
     inventory: Mapping[str, InventoryEntry],
-    max_payload_bytes: int,
-) -> None:
+) -> list[tuple[Path, InventoryEntry]]:
     """Fail closed unless every delivered file is an inventory-matching pack file.
 
-    Size-gates on the trusted inventory metadata *before* reading any bytes, then
-    streams each file's digest with the same cap, so an oversized (or a tampered,
-    larger-than-declared) input is rejected without ever buffering it in memory
-    (defense against a pack whose declared payload would exhaust the process
-    before the materialized-payload cap in ``_prepare_one`` could reject it).
+    Each file's digest is streamed and its read is bounded by the inventory's
+    exact declared size, so a tampered, larger-than-declared input is rejected
+    mid-stream without buffering it (ADR-032-R9: the inventory's exact sizes are
+    the bound, not a fixed cap). Returns each file paired with its record.
     """
     root = Path(pack_root).resolve()
     files = _deliverable_files(input_abs, content_type)
-    records = _matched_inventory_records(files, root, inventory, max_payload_bytes)
+    records = _matched_inventory_records(files, root, inventory)
     for path, record in records:
-        if _sha256_file(path, max_payload_bytes) != record.sha256:
+        if _sha256_file(path, record.size_bytes) != record.sha256:
             raise ContentDeliveryError("content delivery input does not match the pack inventory digest")
+    return records
 
 
 def _deliverable_files(input_abs: Path, content_type: str) -> list[Path]:
@@ -413,16 +412,15 @@ def _deliverable_files(input_abs: Path, content_type: str) -> list[Path]:
 
 
 def _matched_inventory_records(
-    files: list[Path], root: Path, inventory: Mapping[str, InventoryEntry], max_payload_bytes: int
+    files: list[Path], root: Path, inventory: Mapping[str, InventoryEntry]
 ) -> list[tuple[Path, InventoryEntry]]:
-    """Return each file paired with its inventory record, size-gating as it accumulates.
+    """Return each file paired with its inventory record.
 
-    Fails closed on a non-regular file, an uninventoried file, or a declared
-    total that would exceed ``max_payload_bytes`` -- all before any bytes are
-    read (the digest itself is checked separately, in :func:`_sha256_file`).
+    Fails closed on a non-regular file or an uninventoried file before any
+    bytes are read (the digest itself is checked separately, in
+    :func:`_sha256_file`).
     """
     records: list[tuple[Path, InventoryEntry]] = []
-    declared_total = 0
     for path in files:
         if path.is_symlink() or not path.is_file():
             raise ContentDeliveryError("content delivery input contains a non-regular file")
@@ -430,36 +428,93 @@ def _matched_inventory_records(
         record = inventory.get(rel)
         if record is None:
             raise ContentDeliveryError("content delivery input is not in the pack associated-artifact inventory")
-        declared_total += max(record.size_bytes, 0)
-        if declared_total > max_payload_bytes:
-            raise ContentDeliveryError("content delivery input exceeds the configured size bound")
         records.append((path, record))
     return records
 
 
-def _sha256_file(path: Path, max_bytes: int) -> str:
-    """Stream a file's sha256, failing closed once its bytes exceed ``max_bytes``.
+def _sha256_file(path: Path, declared_bytes: int) -> str:
+    """Stream a file's sha256, failing closed once it exceeds its declared size.
 
-    Never holds the whole file in memory, and caps the read so a file larger than
-    declared (a tamper that would otherwise be caught only after buffering) is
-    rejected mid-stream rather than exhausting the process.
+    Never holds the whole file in memory, and stops reading as soon as the file
+    proves larger than its inventory record (a tamper that would otherwise be
+    caught only after reading it all).
     """
     hasher = hashlib.sha256()
     read = 0
     with path.open("rb") as handle:
         while chunk := handle.read(_READ_CHUNK_BYTES):
             read += len(chunk)
-            if read > max_bytes:
-                raise ContentDeliveryError("content delivery input exceeds the configured size bound")
+            if read > declared_bytes:
+                raise ContentDeliveryError("content delivery input does not match the pack inventory digest")
             hasher.update(chunk)
     return hasher.hexdigest()
 
 
-def _promote(storage: ObjectStorage, bucket: str, key: str, payload: bytes) -> None:
-    """Idempotently promote ``payload`` to the content-addressed ``key``."""
+@dataclass(frozen=True)
+class _PayloadSource:
+    """A deterministic delivery payload that can be re-read from the pack."""
+
+    content_type: str
+    content_format: str
+    path: Path
+
+    def chunks(self) -> Iterator[bytes]:
+        return payload_chunks(content_type=self.content_type, content_format=self.content_format, source_path=self.path)
+
+
+class _HashingReader(io.RawIOBase):
+    """Readable view over payload chunks that hashes and counts what it serves."""
+
+    def __init__(self, chunks: Iterator[bytes]) -> None:
+        self._chunks = chunks
+        self._pending = b""
+        self.hasher = hashlib.sha256()
+        self.byte_count = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: WriteableBuffer, /) -> int:
+        while not self._pending:
+            chunk = next(self._chunks, None)
+            if chunk is None:
+                return 0
+            self._pending = chunk
+        view = memoryview(buffer).cast("B")
+        size = min(view.nbytes, len(self._pending))
+        served, self._pending = self._pending[:size], self._pending[size:]
+        view[:size] = served
+        self.hasher.update(served)
+        self.byte_count += size
+        return size
+
+
+def _measure(source: _PayloadSource) -> tuple[str, int]:
+    """Digest and size of a payload computed by streaming it once (no buffering)."""
+    hasher = hashlib.sha256()
+    byte_count = 0
+    for chunk in source.chunks():
+        hasher.update(chunk)
+        byte_count += len(chunk)
+    return hasher.hexdigest(), byte_count
+
+
+def _promote(
+    storage: ObjectStorage, bucket: str, key: str, source: _PayloadSource, digest: str, byte_count: int
+) -> None:
+    """Idempotently stream ``source`` to its content-addressed ``key``.
+
+    The upload is hashed as it streams; if the bytes stored are not the bytes
+    the key names (the source changed underneath), the object is removed and
+    promotion fails closed rather than leaving a mislabeled object for reuse.
+    """
     if storage.object_exists(bucket, key):
         return
-    storage.upload_file(io.BytesIO(payload), bucket, key, _OCTET_STREAM)
+    reader = _HashingReader(source.chunks())
+    storage.upload_file(io.BufferedReader(reader, buffer_size=_READ_CHUNK_BYTES), bucket, key, _OCTET_STREAM)
+    if reader.hasher.hexdigest() != digest or reader.byte_count != byte_count:
+        storage.delete_object(bucket, key)
+        raise ContentDeliveryError("content delivery payload changed while it was promoted")
 
 
 def _verify_projection_against_inventory(pack_root: Path, inventory: Mapping[str, InventoryEntry]) -> None:

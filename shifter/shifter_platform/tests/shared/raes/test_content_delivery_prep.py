@@ -35,17 +35,28 @@ from shared.raes.content_delivery_prep import (
 class _FakeStorage:
     """In-memory ObjectStorage stand-in recording promotions."""
 
-    def __init__(self, *, existing: set[str] | None = None):
+    def __init__(self, *, existing: set[str] | None = None, before_upload=None):
         self.objects: dict[str, bytes] = {}
         self._existing = existing or set()
+        self._before_upload = before_upload
         self.uploads: list[str] = []
+        self.deleted: list[str] = []
 
     def object_exists(self, bucket: str, key: str) -> bool:
         return key in self._existing or key in self.objects
 
     def upload_file(self, file_obj, bucket: str, key: str, content_type: str = "") -> None:
+        if self._before_upload is not None:
+            self._before_upload()
         self.uploads.append(key)
-        self.objects[key] = file_obj.read()
+        chunks = []
+        while chunk := file_obj.read(64 * 1024):  # read like a multipart uploader, in parts
+            chunks.append(chunk)
+        self.objects[key] = b"".join(chunks)
+
+    def delete_object(self, bucket: str, key: str) -> None:
+        self.deleted.append(key)
+        self.objects.pop(key, None)
 
 
 def _content_resource(address: str, *, ctype: str, source: object, text: str | None = None) -> dict:
@@ -120,8 +131,8 @@ def _pack(tmp_path: Path) -> tuple[Path, dict, DeliveryProjection]:
     return pack, inventory, projection
 
 
-def _prepare(pack, inventory, projection, plan, storage, *, prefix="raes/content", max_bytes=10_000_000):
-    target = DeliveryTarget(storage=storage, bucket="assets-bucket", prefix=prefix, max_payload_bytes=max_bytes)
+def _prepare(pack, inventory, projection, plan, storage, *, prefix="raes/content"):
+    target = DeliveryTarget(storage=storage, bucket="assets-bucket", prefix=prefix)
     return prepare_content_delivery(
         pack_root=pack,
         serialized_plan=plan,
@@ -277,26 +288,51 @@ def test_unsupported_source_backed_type_fails_closed(tmp_path: Path):
         _prepare(pack, inventory, projection, plan, storage)
 
 
-def test_oversize_payload_fails_closed(tmp_path: Path):
-    # F2: the declared inventory size (metadata) is over the cap -> rejected before
-    # any bytes are read.
-    pack, inventory, projection = _pack(tmp_path)
-    plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
-    storage = _FakeStorage()
-    with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, storage, max_bytes=3)
-
-
-def test_streaming_hash_caps_input_larger_than_declared(tmp_path: Path):
-    # F2: a file whose ACTUAL bytes exceed the cap (even though its declared
-    # inventory size is small) is rejected mid-stream, never buffered whole.
+def test_input_larger_than_its_declared_size_fails_mid_stream(tmp_path: Path):
+    # The inventory's exact size bounds the read (ADR-032-R9, no fixed cap): a
+    # file whose actual bytes exceed its declared size is rejected mid-stream,
+    # never buffered whole.
     pack, inventory, projection = _pack(tmp_path)
     (pack / "assets" / "flag.txt").write_bytes(b"x" * 500)  # actual >> declared
     inventory["assets/flag.txt"] = InventoryEntry(sha256="0" * 64, size_bytes=5)  # lies small
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
     storage = _FakeStorage()
-    with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, storage, max_bytes=50)
+    with pytest.raises(ContentDeliveryError, match="does not match the pack inventory digest"):
+        _prepare(pack, inventory, projection, plan, storage)
+    assert storage.uploads == []
+
+
+def test_payloads_stream_to_storage_with_no_size_setting(tmp_path: Path):
+    pack, inventory, projection = _pack(tmp_path)
+    big = bytes(range(256)) * 20_000  # several upload chunks
+    (pack / "assets" / "flag.txt").write_bytes(big)
+    inventory["assets/flag.txt"] = InventoryEntry(sha256=hashlib.sha256(big).hexdigest(), size_bytes=len(big))
+    plan = _plan(
+        _content_resource("cf.flag", ctype="file", source="flag-pkg"),
+        _content_resource("cd.seed", ctype="directory", source="seed-tree"),
+    )
+    storage = _FakeStorage()
+
+    bindings = {binding.content_address: binding for binding in _prepare(pack, inventory, projection, plan, storage)}
+
+    assert storage.objects[bindings["cf.flag"].storage_key] == big
+    assert bindings["cf.flag"].byte_count == len(big)
+    seed = storage.objects[bindings["cd.seed"].storage_key]
+    assert (hashlib.sha256(seed).hexdigest(), len(seed)) == (bindings["cd.seed"].sha256, bindings["cd.seed"].byte_count)
+
+
+def test_a_payload_that_changes_during_promotion_is_removed_and_fails(tmp_path: Path):
+    pack, inventory, projection = _pack(tmp_path)
+    plan = _plan(_content_resource("cd.seed", ctype="directory", source="seed-tree"))
+
+    def tamper() -> None:
+        (pack / "assets" / "seed" / "a.txt").write_bytes(b"zzz")  # same size, new bytes
+
+    storage = _FakeStorage(before_upload=tamper)
+    with pytest.raises(ContentDeliveryError, match="changed while it was promoted"):
+        _prepare(pack, inventory, projection, plan, storage)
+    assert storage.objects == {}
+    assert storage.deleted == storage.uploads
 
 
 def _write_projection_file(pack: Path, entries: list[dict]) -> Path:
@@ -328,9 +364,7 @@ def test_default_projection_loader_requires_matching_inventory_record(tmp_path: 
         sha256=hashlib.sha256(proj_path.read_bytes()).hexdigest(), size_bytes=proj_path.stat().st_size
     )
     plan = _plan(_content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}))
-    target = DeliveryTarget(
-        storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content", max_payload_bytes=10_000_000
-    )
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content")
     bindings = prepare_content_delivery(
         pack_root=pack,
         serialized_plan=plan,
@@ -345,9 +379,7 @@ def test_default_projection_loader_fails_closed_when_document_uncovered(tmp_path
     _write_projection_file(pack, _FLAG_PROJECTION_ENTRIES)
     # inventory carries no record at all for delivery/content-projection.json
     plan = _plan(_content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}))
-    target = DeliveryTarget(
-        storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content", max_payload_bytes=10_000_000
-    )
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content")
     with pytest.raises(ContentDeliveryError, match="associated-artifact inventory"):
         prepare_content_delivery(
             pack_root=pack,
@@ -365,9 +397,7 @@ def test_default_projection_loader_fails_closed_when_document_altered(tmp_path: 
     _write_projection_file(pack, _FLAG_PROJECTION_ENTRIES)
     inventory["delivery/content-projection.json"] = InventoryEntry(sha256="0" * 64, size_bytes=1)
     plan = _plan(_content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}))
-    target = DeliveryTarget(
-        storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content", max_payload_bytes=10_000_000
-    )
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content")
     with pytest.raises(ContentDeliveryError, match="does not match the pack inventory digest"):
         prepare_content_delivery(
             pack_root=pack,
@@ -380,7 +410,7 @@ def test_default_projection_loader_fails_closed_when_document_altered(tmp_path: 
 def test_no_bucket_configured_fails_closed(tmp_path: Path):
     pack, inventory, projection = _pack(tmp_path)
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
-    target = DeliveryTarget(storage=_FakeStorage(), bucket="", prefix="raes/content", max_payload_bytes=10_000)
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="", prefix="raes/content")
     with pytest.raises(ContentDeliveryError):
         prepare_content_delivery(
             pack_root=pack,
@@ -422,7 +452,7 @@ def test_unprojected_feature_resolves_to_a_recipe_acquired_artifact(tmp_path: Pa
         seen.append((ref.address, ref.source_name, ref.source_version, ref.feature_type, ref.target_address))
         return _acquired_binding(ref)
 
-    target = DeliveryTarget(storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content", max_payload_bytes=10)
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content")
     bindings = prepare_content_delivery(
         pack_root=pack, serialized_plan=_plan(_claude_feature()), target=target, acquire_feature=acquire
     )
@@ -446,9 +476,7 @@ def test_projected_pack_content_and_acquired_features_combine(tmp_path: Path):
         _content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}),
         _claude_feature(),
     )
-    target = DeliveryTarget(
-        storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content", max_payload_bytes=10_000_000
-    )
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="assets-bucket", prefix="raes/content")
 
     bindings = prepare_content_delivery(
         pack_root=pack,
