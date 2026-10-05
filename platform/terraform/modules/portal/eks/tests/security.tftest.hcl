@@ -573,6 +573,19 @@ run "security_contract" {
     error_message = "The module-owned Load Balancer Controller policy must attach only to the exact ingress IRSA role."
   }
 
+  # IP targets sit in the EKS-managed cluster security group; the controller may
+  # edit ingress there (to admit its backend group) and nowhere untagged else.
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.load_balancer_controller.policy).Statement : statement
+      if try(statement.Sid, "") == "ManageTargetIngressOnClusterSecurityGroup"
+      ]).Resource == "arn:aws:ec2:us-east-2:${data.aws_caller_identity.current.account_id}:security-group/${aws_eks_cluster.this.vpc_config[0].cluster_security_group_id}" && one([
+      for statement in jsondecode(aws_iam_role_policy.load_balancer_controller.policy).Statement : statement
+      if try(statement.Sid, "") == "ManageTargetIngressOnClusterSecurityGroup"
+    ]).Action == ["ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress"]
+    error_message = "The Load Balancer Controller may edit ingress only on the exact EKS cluster security group outside its own tagged groups."
+  }
+
   # EBS/EFS CSI drivers are installed as managed add-ons bound to their own
   # exact-subject IRSA roles (least-privilege controller identity).
   assert {
