@@ -92,6 +92,8 @@ def export_challenges(
                     "description": c.description,
                     "category": c.category,
                     "value": c.points,
+                    # Not a native CTFd field; the CTFd importer reads it back.
+                    "difficulty": c.difficulty,
                     "type": "standard",
                     "state": "visible" if c.visibility == "visible" else "hidden",
                     # Stored flags are verification material (hashes/patterns);
