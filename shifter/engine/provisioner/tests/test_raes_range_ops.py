@@ -473,6 +473,21 @@ class TestProvisionFailure:
         assert payload["reason_code"] == "cloud_operation_failed"
         assert payload["diagnostic"] == "raes range provision failed: RAES content delivery setup plan failed"
 
+    def test_guest_readiness_timeouts_name_the_probe_category(self, patched):
+        from executors.base import GuestReadinessTimeoutError
+
+        patched.apply.side_effect = GuestReadinessTimeoutError(
+            "guest SSH did not become ready within 600s: host key not verifiable"
+        )
+        with pytest.raises(GuestReadinessTimeoutError):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        payload = _payload_for(patched, ResultStep.RAES_TERMINAL_FAILED)
+        assert payload["reason_code"] == "cloud_timeout"
+        assert payload["diagnostic"] == (
+            "raes range provision timed out: guest SSH did not become ready within 600s: host key not verifiable"
+        )
+
     def test_content_delivery_errors_carry_only_authored_text(self):
         """Every RaesContentDeliveryError(...) passes a literal or a module constant,
         never runtime data, which is what lets its message cross the result boundary."""

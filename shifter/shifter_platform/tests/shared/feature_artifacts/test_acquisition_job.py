@@ -108,10 +108,46 @@ def test_result_line_round_trips_and_malformed_output_is_rejected():
 
 def test_main_requires_three_arguments_and_refuses_unsupported_providers(monkeypatch, capsys):
     assert main(["claude-code"]) == 2
-    monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
+    monkeypatch.setenv("CLOUD_PROVIDER", "azure")
     # A reported failure still exits 0 so the launcher can read its reason.
     assert main(["claude-code", "2.1.289", "linux-x64-glibc"]) == 0
     reported = parse_result(capsys.readouterr().out)
     assert reported is not None
     assert not reported.ok
     assert "not supported" in reported.reason
+
+
+class _FakeGcsBucket:
+    """GCS bucket boundary honoring if_generation_match=0 (create-only)."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.preconditions: list[object] = []
+
+    def blob(self, key: str):
+        bucket = self
+
+        class _Blob:
+            def upload_from_filename(self, filename, content_type, if_generation_match):
+                from google.api_core.exceptions import PreconditionFailed
+
+                bucket.preconditions.append(if_generation_match)
+                if key in bucket.objects:
+                    raise PreconditionFailed("exists")
+                bucket.objects[key] = Path(filename).read_bytes()
+
+        return _Blob()
+
+
+def test_gcs_store_writes_create_only_and_treats_an_existing_object_as_stored(upstream):
+    from shared.feature_artifacts.job import GcsArtifactStore
+
+    bucket = _FakeGcsBucket()
+    store = GcsArtifactStore("assets", client=type("Client", (), {"bucket": lambda self, name: bucket})())
+
+    first = acquire("claude-code", "2.1.289", "linux-x64-glibc", store=store, prefix=PREFIX, fetch=upstream)
+    again = acquire("claude-code", "2.1.289", "linux-x64-glibc", store=store, prefix=PREFIX, fetch=upstream)
+
+    assert first.ok and again == first
+    assert bucket.objects == {first.storage_key: BINARY}
+    assert bucket.preconditions == [0, 0]  # never an overwrite

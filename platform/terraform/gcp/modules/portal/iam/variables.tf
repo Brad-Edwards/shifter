@@ -50,6 +50,12 @@ variable "runtime_secret_ids" {
   description = "Secret Manager secret resource IDs keyed by runtime bundle name (from module.portal_secrets.runtime_secret_ids)."
 }
 
+variable "feature_artifact_prefix" {
+  type        = string
+  default     = "raes/content-delivery"
+  description = "Content-addressed delivery prefix (runtime RAES_CONTENT_DELIVERY_PREFIX) on the assets bucket that feature-artifact acquisition writes and verification reads."
+}
+
 variable "assets_bucket_name" {
   type        = string
   description = "Name of the shared platform assets GCS bucket (from module.portal_gcs.assets_bucket_name)."

@@ -8,8 +8,8 @@ reads that line, verifies the stored object independently, and finalizes the
 inventory row.
 
 Usage: ``python -m shared.feature_artifacts.job <source> <resolved-version> <platform>``
-with ``CLOUD_PROVIDER``, ``AWS_REGION``, ``STORAGE_BUCKET_NAME`` and
-``RAES_CONTENT_DELIVERY_PREFIX`` in the environment.
+with ``CLOUD_PROVIDER`` (``aws`` or ``gcp``), ``STORAGE_BUCKET_NAME``,
+``RAES_CONTENT_DELIVERY_PREFIX`` and, on AWS, ``AWS_REGION`` in the environment.
 """
 
 from __future__ import annotations
@@ -70,6 +70,41 @@ class S3ArtifactStore:
     def put(self, path: Path, key: str) -> None:
         with path.open("rb") as handle:
             self._client.upload_fileobj(handle, self._bucket, key, ExtraArgs={"ContentType": _OCTET_STREAM})
+
+
+class GcsArtifactStore:
+    """Minimal GCS writer for the content-addressed prefix (no Django settings).
+
+    Writes create-only (``if_generation_match=0``): the key is the content
+    digest, so an object already there holds the same bytes, and the identity
+    needs object create only, never overwrite (which GCS authorizes as delete).
+    """
+
+    def __init__(self, bucket: str, client: Any | None = None) -> None:
+        # Local import keeps the module importable without the GCS client in tests.
+        if client is None:
+            from google.cloud import storage
+
+            client = storage.Client()
+        self._bucket = client.bucket(bucket)
+
+    def put(self, path: Path, key: str) -> None:
+        from google.api_core.exceptions import PreconditionFailed
+
+        try:
+            self._bucket.blob(key).upload_from_filename(str(path), content_type=_OCTET_STREAM, if_generation_match=0)
+        except PreconditionFailed:
+            return
+
+
+def _store_from_env() -> ArtifactStore | None:
+    """The deployment's object store, or ``None`` on an unsupported provider."""
+    provider = os.environ.get("CLOUD_PROVIDER")
+    if provider == "aws":
+        return S3ArtifactStore(os.environ["STORAGE_BUCKET_NAME"], os.environ["AWS_REGION"])
+    if provider == "gcp":
+        return GcsArtifactStore(os.environ["STORAGE_BUCKET_NAME"])
+    return None
 
 
 def _fetch_and_store(
@@ -135,10 +170,10 @@ def main(argv: list[str]) -> int:
     if len(argv) != 3:
         sys.stderr.write("usage: python -m shared.feature_artifacts.job <source> <resolved-version> <platform>\n")
         return 2
-    if os.environ.get("CLOUD_PROVIDER") != "aws":
+    store = _store_from_env()
+    if store is None:
         result = AcquisitionResult(ok=False, reason="feature-artifact acquisition is not supported on this provider")
     else:
-        store = S3ArtifactStore(os.environ["STORAGE_BUCKET_NAME"], os.environ["AWS_REGION"])
         result = acquire(*argv, store=store, prefix=os.environ["RAES_CONTENT_DELIVERY_PREFIX"])
     # The result line on stdout is the Job's output protocol (read from the pod log).
     sys.stdout.write(RESULT_MARKER + json.dumps(asdict(result), sort_keys=True) + "\n")

@@ -216,6 +216,16 @@
         "jobs": { "$ref": "#/$defs/dnsLabel" }
       }
     },
+    "featureArtifactAcquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceAccountAnnotations", "egressCidrs", "egressExcept"],
+      "properties": {
+        "serviceAccountAnnotations": { "$ref": "#/$defs/annotations" },
+        "egressCidrs": { "$ref": "#/$defs/cidrList" },
+        "egressExcept": { "$ref": "#/$defs/cidrList" }
+      }
+    },
     "serviceAccounts": {
       "type": "object",
       "additionalProperties": false,

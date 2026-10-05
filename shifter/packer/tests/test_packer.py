@@ -1016,16 +1016,11 @@ class TestDcPrebaked:
         assert "Set-DnsServerForwarder" in finalize
 
 
-class TestClaudeBinaryNotBakedIntoAwsImages:
-    """AWS images never contain Claude Code (#2463); GCE keeps it only until #2479."""
+class TestClaudeBinaryNeverBaked:
+    """No Linux image contains Claude Code; ranges receive it at realization (#2463, #2479)."""
 
-    BINARY_SCRIPT = "claude-code-binary.sh"
-
-    def test_aws_linux_templates_never_bake_the_binary(self):
-        for template in ("kali.pkr.hcl", "ubuntu.pkr.hcl"):
-            assert self.BINARY_SCRIPT not in (PACKER_DIR / template).read_text(), template
-
-    def test_gce_linux_templates_bake_it_only_through_the_temporary_script(self):
-        for template in ("gcp/kali.pkr.hcl", "gcp/ubuntu.pkr.hcl"):
-            assert f"../scripts/common/{self.BINARY_SCRIPT}" in (PACKER_DIR / template).read_text(), template
-        assert "#2479" in (SCRIPTS_DIR / "common" / self.BINARY_SCRIPT).read_text()
+    def test_no_linux_template_bakes_the_binary(self):
+        for template in ("kali.pkr.hcl", "ubuntu.pkr.hcl", "gcp/kali.pkr.hcl", "gcp/ubuntu.pkr.hcl"):
+            text = (PACKER_DIR / template).read_text()
+            assert "claude-code-binary" not in text, template
+        assert not (SCRIPTS_DIR / "common" / "claude-code-binary.sh").exists()

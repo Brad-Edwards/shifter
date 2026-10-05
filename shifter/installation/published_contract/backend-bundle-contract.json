@@ -4088,6 +4088,19 @@
           ],
           "sensitivity": "public",
           "source": "selected immutable capacity profile projected during GCP Helm-value assembly"
+        },
+        {
+          "description": "Public GCP image identity (FEATURE_ARTIFACT_JOB_IMAGE) emitted into the platform runtime environment. Optional; emitted only when the deployment enables it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "FEATURE_ARTIFACT_JOB_IMAGE",
+          "owner": "GCP Helm-values renderer (scripts/bootstrap/gcp_control_plane.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "attested image identity projected during GCP Helm-value assembly"
         }
       ],
       "health_checks": [
