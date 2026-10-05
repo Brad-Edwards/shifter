@@ -561,6 +561,71 @@ project in either file can leave Terraform and GitHub correctly configured while
 the CI Kubernetes deploy still pulls from another project's registry or binds
 pods to another project's identities.
 
+#### Optional: model access broker
+
+The ADR-059 model access broker is off by default. Without it, range guests use
+the keyless Vertex identity (ADR-064). Turning it on needs three
+`shifter.yaml` settings blocks that must agree with each other, plus prerequisites
+outside the repository. Validation rejects a partial broker configuration before
+any cloud change.
+
+- `settings.model_broker`: `enabled: true`, the broker `hostname`, a private IPv4
+  `vip` inside the platform GKE subnet, and `admitted_subnets`. Each admitted
+  subnet must sit inside `range_network_cidr` and be disjoint from the VIP and
+  from the other subnets. The block also needs the TLS Secret, control TLS
+  Secret, and CA ConfigMap names, and `model_projects`, which maps each model
+  project ID to its invocation service-account ID. `global_access` stays `false`
+  unless cross-region private clients need the VIP.
+- `settings.model_access`: `enabled: true` and a versioned, priced catalog
+  with its digest. Every account needs a positive spend, rate, and concurrency
+  ceiling; the schema has no unlimited mode.
+- `settings.model_broker_runtime`: the provider inventory, whose principals must
+  equal the applied invocation service accounts, and the fingerprint Secret name
+  and key version. It also takes `guest_trust_ca_pem`, the public broker CA
+  certificate that guests trust. With an empty CA, no guest can enroll.
+
+Supply the blocks one of two ways:
+
+1. A reviewed template at
+   `platform/deploy/gcp/<environment>/model-broker-overlay.template.json`, the
+   recommended path. It must contain exactly the three blocks above and the
+   placeholders `__GCP_PROJECT_ID__`, `__GUEST_CA_PEM__`, and
+   `__CATALOG_DIGEST__`. It must also use the fixed names
+   `model-broker-tls-v1`, `model-control-tls-v1`, `model-access-ca-v1`, and
+   `broker-fingerprint-v1`. On each CI deploy,
+   `scripts/gcp/prepare_model_broker_overlay.py` creates or verifies the broker
+   CA, both TLS Secrets, the CA ConfigMap, and the fingerprint Secret in
+   `shifter-platform`. It also fills in the CA and the catalog digest. The
+   reference shape is
+   `scripts/gcp/tests/fixtures/model-broker-overlay.template.json`.
+2. The `SHIFTER_CONFIG_OVERLAY_JSON` variable, or the blocks written directly into
+   `shifter.yaml`. Neither path creates the trust objects or computes the catalog
+   digest: create the Kubernetes Secrets and ConfigMap first, and set the digest
+   and CA yourself. The local `gdc-bootstrap` path supports only this form. The
+   chart mounts the trust objects by name, so a missing object makes the Helm
+   upgrade fail.
+
+Before enabling:
+
+- Run the first deploy without the template. The template step connects to the
+  GKE cluster before Terraform runs, so on a fresh tenant it fails because the
+  cluster does not exist yet. Add the template once the cluster exists.
+- Prepare every model project. Each one needs billing enabled, the label
+  `shifter-deployment=<deployment.name>`, and the Vertex models enabled. Terraform
+  enables the APIs and creates the invocation service account and its roles
+  there. The CI deploy identity holds roles only in the platform project, so
+  grant it equivalent authority in each other model project first.
+- Set `GCP_RANGE_PRIVATE_GOOGLE_ACCESS=false`. Broker clients require
+  source-preserving isolated egress, and a broker-enrolled range with Private
+  Google Access on fails to provision.
+- Plan certificate renewal. The template path issues 30-day TLS certificates
+  and a 365-day CA, and refuses to deploy when a certificate has less than 14
+  days left or the CA less than 30. It does not renew either automatically yet.
+
+See [GCP packaging](../../architecture/model-access/gcp-packaging.md) and the
+[model access GCP probes](../../ops/model-access-gcp-probes.md) for the full
+contract and post-deploy checks.
+
 ### 4. Deploy
 
 The first clean install runs locally under your own credentials (Workload Identity
