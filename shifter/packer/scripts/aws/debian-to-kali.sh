@@ -83,7 +83,20 @@ echo "=== Ensuring the AWS guest environment survived the conversion ==="
 # (ENA/NVMe drivers), sshd, and systemd-resolved are all required on a range
 # guest; reinstall from Kali Rolling if the upgrade dropped any of them.
 apt-get install -y cloud-init cloud-guest-utils linux-image-cloud-amd64 openssh-server systemd-resolved
-systemctl enable cloud-init.service cloud-config.service cloud-final.service ssh.service systemd-resolved.service
+# cloud-init's stage units changed across releases (24.3 split cloud-init.service
+# into cloud-init-main/cloud-init-network), so enable whichever the installed
+# version ships, then require the final stage that runs per-range user data.
+for unit in cloud-init-local.service cloud-init-main.service cloud-init-network.service \
+  cloud-init.service cloud-config.service cloud-final.service; do
+  if [[ -n "$(systemctl list-unit-files --no-legend "$unit")" ]]; then
+    systemctl enable "$unit"
+  fi
+done
+if ! systemctl is-enabled --quiet cloud-final.service; then
+  echo "FATAL: cloud-init final stage is not enabled after conversion" >&2
+  exit 1
+fi
+systemctl enable ssh.service systemd-resolved.service
 
 echo "=== Regenerating the GRUB config for the installed kernels ==="
 # The held grub-common still owns update-grub; regenerate explicitly so the
