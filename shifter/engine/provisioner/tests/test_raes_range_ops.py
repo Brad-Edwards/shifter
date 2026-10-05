@@ -181,6 +181,23 @@ class TestProvision:
             ResultStep.RAES_TERMINAL_READY,
         ]
 
+    def test_rejected_ready_result_still_reports_terminal_failure(self, patched):
+        # The append validates the result contract; a rejected realized result must
+        # still end the generation (otherwise the range stays PROVISIONING forever and
+        # blocks the owner's next launch). Realized resources are left for destroy.
+        def append(*_args, **kwargs):
+            if kwargs["step"] is ResultStep.RAES_TERMINAL_READY:
+                raise ValueError("result payload members[0] subnet_name must be a non-empty string")
+
+        patched.append.side_effect = append
+
+        with pytest.raises(ValueError):
+            raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        assert _steps(patched)[-1] == ResultStep.RAES_TERMINAL_FAILED
+        assert "subnet_name" not in _payload_for(patched, ResultStep.RAES_TERMINAL_FAILED)["diagnostic"]
+        patched.release_subnet.assert_not_called()
+
     @pytest.mark.parametrize("instances", [{"not": "a-list"}, ["not-a-mapping"]])
     def test_malformed_realized_instances_fail_before_ready(self, patched, instances):
         patched.apply.return_value = {**patched.apply.return_value, "instances": instances}

@@ -17,7 +17,7 @@ data "aws_caller_identity" "current" {}
 locals {
   environment  = "prod"
   cluster_name = "shifter-${local.environment}-eks"
-  secret_names = toset(["database", "django", "redis", "guacamole-db", "guacamole-json-auth"])
+  secret_names = toset(["database", "django", "redis", "cognito", "guacamole-db", "guacamole-json-auth"])
 
   # The EKS control plane composes over the existing portal data plane
   # (ADR-044-R6): portal resources are named "${environment}-portal-*".
@@ -66,6 +66,9 @@ module "eks" {
       service_account = "portal"
       policy_arns     = []
       secret_names    = local.secret_names
+      # Broker participant SSH/RDP connections to realized range guests (#1826).
+      range_participant_secret_read = true
+      rds_iam_db_user               = "portal_runtime"
       object_read_arns = (
         var.ctf_content_bucket_arn == ""
         ? []
@@ -77,12 +80,14 @@ module "eks" {
       service_account = "workers"
       policy_arns     = []
       secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
     }
     ctfScheduler = {
       namespace       = "shifter-platform"
       service_account = "ctf-scheduler"
       policy_arns     = []
       secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
     }
     # Dedicated provisioner Job launcher + the privileged provisioner Job (#1826).
     # The provisioner's range-provisioning permission set is attached separately
@@ -93,6 +98,7 @@ module "eks" {
       service_account = "provisioner-launcher"
       policy_arns     = []
       secret_names    = local.secret_names
+      rds_iam_db_user = "portal_runtime"
     }
     provisioner = {
       namespace       = "shifter-jobs"
