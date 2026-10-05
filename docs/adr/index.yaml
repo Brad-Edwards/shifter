@@ -3872,7 +3872,7 @@
   {
     "id": "ADR-059",
     "title": "Range model and tool access crosses a deployment-owned broker",
-    "status": "proposed",
+    "status": "superseded",
     "scope": "shifter_platform",
     "decision": "PLAT-202 selects a deployment-owned participant model/tool broker with provider credentials outside participant control. Engine owns policy, allocation, grants and accounting; shared owns native contracts; CTF and CMS retain event/scenario/owner admission; the provisioner only realizes a generation-bound operation projection. GCP/Vertex is the first qualification target. This proposed design does not advertise an installed capability or provider parity.",
     "rules": [
@@ -3912,7 +3912,8 @@
       "docs/architecture/model-access/security.md",
       "docs/architecture/model-access/delivery.md",
       "docs/architecture/native-ec2-runtime.md"
-    ]
+    ],
+    "superseded_by": "ADR-068"
   },
   {
     "id": "ADR-064",
@@ -3951,7 +3952,7 @@
   {
     "id": "ADR-060",
     "title": "Model allocation and request budgets are Engine-owned commitments",
-    "status": "proposed",
+    "status": "superseded",
     "scope": "shifter_platform",
     "decision": "Model-required admission extends ADR-047's Engine-owned catalog and capacity seams while enforcing mandatory request, spend, token, rate and concurrency budgets. Engine persists stable generation-bound allocations and atomic integer-unit reservations before provider dispatch. Unknown outcomes retain maximum charges and cannot trigger blind retries. Proposed policy is not evidence that these runtime controls exist.",
     "rules": [
@@ -3993,12 +3994,13 @@
       "shifter/shifter_platform/config/model_access_sharing.py",
       "shifter/shifter_platform/tests/engine/services/test_model_access_authority_postgres.py",
       "shifter/shifter_platform/tests/engine/services/test_model_access_range_pagination.py"
-    ]
+    ],
+    "superseded_by": "ADR-068"
   },
   {
     "id": "ADR-061",
     "title": "Model access is released through revocation and operating evidence",
-    "status": "proposed",
+    "status": "superseded",
     "scope": "shifter_platform",
     "decision": "Model-access release requires measured grant revocation, conservative provider outcome handling, body-free audit, bounded operation, migration and restore evidence. Engine invalidation blocks new admissions; short dispatch/continuation leases fence broker transport. Provider cancellation and token revocation remain separately measured external behavior. GCP cohort qualification and future provider qualifications are distinct.",
     "rules": [
@@ -4031,7 +4033,8 @@
       "docs/ops/model-access.md",
       "docs/architecture/model-access/security.md",
       "docs/architecture/model-access/delivery.md"
-    ]
+    ],
+    "superseded_by": "ADR-068"
   },
   {
     "id": "ADR-062",
@@ -4250,7 +4253,7 @@
   {
     "id": "ADR-067",
     "title": "Model-access enforcement is optional; keyless-direct is the default; adopt a mature LLM gateway for enforcement",
-    "status": "accepted",
+    "status": "superseded",
     "scope": "shifter_platform",
     "decision": "Model-access enforcement (spend, rate, and request metering, and later detections) is an optional capability, not a requirement: no deployment must run an enforcing gateway to give ranges model access. Keyless Workload Identity direct access (ADR-064) is the default guest model path for all ranges including CTF ranges. The deployment-owned broker is an LLM gateway built in-house whose mandatory-enforcement posture, plus a bespoke zero-trust rotating-credential model, blocked basic range-to-model flows (GCE provisioning outlasts the membership freshness window; capacity, enrollment, and per-event bindings are not turnkey). The broker is no longer the strategic enforcement mechanism: investment in hardening its mandatory-enforcement, freshness, and membership machinery stops, and it is retained only as a compatibility and opt-in path pending migration. The strategic optional-enforcement path is a mature, self-hosted LLM gateway (LiteLLM primary candidate) evaluated and adopted under #2411 as part of the AI Gateway milestone #2274. This supersedes the mandatory-enforcement posture of ADR-059 and complements ADR-064.",
     "rules": [
@@ -4275,6 +4278,47 @@
       "docs/adr/067-model-access-enforcement-optional.md",
       "docs/adr/064-default-range-model-access.md",
       "docs/adr/059-range-model-access-broker.md"
+    ],
+    "superseded_by": "ADR-068"
+  },
+  {
+    "id": "ADR-068",
+    "title": "The model access broker is parked; keyless-direct is the only live model path (supersedes ADR-067)",
+    "status": "accepted",
+    "supersedes": "ADR-067",
+    "scope": "shifter_platform",
+    "decision": "The ADR-059 model access broker is parked: no tenant runs it, it is not supported for use, and every deployment keeps settings.model_broker and settings.model_access disabled. Keyless Workload Identity direct access (ADR-064) is the only supported guest model path while it is parked. No work hardens or extends the broker; changes are limited to keeping CI reliable until it is removed or replaced, and model access control is taken up again under the AI Gateway milestone (#2274). Any future model access control path is a transparent proxy whose controls (spend, rate, concurrency, token limits, detections) are optional, with no controls by default and a missing limit meaning no limit; its credentials renew automatically and enabling it needs no manual bootstrap steps. Supersedes ADR-067 and the parked broker design in ADR-059, ADR-060, and ADR-061.",
+    "rules": [
+      {
+        "id": "ADR-068-R1",
+        "description": "The model access broker stays disabled on every deployment and is documented as not supported for use; no tenant configuration enables settings.model_broker or settings.model_access.",
+        "checks": []
+      },
+      {
+        "id": "ADR-068-R2",
+        "description": "While the broker is parked, keyless Workload Identity direct access (ADR-064) is the only supported guest model path.",
+        "checks": []
+      },
+      {
+        "id": "ADR-068-R3",
+        "description": "No new work hardens or extends the parked broker. Changes to its code are limited to keeping CI reliable for other work (for example, isolating a flaky test) until a removal or replacement decision.",
+        "checks": []
+      },
+      {
+        "id": "ADR-068-R4",
+        "description": "Any future model access control path defaults to no controls: every control is optional and a missing limit means no limit. Its certificates and credentials renew automatically, a deploy never fails only because a certificate is near expiry, and enabling it works in the existing bootstrap and deploy flows with no manual steps.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "docs/adr/068-model-access-broker-parked.md",
+      "docs/adr/064-default-range-model-access.md",
+      "docs/technical/dev/setup.md",
+      "https://github.com/Brad-Edwards/shifter/issues/2274"
     ]
   }
 ]

@@ -128,6 +128,12 @@ Accepted ADR-064 supersedes ADR-059's "no-service-account guest default" for
 GCP: range guests receive a default-on, keyless predict-only Vertex model
 identity via Workload Identity, mutually exclusive per range with the broker.
 
+Accepted ADR-068 supersedes ADR-067 and the parked broker design in ADR-059,
+ADR-060 and ADR-061. The broker is parked and not supported for use, and
+keyless-direct (ADR-064) is the only live guest model path. Any future model
+access control path is a transparent proxy whose controls are optional, with no
+controls by default.
+
 The enforcement entrypoint is:
 
 ```bash
