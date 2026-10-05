@@ -204,3 +204,8 @@ output "shared_service_capacity_profile" {
   description = "Applied immutable shared-service capacity profile identity."
   value       = module.platform_core.shared_service_capacity_profile
 }
+
+output "openvpn_pool" {
+  description = "Shared participant OpenVPN pool wiring (#2480); null when not deployed."
+  value       = module.platform_core.openvpn_pool
+}

@@ -26,19 +26,6 @@ variable "name_prefix" {
   type = string
 }
 
-# ADR-008-R7: size of the pre-provisioned OpenVPN gateway service-account pool
-# (sh-vpn-pool-0 .. N-1). Bounds concurrent OpenVPN ranges and must match
-# VPN_GATEWAY_POOL_SIZE in the engine runtime env, which reserves slots into it.
-variable "vpn_gateway_pool_size" {
-  type    = number
-  default = 24
-
-  validation {
-    condition     = var.vpn_gateway_pool_size >= 0 && floor(var.vpn_gateway_pool_size) == var.vpn_gateway_pool_size
-    error_message = "vpn_gateway_pool_size must be a non-negative integer."
-  }
-}
-
 variable "range_host_identity_pool_size" {
   type        = number
   default     = 0

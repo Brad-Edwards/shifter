@@ -169,6 +169,10 @@ def test_p30_terraform_and_gate_projections_are_complete():
         "access_machine_type": "e2-standard-8",
         "access_node_count": 3,
         "access_node_max_count": 8,
+        "vpn_pool_machine_type": "e2-standard-2",
+        "vpn_pool_min_vms": 3,
+        "vpn_pool_max_vms": 6,
+        "vpn_pool_cpu_target_pct": 30,
         "cloud_sql_tier": "db-custom-4-15360",
         "cloud_sql_availability_type": "REGIONAL",
         "cloud_sql_disk_size_gb": 60,
@@ -248,3 +252,18 @@ def test_p30_drift_projection_covers_capacity_bearing_kubernetes_fields():
     assert state["hpa/guacd.spec.maxReplicas"] == 4
     assert state["backendconfig/portal-web.spec.connectionDraining.drainingTimeoutSec"] == 300
     assert state["configmap/platform-runtime.data.PORTAL_WEB_WS_PING_INTERVAL"] == "30"
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "minimum", "maximum"),
+    [
+        ("gcp-shared-v1-p10", 2, 4),
+        ("gcp-shared-v1-p30", 3, 6),
+        ("gcp-shared-v1-p50", 3, 6),
+        ("gcp-shared-v1-p100", 5, 10),
+    ],
+)
+def test_the_openvpn_pool_keeps_a_spare_server_above_its_participant_plan(profile_id, minimum, maximum):
+    # 25 participants per single-threaded OpenVPN server, plus one spare, never fewer than two (#2480).
+    pool = resolve_capacity_profile(profile_id).vpn_pool
+    assert (pool.minimum_vms, pool.maximum_vms, pool.cpu_utilization_pct) == (minimum, maximum, 30)

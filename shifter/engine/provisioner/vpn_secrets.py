@@ -25,7 +25,7 @@ from gcp_dynamic_secrets import (
 )
 from vpn_access import VpnSecretOps
 
-_ISSUER_LOCATOR_ENV = "RANGE_OPENVPN_ISSUER_SECRET"
+_ISSUER_LOCATOR_ENV = "RANGE_OPENVPN_ISSUER_SECRET_ID"
 
 
 class _GCPExceptions(Protocol):

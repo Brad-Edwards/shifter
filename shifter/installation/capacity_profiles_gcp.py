@@ -140,6 +140,29 @@ class AccessNodeCapacity(_ClosedModel):
         return self
 
 
+class VpnPoolCapacity(_ClosedModel):
+    """Shared participant OpenVPN pool sizing (#2480).
+
+    One OpenVPN 2.x process is single-threaded and uses one core. The plan is
+    25 participants per 2-vCPU server: 25 x 3 Mbps (interactive RDP plus SSH)
+    is about 75 Mbps, roughly 40% of one core at OpenVPN's published 12 MHz per
+    Mbps. The minimum adds one spare server (and never drops below two) so a
+    server can fail or be replaced without exceeding the plan. The CPU target
+    is 30% of the VM because a saturated OpenVPN core shows as only 50%.
+    """
+
+    machine_type: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
+    minimum_vms: int = Field(ge=2)
+    maximum_vms: int = Field(ge=2)
+    cpu_utilization_pct: int = Field(ge=10, le=45)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> VpnPoolCapacity:
+        if self.maximum_vms < self.minimum_vms:
+            raise ValueError("VPN pool maximum must be at least its minimum")
+        return self
+
+
 class TimeoutCapacity(_ClosedModel):
     """Coordinated backend, WebSocket, process, pod, and drain timeouts."""
 
@@ -179,6 +202,7 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
     cloud_sql: CloudSqlCapacity
     redis: RedisCapacity
     access_nodes: AccessNodeCapacity
+    vpn_pool: VpnPoolCapacity
     timeouts: TimeoutCapacity
     gate: GateCapacity
 
@@ -198,6 +222,10 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
             "access_machine_type": self.access_nodes.machine_type,
             "access_node_count": self.access_nodes.minimum_nodes,
             "access_node_max_count": self.access_nodes.maximum_nodes,
+            "vpn_pool_machine_type": self.vpn_pool.machine_type,
+            "vpn_pool_min_vms": self.vpn_pool.minimum_vms,
+            "vpn_pool_max_vms": self.vpn_pool.maximum_vms,
+            "vpn_pool_cpu_target_pct": self.vpn_pool.cpu_utilization_pct,
             "cloud_sql_tier": self.cloud_sql.tier,
             "cloud_sql_availability_type": self.cloud_sql.availability_type,
             "cloud_sql_disk_size_gb": self.cloud_sql.disk_size_gb,
@@ -363,6 +391,20 @@ def _resources(request_cpu: str, request_memory: str, limit_cpu: str, limit_memo
     )
 
 
+_VPN_PARTICIPANTS_PER_SERVER = 25
+
+
+def _vpn_pool(count: int) -> VpnPoolCapacity:
+    """Size the OpenVPN pool for one participant tier (basis on VpnPoolCapacity)."""
+    minimum = max(2, -(-count // _VPN_PARTICIPANTS_PER_SERVER) + 1)
+    return VpnPoolCapacity(
+        machine_type="e2-standard-2",
+        minimum_vms=minimum,
+        maximum_vms=max(minimum + 2, minimum * 2),
+        cpu_utilization_pct=30,
+    )
+
+
 def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityProfile:
     """Build one immutable catalog entry from its supported participant tier."""
     sizes: dict[int, tuple[int, int, int, int, str, Literal["ZONAL", "REGIONAL"], int, int]] = {
@@ -420,6 +462,7 @@ def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityP
             minimum_nodes=access_nodes,
             maximum_nodes=access_max,
         ),
+        vpn_pool=_vpn_pool(count),
         timeouts=TimeoutCapacity(
             portal_backend_seconds=3600,
             guacamole_backend_seconds=3600,

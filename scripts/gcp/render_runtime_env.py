@@ -21,6 +21,7 @@ The GCP portal runtime is always rendered in the production security posture
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -267,16 +268,45 @@ def _model_access_runtime_values() -> dict[str, str]:
     }
 
 
-def _openvpn_runtime_values() -> dict[str, str]:
-    """Render the deployment's participant OpenVPN opt-in (#2030, ADR-039-R10).
+_OPENVPN_POOL_KEYS = (
+    "RANGE_OPENVPN_ENDPOINT",
+    "RANGE_OPENVPN_POOL_CIDRS",
+    "RANGE_OPENVPN_ISSUER_SECRET_ID",
+    "VPN_CONTROL_AUDIENCE",
+    "VPN_CONTROLLER_SERVICE_ACCOUNT_EMAIL",
+    "VPN_CONTROLLER_SERVICE_ACCOUNT_ID",
+)
+
+
+def _openvpn_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
+    """Render participant OpenVPN access and its shared pool wiring (#2030, #2480, ADR-039-R10).
 
     Always emitted, so a deploy that turns the opt-in off also revokes a stale
-    ``true`` from an earlier rollout.
+    ``true`` and blanks the pool wiring from an earlier rollout. With the opt-in
+    on, the Terraform ``openvpn_pool`` output must exist: a range must never be
+    promised a VPN that no pool serves.
     """
     enabled = os.environ.get("RANGE_OPENVPN_ENABLED", "").strip().lower() or "false"
     if enabled not in {"true", "false"}:
         raise ValueError("RANGE_OPENVPN_ENABLED must be true or false")
-    return {"RANGE_OPENVPN_ENABLED": enabled}
+    values = {"RANGE_OPENVPN_ENABLED": enabled, **dict.fromkeys(_OPENVPN_POOL_KEYS, "")}
+    if enabled == "false":
+        return values
+    pool = outputs.get("openvpn_pool", {})
+    pool = pool.get("value") if isinstance(pool, dict) else None
+    if not isinstance(pool, dict):
+        raise ValueError("RANGE_OPENVPN_ENABLED=true requires the Terraform openvpn_pool output")
+    values.update(
+        {
+            "RANGE_OPENVPN_ENDPOINT": str(ipaddress.ip_address(str(pool["endpoint"]))),
+            "RANGE_OPENVPN_POOL_CIDRS": str(ipaddress.ip_network(str(pool["subnet_cidr"]), strict=True)),
+            "RANGE_OPENVPN_ISSUER_SECRET_ID": str(pool["issuer_secret"]),
+            "VPN_CONTROL_AUDIENCE": str(pool["control_audience"]),
+            "VPN_CONTROLLER_SERVICE_ACCOUNT_EMAIL": str(pool["service_account_email"]),
+            "VPN_CONTROLLER_SERVICE_ACCOUNT_ID": str(pool["service_account_id"]),
+        }
+    )
+    return values
 
 
 def _mission_control_lease_runtime_values() -> dict[str, str]:
@@ -558,7 +588,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values["MODEL_ENROLLMENT_CONTROL_URL"] = ""
     values["MODEL_ENROLLMENT_CA_PEM_B64"] = ""
     values.update(_model_access_runtime_values())
-    values.update(_openvpn_runtime_values())
+    values.update(_openvpn_runtime_values(outputs))
     values.update(_mission_control_lease_runtime_values())
     # These references originate in the same validated shifter.yaml map that
     # drives per-secret Terraform IAM. Apply them last so a process-local env

@@ -63,7 +63,7 @@ def test_issuer_is_read_from_the_configured_tenant_secret_only():
     assert client.access_secret_version.call_args.kwargs["request"] == {"name": f"{_ISSUER}/versions/latest"}
     client.create_secret.assert_not_called()
 
-    with pytest.raises(RuntimeError, match="RANGE_OPENVPN_ISSUER_SECRET"):
+    with pytest.raises(RuntimeError, match="RANGE_OPENVPN_ISSUER_SECRET_ID"):
         _gcp_adapter(MagicMock(), issuer_secret="").read_issuer()
 
 
@@ -149,12 +149,12 @@ def test_pool_is_enabled_only_with_a_deployed_pool_on_shared_vpc_gce(monkeypatch
     monkeypatch.setenv("GCP_RANGE_BACKEND", "gce")
     monkeypatch.setenv("GCP_RANGE_CELL_NETWORK_MODE", "shared-vpc")
     monkeypatch.delenv("RANGE_OPENVPN_ENDPOINT", raising=False)
-    monkeypatch.delenv("RANGE_OPENVPN_ISSUER_SECRET", raising=False)
+    monkeypatch.delenv("RANGE_OPENVPN_ISSUER_SECRET_ID", raising=False)
     monkeypatch.delenv("RANGE_OPENVPN_POOL_CIDRS", raising=False)
     assert openvpn_access_enabled() is False
 
     monkeypatch.setenv("RANGE_OPENVPN_ENDPOINT", "203.0.113.7")
-    monkeypatch.setenv("RANGE_OPENVPN_ISSUER_SECRET", _ISSUER)
+    monkeypatch.setenv("RANGE_OPENVPN_ISSUER_SECRET_ID", _ISSUER)
     assert openvpn_access_enabled() is False
     monkeypatch.setenv("RANGE_OPENVPN_POOL_CIDRS", "10.49.0.0/24")
     assert openvpn_access_enabled() is True
