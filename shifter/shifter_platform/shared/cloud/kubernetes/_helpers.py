@@ -77,14 +77,15 @@ def admission_conflict_backoff_seconds(attempt: int) -> float:
 
 def create_with_admission_retry[T](create: Callable[[], T]) -> T:
     """Run a create call, retrying admission conflicts with bounded jittered backoff."""
-    for attempt in range(ADMISSION_CONFLICT_ATTEMPTS):
+    for attempt in range(ADMISSION_CONFLICT_ATTEMPTS - 1):
         try:
             return create()
         except Exception as exc:
-            if not is_admission_conflict(exc) or attempt == ADMISSION_CONFLICT_ATTEMPTS - 1:
+            if not is_admission_conflict(exc):
                 raise
             time.sleep(admission_conflict_backoff_seconds(attempt))
-    raise AssertionError("unreachable")  # pragma: no cover - the loop always returns or raises
+    # Final attempt: any error, including a still-conflicting write, propagates.
+    return create()
 
 
 def _shifter_resource_labels(
