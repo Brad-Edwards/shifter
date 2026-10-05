@@ -13,7 +13,6 @@ resources:
   - guacd-service.yaml
   - guacd-deployment.yaml
   - guacamole-client-service.yaml
-  - guacamole-client-backendconfig.yaml
   - guacamole-client-deployment.yaml
   - worker-cms-deployment.yaml
   - worker-engine-deployment.yaml
