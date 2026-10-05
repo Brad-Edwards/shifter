@@ -287,7 +287,7 @@ def _report_realized_provision(
         # PROVISIONING indefinitely and occupies the owner's active-range slot. The
         # cloud resources are realized, so allocations are not released here: the
         # failed range is torn down through the normal destroy operation, which also
-        # removes its OpenVPN gateway.
+        # removes its OpenVPN access.
         reason_code, diagnostic = _classify_failure(exc, "raes range provision result")
         logger.error("RAES range provision result was rejected for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
