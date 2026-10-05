@@ -87,6 +87,29 @@ def get_pinned_range_egress_mode_by_request(request_id: UUID) -> str | None:
     return Range.objects.filter(request__request_id=request_id).values_list("egress_mode", flat=True).first()
 
 
+def get_range_failure_reason_by_request(request_id: UUID) -> str:
+    """The failure recorded for ``request_id``: reason code plus the bounded diagnostic.
+
+    The range keeps only the closed reason code; the provisioner's authored,
+    value-free diagnostic (MAX_DIAGNOSTIC_CHARS) rides the latest terminal-failed
+    operation result. Empty when nothing failed.
+    """
+    from engine.models import OperationResultInbox, Range
+    from shared.operation_results import ResultStep
+
+    reason = Range.objects.filter(request__request_id=request_id).values_list("error_message", flat=True).first()
+    envelope = (
+        OperationResultInbox.objects.filter(request_id=request_id, result_step=ResultStep.RAES_TERMINAL_FAILED.value)
+        .order_by("-created_at")
+        .values_list("envelope", flat=True)
+        .first()
+    )
+    payload = envelope.get("payload") if isinstance(envelope, dict) else None
+    diagnostic = payload.get("diagnostic") if isinstance(payload, dict) else None
+    parts = [part for part in (reason, diagnostic) if isinstance(part, str) and part]
+    return ": ".join(parts)
+
+
 def destroy_range_by_request(request_id: UUID) -> bool:
     """Tear down range infrastructure by request_id.
 
