@@ -47,9 +47,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #2305 after granting namespace-scoped pod listing for cancellation.
 # Regenerated after raising provisioner launcher memory for burst requests.
 # Regenerated for #2467 after admitting raes-range activate in the provisioner Job policy.
+# Regenerated for #2480 after admitting the OpenVPN pool env and dropping the 1195 port.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "7734e6d178a1bdfc6887160caf2dec560e49605cf5c7843288b8ec4772b97998",
-    "gcp-prod": "e15c2f3b9aa4b83cfd8400be28ee9dc0952f6c86593b64b5d0750e2b7b34b559",
+    "gcp-dev": "aaff0969559e2f147710bb9b185522eb440421b5fb6e222ffb0902815818264c",
+    "gcp-prod": "6ea1b4566d1cb8e9392eed18f8895287e5ed68fe7e7096ea17d3a0d2f0770e27",
 }
 
 

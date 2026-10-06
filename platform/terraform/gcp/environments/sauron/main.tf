@@ -98,6 +98,12 @@ module "platform_core" {
   provisioner_node_count             = var.provisioner_node_count
   access_node_count                  = var.access_node_count
   access_node_max_count              = var.access_node_max_count
+  openvpn_pool_enabled               = var.openvpn_pool_enabled
+  openvpn_pool_subnet_cidr           = var.openvpn_pool_subnet_cidr
+  openvpn_pool_machine_type          = var.vpn_pool_machine_type
+  openvpn_pool_min_vms               = var.vpn_pool_min_vms
+  openvpn_pool_max_vms               = var.vpn_pool_max_vms
+  openvpn_pool_cpu_target_pct        = var.vpn_pool_cpu_target_pct
   shared_service_capacity_profile    = var.shared_service_capacity_profile
   cloud_sql_database_version         = var.cloud_sql_database_version
   cloud_sql_tier                     = var.cloud_sql_tier

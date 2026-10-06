@@ -630,6 +630,7 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
             "PROVISIONER_IMAGE_DIGEST",
             "GUACD_IMAGE_DIGEST",
             "GUACAMOLE_CLIENT_IMAGE_DIGEST",
+            "OPENVPN_IMAGE_DIGEST",
         ):
             self.assertIn(digest, workflow)
         self.assertIn("--exit-code 1", workflow)
@@ -767,6 +768,18 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn('resource "google_storage_bucket_iam_member" "destroy_bucket_iam_admin"', identity)
         self.assert_hcl_assignment(identity, "role", '"roles/storage.legacyBucketOwner"')
         self.assertIn("platform_external_bucket_names", identity)
+        # The OpenVPN pool's VM permissions (#2480) never reach images and are
+        # conditioned to the pool's own instance, disk and template names.
+        for marker in ('variable "deploy_vpn_pool_permissions"', 'variable "destroy_vpn_pool_permissions"'):
+            start = variables.index(marker)
+            block = variables[start : variables.index("\n}", start)]
+            self.assertNotIn("compute.images.", block)
+            self.assertNotIn("compute.snapshots.", block)
+        for name in ("deploy_vpn_pool", "destroy_vpn_pool"):
+            start = identity.index(f'resource "google_project_iam_member" "{name}"')
+            block = identity[start : identity.index("\n}\n", start)]
+            self.assert_hcl_assignment(block, "expression", "local.vpn_pool_condition")
+        self.assertIn("resource.name.extract('/instances/{name}').startsWith", identity)
         condition_start = identity.index("platform_storage_bucket_names")
         condition_end = identity.index("\n}", condition_start)
         self.assertNotIn("release-evidence", identity[condition_start:condition_end])

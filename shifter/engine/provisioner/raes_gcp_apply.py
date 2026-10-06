@@ -65,7 +65,7 @@ from raes_gcp_destroy import RaesGceDestroyOptions, destroy_raes_range_cell
 from raes_gcp_plan import RaesGcePlanOptions, build_raes_range_cell_plan
 from raes_gcp_secret_ops import RaesGceSecretOps, _default_secret_ops
 from raes_gcp_verification import _verify_raes_apply
-from raes_gcp_vpn_apply import ensure_vpn_gateway, publish_vpn_access, remote_access_plan
+from raes_gcp_vpn_apply import publish_vpn_access, vpn_access_plan
 from raes_guest_plan import (
     _access_by_node,
     _accounts_by_node,
@@ -313,8 +313,8 @@ def _cleanup_failed_apply(
     runtime: RaesGceApplyRuntime,
 ) -> None:
     """Run reconstructive cleanup using the apply pass's resolved clients."""
-    # Destroy reconstructs names only; the identity secret is not needed.
-    remote_access = runtime.openvpn.plan_remote_access().names_only() if runtime.openvpn is not None else None
+    # Teardown reconstructs the pool rule by name only.
+    remote_access = runtime.openvpn.plan_access().names_only() if runtime.openvpn is not None else None
     destroy_raes_range_cell(
         request_uuid,
         range_id,
@@ -361,7 +361,7 @@ def _prepare_raes_apply(
             access_bindings=realized_access,
             egress_policy=GceEgressPolicy(mode=options.egress_mode, model_broker=options.model_broker),
             allocated_network_cidrs=options.allocated_network_cidrs,
-            remote_access=remote_access_plan(options),
+            remote_access=vpn_access_plan(options),
         ),
     )
     for instance in plan["instances"]:
@@ -450,9 +450,8 @@ def apply_raes_range_cell(
             _access_by_node(realized_access),
             created,
         )
-        vpn_gateway = ensure_vpn_gateway(plan, runtime)
         verified_observations = _verify_raes_apply(plan, raes_plan, instance_outputs, delivery_bindings, runtime)
-        vpn_access = publish_vpn_access(runtime, vpn_gateway)
+        vpn_access = publish_vpn_access(runtime)
     except GCEInstanceBindingError:
         # A conflicting VM is not ours to delete, even if a race placed it
         # after the read-only preflight and some network resources were made.

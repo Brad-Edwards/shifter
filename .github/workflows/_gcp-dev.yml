@@ -111,6 +111,7 @@ jobs:
       provisioner_digest: ${{ steps.build-provisioner.outputs.digest }}
       guacd_digest: ${{ steps.build-guacd.outputs.digest }}
       guacamole_client_digest: ${{ steps.build-guacamole-client.outputs.digest }}
+      openvpn_digest: ${{ steps.build-openvpn.outputs.digest }}
     env:
       GCP_ENVIRONMENT: ${{ inputs.environment }}
       USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
@@ -226,6 +227,8 @@ jobs:
           GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
           GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
           GCP_CTF_CONTENT_BUCKET: ${{ vars.GCP_CTF_CONTENT_BUCKET }}
+          # Participant OpenVPN opt-in also deploys the shared pool (#2480).
+          RANGE_OPENVPN_ENABLED: ${{ vars.RANGE_OPENVPN_ENABLED }}
         # JSON tfvars gives Terraform exact escaping without interpolating
         # secret values into HCL or command arguments. The file lives outside
         # the persistent checkout and is explicitly removed at job end (#2084).
@@ -265,6 +268,10 @@ jobs:
               "ctf_content_bucket_name": os.environ.get("GCP_CTF_CONTENT_BUCKET", ""),
           }
           values.update({key: value for key, value in optional.items() if value})
+          openvpn = os.environ.get("RANGE_OPENVPN_ENABLED", "").strip().lower() or "false"
+          if openvpn not in {"true", "false"}:
+              raise SystemExit("::error::RANGE_OPENVPN_ENABLED must be true or false")
+          values["openvpn_pool_enabled"] = openvpn == "true"
           descriptor = os.open(
               os.environ["TF_VARS_FILE"],
               os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -528,6 +535,7 @@ jobs:
               env_file.write(f"GUACD_IMAGE_ROOT={image_roots['guacd']}\n")
               env_file.write(f"GUACAMOLE_CLIENT_IMAGE_ROOT={image_roots['guacamole-client']}\n")
               env_file.write(f"PROVISIONER_IMAGE_ROOT={image_roots['pulumi-provisioner']}\n")
+              env_file.write(f"OPENVPN_IMAGE_ROOT={image_roots['openvpn']}\n")
               env_file.write(f"ARTIFACT_REGISTRY_HOST={image_roots['portal'].split('/')[0]}\n")
               env_file.write(f"PUBLIC_HOSTNAME={value('public_hostname')}\n")
           PY
@@ -587,6 +595,17 @@ jobs:
           no-cache: true
           provenance: mode=max
           sbom: true
+      - name: Build and push OpenVPN pool image
+        id: build-openvpn
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
+        with:
+          context: ./shifter/engine/openvpn
+          push: true
+          tags: |
+            ${{ env.OPENVPN_IMAGE_ROOT }}:${{ env.SHORT_SHA }}
+          no-cache: true
+          provenance: mode=max
+          sbom: true
       - name: Attest build provenance (portal)
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -610,6 +629,12 @@ jobs:
         with:
           subject-name: ${{ env.GUACAMOLE_CLIENT_IMAGE_ROOT }}
           subject-digest: ${{ steps.build-guacamole-client.outputs.digest }}
+          push-to-registry: false
+      - name: Attest build provenance (openvpn)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.OPENVPN_IMAGE_ROOT }}
+          subject-digest: ${{ steps.build-openvpn.outputs.digest }}
           push-to-registry: false
       - name: Remove ephemeral preparation inputs
         if: always()
@@ -664,6 +689,7 @@ jobs:
           PROVISIONER_IMAGE_DIGEST: ${{ needs.prepare.outputs.provisioner_digest }}
           GUACD_IMAGE_DIGEST: ${{ needs.prepare.outputs.guacd_digest }}
           GUACAMOLE_CLIENT_IMAGE_DIGEST: ${{ needs.prepare.outputs.guacamole_client_digest }}
+          OPENVPN_IMAGE_DIGEST: ${{ needs.prepare.outputs.openvpn_digest }}
         run: |
           set -euo pipefail
           prefix="shifter-${GCP_ENVIRONMENT}"
@@ -674,10 +700,12 @@ jobs:
             echo "PROVISIONER_IMAGE_ROOT=${registry}/${GCP_PROJECT_ID}/${prefix}-pulumi-provisioner/pulumi-provisioner"
             echo "GUACD_IMAGE_ROOT=${registry}/${GCP_PROJECT_ID}/${prefix}-guacd/guacd"
             echo "GUACAMOLE_CLIENT_IMAGE_ROOT=${registry}/${GCP_PROJECT_ID}/${prefix}-guacamole-client/guacamole-client"
+            echo "OPENVPN_IMAGE_ROOT=${registry}/${GCP_PROJECT_ID}/${prefix}-openvpn/openvpn"
             echo "PORTAL_IMAGE_DIGEST=${PORTAL_IMAGE_DIGEST}"
             echo "PROVISIONER_IMAGE_DIGEST=${PROVISIONER_IMAGE_DIGEST}"
             echo "GUACD_IMAGE_DIGEST=${GUACD_IMAGE_DIGEST}"
             echo "GUACAMOLE_CLIENT_IMAGE_DIGEST=${GUACAMOLE_CLIENT_IMAGE_DIGEST}"
+            echo "OPENVPN_IMAGE_DIGEST=${OPENVPN_IMAGE_DIGEST}"
           } >> "${GITHUB_ENV}"
       - name: Login to Artifact Registry with scanner identity
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
@@ -713,12 +741,14 @@ jobs:
               "provisioner": os.environ["PROVISIONER_IMAGE_ROOT"],
               "guacd": os.environ["GUACD_IMAGE_ROOT"],
               "guacamole-client": os.environ["GUACAMOLE_CLIENT_IMAGE_ROOT"],
+              "openvpn": os.environ["OPENVPN_IMAGE_ROOT"],
           }
           digests = {
               "portal": os.environ["PORTAL_IMAGE_DIGEST"],
               "provisioner": os.environ["PROVISIONER_IMAGE_DIGEST"],
               "guacd": os.environ["GUACD_IMAGE_DIGEST"],
               "guacamole-client": os.environ["GUACAMOLE_CLIENT_IMAGE_DIGEST"],
+              "openvpn": os.environ["OPENVPN_IMAGE_DIGEST"],
           }
           invalid = [name for name, value in digests.items() if len(value) != 71 or not value.startswith("sha256:")]
           if invalid:
@@ -750,6 +780,7 @@ jobs:
           scan_image provisioner "${PROVISIONER_IMAGE_ROOT}" "${PROVISIONER_IMAGE_DIGEST}"
           scan_image guacd "${GUACD_IMAGE_ROOT}" "${GUACD_IMAGE_DIGEST}"
           scan_image guacamole-client "${GUACAMOLE_CLIENT_IMAGE_ROOT}" "${GUACAMOLE_CLIENT_IMAGE_DIGEST}"
+          scan_image openvpn "${OPENVPN_IMAGE_ROOT}" "${OPENVPN_IMAGE_DIGEST}"
           exit "${scan_status}"
       - name: Store raw scan evidence privately
         id: store_scan_evidence
@@ -807,6 +838,7 @@ jobs:
             "${RUNNER_TEMP}/gcp-release-security/provisioner-trivy.json" \
             "${RUNNER_TEMP}/gcp-release-security/guacd-trivy.json" \
             "${RUNNER_TEMP}/gcp-release-security/guacamole-client-trivy.json" \
+            "${RUNNER_TEMP}/gcp-release-security/openvpn-trivy.json" \
             "${RUNNER_TEMP}/gcp-release-scan-verdict.json"
           rmdir "${RUNNER_TEMP}/trivy-bin" 2>/dev/null || true
           rmdir "${RUNNER_TEMP}/gcp-release-security" 2>/dev/null || true
@@ -944,6 +976,7 @@ jobs:
               env_file.write(f"GUACD_IMAGE_ROOT={image_roots['guacd']}\n")
               env_file.write(f"GUACAMOLE_CLIENT_IMAGE_ROOT={image_roots['guacamole-client']}\n")
               env_file.write(f"PROVISIONER_IMAGE_ROOT={image_roots['pulumi-provisioner']}\n")
+              env_file.write(f"OPENVPN_IMAGE_ROOT={image_roots['openvpn']}\n")
               env_file.write(f"PUBLIC_HOSTNAME={value('public_hostname')}\n")
           PY
       - name: Rewrite overlay image project and service accounts
@@ -1052,6 +1085,19 @@ jobs:
           python3 scripts/gcp/render_private_service_netpol.py \
             --terraform-output-json /tmp/gcp-terraform-outputs.json \
             --output "${K8S_OVERLAY_DIR}/platform-private-service.generated.yaml"
+      - name: Render tenant deploy identity into the overlay
+        run: |
+          # The committed overlay ships tenant-neutral `shifter-<env>`
+          # placeholders for the Artifact Registry roots (kustomization
+          # `newName`s) and the Workload Identity GSA annotations
+          # (patch-serviceaccounts). Project the real deploy identity in from the
+          # Terraform outputs at deploy time (ADR-004-R14, ADR-011) so no real
+          # project id / service-account email is ever committed. Runs BEFORE the
+          # digest-pin step below, which rewrites each image `newTag` -> the
+          # verified `@sha256` digest on the same kustomization.yaml.
+          python3 scripts/gcp/render_overlay_identity.py \
+            --environment "${GCP_ENVIRONMENT}" \
+            --terraform-output-json /tmp/gcp-terraform-outputs.json
       # Roll out the production-secure workload (new runtime ConfigMap + restart)
       # BEFORE (re-)applying the public edge, so the public Ingress never routes
       # to pods still running an older, less-secure runtime config.
@@ -1100,6 +1146,7 @@ jobs:
           PROVISIONER_DIGEST: ${{ needs.prepare.outputs.provisioner_digest }}
           GUACD_DIGEST: ${{ needs.prepare.outputs.guacd_digest }}
           GUACAMOLE_CLIENT_DIGEST: ${{ needs.prepare.outputs.guacamole_client_digest }}
+          OPENVPN_DIGEST: ${{ needs.prepare.outputs.openvpn_digest }}
         run: |
           # ADR-037-R6: verify the GitHub OIDC-signed provenance attestation for
           # each built image@digest and the fixed Brad-Edwards/shifter identity
@@ -1126,6 +1173,28 @@ jobs:
           verify "${PROVISIONER_IMAGE_ROOT}" "${PROVISIONER_DIGEST}" "provisioner"
           verify "${GUACD_IMAGE_ROOT}" "${GUACD_DIGEST}" "guacd"
           verify "${GUACAMOLE_CLIENT_IMAGE_ROOT}" "${GUACAMOLE_CLIENT_DIGEST}" "guacamole-client"
+          verify "${OPENVPN_IMAGE_ROOT}" "${OPENVPN_DIGEST}" "openvpn"
+
+      - name: Ensure OpenVPN pool PKI
+        id: vpn_pki
+        run: |
+          # #2480: the tenant CA and the pool server identity live only in Secret
+          # Manager (never Terraform state). Runs before the control plane
+          # restarts so the provisioner can sign participant profiles at once.
+          set -euo pipefail
+          pool="$(jq -c '.openvpn_pool.value // empty' /tmp/gcp-terraform-outputs.json)"
+          if [ -z "${pool}" ]; then
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          issuer="$(jq -r '.issuer_secret' <<< "${pool}")"
+          server="$(jq -r '.server_secret' <<< "${pool}")"
+          uv run --project scripts/gcp python scripts/gcp/ensure_vpn_pki.py \
+            --project "${PROJECT_ID}" \
+            --issuer-secret "${issuer##*/}" \
+            --server-secret "${server##*/}" \
+            --changed-output "${GITHUB_OUTPUT}"
+          echo "enabled=true" >> "${GITHUB_OUTPUT}"
 
       - name: Render and apply optional model broker from the canonical chart
         env:
@@ -1373,6 +1442,73 @@ jobs:
             fi
             sleep 5
           done
+      - name: Roll out the OpenVPN pool release
+        if: steps.vpn_pki.outputs.enabled == 'true'
+        env:
+          OPENVPN_DIGEST: ${{ needs.prepare.outputs.openvpn_digest }}
+          PKI_CHANGED: ${{ steps.vpn_pki.outputs.changed }}
+        run: |
+          # #2480: pool servers run only the image named by the release record,
+          # and only this job writes it, after the exact-digest scan and the
+          # provenance check above. A new record or server identity replaces
+          # every server, surging new ones in before old ones leave.
+          set -euo pipefail
+          if [[ ! "${OPENVPN_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::openvpn build did not produce a valid image digest"
+            exit 1
+          fi
+          pool="$(jq -c '.openvpn_pool.value' /tmp/gcp-terraform-outputs.json)"
+          field() { jq -r --arg key "$1" '.[$key]' <<< "${pool}"; }
+          if [ "$(field image_root)" != "${OPENVPN_IMAGE_ROOT}" ]; then
+            echo "::error::the pool image root does not match the built openvpn image root"
+            exit 1
+          fi
+          release_secret="$(field release_secret)"
+          release_secret="${release_secret##*/}"
+          group="$(field instance_group)"
+          region="$(field region)"
+          release="${OPENVPN_IMAGE_ROOT}@${OPENVPN_DIGEST}"
+          errors="${RUNNER_TEMP}/openvpn-release.err"
+          if current="$(gcloud secrets versions access latest --secret="${release_secret}" --project="${PROJECT_ID}" 2>"${errors}")"; then
+            :
+          elif grep -q NOT_FOUND "${errors}"; then
+            current=""
+          else
+            cat "${errors}" >&2
+            exit 1
+          fi
+          replace="${PKI_CHANGED:-false}"
+          if [ "${current}" != "${release}" ]; then
+            printf '%s' "${release}" | gcloud secrets versions add "${release_secret}" --project="${PROJECT_ID}" --data-file=-
+            replace=true
+          fi
+          if [ "${replace}" = true ]; then
+            gcloud compute instance-groups managed rolling-action replace "${group}" \
+              --region="${region}" --project="${PROJECT_ID}" --max-unavailable=0
+          fi
+          gcloud compute instance-groups managed wait-until "${group}" \
+            --version-target-reached --region="${region}" --project="${PROJECT_ID}" --timeout=1800
+          gcloud compute instance-groups managed wait-until "${group}" \
+            --stable --region="${region}" --project="${PROJECT_ID}" --timeout=1800
+          backend="$(field backend_service)"
+          deadline=$((SECONDS + 600))
+          until health="$(gcloud compute backend-services get-health "${backend}" --region="${region}" \
+              --project="${PROJECT_ID}" --format=json)" \
+            && jq -e '[.[].status.healthStatus[]?.healthState] | length > 0 and all(. == "HEALTHY")' <<< "${health}" >/dev/null; do
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::OpenVPN pool servers did not all report healthy within 10 minutes."
+              exit 1
+            fi
+            sleep 15
+          done
+          # The pool reads only the latest record; superseded ones are history.
+          gcloud secrets versions list "${release_secret}" --project="${PROJECT_ID}" \
+            --filter=state:ENABLED --sort-by=~createTime --format='value(name)' \
+            | tail -n +2 | while read -r version; do
+              gcloud secrets versions destroy "${version##*/}" --secret="${release_secret}" \
+                --project="${PROJECT_ID}" --quiet
+            done
+          rm -f "${errors}"
       - name: Record running workload image IDs
         env:
           PORTAL_IMAGE_DIGEST: ${{ needs.prepare.outputs.portal_digest }}

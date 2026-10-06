@@ -94,6 +94,7 @@ from ._sharing import (
     SharingPoolRevision,
 )
 from ._subnet import Subnet, SubnetAllocation
+from ._vpn_session import VpnSession, VpnSessionEndReason, VpnSessionState
 from ._warm_pool import WarmRangeGeneration
 
 __all__ = [
@@ -163,5 +164,8 @@ __all__ = [
     "SharingPoolRevision",
     "Subnet",
     "SubnetAllocation",
+    "VpnSession",
+    "VpnSessionEndReason",
+    "VpnSessionState",
     "WarmRangeGeneration",
 ]

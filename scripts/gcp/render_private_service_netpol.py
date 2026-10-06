@@ -174,10 +174,6 @@ spec:
           port: 5985
         - protocol: TCP
           port: 5986
-        - protocol: TCP
-          # Participant OpenVPN gateway health responder (#2030, ADR-039-R10):
-          # the provisioner proves the gateway ready before publishing a profile.
-          port: 1195
 """
 
     # YAML is hand-formatted (rather than via PyYAML) for two reasons:

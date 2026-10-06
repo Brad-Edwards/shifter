@@ -33,7 +33,7 @@ from raes_gcp_apply import (
 from raes_gcp_composition import RaesGceCompositionError
 from raes_gcp_firewall import node_tag
 from raes_gcp_plan import RaesGcePlanError, build_raes_range_cell_plan
-from raes_gcp_vpn_plan import RaesGceRemoteAccess
+from raes_gcp_vpn_plan import RaesGceVpnAccess, vpn_pool_firewall_name
 from raes_plan import (
     RaesPlan,
     RaesPlanAccount,
@@ -1555,73 +1555,42 @@ class TestParticipantAccessRealization:
         assert instance["ssh_key_secret_arn"] == ""
 
 
-_VPN_SECRET = "projects/secrets-proj/secrets/vpn-server"
 _VPN_REALIZATION = {
     "generation": "11111111-2222-3333-4444-555555555555",
     "target_ref": "node.web#0",
-    "endpoint": "34.1.2.3",
+    "endpoint": "203.0.113.7",
     "port": 1194,
     "secret_ref": "projects/secrets-proj/secrets/vpn-profile",
 }
+_VPN_ACCESS = RaesGceVpnAccess("node.web#0", ("10.49.0.0/24",))
 
 
 class _FakeOpenVpn:
-    """A prepared OpenVPN session double recording the gateway the apply hands it."""
+    """Prepared OpenVPN access double recording when the profile is minted."""
 
-    def __init__(self, *, healthy: bool = True) -> None:
-        self.healthy = healthy
-        self.published: list = []
+    def __init__(self, *, mintable: bool = True) -> None:
+        self.mintable = mintable
+        self.published = 0
 
     @staticmethod
-    def plan_remote_access() -> RaesGceRemoteAccess:
-        return RaesGceRemoteAccess("node.web#0", 2, _VPN_SECRET)
+    def plan_access() -> RaesGceVpnAccess:
+        return _VPN_ACCESS
 
-    def publish(self, gateway):
-        if not self.healthy:
-            raise ValueError("OpenVPN gateway service did not become ready")
-        self.published.append(gateway)
+    def publish(self):
+        if not self.mintable:
+            raise ValueError("OpenVPN issuer secret has an invalid shape")
+        self.published += 1
         return dict(_VPN_REALIZATION)
 
 
-def _vpn_config() -> GCERangeCellConfig:
-    return replace(
-        _config("shared-vpc"),
-        private_google_access=True,
-        linux=GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1"),
-    )
-
-
-def _gateway_clients() -> SimpleNamespace:
-    """Fake clients that read an inserted gateway back with its external address."""
-    clients = _clients()
-    inserted: set[str] = set()
-    absent = clients.instances.get.side_effect
-
-    def get(**kwargs):
-        if kwargs["instance"] in inserted:
-            nat = SimpleNamespace(nat_i_p="34.1.2.3")
-            return SimpleNamespace(network_interfaces=[SimpleNamespace(access_configs=[nat])])
-        return absent(**kwargs)
-
-    def insert(**kwargs):
-        name = kwargs["instance_resource"]["name"]
-        if name.endswith("vpn-gateway"):
-            inserted.add(name)
-        return SimpleNamespace(name="op")
-
-    clients.instances.get.side_effect = get
-    clients.instances.insert.side_effect = insert
-    return clients
-
-
-class TestOpenVpnGateway:
-    """The participant OpenVPN gateway is realized inside the apply (#2030)."""
+class TestOpenVpnPoolAccess:
+    """The pool rule is part of the apply; the profile is minted after verification (#2480)."""
 
     def _options(self, clients, openvpn):
         secret_ops, _ = _secret_ops()
         account_ops, _ = _account_secret_ops()
         return _apply_options(
-            _vpn_config(),
+            _config("shared-vpc"),
             clients,
             secret_ops,
             account_secret_ops=account_ops,
@@ -1630,8 +1599,8 @@ class TestOpenVpnGateway:
             openvpn=openvpn,
         )
 
-    def test_apply_realizes_the_gateway_and_reports_its_realization(self):
-        clients = _gateway_clients()
+    def test_apply_admits_the_pool_and_reports_the_profile(self):
+        clients = _clients()
         openvpn = _FakeOpenVpn()
 
         output = apply_raes_range_cell(
@@ -1644,45 +1613,39 @@ class TestOpenVpnGateway:
         )
 
         assert output["vpn_access"] == _VPN_REALIZATION
-        (gateway,) = openvpn.published
-        assert (gateway["endpoint"], gateway["port"], gateway["target_ref"]) == ("34.1.2.3", 1194, "node.web#0")
-        body = next(
-            call.kwargs["instance_resource"]
-            for call in clients.instances.insert.call_args_list
-            if call.kwargs["instance_resource"]["name"].endswith("vpn-gateway")
-        )
-        startup = body["metadata"]["items"][0]["value"]
-        assert f'name = "{_VPN_SECRET}/versions/latest"' in startup
-        assert "'--dport', '22'" in startup
-        assert body["service_accounts"][0]["email"].startswith("sh-vpn-pool-2@")
+        assert openvpn.published == 1
         rules = [call.kwargs["firewall_resource"] for call in clients.firewalls.insert.call_args_list]
-        target_egress = next(rule for rule in rules if rule["name"].endswith("vpn-target"))
-        assert target_egress["allowed"] == [{"I_p_protocol": "tcp", "ports": ["22"]}]
+        pool = next(rule for rule in rules if rule["name"] == vpn_pool_firewall_name(7))
+        assert pool["source_ranges"] == ["10.49.0.0/24"]
+        assert pool["allowed"] == [{"I_p_protocol": "tcp", "ports": ["22"]}]
+        inserted = [call.kwargs["instance_resource"]["name"] for call in clients.instances.insert.call_args_list]
+        assert not any("vpn" in name for name in inserted)
 
-    def test_a_gateway_that_never_becomes_healthy_fails_and_is_cleaned_up(self):
-        clients = _gateway_clients()
+    def test_a_profile_that_cannot_be_minted_fails_and_cleans_up_by_name(self, monkeypatch):
+        import raes_gcp_apply
 
-        with pytest.raises(ValueError, match="did not become ready"):
+        cleanups = []
+        monkeypatch.setattr(
+            raes_gcp_apply,
+            "destroy_raes_range_cell",
+            lambda *_args, **_kwargs: cleanups.append(_args[3].remote_access),
+        )
+
+        with pytest.raises(ValueError, match="invalid shape"):
             apply_raes_range_cell(
                 "11111111-2222-3333-4444-555555555555",
                 7,
                 _access_plan(),
                 _resolver,
-                self._options(clients, _FakeOpenVpn(healthy=False)),
+                self._options(_clients(), _FakeOpenVpn(mintable=False)),
                 access_bindings=[_access_transport()],
             )
 
-        deleted = [call.kwargs["instance"] for call in clients.instances.delete.call_args_list]
-        assert any(name.endswith("vpn-gateway") for name in deleted)
+        # Cleanup reconstructs the pool rule by name; it never re-validates the target's channels.
+        assert cleanups == [RaesGceVpnAccess("node.web#0")]
 
-    def test_destroy_removes_the_gateway_before_its_subnet(self):
+    def test_destroy_removes_the_pool_rule(self):
         clients = _clients(exists=True)
-        order: list[str] = []
-        clients.instances.delete.side_effect = lambda **kw: order.append(kw["instance"]) or SimpleNamespace(name="op")
-        clients.addresses.delete.side_effect = lambda **kw: order.append(kw["address"]) or SimpleNamespace(name="op")
-        clients.subnetworks.delete.side_effect = lambda **kw: (
-            order.append(kw["subnetwork"]) or SimpleNamespace(name="op")
-        )
         secret_ops, _ = _secret_ops()
         account_ops, _ = _account_secret_ops()
 
@@ -1691,37 +1654,35 @@ class TestOpenVpnGateway:
             7,
             _access_plan(),
             RaesGceDestroyOptions(
-                config=_vpn_config(),
+                config=_config("shared-vpc"),
                 clients=clients,
                 secret_ops=secret_ops,
                 account_secret_ops=account_ops,
                 allocated_network_cidrs=(("net.lan", "10.9.0.0/24"),),
-                remote_access=RaesGceRemoteAccess("node.web#0", 2),
+                remote_access=RaesGceVpnAccess("node.web#0"),
             ),
         )
 
-        gateway = next(index for index, name in enumerate(order) if name.endswith("vpn-gateway"))
-        gateway_address = next(index for index, name in enumerate(order) if name.endswith("vpn-gateway-ip"))
-        subnet = next(index for index, name in enumerate(order) if name.endswith("-lan"))
-        assert gateway < subnet and gateway_address < subnet
-        deleted_rules = {call.kwargs["firewall"] for call in clients.firewalls.delete.call_args_list}
-        assert any(name.endswith("vpn-in") for name in deleted_rules)
+        deleted = {call.kwargs["firewall"] for call in clients.firewalls.delete.call_args_list}
+        assert vpn_pool_firewall_name(7) in deleted
 
-    def test_inventory_counts_a_residual_gateway(self):
+    def test_inventory_counts_a_residual_pool_rule(self):
         from raes_gcp_inventory import inventory_raes_range_cell
 
-        def residual_instances(remote_access):
+        def residual(remote_access, category):
             report = inventory_raes_range_cell(
                 "11111111-2222-3333-4444-555555555555",
                 7,
                 _access_plan(),
                 RaesGceDestroyOptions(
-                    config=_vpn_config(),
+                    config=_config("shared-vpc"),
                     clients=_clients(exists=True),
                     allocated_network_cidrs=(("net.lan", "10.9.0.0/24"),),
                     remote_access=remote_access,
                 ),
             )
-            return {row["category"]: row["count"] for row in report["residual_categories"]}["instances"]
+            return {row["category"]: row["count"] for row in report["residual_categories"]}[category]
 
-        assert residual_instances(RaesGceRemoteAccess("node.web#0", 2)) == residual_instances(None) + 1
+        with_access = RaesGceVpnAccess("node.web#0")
+        assert residual(with_access, "firewalls") == residual(None, "firewalls") + 1
+        assert residual(with_access, "instances") == residual(None, "instances")
