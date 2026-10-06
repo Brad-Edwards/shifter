@@ -199,7 +199,6 @@ def create_raes_range(
             range_config=compiled_plan,
             workspace_id=workspace_id,
             remote_access_capability=capability,
-            vpn_gateway_pool_slot=Range.allocate_vpn_gateway_slot() if capability is not None else None,
             **binding_fields,
             **egress_fields,
         )
@@ -252,8 +251,8 @@ def grant_raes_remote_access(request_id: UUID, deadline: datetime | None) -> boo
     """Mint the claimant's OpenVPN authority on a just-claimed warm generation (#28, #2030).
 
     Runs inside the CMS claim transaction after the ownership rehome, so the
-    activation input composed afterwards carries the capability and the gateway
-    is realized for the claimant. A warm generation is prepared without VPN, so a
+    activation input composed afterwards carries the capability and the profile
+    is minted for the claimant. A warm generation is prepared without VPN, so a
     persisted capability or binding here is a contract violation. Returns whether
     a capability was granted.
     """
@@ -274,7 +273,6 @@ def grant_raes_remote_access(request_id: UUID, deadline: datetime | None) -> boo
     with transaction.atomic():
         updated = Range.objects.filter(pk=range_obj.pk, remote_access_capability__isnull=True).update(
             remote_access_capability=capability,
-            vpn_gateway_pool_slot=Range.allocate_vpn_gateway_slot(),
             updated_at=timezone.now(),
         )
     if updated != 1:

@@ -823,8 +823,18 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "'24'",
-      "name": "VPN_GATEWAY_POOL_SIZE",
+      "default": "''",
+      "name": "VPN_CONTROLLER_SERVICE_ACCOUNT_EMAIL",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "''",
+      "name": "VPN_CONTROLLER_SERVICE_ACCOUNT_ID",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "''",
+      "name": "VPN_CONTROL_AUDIENCE",
       "source_file": "config/settings.py"
     },
     {

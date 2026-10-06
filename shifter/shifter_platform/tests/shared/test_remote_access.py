@@ -114,6 +114,7 @@ def _profile(endpoint="vpn.example.test", port=1194):
         "persist-key\n"
         "persist-tun\n"
         "remote-cert-tls server\n"
+        "verify-x509-name shifter-openvpn-server name\n"
         "auth-nocache\n"
         "verb 3\n"
         "<ca>\nTEST-CA\n</ca>\n"
@@ -166,6 +167,17 @@ def test_profile_validator_rejects_client_code_execution_and_route_expansion(uns
     profile = _profile() + f"{unsafe_line}\n"
     with pytest.raises(OpenVpnBindingError, match="directive"):
         validate_openvpn_profile(profile, binding)
+
+
+@pytest.mark.parametrize(
+    "pin",
+    ["", "verify-x509-name some-other-server name\n", "verify-x509-name shifter-openvpn-server subject\n"],
+    ids=["missing", "other-name", "other-type"],
+)
+def test_profile_validator_requires_the_pool_server_name_pin(pin):
+    profile = _profile().replace("verify-x509-name shifter-openvpn-server name\n", pin)
+    with pytest.raises(OpenVpnBindingError):
+        validate_openvpn_profile(profile, parse_openvpn_binding(_binding()))
 
 
 def test_profile_validator_rejects_an_endpoint_that_does_not_match_the_binding():

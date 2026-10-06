@@ -13,7 +13,6 @@ from gcp_range_cell_types import (
     FirewallPlan,
     GceEgressPolicy,
     InstancePlan,
-    OpenVpnGatewayPlan,
     SubnetPlan,
 )
 
@@ -93,11 +92,6 @@ def _ipv4_complement(excluded: list[ipaddress.IPv4Network]) -> list[str]:
                 next_allowed.append(network)
         allowed = next_allowed
     return [str(network) for network in sorted(allowed, key=lambda item: (int(item.network_address), item.prefixlen))]
-
-
-def _public_ipv4_source_ranges() -> list[str]:
-    """Return routable public IPv4 space without private/reserved sources."""
-    return _ipv4_complement(list(_NON_PUBLIC_IPV4_CIDRS))
 
 
 def _denied_egress_networks(config: GCERangeCellConfig) -> list[ipaddress.IPv4Network]:
@@ -334,62 +328,6 @@ def _egress_rules(
     return rules
 
 
-def _vpn_gateway_rules(
-    range_id: int,
-    vpn_gateway: OpenVpnGatewayPlan,
-    portal_network_cidrs: list[str],
-) -> list[FirewallPlan]:
-    """Render the closed ingress/egress envelope for the OpenVPN gateway."""
-    return [
-        {
-            "name": _short_resource_name("shifter-r", range_id, "vpn-in"),
-            "direction": "INGRESS",
-            "priority": 800,
-            "target_tags": [vpn_gateway["tag"]],
-            "source_ranges": _public_ipv4_source_ranges(),
-            "allowed": [{"IPProtocol": "udp", "ports": ["1194"]}],
-        },
-        {
-            "name": _short_resource_name("shifter-r", range_id, "vpn-health"),
-            "direction": "INGRESS",
-            "priority": 800,
-            "target_tags": [vpn_gateway["tag"]],
-            "source_ranges": portal_network_cidrs,
-            "allowed": [{"IPProtocol": "tcp", "ports": ["1195"]}],
-        },
-        {
-            "name": _short_resource_name("shifter-r", range_id, "vpn-target"),
-            "direction": "EGRESS",
-            "priority": 800,
-            "target_tags": [vpn_gateway["tag"]],
-            "destination_ranges": [f"{vpn_gateway['target_ip']}/32"],
-            # Only the target's declared participant channels when the plan
-            # carries them (#2030); a legacy plan forwards every port.
-            "allowed": (
-                [{"IPProtocol": "tcp", "ports": list(vpn_gateway["target_ports"])}]
-                if vpn_gateway.get("target_ports")
-                else [{"IPProtocol": "all"}]
-            ),
-        },
-        {
-            "name": _short_resource_name("shifter-r", range_id, "vpn-api"),
-            "direction": "EGRESS",
-            "priority": 800,
-            "target_tags": [vpn_gateway["tag"]],
-            "destination_ranges": [_GOOGLE_PRIVATE_API_VIP_CIDR],
-            "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
-        },
-        {
-            "name": _short_resource_name("shifter-r", range_id, "vpn-deny"),
-            "direction": "EGRESS",
-            "priority": 900,
-            "target_tags": [vpn_gateway["tag"]],
-            "destination_ranges": [_UNIVERSAL_IPV4_CIDR],
-            "denied": [{"IPProtocol": "all"}],
-        },
-    ]
-
-
 def _public_web_egress(
     deny_general_egress: bool,
     instances: list[InstancePlan],
@@ -407,7 +345,6 @@ def build_firewall_plan(
     range_id: int,
     subnet_plans: list[SubnetPlan],
     config: GCERangeCellConfig,
-    vpn_gateway: OpenVpnGatewayPlan | None = None,
     *,
     instance_plans: list[InstancePlan] | None = None,
     include_optional_cleanup: bool = False,
@@ -430,7 +367,6 @@ def build_firewall_plan(
         config,
         subnet_plans,
         instance_plans or [],
-        vpn_gateway,
         bypass,
     )
     if bypass:
@@ -476,8 +412,6 @@ def build_firewall_plan(
             config,
         )
     )
-    if vpn_gateway is not None:
-        firewalls.extend(_vpn_gateway_rules(range_id, vpn_gateway, portal_network_cidrs))
     if broker_destination is not None:
         firewalls.append(
             {

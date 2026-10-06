@@ -2,8 +2,8 @@
 
 Covers the Engine seams end to end:
 
-* create-time minting against the persisted participant access, the gateway pool
-  slot, the GCE-only fail-closed gate, and the idempotent-replay guard;
+* create-time minting against the persisted participant access, the GCE-only
+  fail-closed gate, and the idempotent-replay guard;
 * the warm-claim grant;
 * the operation-input projection the provisioner realizes from;
 * binding the owner-free realization from the terminal result to the range owner;
@@ -87,13 +87,11 @@ def _create(*, deadline: datetime | None, access=None, backend: BackendAdmission
 
 
 class TestCreateMinting:
-    def test_an_admitted_launch_mints_the_sole_target_and_reserves_distinct_slots(self):
+    def test_an_admitted_launch_mints_the_sole_target(self):
         first = _create(deadline=_deadline())
-        second = _create(deadline=_deadline())
 
         assert first.remote_access_capability["target_ref"] == _TARGET
         assert first.remote_access_capability["channel"] == "openvpn"
-        assert {first.vpn_gateway_pool_slot, second.vpn_gateway_pool_slot} == {0, 1}
 
     @pytest.mark.parametrize(
         "access",
@@ -105,12 +103,10 @@ class TestCreateMinting:
     def test_a_launch_without_a_single_target_mints_nothing(self, access):
         range_obj = _create(deadline=_deadline(), access=access)
         assert range_obj.remote_access_capability is None
-        assert range_obj.vpn_gateway_pool_slot is None
 
     def test_a_launch_without_a_deadline_mints_nothing(self):
         range_obj = _create(deadline=None)
         assert range_obj.remote_access_capability is None
-        assert range_obj.vpn_gateway_pool_slot is None
 
     def test_a_requested_deadline_on_a_backend_without_a_gateway_fails_closed(self):
         request_id = uuid4()
@@ -148,7 +144,6 @@ class TestWarmClaimGrant:
         assert grant_raes_remote_access(range_obj.request.request_id, _deadline()) is True
         range_obj.refresh_from_db()
         assert range_obj.remote_access_capability["target_ref"] == _TARGET
-        assert range_obj.vpn_gateway_pool_slot is not None
         with pytest.raises(ValueError, match="before its claim"):
             grant_raes_remote_access(range_obj.request.request_id, _deadline())
 
@@ -157,7 +152,7 @@ class TestWarmClaimGrant:
 
 
 class _Range:
-    """A launched RAES range holding a capability, a slot, and declared access."""
+    """A launched RAES range holding a capability and declared access."""
 
     def __init__(self, *, capability: bool = True, owner=None, status=ResourceStatus.PENDING.value):
         self.request_id = uuid4()
@@ -173,7 +168,6 @@ class _Range:
             range_backend="gce",
             provisioner_operation_id=self.operation_id,
             remote_access_capability=build_openvpn_capability(_TARGET, _deadline()) if capability else None,
-            vpn_gateway_pool_slot=3 if capability else None,
         )
         for binding in _access():
             RaesParticipantAccessBinding.objects.create(
@@ -251,11 +245,11 @@ def _disposition(row: OperationResultInbox) -> str:
 
 
 class TestOperationInputProjection:
-    def test_provision_and_destroy_carry_the_capability_and_slot(self):
+    def test_provision_and_destroy_carry_the_capability(self):
         fx = _Range()
 
         provision = fx.input("provision").remote_access
-        assert (provision.target_ref, provision.gateway_pool_slot) == (_TARGET, 3)
+        assert provision.target_ref == _TARGET
         fx.range.status = ResourceStatus.DESTROYING.value
         fx.range.save(update_fields=["status"])
         assert fx.input("destroy").remote_access == provision
@@ -281,12 +275,6 @@ class TestOperationInputProjection:
         payload = fx.input()
         assert payload.remote_access is None
         assert payload.access_bindings == ()
-
-    def test_a_capability_without_a_reserved_slot_fails_closed(self):
-        fx = _Range()
-        Range.objects.filter(pk=fx.range.pk).update(vpn_gateway_pool_slot=None)
-        with pytest.raises(ValueError, match="gateway pool slot"):
-            fx.input()
 
 
 class TestRealizationBinding:

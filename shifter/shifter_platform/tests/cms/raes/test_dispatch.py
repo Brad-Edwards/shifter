@@ -287,7 +287,6 @@ class TestOpenVpnAdmission:
 
         assert range_obj.remote_access_capability["target_ref"] == f"{self._NODE}#0"
         assert range_obj.remote_access_capability["teardown_at"] == ceiling.isoformat().replace("+00:00", "Z")
-        assert range_obj.vpn_gateway_pool_slot is not None
 
     def test_a_launch_without_a_lease_ceiling_mints_nothing(self, user):
         range_obj = self._launch(user, lease_ceiling=None, backend_admission=self._gce())

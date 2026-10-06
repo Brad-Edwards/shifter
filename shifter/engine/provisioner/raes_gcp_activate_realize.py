@@ -9,10 +9,9 @@ claimant's participant access is published. The bounded member/access rows the
 Engine applier persists are projected from the realized instance outputs (secret
 *references* only, never credential values).
 
-The claimant's VPN identity is generation-fenced and regenerates for the new owner
-against the rotated (activate) operation generation; the pre-claim VPN generation
-was already deleted by the scrub step, so activation does not re-mint a VPN profile
-here.
+When the claimant's range holds an OpenVPN capability, activation adds the pool
+firewall rule and mints the claimant's generation-fenced profile (#2480). The
+pre-claim generation never held one, and the scrub step deleted any residue.
 
 This module performs live GCE work; its efficacy is verified on a real range (the
 repository's verification norm for provisioner cloud effects). It fails closed: any

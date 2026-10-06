@@ -28,8 +28,6 @@ from gcp_range_cell_resources import (
     firewall_resource,
     instance_resource,
     network_resource,
-    openvpn_gateway_address_resource,
-    openvpn_gateway_instance_resource,
     router_nat_resource,
     subnetwork_resource,
 )
@@ -348,72 +346,6 @@ def _provision_range_resources(
     return instance_outputs
 
 
-def _external_ip(instance: object) -> str:
-    """Return the instance's first NAT external IP, or empty when absent."""
-    interfaces = getattr(instance, "network_interfaces", None) or []
-    if not interfaces:
-        return ""
-    access_configs = getattr(interfaces[0], "access_configs", None) or []
-    if not access_configs:
-        return ""
-    return str(getattr(access_configs[0], "nat_i_p", "") or getattr(access_configs[0], "nat_ip", ""))
-
-
-def _ensure_openvpn_gateway(
-    plan: RangeCellPlan,
-    clients: GCEClients,
-    config: GCERangeCellConfig,
-) -> ResourceDict | None:
-    """Create/reconcile the request-owned gateway and return non-secret readiness."""
-    gateway = plan.get("vpn_gateway")
-    if gateway is None:
-        return None
-    address = _get_or_none(
-        clients.addresses.get,
-        clients.google_exceptions,
-        project=plan["project_id"],
-        region=plan["region"],
-        address=gateway["address_name"],
-    )
-    if address is None:
-        operation = clients.addresses.insert(
-            project=plan["project_id"],
-            region=plan["region"],
-            address_resource=openvpn_gateway_address_resource(gateway),
-        )
-        _wait_for_operation(plan, clients, operation, "region")
-    existing = _get_or_none(
-        clients.instances.get,
-        clients.google_exceptions,
-        project=plan["project_id"],
-        zone=plan["zone"],
-        instance=gateway["resource_name"],
-    )
-    if existing is None:
-        operation = clients.instances.insert(
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance_resource=openvpn_gateway_instance_resource(plan, gateway, config),
-        )
-        _wait_for_operation(plan, clients, operation, "zone")
-        existing = clients.instances.get(
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=gateway["resource_name"],
-        )
-    endpoint = _external_ip(existing)
-    if not endpoint:
-        raise RuntimeError("GCE OpenVPN gateway has no public endpoint")
-    return {
-        "endpoint": endpoint,
-        "port": 1194,
-        "health_endpoint": gateway["private_ip"],
-        "health_port": 1195,
-        "target_ref": gateway["target_ref"],
-        "ready": False,
-    }
-
-
 def apply_range_cell(
     request_uuid: str,
     variables: ResourceDict,
@@ -427,8 +359,7 @@ def apply_range_cell(
     """Create or reconcile a live-fire GCE range cell and return provisioner outputs."""
     resolved_config = config or load_gce_range_cell_config()
     # Validate the closed contract and scenario binding before constructing any
-    # provider or secret client, let alone mutating a cloud resource. The gateway
-    # VM runs as the range's reserved pool identity (ADR-008-R7).
+    # provider or secret client, let alone mutating a cloud resource.
     range_data = get_range_data_by_request_id(request_uuid)
     # Bind the config to this range's realized zone (chosen at range creation and
     # stored on the row) before anything reads region/zone. Empty placement keeps
@@ -439,7 +370,6 @@ def apply_range_cell(
         request_uuid,
         variables,
         resolved_config,
-        vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
         range_host_pool_slot=range_host_pool_slot,
     )
     resolved_clients = clients or _build_clients()
@@ -447,7 +377,6 @@ def apply_range_cell(
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     try:
         instance_outputs = _provision_range_resources(plan, resolved_clients, resolved_config, resolved_secret_ops)
-        vpn_gateway = _ensure_openvpn_gateway(plan, resolved_clients, resolved_config)
         closed_result = range_cell_result(variables, plan, instance_outputs)
     except Exception:
         logger.exception("GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
@@ -463,11 +392,8 @@ def apply_range_cell(
         )
         cleanup(request_uuid, variables)
         raise
-    result: ResourceDict = {
+    return {
         "subnets": subnet_outputs(plan),
         "instances": instance_outputs,
         "range_cell": closed_result,
     }
-    if vpn_gateway is not None:
-        result["vpn_gateway"] = vpn_gateway
-    return result
