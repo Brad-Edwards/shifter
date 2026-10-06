@@ -24,6 +24,7 @@ $NetbiosName = Read-RaesValue
 $AuthorityUsername = Read-RaesValue
 $DsrmPasswordText = Read-RaesValue
 $AuthorityPasswordText = Read-RaesValue
+$RequireExistingDomain = Read-RaesValue
 try {
     $existing = $null
     if (Get-Command Get-ADDomain -ErrorAction SilentlyContinue) {
@@ -37,6 +38,9 @@ try {
         Write-Output "RAES_AD_PROMOTION_VERIFIED"
         exit 0
     }
+    # A prepromoted image must already be this domain's controller; never
+    # create a fresh forest in its place.
+    if ($RequireExistingDomain -ceq "1") { exit 1 }
     $feature = Get-WindowsFeature -Name AD-Domain-Services
     if (-not $feature.Installed) {
         Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -ErrorAction Stop | Out-Null
@@ -261,11 +265,19 @@ class RaesDomainControllerPlan:
     """Prepare the RID-500 authority and promote one exact authored domain."""
 
     def __init__(
-        self, *, dns_name: str, netbios_name: str, authority_username: str, dsrm_password: str, authority_password: str
+        self,
+        *,
+        dns_name: str,
+        netbios_name: str,
+        authority_username: str,
+        dsrm_password: str,
+        authority_password: str,
+        require_existing_domain: bool = False,
     ) -> None:
         self._context = _context(
             dns_name=dns_name,
             netbios_name=netbios_name,
+            require_existing_domain="1" if require_existing_domain else "0",
             authority_username=authority_username,
             dsrm_password=dsrm_password,
             authority_password=authority_password,
@@ -279,7 +291,7 @@ class RaesDomainControllerPlan:
                 script=_PROMOTE,
                 stdin_input=(
                     "{{ dns_name_b64 }}\n{{ netbios_name_b64 }}\n{{ authority_username_b64 }}\n"
-                    "{{ dsrm_password_b64 }}\n{{ authority_password_b64 }}\n"
+                    "{{ dsrm_password_b64 }}\n{{ authority_password_b64 }}\n{{ require_existing_domain_b64 }}\n"
                 ),
                 timeout_seconds=1200,
             )
@@ -301,6 +313,7 @@ class RaesDomainControllerPlan:
             "dsrm_password_b64": self._context["dsrm_password_b64"],
             "authority_password": self._context["authority_password"],
             "authority_password_b64": self._context["authority_password_b64"],
+            "require_existing_domain_b64": self._context["require_existing_domain_b64"],
         }
 
 
