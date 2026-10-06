@@ -714,6 +714,9 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertIn("oras-project/setup-oras@", build)
         self.assertIn("application/vnd.shifter.gce-image.tar.gz", build)
         self.assertIn("application/vnd.shifter.gce-image.v1", build)
+        # ORAS rejects absolute file paths: the disk is pushed by relative name.
+        self.assertIn('cd "${DISK_DIR}"', build)
+        self.assertIn('"${DISK_FILE}:application/vnd.shifter.gce-image.tar.gz"', build)
         self.assertIn("ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shifter-gce-${IMAGE_TYPE}", build)
         self.assertIn("oci://${PACKAGE}@${DIGEST}", build)
         # Provenance annotations bind the artifact to its protected build.
