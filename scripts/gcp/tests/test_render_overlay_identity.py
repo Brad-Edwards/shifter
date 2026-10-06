@@ -49,7 +49,9 @@ metadata:
 _IMAGE_ROOTS = {
     "portal": "us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-portal/portal",
     "guacd": "us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-guacd/guacd",
-    "guacamole-client": "us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-guacamole-client/guacamole-client",
+    "guacamole-client": (
+        "us-central1-docker.pkg.dev/example-gcp-project/shifter-orthanc-guacamole-client/guacamole-client"
+    ),
 }
 
 _WORKLOAD_SERVICE_ACCOUNTS = {
@@ -87,7 +89,7 @@ def test_render_service_account_patch_rewrites_email_preserving_localparts():
     # The shortened prov-launcher localpart is preserved, not regenerated.
     assert "shifterorthanc-prov-launcher@example-gcp-project.iam.gserviceaccount.com" in rendered
     # Comments and structure survive the rewrite.
-    assert 'name: provisioner-launcher' in rendered
+    assert "name: provisioner-launcher" in rendered
     assert "GCP 30-char SA id cap" in rendered
 
 

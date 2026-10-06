@@ -10,9 +10,9 @@ from .checks.boundary_mock import (
 from .checks.cloud_identifiers import (
     check_mission_control_no_flag_literals,
     check_no_live_cloud_identifiers,
-    check_no_live_gcp_deploy_identity,
     check_no_terraform_operational_placeholders,
 )
+from .checks.gcp_deploy_identity import check_no_live_gcp_deploy_identity
 from .checks.complexity import (
     check_python_complexity_gate,
 )

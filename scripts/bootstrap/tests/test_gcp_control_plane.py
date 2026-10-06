@@ -2406,7 +2406,9 @@ class TestGcpBootstrapIdentityPlatform:
 
     def test_render_gcp_platform_runtime_env_wires_guest_image_urls_from_bucket(self):
         """Guest boot images resolve to the packer-gcp export bucket per environment."""
-        config = deploy.GDCBootstrapConfig(project_id="example-gcp-project", cluster_id="cluster1", environment="gcp-dev")
+        config = deploy.GDCBootstrapConfig(
+            project_id="example-gcp-project", cluster_id="cluster1", environment="gcp-dev"
+        )
 
         rendered = deploy.render_gcp_platform_runtime_env(config, bootstrap_env_values={})
 

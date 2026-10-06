@@ -106,7 +106,7 @@ certificate wait, so the certificate may reach `ACTIVE` out of band; once it is
 active, a final `gdc-bootstrap` re-run fast-forwards (cached images, no-op
 Terraform) and completes green after the portal HTTPS check.
 
-## The k8s overlay ships a placeholder project — never hand-edit it
+## The k8s overlay ships a placeholder project: never hand-edit it
 
 The committed tenant overlay ships a `shifter-<environment>` placeholder project
 in `platform/k8s/gcp/overlays/<environment>/kustomization.yaml` (the image
@@ -118,7 +118,7 @@ land in the repo (ADR-004-R14, ADR-011) and is enforced by the
 `no-live-gcp-deploy-identity` adr-guard check.
 
 The CI deploy renders the real identity into the overlay at deploy time from the
-Terraform outputs — `scripts/gcp/render_overlay_identity.py` rewrites the image
+Terraform outputs: `scripts/gcp/render_overlay_identity.py` rewrites the image
 `newName`s from `artifact_registry_image_roots` and the GSA annotations from
 `workload_service_accounts` (matched by localpart) in the ephemeral runner
 checkout, before the digest-pin step. Nothing is written back to git. Only the

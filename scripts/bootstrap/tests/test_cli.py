@@ -802,7 +802,9 @@ class TestMainCLI:
         """
         with patch.dict("os.environ", {"SHIFTER_GCP_TERRAFORM_IDENTITY": ""}, clear=False):
             parser = deploy._build_parser()
-            args = parser.parse_args(["gdc-bootstrap", "--project-id", "example-gcp-project", "--cluster-id", "cluster1"])
+            args = parser.parse_args(
+                ["gdc-bootstrap", "--project-id", "example-gcp-project", "--cluster-id", "cluster1"]
+            )
             config = deploy._build_gdc_bootstrap_config(args)
 
         assert config.terraform_identity == "operator-adc"
