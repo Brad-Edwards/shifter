@@ -1012,19 +1012,20 @@ def _feature_artifact_job_image(roles: Mapping[str, str], validated_images: Mapp
 def _runtime_plugin_pool_values(roles: Mapping[str, str], terraform_outputs: Mapping[str, object]) -> dict[str, object]:
     """The trusted runtime-plugin node-pool labeler (#2526), enabled with the plugin pool.
 
-    The labeler identity and the pool's node role come from the same Terraform
-    toggle, so exactly one of them present means a misconfigured environment.
+    The labeler identity and the pool's Auto Scaling group come from the same
+    Terraform toggle, so exactly one of them present means a misconfigured
+    environment.
     """
-    raw = terraform_outputs.get("runtime_plugin_node_role_arn")
-    node_role_arn = raw.get("value", "") if isinstance(raw, Mapping) else ""
-    if not isinstance(node_role_arn, str):
-        raise ValueError("runtime_plugin_node_role_arn must be a string")
+    raw = terraform_outputs.get("runtime_plugin_node_group_asg")
+    node_group_asg = raw.get("value", "") if isinstance(raw, Mapping) else ""
+    if not isinstance(node_group_asg, str):
+        raise ValueError("runtime_plugin_node_group_asg must be a string")
     labeler = "nodePoolLabeler" in roles
-    if labeler != bool(node_role_arn):
+    if labeler != bool(node_group_asg):
         raise ValueError("the runtime-plugin pool and the nodePoolLabeler identity must be enabled together")
-    if node_role_arn and not node_role_arn.startswith("arn:aws:iam::"):
-        raise ValueError("runtime_plugin_node_role_arn must be an IAM role ARN")
-    return {"labeler": {"enabled": labeler, "nodeRoleArn": node_role_arn}}
+    if node_group_asg and not re.fullmatch(r"[\w+=,.@/:-]{1,255}", node_group_asg):
+        raise ValueError("runtime_plugin_node_group_asg must be an Auto Scaling group name")
+    return {"labeler": {"enabled": labeler, "nodeGroupAsg": node_group_asg}}
 
 
 def _edge_values(config: RootConfig, terraform_outputs: Mapping[str, object]) -> dict[str, object]:

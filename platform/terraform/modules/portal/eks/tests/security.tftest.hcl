@@ -333,14 +333,12 @@ run "security_contract" {
     condition = (
       keys(aws_iam_role_policy.workload_node_pool_labeler) == ["nodePoolLabeler"] &&
       jsondecode(aws_iam_role_policy.workload_node_pool_labeler["nodePoolLabeler"].policy).Statement[0].Action == ["ec2:DescribeInstances"] &&
-      jsondecode(aws_iam_role_policy.workload_node_pool_labeler["nodePoolLabeler"].policy).Statement[1].Action == ["iam:GetInstanceProfile"] &&
-      endswith(jsondecode(aws_iam_role_policy.workload_node_pool_labeler["nodePoolLabeler"].policy).Statement[1].Resource, ":instance-profile/eks-*") &&
-      length(jsondecode(aws_iam_role_policy.workload_node_pool_labeler["nodePoolLabeler"].policy).Statement) == 2 &&
+      length(jsondecode(aws_iam_role_policy.workload_node_pool_labeler["nodePoolLabeler"].policy).Statement) == 1 &&
       !contains(keys(aws_iam_role_policy.workload_platform_application), "nodePoolLabeler") &&
       !contains(keys(aws_iam_role_policy.workload_rds_iam), "nodePoolLabeler") &&
-      output.runtime_plugin_node_role_arn == aws_iam_role.runtime_plugin_node[0].arn
+      output.runtime_plugin_node_group_asg == "eks-shifter-test-plugins-asg"
     )
-    error_message = "The node-pool labeler may only read node instances and EKS instance profiles."
+    error_message = "The node-pool labeler may only read node instances."
   }
 
   assert {

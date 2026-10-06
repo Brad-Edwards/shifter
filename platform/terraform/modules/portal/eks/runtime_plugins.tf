@@ -65,11 +65,12 @@ resource "aws_launch_template" "runtime_plugins" {
   tags = var.tags
 }
 
-# The pool's own node role is its identity: the trusted node-pool labeler
-# (shared.cloud.eks_node_pool_labeler) applies the
+# The pool's own node role keeps its nodes' AWS identity apart from the platform
+# pool. Pool membership is the node group's Auto Scaling group: the trusted
+# node-pool labeler (shared.cloud.eks_node_pool_labeler) applies the
 # node-restriction.kubernetes.io/shifter-pool=runtime-plugin label only to nodes
-# whose instance profile carries this role. A kubelet cannot set that label
-# (NodeRestriction), and a node cannot change its own instance profile.
+# whose aws:autoscaling:groupName tag names it. A kubelet cannot set that label
+# (NodeRestriction), and only AWS can set aws:-prefixed tags.
 resource "aws_iam_role" "runtime_plugin_node" {
   count                = var.enable_runtime_plugins ? 1 : 0
   name                 = "${var.cluster_name}-runtime-plugin-node"

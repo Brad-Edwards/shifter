@@ -972,24 +972,24 @@ def test_populate_eks_workload_secrets_copies_sources_via_file(monkeypatch):
 def test_runtime_plugin_pool_labeler_follows_the_pool_toggle():
     """The trusted node-pool labeler (#2526) renders only with the plugin pool's node role."""
     disabled = aws_eks.render_aws_values(_config(), _terraform_outputs(), _images())
-    assert disabled["runtimePluginPool"] == {"labeler": {"enabled": False, "nodeRoleArn": ""}}
+    assert disabled["runtimePluginPool"] == {"labeler": {"enabled": False, "nodeGroupAsg": ""}}
     assert "nodePoolLabeler" not in disabled["identity"]["serviceAccountRoleArns"]
 
     outputs = _terraform_outputs()
     labeler = "arn:aws:iam::123456789012:role/shifter-dev-node-pool-labeler"
-    node_role = "arn:aws:iam::123456789012:role/shifter-dev-runtime-plugin-node"
+    node_group = "eks-runtime-plugins-1234-abcd"
     outputs["workload_role_arns"]["value"]["nodePoolLabeler"] = labeler
-    outputs["runtime_plugin_node_role_arn"] = {"value": node_role}
+    outputs["runtime_plugin_node_group_asg"] = {"value": node_group}
     enabled = aws_eks.render_aws_values(_config(), outputs, _images())
-    assert enabled["runtimePluginPool"] == {"labeler": {"enabled": True, "nodeRoleArn": node_role}}
+    assert enabled["runtimePluginPool"] == {"labeler": {"enabled": True, "nodeGroupAsg": node_group}}
     assert enabled["identity"]["serviceAccountRoleArns"]["nodePoolLabeler"] == labeler
 
     # Exactly one of the identity and the pool role means a misconfigured environment.
-    del outputs["runtime_plugin_node_role_arn"]
+    del outputs["runtime_plugin_node_group_asg"]
     with pytest.raises(ValueError, match="enabled together"):
         aws_eks.render_aws_values(_config(), outputs, _images())
     pool_only = _terraform_outputs()
-    pool_only["runtime_plugin_node_role_arn"] = {"value": node_role}
+    pool_only["runtime_plugin_node_group_asg"] = {"value": node_group}
     with pytest.raises(ValueError, match="enabled together"):
         aws_eks.render_aws_values(_config(), pool_only, _images())
 
