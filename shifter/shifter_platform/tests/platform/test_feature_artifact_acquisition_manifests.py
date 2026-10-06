@@ -90,6 +90,31 @@ def _container(job: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("region", ["us-east-2", ""], ids=["eks-with-region", "gke-without-region"])
+def test_policy_admits_the_job_with_or_without_a_region(region, monkeypatch):
+    """GKE has no AWS_REGION; the launcher omits it rather than send an empty value."""
+    monkeypatch.setenv("AWS_REGION", region)
+    job = _launcher_job()
+    names = {entry["name"] for entry in _container(job)["env"]}
+    assert ("AWS_REGION" in names) is bool(region)
+    assert _allows(_policy(), job)
+
+
+@pytest.mark.django_db
+def test_policy_requires_every_provider_neutral_input(monkeypatch):
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    policy = _policy()
+    job = _launcher_job()
+    for required in ("CLOUD_PROVIDER", "STORAGE_BUCKET_NAME", "RAES_CONTENT_DELIVERY_PREFIX", "HOME", "TMPDIR"):
+        candidate = copy.deepcopy(job)
+        _container(candidate)["env"] = [e for e in _container(candidate)["env"] if e["name"] != required]
+        assert not _allows(policy, candidate), required
+    empty = copy.deepcopy(job)
+    _container(empty)["env"].append({"name": "AWS_REGION"})  # an empty value arrives value-less
+    assert not _allows(policy, empty)
+
+
+@pytest.mark.django_db
 def test_policy_admits_the_launcher_built_job_and_denies_tampering():
     policy = _policy()
     job = _launcher_job()
@@ -118,6 +143,39 @@ def test_policy_admits_the_launcher_built_job_and_denies_tampering():
     }
     for name, mutate in mutations.items():
         assert not _allows(policy, tampered(mutate)), name
+
+
+def test_acquisition_egress_identity_and_metadata_follow_the_values():
+    """Egress comes only from featureArtifactAcquisition values; identity annotations
+    merge with an IRSA role; Workload Identity's metadata server stays reachable."""
+    documents = _render(
+        "values-gcp-dev.yaml",
+        "capabilities.kubernetesJobLauncher=true",
+        "capabilities.featureArtifactAcquisition=true",
+        "featureArtifactAcquisition.egressCidrs={0.0.0.0/0}",
+        "featureArtifactAcquisition.egressExcept={10.0.0.0/8,172.16.0.0/12}",
+        "featureArtifactAcquisition.serviceAccountAnnotations.iam\\.gke\\.io/gcp-service-account=acquirer@example.iam.gserviceaccount.com",
+        f"images.platform={IMAGE}",
+    )
+    policies = {
+        doc["metadata"]["name"]: doc
+        for doc in documents
+        if doc.get("kind") == "NetworkPolicy" and doc["metadata"].get("namespace") == "shifter-acquisition"
+    }
+    https = policies["acquisition-https-egress"]["spec"]["egress"][0]
+    assert https["to"] == [{"ipBlock": {"cidr": "0.0.0.0/0", "except": ["10.0.0.0/8", "172.16.0.0/12"]}}]
+    assert https["ports"] == [{"protocol": "TCP", "port": 443}]
+    metadata = policies["acquisition-metadata-server-egress"]["spec"]["egress"][0]
+    assert metadata["to"] == [{"ipBlock": {"cidr": "169.254.169.254/32"}}]
+
+    account = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ServiceAccount" and doc["metadata"]["name"] == "artifact-acquirer"
+    )
+    assert account["metadata"]["annotations"] == {
+        "iam.gke.io/gcp-service-account": "acquirer@example.iam.gserviceaccount.com"
+    }
 
 
 def test_gke_profiles_never_render_acquisition_resources():

@@ -563,6 +563,14 @@ pods to another project's identities.
 
 #### Optional: model access broker
 
+> **Not supported for use.** The broker is parked: keep `settings.model_broker`
+> and `settings.model_access` disabled. Three known defects make it unfit to run:
+> its TLS certificates are never renewed, so deploys fail 16 days after the first
+> broker deploy and its certificate expires at day 30; a fresh tenant with a
+> broker template fails its first deploy; and every model call requires finite
+> spend, rate, and concurrency limits. Range guests reach models through the
+> keyless default below. This section documents the settings for reference only.
+
 The ADR-059 model access broker is off by default. Without it, range guests use
 the keyless Vertex identity (ADR-064). Turning it on needs three
 `shifter.yaml` settings blocks that must agree with each other, plus prerequisites

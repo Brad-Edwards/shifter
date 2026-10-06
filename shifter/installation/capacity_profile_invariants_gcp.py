@@ -6,6 +6,7 @@ field validation, so an incoherent profile can never be resolved.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,6 +19,7 @@ def validate_profile_invariants(profile: GcpSharedServiceCapacityProfile) -> Non
     _validate_ready_replica_floors(profile)
     _validate_timeout_ordering(profile)
     _validate_connection_budgets(profile)
+    _validate_sql_default_connection_limit(profile)
     _validate_gate_replica_floor(profile)
 
 
@@ -65,3 +67,24 @@ def _validate_gate_replica_floor(profile: GcpSharedServiceCapacityProfile) -> No
     """Require the public-path gate to demand no more guacd pods than ready."""
     if profile.gate.required_guacd_replicas > profile.guacd.replicas:
         raise ValueError("gate requires more guacd replicas than the ready minimum")
+
+
+# Cloud SQL for PostgreSQL default max_connections by instance memory (GB), from
+# Google's "Configure database flags" reference: the profile does not set the
+# flag, so a budget above the default would promise connections the server
+# refuses.
+_SQL_DEFAULT_MAX_CONNECTIONS = ((120, 1000), (60, 800), (30, 600), (15, 500), (7.5, 400), (6, 200), (3.75, 100))
+
+
+def _validate_sql_default_connection_limit(profile: GcpSharedServiceCapacityProfile) -> None:
+    """Require the SQL connection budget to fit Cloud SQL's default limit for the tier's memory."""
+    match = re.fullmatch(r"db-custom-\d+-(\d+)", profile.cloud_sql.tier)
+    if match is None:
+        raise ValueError("Cloud SQL tier must be a db-custom-<vcpu>-<memory MB> machine type")
+    memory_gb = int(match.group(1)) / 1024
+    default_limit = next((limit for floor, limit in _SQL_DEFAULT_MAX_CONNECTIONS if memory_gb >= floor), 50)
+    if profile.cloud_sql.connection_budget > default_limit:
+        raise ValueError(
+            f"SQL connection budget {profile.cloud_sql.connection_budget} exceeds the tier's default "
+            f"max_connections of {default_limit}"
+        )

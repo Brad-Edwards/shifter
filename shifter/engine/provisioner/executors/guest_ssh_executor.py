@@ -23,6 +23,7 @@ from executors.base import (
     ExecutorConnectionError,
     ExecutorError,
     ExecutorTimeoutError,
+    GuestReadinessTimeoutError,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,30 @@ class GuestSSHConnectionError(ExecutorConnectionError):
 _STREAM_CHUNK_BYTES = 1024 * 1024
 #: Bound on captured stdout/stderr of a streamed run (setup scripts print markers).
 _MAX_STREAMED_OUTPUT_BYTES = 1024 * 1024
+
+
+#: Authored categories for a failed readiness probe, matched against the ssh
+#: client's own diagnostics in order. Only the category leaves this module.
+_PROBE_FAILURE_CATEGORIES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("Host key verification failed", "REMOTE HOST IDENTIFICATION HAS CHANGED", "host key is known"),
+        "host key not verifiable",
+    ),
+    (("Permission denied",), "authentication refused"),
+    (("a password is required", "sudo:"), "privilege escalation refused"),
+    (("Connection refused",), "connection refused"),
+    (("timed out", "TimeoutError"), "connection timed out"),
+    (("No route to host",), "no route to host"),
+    (("exit=0",), "unexpected probe output"),
+)
+
+
+def _probe_failure_category(detail: str) -> str:
+    """Map a probe's raw diagnostic onto one authored category."""
+    for markers, category in _PROBE_FAILURE_CATEGORIES:
+        if any(marker in detail for marker in markers):
+            return category
+    return "unavailable"
 
 
 def _command_result(returncode: int, stdout_bytes: bytes, stderr_bytes: bytes) -> CommandResult:
@@ -402,8 +427,11 @@ class GuestSSHExecutor:
             elapsed = time.time() - start_time
             if elapsed > timeout_seconds:
                 detail = self._last_probe_detail or "no probe diagnostic captured"
-                raise TimeoutError(
-                    f"SSH on {target} did not become available within {timeout_seconds}s (last probe: {detail})"
+                logger.warning(
+                    "SSH on %s did not become available within %ss (last probe: %s)", target, timeout_seconds, detail
+                )
+                raise GuestReadinessTimeoutError(
+                    f"guest SSH did not become ready within {timeout_seconds}s: {_probe_failure_category(detail)}"
                 )
 
             if self._probe_ready(target, document_name):

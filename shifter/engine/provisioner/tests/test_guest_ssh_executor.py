@@ -226,16 +226,40 @@ class TestGuestSSHExecutorReadiness:
             executor.close()
 
     def test_wait_for_ready_timeout_includes_probe_detail(self, mocker):
+        import itertools
+
         mocker.patch("time.sleep")
-        mocker.patch("time.time", side_effect=[0.0, 0.0, 100.0])
+        # Logging timestamps records with time.time() too, so the clock stays past the deadline.
+        mocker.patch("time.time", side_effect=itertools.chain([0.0, 0.0], itertools.repeat(100.0)))
         mock_run = mocker.patch("executors.guest_ssh_executor.subprocess.run")
         mock_run.return_value = MagicMock(returncode=255, stdout=b"", stderr=b"Host key verification failed.\n")
         executor = GuestSSHExecutor(private_key="PRIVATE KEY", username="ubuntu", poll_interval_seconds=0)
         try:
-            with pytest.raises(TimeoutError, match="Host key verification failed"):
+            with pytest.raises(TimeoutError, match="within 30s: host key not verifiable") as raised:
                 executor.wait_for_ready("10.10.1.5", timeout_seconds=30)
         finally:
             executor.close()
+        # Authored: the address and the raw ssh output stay in the provisioner's log.
+        assert "10.10.1.5" not in str(raised.value)
+        assert "verification failed" not in str(raised.value)
+
+    @pytest.mark.parametrize(
+        ("detail", "category"),
+        [
+            ("exit=255 Host key verification failed.", "host key not verifiable"),
+            ("exit=255 ubuntu@10.0.0.5: Permission denied (publickey).", "authentication refused"),
+            ("exit=1 sudo: a password is required", "privilege escalation refused"),
+            ("exit=255 ssh: connect to host 10.0.0.5 port 22: Connection refused", "connection refused"),
+            ("TimeoutError: SSH command timed out after 15s", "connection timed out"),
+            ("exit=255 ssh: connect to host 10.0.0.5 port 22: No route to host", "no route to host"),
+            ("exit=0", "unexpected probe output"),
+            ("", "unavailable"),
+        ],
+    )
+    def test_probe_failures_reduce_to_authored_categories(self, detail, category):
+        from executors.guest_ssh_executor import _probe_failure_category
+
+        assert _probe_failure_category(detail) == category
 
     def test_reboot_and_wait_observes_offline_then_ready(self, mocker):
         mocker.patch("time.sleep")

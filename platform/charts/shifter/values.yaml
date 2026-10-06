@@ -30,6 +30,15 @@ capabilities:
   # workload identity.
   featureArtifactAcquisition: false
 
+# Isolated feature-artifact acquisition Jobs (ADR-034-R12, #2463), used when
+# capabilities.featureArtifactAcquisition is on. Renderers set the HTTPS egress
+# the Job needs to reach upstream registries and object storage (the cluster's
+# own ranges excluded), and provider identity annotations for its service account.
+featureArtifactAcquisition:
+  serviceAccountAnnotations: {}
+  egressCidrs: []
+  egressExcept: []
+
 namespaces:
   platform: shifter-platform
   jobs: shifter-jobs

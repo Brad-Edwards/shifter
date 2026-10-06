@@ -1085,6 +1085,19 @@ jobs:
           python3 scripts/gcp/render_private_service_netpol.py \
             --terraform-output-json /tmp/gcp-terraform-outputs.json \
             --output "${K8S_OVERLAY_DIR}/platform-private-service.generated.yaml"
+      - name: Render tenant deploy identity into the overlay
+        run: |
+          # The committed overlay ships tenant-neutral `shifter-<env>`
+          # placeholders for the Artifact Registry roots (kustomization
+          # `newName`s) and the Workload Identity GSA annotations
+          # (patch-serviceaccounts). Project the real deploy identity in from the
+          # Terraform outputs at deploy time (ADR-004-R14, ADR-011) so no real
+          # project id / service-account email is ever committed. Runs BEFORE the
+          # digest-pin step below, which rewrites each image `newTag` -> the
+          # verified `@sha256` digest on the same kustomization.yaml.
+          python3 scripts/gcp/render_overlay_identity.py \
+            --environment "${GCP_ENVIRONMENT}" \
+            --terraform-output-json /tmp/gcp-terraform-outputs.json
       # Roll out the production-secure workload (new runtime ConfigMap + restart)
       # BEFORE (re-)applying the public edge, so the public Ingress never routes
       # to pods still running an older, less-secure runtime config.
@@ -1276,7 +1289,7 @@ jobs:
                     imagePullPolicy: IfNotPresent
                     # entrypoint.sh runs migrations first, then registers the
                     # immutable shipped seed and base image mappings.
-                    args: ["/bin/sh", "-c", "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry"]
+                    args: ["/bin/sh", "-c", "python manage.py bootstrap_inbox_catalog && python manage.py seed_raes_image_registry && python manage.py acquire_feature_artifacts"]
                     envFrom:
                       - configMapRef:
                           name: platform-runtime
