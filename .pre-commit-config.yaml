@@ -350,3 +350,11 @@ repos:
         files: ^(platform/k8s/gcp/base/.*\.ya?ml$|platform/charts/shifter/.*)
         pass_filenames: true
         verbose: true
+
+      - id: adr-guard-gcp-overlay-identity
+        name: architecture (adr guard gcp overlay deploy identity)
+        entry: python3 scripts/adr_guard/adr_guard.py --checks no-live-gcp-deploy-identity --files
+        language: system
+        files: ^platform/k8s/gcp/overlays/.*
+        pass_filenames: true
+        verbose: true
