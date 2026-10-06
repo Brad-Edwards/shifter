@@ -869,7 +869,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-      - name: Install Helm for canonical model broker rendering (hermetic, version-pinned, checksum-verified)
+      - name: Install Helm for canonical chart rendering (hermetic, version-pinned, checksum-verified)
         env:
           HELM_VERSION: v3.15.4
           # Reviewed, digest-pinned SHA-256 of helm-v3.15.4-linux-amd64.tar.gz.
@@ -1196,7 +1196,7 @@ jobs:
             --changed-output "${GITHUB_OUTPUT}"
           echo "enabled=true" >> "${GITHUB_OUTPUT}"
 
-      - name: Render and apply optional model broker from the canonical chart
+      - name: Render and apply the platform with chart-owned model broker and acquisition resources
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
           SHIFTER_CONFIG_OVERLAY_JSON: ${{ vars.SHIFTER_CONFIG_OVERLAY_JSON }}
@@ -1218,6 +1218,13 @@ jobs:
             --config "${config}" --terraform-output /tmp/gcp-terraform-outputs.json \
             --platform-image "${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}" \
             --base-manifests "${base_manifest}" --output "${manifest}"
+          # Feature-artifact acquisition (#2479) is chart-owned like the broker:
+          # its admission policy pins this run's platform image digest.
+          platform_manifest="${RUNNER_TEMP}/platform.generated.yaml"
+          uv run --project scripts/gcp python scripts/gcp/render_feature_artifact_acquisition.py \
+            --terraform-output /tmp/gcp-terraform-outputs.json \
+            --platform-image "${PORTAL_IMAGE_ROOT}@${PORTAL_IMAGE_DIGEST}" \
+            --manifest "${manifest}" --output "${platform_manifest}"
           enabled="$(cat "${manifest}.enabled")"
           echo "MODEL_BROKER_ENABLED=${enabled}" >> "${GITHUB_ENV}"
           if [ "${enabled}" = false ]; then
@@ -1232,7 +1239,7 @@ jobs:
             kubectl delete networkpolicy model-enrollment-control-egress \
               -n shifter-jobs --ignore-not-found
           fi
-          kubectl apply -f "${manifest}"
+          kubectl apply -f "${platform_manifest}"
       - name: Retire inventoried manual qualification objects
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
