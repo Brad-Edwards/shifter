@@ -499,9 +499,9 @@ resource "aws_iam_role_policy" "workload_feature_artifact_store" {
   })
 }
 
-# Trusted runtime-plugin node-pool labeler (#2526): reads which instance profile
-# backs each EKS node. ec2:DescribeInstances has no resource-level scoping; the
-# instance-profile read is limited to the profiles EKS managed node groups create.
+# Trusted runtime-plugin node-pool labeler (#2526): reads each EKS node's
+# instance (state, DNS name and its AWS-set aws:autoscaling:groupName tag).
+# ec2:DescribeInstances has no resource-level scoping.
 resource "aws_iam_role_policy" "workload_node_pool_labeler" {
   for_each = local.workload_node_pool_labeler
 
@@ -515,12 +515,6 @@ resource "aws_iam_role_policy" "workload_node_pool_labeler" {
         Effect   = "Allow"
         Action   = ["ec2:DescribeInstances"]
         Resource = "*"
-      },
-      {
-        Sid      = "ReadManagedNodeGroupInstanceProfiles"
-        Effect   = "Allow"
-        Action   = ["iam:GetInstanceProfile"]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/eks-*"
       },
     ]
   })

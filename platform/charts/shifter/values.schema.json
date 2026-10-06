@@ -234,10 +234,10 @@
         "labeler": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "nodeRoleArn", "resources"],
+          "required": ["enabled", "nodeGroupAsg", "resources"],
           "properties": {
             "enabled": { "type": "boolean" },
-            "nodeRoleArn": { "type": "string", "pattern": "^(arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+)?$" },
+            "nodeGroupAsg": { "type": "string", "pattern": "^[A-Za-z0-9_+=,.@/:-]{0,255}$" },
             "resources": { "type": "object" }
           }
         }

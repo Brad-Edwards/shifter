@@ -19,8 +19,9 @@ declares a bounded GKE Sandbox pool with warm capacity; AWS declares a dedicated
 EKS sandbox node pool with the same workload restrictions. Pool membership is the
 `node-restriction.kubernetes.io/shifter-pool=runtime-plugin` label, which a
 kubelet cannot set. GKE applies it through its control plane; on EKS a trusted
-labeler applies it only to nodes whose instance profile carries the pool's own
-node role, and admission confines that labeler to the one label (#2526). An installation without the required runtime fails closed.
+labeler applies it only to running nodes that AWS has tagged as members of the
+pool's own Auto Scaling group, and admission confines that labeler to the one
+label (#2526). An installation without the required runtime fails closed.
 It cannot run tenant code in the default container runtime as a fallback.
 
 Tenant admins can now assign installed versions to registered packs and select

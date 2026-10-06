@@ -127,12 +127,12 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         """#2526: the trusted labeler renders only when enabled and may toggle only the pool label."""
         _, default = _render(VALUES_FILES["aws-dev"])
         self.assertFalse(any(_identity(doc)[1] == "node-pool-labeler" for doc in default))
-        node_role = "arn:aws:iam::123456789012:role/shifter-dev-runtime-plugin-node"
+        node_group = "eks-runtime-plugins-1234-abcd"
         labeler_role = "arn:aws:iam::123456789012:role/shifter-dev-node-pool-labeler"
         rendered = _helm(
             "template", "contract-test", str(CHART_DIR), "-f", str(VALUES_FILES["aws-dev"]),
             "--set", "runtimePluginPool.labeler.enabled=true",
-            "--set", f"runtimePluginPool.labeler.nodeRoleArn={node_role}",
+            "--set", f"runtimePluginPool.labeler.nodeGroupAsg={node_group}",
             "--set", f"identity.serviceAccountRoleArns.nodePoolLabeler={labeler_role}",
             "--set", "runtimeEnv.AWS_REGION=us-east-2",
             "--set", "network.kubernetesApiCidrs={10.100.0.0/16}",
@@ -150,7 +150,7 @@ class BackendNeutralChartContractTests(unittest.TestCase):
             "validationActions"], ["Deny"])
         container = docs[("Deployment", "node-pool-labeler")]["spec"]["template"]["spec"]["containers"][0]
         self.assertEqual(container["command"], ["python", "-m", "shared.cloud.eks_node_pool_labeler"])
-        self.assertIn({"name": "RUNTIME_PLUGIN_NODE_ROLE_ARN", "value": node_role}, container["env"])
+        self.assertIn({"name": "RUNTIME_PLUGIN_NODE_GROUP_ASG", "value": node_group}, container["env"])
         self.assertIn(("NetworkPolicy", "allow-node-pool-labeler-kubernetes-api-egress"), docs)
         # GKE applies the pool label itself; the labeler never renders there.
         _, gcp = _render(VALUES_FILES["gcp-dev"])

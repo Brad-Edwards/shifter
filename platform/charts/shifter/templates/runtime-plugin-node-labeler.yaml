@@ -4,8 +4,8 @@
 # Trusted runtime-plugin node-pool labeler (#2526). NodeRestriction stops a
 # kubelet from setting node-restriction.kubernetes.io/shifter-pool, and EKS
 # managed node groups can only apply labels through the kubelet, so this
-# controller applies the pool label to nodes whose instance profile carries the
-# runtime-plugin pool's node role (shared.cloud.eks_node_pool_labeler).
+# controller applies the pool label to nodes in the runtime-plugin node group's
+# Auto Scaling group (shared.cloud.eks_node_pool_labeler).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -149,8 +149,8 @@ spec:
           {{- include "shifter.tmpVolumeMount" . | nindent 10 }}
           command: ["python", "-m", "shared.cloud.eks_node_pool_labeler"]
           env:
-            - name: RUNTIME_PLUGIN_NODE_ROLE_ARN
-              value: {{ $labeler.nodeRoleArn | quote }}
+            - name: RUNTIME_PLUGIN_NODE_GROUP_ASG
+              value: {{ required "runtimePluginPool.labeler.nodeGroupAsg is required" $labeler.nodeGroupAsg | quote }}
             - name: AWS_REGION
               value: {{ required "runtimeEnv.AWS_REGION is required for the node-pool labeler" .Values.runtimeEnv.AWS_REGION | quote }}
           livenessProbe:
