@@ -25,7 +25,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Protocol, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,84 @@ _PROVIDER_ID = re.compile(r"^aws:///[a-z0-9-]+/(i-[0-9a-f]{8,17})$")
 _POLL_SECONDS = 15
 
 
+class _InstanceProfileRef(TypedDict):
+    Arn: str
+
+
+class _InstanceState(TypedDict):
+    Name: str
+
+
+class _Instance(TypedDict, total=False):
+    State: _InstanceState
+    PrivateDnsName: str
+    IamInstanceProfile: _InstanceProfileRef
+
+
+class _Reservation(TypedDict):
+    Instances: list[_Instance]
+
+
+class _DescribeInstances(TypedDict, total=False):
+    Reservations: list[_Reservation]
+
+
+class _Role(TypedDict):
+    Arn: str
+
+
+class _InstanceProfile(TypedDict):
+    Roles: list[_Role]
+
+
+class _GetInstanceProfile(TypedDict):
+    InstanceProfile: _InstanceProfile
+
+
+class Ec2Reader(Protocol):
+    """The one EC2 read the labeler needs."""
+
+    def describe_instances(self, *, InstanceIds: list[str]) -> _DescribeInstances: ...
+
+
+class IamReader(Protocol):
+    """The one IAM read the labeler needs."""
+
+    def get_instance_profile(self, *, InstanceProfileName: str) -> _GetInstanceProfile: ...
+
+
+class NodeMetadata(Protocol):
+    name: str
+    labels: dict[str, str] | None
+
+
+class NodeSpec(Protocol):
+    provider_id: str | None
+
+
+class Node(Protocol):
+    """The fields of a Kubernetes Node the labeler reads."""
+
+    metadata: NodeMetadata
+    spec: NodeSpec
+
+
+class NodeList(Protocol):
+    items: list[Node]
+
+
+class NodeApi(Protocol):
+    """The Kubernetes Node operations the labeler uses."""
+
+    def list_node(self) -> NodeList: ...
+
+    def patch_node(self, name: str, body: dict[str, object]) -> object: ...
+
+
 class InstanceRoleResolver:
     """Resolve the IAM roles behind a node's EC2 instance."""
 
-    def __init__(self, ec2: Any, iam: Any) -> None:
+    def __init__(self, ec2: Ec2Reader, iam: IamReader) -> None:
         self._ec2 = ec2
         self._iam = iam
         self._profile_roles: dict[str, frozenset[str]] = {}
@@ -47,34 +121,42 @@ class InstanceRoleResolver:
     def roles(self, instance_id: str, node_name: str) -> frozenset[str]:
         """Roles of the running instance whose private DNS name is ``node_name``.
 
-        Returns an empty set when the instance does not exist, is not running,
-        does not match the node name, or has no instance profile. Provider
-        errors other than a missing instance propagate.
+        Empty when the instance does not exist, is not running, does not match
+        the node name, or has no instance profile. Provider errors other than a
+        missing instance propagate.
         """
+        profile_arn = self._profile_arn(instance_id, node_name)
+        if not profile_arn:
+            return frozenset()
+        if profile_arn not in self._profile_roles:
+            profile = self._iam.get_instance_profile(InstanceProfileName=profile_arn.rsplit("/", 1)[-1])
+            roles = profile["InstanceProfile"]["Roles"]
+            self._profile_roles[profile_arn] = frozenset(role["Arn"] for role in roles)
+        return self._profile_roles[profile_arn]
+
+    def _profile_arn(self, instance_id: str, node_name: str) -> str:
+        """The instance profile of the running instance named ``node_name``, or ``""``."""
         from botocore.exceptions import ClientError
 
         try:
             response = self._ec2.describe_instances(InstanceIds=[instance_id])
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") == "InvalidInstanceID.NotFound":
-                return frozenset()
+                return ""
             raise
-        instances = [instance for reservation in response["Reservations"] for instance in reservation["Instances"]]
+        instances = [
+            instance for reservation in response.get("Reservations", []) for instance in reservation["Instances"]
+        ]
         if len(instances) != 1:
-            return frozenset()
+            return ""
         instance = instances[0]
-        if instance.get("State", {}).get("Name") != "running" or instance.get("PrivateDnsName") != node_name:
-            return frozenset()
-        profile_arn = instance.get("IamInstanceProfile", {}).get("Arn", "")
-        if not profile_arn:
-            return frozenset()
-        if profile_arn not in self._profile_roles:
-            profile = self._iam.get_instance_profile(InstanceProfileName=profile_arn.rsplit("/", 1)[-1])
-            self._profile_roles[profile_arn] = frozenset(role["Arn"] for role in profile["InstanceProfile"]["Roles"])
-        return self._profile_roles[profile_arn]
+        running = "State" in instance and instance["State"]["Name"] == "running"
+        named = instance.get("PrivateDnsName") == node_name
+        profile = instance.get("IamInstanceProfile")
+        return profile["Arn"] if running and named and profile else ""
 
 
-def node_qualifies(node: Any, resolver: InstanceRoleResolver, pool_role_arn: str) -> bool | None:
+def node_qualifies(node: Node, resolver: InstanceRoleResolver, pool_role_arn: str) -> bool | None:
     """Whether ``node`` belongs to the pool; ``None`` when the provider could not answer."""
     from botocore.exceptions import BotoCoreError, ClientError
 
@@ -88,7 +170,7 @@ def node_qualifies(node: Any, resolver: InstanceRoleResolver, pool_role_arn: str
         return None
 
 
-def reconcile_node(core: Any, node: Any, resolver: InstanceRoleResolver, pool_role_arn: str) -> None:
+def reconcile_node(core: NodeApi, node: Node, resolver: InstanceRoleResolver, pool_role_arn: str) -> None:
     """Apply or remove the pool label so it matches the node's verified identity."""
     qualifies = node_qualifies(node, resolver, pool_role_arn)
     if qualifies is None:
@@ -102,13 +184,14 @@ def reconcile_node(core: Any, node: Any, resolver: InstanceRoleResolver, pool_ro
         logger.warning("node pool label removed from unverified node=%s", node.metadata.name)
 
 
-def reconcile_all(core: Any, resolver: InstanceRoleResolver, pool_role_arn: str) -> None:
+def reconcile_all(core: NodeApi, resolver: InstanceRoleResolver, pool_role_arn: str) -> None:
     """One pass over every node."""
     for node in core.list_node().items:
         reconcile_node(core, node, resolver, pool_role_arn)
 
 
 def main() -> int:
+    """Run the labeler until the process is stopped; returns 2 on missing configuration."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     pool_role_arn = os.environ.get("RUNTIME_PLUGIN_NODE_ROLE_ARN", "")
     region = os.environ.get("AWS_REGION", "")
