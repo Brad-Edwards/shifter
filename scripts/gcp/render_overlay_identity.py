@@ -75,9 +75,7 @@ def render_kustomization_images(text: str, image_roots: dict[str, str]) -> str:
         try:
             root = image_roots[component]
         except KeyError as exc:
-            raise KeyError(
-                f"No artifact_registry_image_roots entry for image component {component!r}"
-            ) from exc
+            raise KeyError(f"No artifact_registry_image_roots entry for image component {component!r}") from exc
         return f"{match.group('pre')}{root}{match.group('post')}"
 
     return _IMAGE_NEWNAME_RE.sub(_replace, text)
@@ -92,18 +90,14 @@ def render_service_account_patch(text: str, workload_service_accounts: dict[str,
     ``prov-launcher``) are preserved exactly. Raises ``KeyError`` if the overlay
     names a service-account localpart with no Terraform email.
     """
-    by_localpart = {
-        email.split("@", 1)[0]: email for email in workload_service_accounts.values()
-    }
+    by_localpart = {email.split("@", 1)[0]: email for email in workload_service_accounts.values()}
 
     def _replace(match: re.Match[str]) -> str:
         localpart = match.group("localpart")
         try:
             email = by_localpart[localpart]
         except KeyError as exc:
-            raise KeyError(
-                f"No workload_service_accounts entry for service-account localpart {localpart!r}"
-            ) from exc
+            raise KeyError(f"No workload_service_accounts entry for service-account localpart {localpart!r}") from exc
         return f"{match.group('pre')}{email}"
 
     return _SERVICE_ACCOUNT_RE.sub(_replace, text)
@@ -130,17 +124,13 @@ def render_overlay(environment: str, outputs: dict[str, object]) -> None:
 
     kustomization = overlay / "kustomization.yaml"
     kustomization.write_text(
-        render_kustomization_images(
-            kustomization.read_text(encoding="utf-8"), image_roots
-        ),
+        render_kustomization_images(kustomization.read_text(encoding="utf-8"), image_roots),
         encoding="utf-8",
     )
 
     sa_patch = overlay / "patch-serviceaccounts.patch"
     sa_patch.write_text(
-        render_service_account_patch(
-            sa_patch.read_text(encoding="utf-8"), workload_service_accounts
-        ),
+        render_service_account_patch(sa_patch.read_text(encoding="utf-8"), workload_service_accounts),
         encoding="utf-8",
     )
 
