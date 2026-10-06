@@ -283,7 +283,7 @@ contract consumed by the provisioner runtime:
 
 `gcp-dev` concrete values:
 
-- `project_id = "prod-rwctxzl6shxk"`
+- `project_id = "example-gcp-project"`
 - `public_hostname = "shifter.example.com"`
 - `enable_managed_tls = true`
 - `gke_master_authorized_cidrs = []`; operator and CI access use Connect Gateway
