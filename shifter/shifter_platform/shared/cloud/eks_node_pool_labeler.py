@@ -13,7 +13,7 @@ profile's role is the runtime-plugin pool's dedicated node role. None of these
 can be changed from the node. A node that positively fails the check loses the
 label; a provider error leaves the node unchanged.
 
-Usage: ``python -m shared.cloud.aws.node_pool_labeler`` with
+Usage: ``python -m shared.cloud.eks_node_pool_labeler`` with
 ``RUNTIME_PLUGIN_NODE_ROLE_ARN`` and ``AWS_REGION`` in the environment.
 """
 

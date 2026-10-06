@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 
-from shared.cloud.aws.node_pool_labeler import (
+from shared.cloud.eks_node_pool_labeler import (
     POOL_LABEL,
     POOL_VALUE,
     InstanceRoleResolver,

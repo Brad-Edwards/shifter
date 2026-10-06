@@ -149,7 +149,7 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         self.assertEqual(docs[("ValidatingAdmissionPolicyBinding", "restrict-node-pool-labeler")]["spec"][
             "validationActions"], ["Deny"])
         container = docs[("Deployment", "node-pool-labeler")]["spec"]["template"]["spec"]["containers"][0]
-        self.assertEqual(container["command"], ["python", "-m", "shared.cloud.aws.node_pool_labeler"])
+        self.assertEqual(container["command"], ["python", "-m", "shared.cloud.eks_node_pool_labeler"])
         self.assertIn({"name": "RUNTIME_PLUGIN_NODE_ROLE_ARN", "value": node_role}, container["env"])
         self.assertIn(("NetworkPolicy", "allow-node-pool-labeler-kubernetes-api-egress"), docs)
         # GKE applies the pool label itself; the labeler never renders there.
