@@ -18,6 +18,9 @@ def test_catalog_has_all_versioned_event_sizes():
         "gcp-shared-v1-p30",
         "gcp-shared-v1-p50",
         "gcp-shared-v1-p100",
+        "gcp-shared-v1-p200",
+        "gcp-shared-v1-p300",
+        "gcp-shared-v1-p500",
     }
 
 
@@ -40,6 +43,9 @@ def test_catalog_has_all_versioned_event_sizes():
         ("gcp-shared-v1-p30", 30, 5, 2, 3, 8, "db-custom-4-15360", "REGIONAL", 60, 200, 8),
         ("gcp-shared-v1-p50", 50, 8, 4, 4, 12, "db-custom-8-30720", "REGIONAL", 100, 350, 12),
         ("gcp-shared-v1-p100", 100, 14, 8, 6, 20, "db-custom-16-61440", "REGIONAL", 200, 650, 20),
+        ("gcp-shared-v1-p200", 200, 26, 16, 12, 24, "db-custom-32-122880", "REGIONAL", 400, 800, 32),
+        ("gcp-shared-v1-p300", 300, 38, 24, 18, 36, "db-custom-48-184320", "REGIONAL", 600, 800, 48),
+        ("gcp-shared-v1-p500", 500, 62, 40, 28, 57, "db-custom-64-245760", "REGIONAL", 1000, 800, 80),
     ],
 )
 def test_every_catalog_profile_has_its_authored_capacity_shape(
@@ -261,9 +267,31 @@ def test_p30_drift_projection_covers_capacity_bearing_kubernetes_fields():
         ("gcp-shared-v1-p30", 3, 6),
         ("gcp-shared-v1-p50", 3, 6),
         ("gcp-shared-v1-p100", 5, 10),
+        ("gcp-shared-v1-p200", 9, 18),
+        ("gcp-shared-v1-p300", 13, 26),
+        ("gcp-shared-v1-p500", 21, 42),
     ],
 )
 def test_the_openvpn_pool_keeps_a_spare_server_above_its_participant_plan(profile_id, minimum, maximum):
     # 25 participants per single-threaded OpenVPN server, plus one spare, never fewer than two (#2480).
     pool = resolve_capacity_profile(profile_id).vpn_pool
     assert (pool.minimum_vms, pool.maximum_vms, pool.cpu_utilization_pct) == (minimum, maximum, 30)
+
+
+@pytest.mark.parametrize("profile_id", ["gcp-shared-v1-p200", "gcp-shared-v1-p300", "gcp-shared-v1-p500"])
+def test_large_tiers_grow_the_single_guacamole_client_not_its_replica_count(profile_id):
+    profile = resolve_capacity_profile(profile_id)
+    assert profile.guacamole_client.replicas == 1
+    assert profile.helm_projection()["guacamoleClient"]["replicas"] == 1
+    assert profile.guacamole_client.absolute_tunnel_connections == profile.participant_count
+    small = resolve_capacity_profile("gcp-shared-v1-p100").guacamole_client.resources.limits
+    assert int(profile.guacamole_client.resources.limits.cpu) > int(small.cpu)
+
+
+def test_a_sql_budget_above_the_default_connection_limit_is_rejected():
+    profile = resolve_capacity_profile("gcp-shared-v1-p300")
+    data = profile.model_dump()
+    data["cloud_sql"]["connection_budget"] = 1300  # 120+ GB instances default to 1,000 connections
+
+    with pytest.raises(ValueError, match="default max_connections"):
+        GcpSharedServiceCapacityProfile.model_validate(data)

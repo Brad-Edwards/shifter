@@ -30,7 +30,10 @@ The current enforcement stack has six parts:
    bootstraps `sys.path` once and re-exports the internal `_guard` package. The
    check logic lives in one module per concern family under `_guard/checks/` (for
    example `_guard/checks/k8s_security.py`, `_guard/checks/secret_hygiene.py`,
-   `_guard/checks/deploy_workflow.py`) on top of the shared kernels
+   `_guard/checks/deploy_workflow.py`; `_guard/checks/cloud_identifiers.py` holds
+   the AWS-shaped `no-live-cloud-identifiers` scan and
+   `_guard/checks/gcp_deploy_identity.py` its GCP overlay complement,
+   `no-live-gcp-deploy-identity`) on top of the shared kernels
    `_guard/_common.py` (the `Violation` model, repo/git helpers, exception
    filtering) and `_guard/_workflow_model.py` (the `_dw_*` workflow-as-data
    model), with `_guard/_registry.py` holding the deterministic `CHECKS` /
