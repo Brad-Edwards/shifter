@@ -100,3 +100,8 @@ output "ingress_waf_acl_arn" {
   description = "Regional WAF ACL ARN for the ingress load balancer."
   value       = aws_wafv2_web_acl.ingress.arn
 }
+
+output "runtime_plugin_node_role_arn" {
+  description = "Node role of the runtime-plugin pool; the trusted labeler labels only nodes backed by it. Empty when the pool is disabled."
+  value       = var.enable_runtime_plugins ? aws_iam_role.runtime_plugin_node[0].arn : ""
+}
