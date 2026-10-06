@@ -46,13 +46,15 @@ runtimePluginPool:
   labeler:
     enabled: false
     nodeRoleArn: ""
+    # Measured: the platform package, boto3 and the Kubernetes client take about
+    # 180 MiB resident before the first reconcile pass.
     resources:
       requests:
         cpu: 10m
-        memory: 64Mi
+        memory: 192Mi
       limits:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 200m
+        memory: 320Mi
 
 namespaces:
   platform: shifter-platform
