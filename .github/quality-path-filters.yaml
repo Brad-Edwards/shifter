@@ -44,6 +44,8 @@ schema_version: 1
 
 force_full_matrix:
   - .github/workflows/**
+  # Local composite actions are CI control plane called by the workflows.
+  - .github/actions/**
   - .github/quality-path-filters.yaml
 
 quality_units:
@@ -85,6 +87,15 @@ quality_units:
       lint: [packer-lint]
       security: [packer-sast]
       test: [packer-tests]
+
+  - id: openvpn
+    paths:
+      - shifter/engine/openvpn/**
+    sonar: true
+    responsibilities:
+      lint: [openvpn-lint]
+      security: [openvpn-sast]
+      test: [openvpn-tests]
 
   - id: bootstrap
     paths:

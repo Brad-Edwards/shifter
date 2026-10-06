@@ -203,7 +203,8 @@
         "gcpBackendConfig": { "type": "boolean" },
         "gcpManagedTls": { "type": "boolean" },
         "kubernetesJobLauncher": { "type": "boolean" },
-        "gcpAccessNodePool": { "type": "boolean" }
+        "gcpAccessNodePool": { "type": "boolean" },
+        "featureArtifactAcquisition": { "type": "boolean" }
       }
     },
     "namespaces": {
@@ -213,6 +214,16 @@
       "properties": {
         "platform": { "$ref": "#/$defs/dnsLabel" },
         "jobs": { "$ref": "#/$defs/dnsLabel" }
+      }
+    },
+    "featureArtifactAcquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceAccountAnnotations", "egressCidrs", "egressExcept"],
+      "properties": {
+        "serviceAccountAnnotations": { "$ref": "#/$defs/annotations" },
+        "egressCidrs": { "$ref": "#/$defs/cidrList" },
+        "egressExcept": { "$ref": "#/$defs/cidrList" }
       }
     },
     "serviceAccounts": {
@@ -425,7 +436,8 @@
         "rangeClusterApiCidrs",
         "rangeClusterApiPort",
         "rangeAccessCidrs",
-        "rangeAccessPorts"
+        "rangeAccessPorts",
+        "rangeProvisionerPorts"
       ],
       "properties": {
         "enabled": { "const": true },
@@ -442,6 +454,15 @@
         },
         "rangeAccessCidrs": { "$ref": "#/$defs/cidrList" },
         "rangeAccessPorts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "rangeProvisionerPorts": {
           "type": "array",
           "uniqueItems": true,
           "items": {

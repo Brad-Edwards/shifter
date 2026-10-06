@@ -239,7 +239,7 @@ class TestBootstrapCommand:
         source.refresh_from_db()
         assert source.id == original_id
         assert source.package_digest == request.package_digest
-        assert source.package_version == "0.2.0"
+        assert source.package_version == request.package_version
         assert source.conformance_status == "passed"
         # A later customized tenant revision must not be overwritten by deploy.
         source.package_digest = "sha256:" + "f" * 64
@@ -258,8 +258,11 @@ class TestBootstrapCommand:
         monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(SHIPPED_INBOX_MANIFEST.parents[3]))
         call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
         source = RaesPackageSource.objects.get(scenario_id="smoke-linux")
+        shipped = next(r for r in load_inbox_manifest(SHIPPED_INBOX_MANIFEST) if r.scenario_id == "smoke-linux")
         assert source.conformance_status == RaesPackageSource.ConformanceStatus.PASSED
-        assert source.conformance_report_ref == "release://cms/scenarios/inbox_packs/smoke-linux@0.2.0"
+        assert source.conformance_report_ref == (
+            f"release://cms/scenarios/inbox_packs/smoke-linux@{shipped.package_version}"
+        )
         assert get_catalog_entry("smoke-linux")["launchable"] is True
 
     def test_command_errors_on_unknown_actor(self, db):

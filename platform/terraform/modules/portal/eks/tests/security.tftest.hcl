@@ -1,18 +1,32 @@
 override_data {
   target = data.aws_ssm_parameters_by_path.range_network
   values = {
-    names = [
-      "/shifter/test/range/vpc_id",
-      "/shifter/test/range/vpc_cidr",
-      "/shifter/test/range/private_route_table_id",
-      "/shifter/test/range/engine_secrets_kms_key_arn",
-    ]
-    values = [
-      "vpc-mock-range",
-      "10.50.0.0/16",
-      "rtb-mock-range",
-      "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets",
-    ]
+    names  = ["/shifter/test/range/vpc_id", "/shifter/test/range/vpc_cidr", "/shifter/test/range/private_route_table_id"]
+    values = ["vpc-mock-range", "10.50.0.0/16", "rtb-mock-range"]
+  }
+}
+
+# Portal-stack keys for platform application access (#2466); queue and topic
+# ARNs are built from their stable names, so they need no lookup.
+override_data {
+  target = data.aws_kms_alias.portal_messaging
+  values = {
+    target_key_arn = "arn:aws:kms:us-east-2:123456789012:key/mock-portal-messaging"
+  }
+}
+
+override_data {
+  target = data.aws_kms_alias.portal_storage
+  values = {
+    target_key_arn = "arn:aws:kms:us-east-2:123456789012:key/mock-portal-storage"
+  }
+}
+
+# Portal Secrets Manager CMK the provisioner encrypts range guest credentials with.
+override_data {
+  target = data.aws_kms_alias.range_credential_secrets
+  values = {
+    target_key_arn = "arn:aws:kms:us-east-2:123456789012:key/mock-portal-secrets-manager"
   }
 }
 
@@ -240,10 +254,22 @@ variables {
       service_account               = "shifter-portal"
       policy_arns                   = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
       range_participant_secret_read = true
+      platform_application_access   = true
     }
     workers = {
-      namespace       = "shifter-platform"
-      service_account = "shifter-workers"
+      namespace                   = "shifter-platform"
+      service_account             = "shifter-workers"
+      platform_application_access = true
+    }
+    artifactAcquirer = {
+      namespace                    = "shifter-acquisition"
+      service_account              = "artifact-acquirer"
+      feature_artifact_store_write = true
+    }
+    migrator = {
+      namespace                   = "shifter-platform"
+      service_account             = "migrator"
+      feature_artifact_store_read = true
     }
     provisionerLauncher = {
       namespace       = "shifter-platform"
@@ -266,6 +292,7 @@ variables {
       policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"]
     }
   }
+  storage_bucket_name = "test-storage-bucket"
   secret_names = [
     "database",
     "django",
@@ -434,11 +461,64 @@ run "security_contract" {
 
   assert {
     condition = (
-      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-range-secrets" &&
+      jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-secrets-manager" &&
       jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-2.amazonaws.com" &&
       jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[1].Condition.StringLike["kms:EncryptionContext:SecretARN"] == jsondecode(aws_iam_role_policy.workload_range_participant_secrets["portal"].policy).Statement[0].Resource
     )
-    error_message = "Range-secret Decrypt must be confined to the range key, via Secrets Manager, for exactly the participant-delivery secret ARNs."
+    error_message = "Range-credential Decrypt must be confined to the key the provisioner encrypts with, via Secrets Manager, for exactly the participant-delivery secret ARNs."
+  }
+
+  # Platform application access (#2466): only opted-in Django identities, exact
+  # portal-stack resources, KMS confined by service, metrics by namespace.
+  assert {
+    condition     = toset(keys(aws_iam_role_policy.workload_platform_application)) == toset(["portal", "workers"])
+    error_message = "Platform application access must be granted only to identities that opt in."
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[0].Resource == ["arn:aws:sqs:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-cms-tasks", "arn:aws:sqs:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-engine-tasks", "arn:aws:sqs:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-mc-tasks"] &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[1].Resource == "arn:aws:sns:us-east-2:${data.aws_caller_identity.current.account_id}:test-portal-range-events" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[2].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-messaging" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[2].Condition.StringEquals["kms:ViaService"] == ["sqs.us-east-2.amazonaws.com", "sns.us-east-2.amazonaws.com"] &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[3].Resource == "arn:aws:s3:::test-storage-bucket/*" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[4].Resource == "arn:aws:s3:::test-storage-bucket" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[5].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-storage" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[5].Condition.StringEquals["kms:ViaService"] == "s3.us-east-2.amazonaws.com" &&
+      jsondecode(aws_iam_role_policy.workload_platform_application["workers"].policy).Statement[6].Condition.StringEquals["cloudwatch:namespace"] == ["Shifter/PortalCapacity", "Shifter/WarmPool", "Shifter/CtfCommunication"]
+    )
+    error_message = "Platform application access must target exactly the portal-stack queues, topic, storage bucket and their keys, and the application metric namespaces."
+  }
+
+  # Isolated acquisition Job (#2463): only the opted-in identity, object get/put
+  # under the delivery prefix only (no list, no delete), storage key via S3 only.
+  assert {
+    condition = (
+      keys(aws_iam_role_policy.workload_feature_artifact_store) == ["artifactAcquirer"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[0].Action == ["s3:PutObject"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[0].Resource == "arn:aws:s3:::test-storage-bucket/raes/content-delivery/*" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[1].Resource == "arn:aws:kms:us-east-2:123456789012:key/mock-portal-storage" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store["artifactAcquirer"].policy).Statement[1].Condition.StringEquals["kms:ViaService"] == "s3.us-east-2.amazonaws.com" &&
+      !contains(keys(aws_iam_role_policy.workload_platform_application), "artifactAcquirer") &&
+      !contains(keys(aws_iam_role_policy.workload_rds_iam), "artifactAcquirer")
+    )
+    error_message = "The acquisition Job may only put objects under the delivery prefix, with no database or platform application access."
+  }
+
+  # Deploy content bootstrap checks inventoried artifacts exist: HEAD (s3:GetObject)
+  # under the delivery prefix plus ListBucket for 404s, and no storage-key KMS grant.
+  assert {
+    condition = (
+      keys(aws_iam_role_policy.workload_feature_artifact_store_read) == ["migrator"] &&
+      length(jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement) == 2 &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[0].Action == ["s3:GetObject"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[0].Resource == "arn:aws:s3:::test-storage-bucket/raes/content-delivery/*" &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[1].Action == ["s3:ListBucket"] &&
+      jsondecode(aws_iam_role_policy.workload_feature_artifact_store_read["migrator"].policy).Statement[1].Resource == "arn:aws:s3:::test-storage-bucket" &&
+      !contains(keys(aws_iam_role_policy.workload_feature_artifact_store), "migrator") &&
+      !contains(keys(aws_iam_role_policy.workload_platform_application), "migrator")
+    )
+    error_message = "The migrator may only check object existence under the delivery prefix, without decrypt or write access."
   }
 
   assert {
@@ -491,6 +571,17 @@ run "security_contract" {
   assert {
     condition     = aws_iam_role_policy.load_balancer_controller.role == aws_iam_role.workload["ingress"].id
     error_message = "The module-owned Load Balancer Controller policy must attach only to the exact ingress IRSA role."
+  }
+
+  # IP targets sit in the EKS-managed cluster security group; it carries the
+  # exact cluster ownership tag so the controller's tag-scoped rule edits reach it.
+  assert {
+    condition = (
+      aws_ec2_tag.cluster_security_group_lb_controller.resource_id == aws_eks_cluster.this.vpc_config[0].cluster_security_group_id &&
+      aws_ec2_tag.cluster_security_group_lb_controller.key == "elbv2.k8s.aws/cluster" &&
+      aws_ec2_tag.cluster_security_group_lb_controller.value == var.cluster_name
+    )
+    error_message = "The EKS cluster security group must carry the Load Balancer Controller's exact cluster ownership tag."
   }
 
   # EBS/EFS CSI drivers are installed as managed add-ons bound to their own

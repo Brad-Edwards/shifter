@@ -23,6 +23,24 @@ locals {
     identity_name => identity.rds_iam_db_user
     if identity.rds_iam_db_user != ""
   }
+  workload_feature_artifact_store_write = toset([
+    for identity_name, identity in var.workload_identities :
+    identity_name
+    if identity.feature_artifact_store_write
+  ])
+  workload_feature_artifact_store_read = toset([
+    for identity_name, identity in var.workload_identities :
+    identity_name
+    if identity.feature_artifact_store_read
+  ])
+  workload_platform_application_access = toset([
+    for identity_name, identity in var.workload_identities :
+    identity_name
+    if identity.platform_application_access
+  ])
+  # Platform task queues, by the portal stack's stable names (ADR-044-R6).
+  platform_queue_keys        = toset(["cms", "engine", "mc"])
+  platform_metric_namespaces = ["Shifter/PortalCapacity", "Shifter/WarmPool", "Shifter/CtfCommunication"]
   workload_range_participant_secret_access = toset([
     for identity_name, identity in var.workload_identities :
     identity_name
@@ -220,12 +238,19 @@ resource "aws_iam_role_policy" "workload_rds_iam" {
   })
 }
 
+# The provisioner encrypts range guest credentials with the portal Secrets Manager
+# CMK (eks-provisioner-env SECRETS_KMS_KEY_ARN). Resolve it by the same alias so the
+# reader's Decrypt grant and the writer's key can never diverge.
+data "aws_kms_alias" "range_credential_secrets" {
+  count = length(local.workload_range_participant_secret_access) > 0 ? 1 : 0
+  name  = "alias/shifter-${var.environment}-secrets-manager"
+}
+
 # Read-only participant-delivery credentials for brokering a participant's SSH/RDP
 # connection to a realized range guest (#1826; GCP parity with the portal's
-# participant-prefix-conditioned secretAccessor). The secrets are encrypted with the
-# range-owned engine-secrets key published at /shifter/<env>/range/ (key policy
-# delegates to account IAM); Decrypt is confined to Secrets Manager calls on exactly
-# the participant-delivery secret ARNs via the SecretARN encryption context.
+# participant-prefix-conditioned secretAccessor). Decrypt is confined to Secrets
+# Manager calls on exactly the participant-delivery secret ARNs via the SecretARN
+# encryption context.
 resource "aws_iam_role_policy" "workload_range_participant_secrets" {
   for_each = local.workload_range_participant_secret_access
 
@@ -242,7 +267,7 @@ resource "aws_iam_role_policy" "workload_range_participant_secrets" {
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = local.range_network["engine_secrets_kms_key_arn"]
+        Resource = data.aws_kms_alias.range_credential_secrets[0].target_key_arn
         Condition = {
           StringEquals = {
             "kms:ViaService" = "secretsmanager.${var.aws_region}.amazonaws.com"
@@ -338,4 +363,161 @@ resource "aws_iam_role" "cluster_autoscaler" {
 resource "aws_iam_role_policy_attachment" "cluster_autoscaler" {
   role       = aws_iam_role.cluster_autoscaler.name
   policy_arn = aws_iam_policy.cluster_autoscaler.arn
+}
+
+# ------------------------------------------------------------------------------
+# Platform application AWS access (#2466)
+# ------------------------------------------------------------------------------
+# The retired portal EC2 role carried the platform's SQS, SNS, storage and metrics
+# permissions for the same Django processes these identities now run. Resources
+# are the portal stack's, resolved by stable name (ADR-044-R6); every KMS key
+# policy delegates to account IAM, and the storage bucket policy still enforces
+# TLS and its own SSE-KMS key on every write.
+data "aws_kms_alias" "portal_messaging" {
+  count = length(local.workload_platform_application_access) > 0 ? 1 : 0
+  name  = "alias/${var.environment}-portal-portal-messaging"
+}
+
+data "aws_kms_alias" "portal_storage" {
+  count = length(local.workload_platform_application_access) + length(local.workload_feature_artifact_store_write) > 0 ? 1 : 0
+  name  = "alias/shifter-${var.environment}-portal-s3"
+}
+
+resource "aws_iam_role_policy" "workload_platform_application" {
+  for_each = local.workload_platform_application_access
+
+  name = "platform-application-access"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "PlatformTaskQueues"
+        Effect = "Allow"
+        Action = [
+          "sqs:ChangeMessageVisibility",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:GetQueueUrl",
+          "sqs:ReceiveMessage",
+          "sqs:SendMessage",
+        ]
+        Resource = sort([for queue in local.platform_queue_keys : "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.environment}-portal-${queue}-tasks"])
+      },
+      {
+        Sid      = "RangeEventsPublish"
+        Effect   = "Allow"
+        Action   = ["sns:Publish"]
+        Resource = "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.environment}-portal-range-events"
+      },
+      {
+        Sid      = "MessagingKms"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = data.aws_kms_alias.portal_messaging[0].target_key_arn
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = ["sqs.${var.aws_region}.amazonaws.com", "sns.${var.aws_region}.amazonaws.com"]
+          }
+        }
+      },
+      {
+        Sid    = "StorageObjects"
+        Effect = "Allow"
+        Action = [
+          "s3:DeleteObject",
+          "s3:GetObject",
+          "s3:GetObjectTagging",
+          "s3:PutObject",
+          "s3:PutObjectTagging",
+        ]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}/*"
+      },
+      {
+        Sid      = "StorageBucketList"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}"
+      },
+      {
+        Sid      = "StorageKms"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKey"]
+        Resource = data.aws_kms_alias.portal_storage[0].target_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "s3.${var.aws_region}.amazonaws.com" }
+        }
+      },
+      {
+        # PutMetricData has no resource-level scoping; the namespace condition is
+        # the boundary.
+        Sid      = "ApplicationMetrics"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+        Condition = {
+          StringEquals = { "cloudwatch:namespace" = local.platform_metric_namespaces }
+        }
+      },
+    ]
+  })
+}
+
+# Isolated feature-artifact acquisition Job (ADR-034-R12, #2463): it may only
+# write objects under the content-addressed delivery prefix (multipart SSE-KMS
+# uploads need the storage key's Decrypt and GenerateDataKey). It cannot read,
+# list, delete, or touch any other bucket path.
+resource "aws_iam_role_policy" "workload_feature_artifact_store" {
+  for_each = local.workload_feature_artifact_store_write
+
+  name = "feature-artifact-store-write"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "FeatureArtifactObjects"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}/${trim(var.feature_artifact_prefix, "/")}/*"
+      },
+      {
+        Sid      = "FeatureArtifactStorageKms"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = data.aws_kms_alias.portal_storage[0].target_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "s3.${var.aws_region}.amazonaws.com" }
+        }
+      },
+    ]
+  })
+}
+
+# Deploy content bootstrap (acquire_feature_artifacts, ADR-034-R12): verifies an
+# inventoried artifact still exists before reusing it. HEAD needs s3:GetObject,
+# and only ListBucket turns a missing key into 404 instead of 403. With no
+# storage-key KMS grant the identity cannot decrypt object bytes.
+resource "aws_iam_role_policy" "workload_feature_artifact_store_read" {
+  for_each = local.workload_feature_artifact_store_read
+
+  name = "feature-artifact-store-read"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "FeatureArtifactObjectMetadata"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}/${trim(var.feature_artifact_prefix, "/")}/*"
+      },
+      {
+        Sid      = "FeatureArtifactMissingObjects"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = "arn:aws:s3:::${var.storage_bucket_name}"
+      },
+    ]
+  })
 }

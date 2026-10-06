@@ -12,6 +12,8 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .capacity_profile_invariants_gcp import validate_profile_invariants
+
 CapacityProfileId = Literal[
     "gcp-shared-v1-p10",
     "gcp-shared-v1-p30",
@@ -140,6 +142,29 @@ class AccessNodeCapacity(_ClosedModel):
         return self
 
 
+class VpnPoolCapacity(_ClosedModel):
+    """Shared participant OpenVPN pool sizing (#2480).
+
+    One OpenVPN 2.x process is single-threaded and uses one core. The plan is
+    25 participants per 2-vCPU server: 25 x 3 Mbps (interactive RDP plus SSH)
+    is about 75 Mbps, roughly 40% of one core at OpenVPN's published 12 MHz per
+    Mbps. The minimum adds one spare server (and never drops below two) so a
+    server can fail or be replaced without exceeding the plan. The CPU target
+    is 30% of the VM because a saturated OpenVPN core shows as only 50%.
+    """
+
+    machine_type: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
+    minimum_vms: int = Field(ge=2)
+    maximum_vms: int = Field(ge=2)
+    cpu_utilization_pct: int = Field(ge=10, le=45)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> VpnPoolCapacity:
+        if self.maximum_vms < self.minimum_vms:
+            raise ValueError("VPN pool maximum must be at least its minimum")
+        return self
+
+
 class TimeoutCapacity(_ClosedModel):
     """Coordinated backend, WebSocket, process, pod, and drain timeouts."""
 
@@ -179,17 +204,14 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
     cloud_sql: CloudSqlCapacity
     redis: RedisCapacity
     access_nodes: AccessNodeCapacity
+    vpn_pool: VpnPoolCapacity
     timeouts: TimeoutCapacity
     gate: GateCapacity
 
     @model_validator(mode="after")
     def validate_coupled_limits(self) -> GcpSharedServiceCapacityProfile:
         """Validate invariants that couple otherwise independent profile sections."""
-        _validate_profile_identity(self)
-        _validate_ready_replica_floors(self)
-        _validate_timeout_ordering(self)
-        _validate_connection_budgets(self)
-        _validate_gate_replica_floor(self)
+        validate_profile_invariants(self)
         return self
 
     def terraform_projection(self) -> dict[str, object]:
@@ -198,6 +220,10 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
             "access_machine_type": self.access_nodes.machine_type,
             "access_node_count": self.access_nodes.minimum_nodes,
             "access_node_max_count": self.access_nodes.maximum_nodes,
+            "vpn_pool_machine_type": self.vpn_pool.machine_type,
+            "vpn_pool_min_vms": self.vpn_pool.minimum_vms,
+            "vpn_pool_max_vms": self.vpn_pool.maximum_vms,
+            "vpn_pool_cpu_target_pct": self.vpn_pool.cpu_utilization_pct,
             "cloud_sql_tier": self.cloud_sql.tier,
             "cloud_sql_availability_type": self.cloud_sql.availability_type,
             "cloud_sql_disk_size_gb": self.cloud_sql.disk_size_gb,
@@ -309,57 +335,25 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
         }
 
 
-def _validate_profile_identity(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require the profile suffix, participant count, and gate target to agree."""
-    expected_count = int(profile.profile_id.rsplit("p", 1)[1])
-    if expected_count != profile.participant_count or profile.gate.concurrency != profile.participant_count:
-        raise ValueError("profile identity, participant count, and gate concurrency must agree")
-
-
-def _validate_ready_replica_floors(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require ready replicas to carry the gate before autoscaling reacts."""
-    if profile.portal.autoscaling.min_replicas != profile.portal.replicas:
-        raise ValueError("portal minimum replicas must carry the gate before autoscaling")
-    if profile.guacd.autoscaling.min_replicas != profile.guacd.replicas:
-        raise ValueError("guacd minimum replicas must carry the gate before autoscaling")
-
-
-def _validate_timeout_ordering(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require heartbeat, drain, process, and pod timeouts to remain ordered."""
-    timeouts = profile.timeouts
-    cadence = timeouts.websocket_ping_interval_seconds + timeouts.websocket_ping_timeout_seconds
-    if cadence >= min(timeouts.portal_backend_seconds, timeouts.guacamole_backend_seconds):
-        raise ValueError("WebSocket cadence must remain below both public backend timeouts")
-    if timeouts.pod_termination_grace_seconds < timeouts.connection_draining_seconds:
-        raise ValueError("pod termination grace must cover connection draining")
-    if timeouts.pod_termination_grace_seconds <= timeouts.process_graceful_timeout_seconds:
-        raise ValueError("pod termination grace must exceed the process graceful timeout")
-
-
-def _validate_connection_budgets(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require SQL and Redis budgets to cover all configured process contexts."""
-    portal_contexts = profile.portal.replicas * (profile.portal.web_workers + profile.portal.bootstrap_workers)
-    required_sql = (
-        portal_contexts + profile.guacamole_client.jdbc_pool_active_connections + profile.cloud_sql.reserved_connections
-    )
-    if profile.cloud_sql.connection_budget < required_sql:
-        raise ValueError("SQL connection budget does not cover portal, Guacamole, and reserve contexts")
-    required_redis = profile.portal.replicas * profile.portal.web_workers * 2
-    if profile.redis.connection_budget < required_redis:
-        raise ValueError("Redis connection budget does not cover portal processes and reconnect headroom")
-
-
-def _validate_gate_replica_floor(profile: GcpSharedServiceCapacityProfile) -> None:
-    """Require the public-path gate to demand no more guacd pods than ready."""
-    if profile.gate.required_guacd_replicas > profile.guacd.replicas:
-        raise ValueError("gate requires more guacd replicas than the ready minimum")
-
-
 def _resources(request_cpu: str, request_memory: str, limit_cpu: str, limit_memory: str) -> WorkloadResources:
     """Build one workload resource request/limit pair."""
     return WorkloadResources(
         requests=ResourceQuantity(cpu=request_cpu, memory=request_memory),
         limits=ResourceQuantity(cpu=limit_cpu, memory=limit_memory),
+    )
+
+
+_VPN_PARTICIPANTS_PER_SERVER = 25
+
+
+def _vpn_pool(count: int) -> VpnPoolCapacity:
+    """Size the OpenVPN pool for one participant tier (basis on VpnPoolCapacity)."""
+    minimum = max(2, -(-count // _VPN_PARTICIPANTS_PER_SERVER) + 1)
+    return VpnPoolCapacity(
+        machine_type="e2-standard-2",
+        minimum_vms=minimum,
+        maximum_vms=max(minimum + 2, minimum * 2),
+        cpu_utilization_pct=30,
     )
 
 
@@ -420,6 +414,7 @@ def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityP
             minimum_nodes=access_nodes,
             maximum_nodes=access_max,
         ),
+        vpn_pool=_vpn_pool(count),
         timeouts=TimeoutCapacity(
             portal_backend_seconds=3600,
             guacamole_backend_seconds=3600,

@@ -51,6 +51,11 @@ _GCP_PROVISIONER_ENV_KEYS = (
     "RANGE_NETWORK_ZONE",
     "PORTAL_NETWORK_CIDRS",
     "ACCESS_NETWORK_CIDRS",
+    # Shared participant OpenVPN pool (#2480): profiles point at the pool
+    # endpoint and are signed by the tenant CA; ranges admit the pool networks.
+    "RANGE_OPENVPN_ENDPOINT",
+    "RANGE_OPENVPN_ISSUER_SECRET_ID",
+    "RANGE_OPENVPN_POOL_CIDRS",
     "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
     "GCP_RANGE_BACKEND",
     "GCP_RANGE_PLANE",

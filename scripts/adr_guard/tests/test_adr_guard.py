@@ -5554,7 +5554,7 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
                 repo_root,
                 "platform/terraform/x/net.tf",
                 'dns        = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]\n'
-                'gcp_health = ["130.211.0.0/22", "35.191.0.0/16"]\n'
+                'gcp_health = ["130.211.0.0/22", "35.191.0.0/16", "209.85.204.0/22"]\n'
                 'gcp_iap    = "35.235.240.0/20"\n'
                 'googleapis = "199.36.153.8/30"\n'
                 'doc        = "203.0.113.10/32"\n'
@@ -5615,6 +5615,17 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
                 repo_root,
                 "scripts/x/test_thing.py",
                 'a = "123456789012"\nb = "111122223333"\nc = "000000000000"\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual(violations, [])
+
+    def test_allows_public_ami_publisher_owners(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "shifter/packer/x.pkr.hcl",
+                'owners = ["099720109477"]\nowners = ["136693071363"]\nowners = ["679593333241"]\n',
             )
             violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
             self.assertEqual(violations, [])

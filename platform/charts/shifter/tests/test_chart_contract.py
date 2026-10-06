@@ -46,9 +46,11 @@ AWS_DEV_WAF_ACL_ARN = (
 # direct-provider configuration, capacity contracts, and isolated provider egress.
 # Regenerated for #2305 after granting namespace-scoped pod listing for cancellation.
 # Regenerated after raising provisioner launcher memory for burst requests.
+# Regenerated for #2467 after admitting raes-range activate in the provisioner Job policy.
+# Regenerated for #2480 after admitting the OpenVPN pool env and dropping the 1195 port.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "28a10854e15f7d4f307901a462b2ea7e47e16f6fad1d91b4f87f91d2497b5f67",
-    "gcp-prod": "169d18f669b415eac87c90290265c91dc4d74cf2fa165fd2d2e782e9fa2570a4",
+    "gcp-dev": "aaff0969559e2f147710bb9b185522eb440421b5fb6e222ffb0902815818264c",
+    "gcp-prod": "6ea1b4566d1cb8e9392eed18f8895287e5ed68fe7e7096ea17d3a0d2f0770e27",
 }
 
 
@@ -98,6 +100,14 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                 self.assertEqual(policy["spec"]["egress"], [{
                     "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
                     "ports": [{"protocol": "TCP", "port": port} for port in (22, 3389)],
+                }])
+                # Provisioner Jobs dial the management channels and the OpenVPN
+                # gateway health responder (#2030); the portal does not.
+                jobs = next(doc for doc in documents if _identity(doc) == (
+                    "NetworkPolicy", "allow-jobs-range-access-egress"))
+                self.assertEqual(jobs["spec"]["egress"], [{
+                    "to": [{"ipBlock": {"cidr": "10.50.0.0/16"}}],
+                    "ports": [{"protocol": "TCP", "port": port} for port in (22, 2222, 3389, 5985, 5986, 1195)],
                 }])
 
     def test_aws_supplies_gvisor_runtime_class_for_only_the_isolated_pool(self) -> None:

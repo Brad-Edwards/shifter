@@ -221,16 +221,15 @@ class TestKaliTools:
 
 
 class TestClaudeCode:
-    """Test Claude Code installation script."""
+    """Test the Kali Claude Code configuration script."""
 
     @pytest.fixture
     def claude_content(self):
         return (SCRIPTS_DIR / "kali" / "claude-code.sh").read_text()
 
-    def test_npm_install(self, claude_content):
-        """Claude Code should be installed via npm."""
-        assert "npm install" in claude_content
-        assert "claude-code" in claude_content
+    def test_never_installs_the_binary(self, claude_content):
+        """The binary is delivered at realization (#2463); the image only configures it."""
+        assert "npm install" not in claude_content
 
     def test_bedrock_config(self, claude_content):
         """Bedrock environment variables should be set."""
@@ -382,16 +381,15 @@ class TestUbuntuTools:
 
 
 class TestUbuntuClaudeCode:
-    """Test Ubuntu Claude Code installation script."""
+    """Test the Ubuntu Claude Code configuration script."""
 
     @pytest.fixture
     def claude_content(self):
         return (SCRIPTS_DIR / "ubuntu" / "claude-code.sh").read_text()
 
-    def test_npm_install(self, claude_content):
-        """Claude Code should be installed via npm."""
-        assert "npm install" in claude_content
-        assert "claude-code" in claude_content
+    def test_never_installs_the_binary(self, claude_content):
+        """The binary is delivered at realization (#2463); the image only configures it."""
+        assert "npm install" not in claude_content
 
     def test_bedrock_config(self, claude_content):
         """Bedrock environment variables should be set."""
@@ -1016,3 +1014,13 @@ class TestDcPrebaked:
         finalize = (PACKER_DIR / "scripts" / "dc-prebaked" / "finalize.ps1").read_text()
         assert "169.254.169.253" in finalize
         assert "Set-DnsServerForwarder" in finalize
+
+
+class TestClaudeBinaryNeverBaked:
+    """No Linux image contains Claude Code; ranges receive it at realization (#2463, #2479)."""
+
+    def test_no_linux_template_bakes_the_binary(self):
+        for template in ("kali.pkr.hcl", "ubuntu.pkr.hcl", "gcp/kali.pkr.hcl", "gcp/ubuntu.pkr.hcl"):
+            text = (PACKER_DIR / template).read_text()
+            assert "claude-code-binary" not in text, template
+        assert not (SCRIPTS_DIR / "common" / "claude-code-binary.sh").exists()
