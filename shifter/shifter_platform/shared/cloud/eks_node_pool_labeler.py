@@ -37,57 +37,77 @@ _POLL_SECONDS = 15
 
 
 class _InstanceProfileRef(TypedDict):
+    """The instance-profile reference on a described instance."""
+
     Arn: str
 
 
 class _InstanceState(TypedDict):
+    """The lifecycle state of a described instance."""
+
     Name: str
 
 
 class _Instance(TypedDict, total=False):
+    """The described-instance fields the labeler reads."""
+
     State: _InstanceState
     PrivateDnsName: str
     IamInstanceProfile: _InstanceProfileRef
 
 
 class _Reservation(TypedDict):
+    """One DescribeInstances reservation."""
+
     Instances: list[_Instance]
 
 
 class _DescribeInstances(TypedDict, total=False):
+    """The DescribeInstances response fields the labeler reads."""
+
     Reservations: list[_Reservation]
 
 
 class _Role(TypedDict):
+    """A role attached to an instance profile."""
+
     Arn: str
 
 
 class _InstanceProfile(TypedDict):
+    """The roles an instance profile carries."""
+
     Roles: list[_Role]
 
 
 class _GetInstanceProfile(TypedDict):
+    """The GetInstanceProfile response fields the labeler reads."""
+
     InstanceProfile: _InstanceProfile
 
 
 class Ec2Reader(Protocol):
     """The one EC2 read the labeler needs."""
 
-    def describe_instances(self, *, InstanceIds: list[str]) -> _DescribeInstances: ...
+    def describe_instances(self, **kwargs: list[str]) -> _DescribeInstances: ...
 
 
 class IamReader(Protocol):
     """The one IAM read the labeler needs."""
 
-    def get_instance_profile(self, *, InstanceProfileName: str) -> _GetInstanceProfile: ...
+    def get_instance_profile(self, **kwargs: str) -> _GetInstanceProfile: ...
 
 
 class NodeMetadata(Protocol):
+    """The Node metadata the labeler reads."""
+
     name: str
     labels: dict[str, str] | None
 
 
 class NodeSpec(Protocol):
+    """The Node spec field the labeler reads."""
+
     provider_id: str | None
 
 
@@ -99,6 +119,8 @@ class Node(Protocol):
 
 
 class NodeList(Protocol):
+    """A listing of Nodes."""
+
     items: list[Node]
 
 
