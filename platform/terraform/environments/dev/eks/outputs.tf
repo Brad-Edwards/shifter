@@ -90,3 +90,8 @@ output "model_broker" {
   description = "Applied private model broker configuration."
   value       = module.eks.model_broker
 }
+
+output "runtime_plugin_node_role_arn" {
+  description = "Node role of the runtime-plugin pool, consumed by the trusted node-pool labeler (#2526)."
+  value       = module.eks.runtime_plugin_node_role_arn
+}
