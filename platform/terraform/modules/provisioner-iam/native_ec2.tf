@@ -62,7 +62,7 @@ resource "aws_iam_role_policy_attachment" "native_ec2" {
 # cannot read it directly. The provisioner attaches it only when a range has no
 # model-broker guest path (the two are mutually exclusive per ADR-064).
 resource "aws_iam_role" "range_host_model" {
-  name                 = "${var.name_prefix}-range-host-model"
+  name                 = "${local.iam_name_prefix}-range-host-model"
   permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
@@ -98,7 +98,7 @@ resource "aws_iam_role_policy" "range_host_model_invoke" {
 }
 
 resource "aws_iam_instance_profile" "range_host_model" {
-  name = "${var.name_prefix}-range-host-model"
+  name = "${local.iam_name_prefix}-range-host-model"
   role = aws_iam_role.range_host_model.name
   tags = var.tags
 }

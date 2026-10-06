@@ -26,7 +26,7 @@ class Ec2GuestError(ValueError):
     """The observed EC2 guest cannot prove the intended ownership or containment."""
 
 
-_INSTANCE_PROFILE_ARN = re.compile(r"arn:aws:iam::[0-9]{12}:instance-profile/[\w+=,.@/-]{1,128}")
+_INSTANCE_PROFILE_ARN = re.compile(r"arn:aws:iam::\d{12}:instance-profile/[\w+=,.@/-]{1,128}", re.ASCII)
 
 
 @dataclass(frozen=True)

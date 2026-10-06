@@ -202,6 +202,7 @@ module "eks_provisioner_env" {
 
   environment              = local.environment
   name_prefix              = local.portal_name_prefix
+  iam_name_prefix          = "shifter-${local.environment}"
   runtime_env              = var.runtime_env
   provisioner_role_name    = module.eks.workload_role_names["provisioner"]
   provisioner_role_id      = module.eks.workload_role_ids["provisioner"]

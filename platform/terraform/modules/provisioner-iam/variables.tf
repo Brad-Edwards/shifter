@@ -3,6 +3,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "iam_name_prefix" {
+  description = "Prefix for IAM role and instance profile names (defaults to name_prefix)"
+  type        = string
+  default     = null
+}
+
 variable "environment" {
   description = "Deployment environment; scopes the runtime resource-tag and namespace conditions on the provisioner permissions."
   type        = string

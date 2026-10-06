@@ -3,6 +3,12 @@ variable "environment" {
   type        = string
 }
 
+variable "iam_name_prefix" {
+  description = "Prefix for IAM role and instance profile names the provisioner permission set creates (defaults to name_prefix)"
+  type        = string
+  default     = null
+}
+
 variable "name_prefix" {
   description = "Portal resource name prefix (e.g. dev-portal); selects the portal RDS/KMS/VPC the provisioner shares."
   type        = string

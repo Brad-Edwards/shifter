@@ -147,6 +147,7 @@ module "provisioner_iam" {
   source = "../../provisioner-iam"
 
   name_prefix              = var.name_prefix
+  iam_name_prefix          = var.iam_name_prefix
   environment              = var.environment
   role_name                = var.provisioner_role_name
   role_id                  = var.provisioner_role_id

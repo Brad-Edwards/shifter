@@ -13,8 +13,9 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 locals {
-  account_id = data.aws_caller_identity.current.account_id
-  region     = data.aws_region.current.id
+  account_id      = data.aws_caller_identity.current.account_id
+  region          = data.aws_region.current.id
+  iam_name_prefix = coalesce(var.iam_name_prefix, var.name_prefix)
 }
 
 # ------------------------------------------------------------------------------
