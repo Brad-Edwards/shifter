@@ -75,20 +75,30 @@ def _host_contract(resolved: ResolvedImage) -> Ec2HostContract:
     )
     domain = (contract.domain_dns_name, contract.domain_netbios_name)
     if contract.bootstrap_capability == BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
-        if (
-            any(domain)
-            or not all(participant)
-            or contract.participant_readiness_contract != PARTICIPANT_READINESS_CONTRACT_V1
-            or not re.fullmatch(r"[0-9a-f]{64}", contract.participant_readiness_manifest_sha256)
-            or not resolved.management_ssh_username
-        ):
-            raise Ec2ImageError("EC2 preconfigured host images require the complete participant readiness contract")
+        _validate_preconfigured(contract, participant, domain, resolved.management_ssh_username)
     elif contract.bootstrap_capability == BOOTSTRAP_PREPROMOTED_DC:
         if any(participant) or not all(domain):
             raise Ec2ImageError("EC2 prepromoted directory images require DNS and NetBIOS domain names")
     elif contract.bootstrap_capability != BOOTSTRAP_STANDARD or any(participant) or any(domain):
         raise Ec2ImageError("EC2 image bootstrap capability is unsupported")
     return contract
+
+
+def _validate_preconfigured(
+    contract: Ec2HostContract,
+    participant: tuple[str, str, str, str],
+    domain: tuple[str, str],
+    management_username: str,
+) -> None:
+    """Require the complete participant readiness contract and a host login."""
+    if (
+        any(domain)
+        or not all(participant)
+        or contract.participant_readiness_contract != PARTICIPANT_READINESS_CONTRACT_V1
+        or not re.fullmatch(r"[0-9a-f]{64}", contract.participant_readiness_manifest_sha256)
+        or not management_username
+    ):
+        raise Ec2ImageError("EC2 preconfigured host images require the complete participant readiness contract")
 
 
 @dataclass(frozen=True)
