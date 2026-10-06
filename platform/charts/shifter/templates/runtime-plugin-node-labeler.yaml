@@ -5,7 +5,7 @@
 # kubelet from setting node-restriction.kubernetes.io/shifter-pool, and EKS
 # managed node groups can only apply labels through the kubelet, so this
 # controller applies the pool label to nodes whose instance profile carries the
-# runtime-plugin pool's node role (shared.cloud.aws.node_pool_labeler).
+# runtime-plugin pool's node role (shared.cloud.eks_node_pool_labeler).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -147,7 +147,7 @@ spec:
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           {{- include "shifter.containerSecurityContextApp" . | nindent 10 }}
           {{- include "shifter.tmpVolumeMount" . | nindent 10 }}
-          command: ["python", "-m", "shared.cloud.aws.node_pool_labeler"]
+          command: ["python", "-m", "shared.cloud.eks_node_pool_labeler"]
           env:
             - name: RUNTIME_PLUGIN_NODE_ROLE_ARN
               value: {{ $labeler.nodeRoleArn | quote }}

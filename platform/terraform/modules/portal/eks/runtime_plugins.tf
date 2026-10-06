@@ -66,7 +66,7 @@ resource "aws_launch_template" "runtime_plugins" {
 }
 
 # The pool's own node role is its identity: the trusted node-pool labeler
-# (shared.cloud.aws.node_pool_labeler) applies the
+# (shared.cloud.eks_node_pool_labeler) applies the
 # node-restriction.kubernetes.io/shifter-pool=runtime-plugin label only to nodes
 # whose instance profile carries this role. A kubelet cannot set that label
 # (NodeRestriction), and a node cannot change its own instance profile.
