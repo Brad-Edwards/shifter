@@ -5554,7 +5554,7 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
                 repo_root,
                 "platform/terraform/x/net.tf",
                 'dns        = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]\n'
-                'gcp_health = ["130.211.0.0/22", "35.191.0.0/16"]\n'
+                'gcp_health = ["130.211.0.0/22", "35.191.0.0/16", "209.85.204.0/22"]\n'
                 'gcp_iap    = "35.235.240.0/20"\n'
                 'googleapis = "199.36.153.8/30"\n'
                 'doc        = "203.0.113.10/32"\n'

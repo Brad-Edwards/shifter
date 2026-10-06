@@ -861,7 +861,7 @@ _VPN_REALIZATION = {
 
 
 class TestOpenVpnOrchestration:
-    """Participant OpenVPN rides provision, destroy, and failure handling (#2030)."""
+    """Participant OpenVPN rides provision, destroy, and failure handling (#2030, #2480)."""
 
     @staticmethod
     def _remote():
@@ -872,7 +872,6 @@ class TestOpenVpnOrchestration:
 
         return RaesRemoteAccess(
             capability=build_openvpn_capability("provision.node.web#0", datetime.now(UTC) + timedelta(days=1)),
-            gateway_pool_slot=3,
         )
 
     @pytest.fixture
@@ -889,7 +888,7 @@ class TestOpenVpnOrchestration:
         monkeypatch.setattr(raes_range_ops, "cleanup_raes_openvpn", lambda *args: state.cleaned.append(args))
         return state
 
-    def test_provision_realizes_the_gateway_inside_the_apply_and_reports_it(self, patched, vpn):
+    def test_provision_carries_the_access_into_the_apply_and_reports_the_profile(self, patched, vpn):
         patched.apply.return_value = {**patched.apply.return_value, "vpn_access": dict(_VPN_REALIZATION)}
 
         raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
@@ -899,7 +898,7 @@ class TestOpenVpnOrchestration:
         assert _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["vpn_access"] == _VPN_REALIZATION
         assert vpn.cleaned == []
 
-    def test_a_failed_provision_deletes_the_credentials_without_masking_its_failure(self, monkeypatch, patched, vpn):
+    def test_a_failed_provision_deletes_the_profile_without_masking_its_failure(self, monkeypatch, patched, vpn):
         patched.apply.side_effect = RuntimeError("apply failed")
 
         def broken_cleanup(*args):
@@ -925,12 +924,12 @@ class TestOpenVpnOrchestration:
         ec2.assert_not_called()
         assert str(ResultStep.RAES_TERMINAL_FAILED) in _steps(patched)
 
-    def test_destroy_removes_the_gateway_and_its_credentials_with_inventory(self, patched, vpn):
-        from raes_gcp_vpn_plan import RaesGceRemoteAccess
+    def test_destroy_removes_the_pool_rule_and_profile_with_inventory(self, patched, vpn):
+        from raes_gcp_vpn_plan import RaesGceVpnAccess
 
         raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
 
-        names_only = RaesGceRemoteAccess("provision.node.web#0", 3)
+        names_only = RaesGceVpnAccess("provision.node.web#0")
         assert patched.destroy.call_args.args[3].remote_access == names_only
         assert patched.inventory.call_args.args[3].remote_access == names_only
         assert vpn.cleaned == [("req-1", 7, vpn.remote)]

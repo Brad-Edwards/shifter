@@ -48,8 +48,8 @@ but it is not qualified until it has its own strict gate budget and evidence.
    instance, or Redis instance by hand. The p30 minimums themselves carry the
    event; autoscaling is supplemental headroom.
 
-4. Wait for Terraform, GKE rollouts, HPAs, BackendConfigs, Cloud SQL, and Redis
-   to stabilize. Guacamole client replicas must remain exactly one; portal and
+4. Wait for Terraform, GKE rollouts, HPAs, BackendConfigs, Cloud SQL, Redis,
+   and the OpenVPN pool (when enabled) to stabilize. Guacamole client replicas must remain exactly one; portal and
    guacd are the horizontally scaled workloads.
 
 5. Prove the effective state matches the selected profile:
@@ -58,10 +58,14 @@ but it is not qualified until it has its own strict gate budget and evidence.
    uv run python scripts/gcp/check_event_capacity_drift.py \
      --desired /tmp/shifter-event-capacity.json \
      --project <project> --region <region> --cluster <cluster> \
-     --sql-instance <sql-instance> --redis-instance <redis-instance>
+     --sql-instance <sql-instance> --redis-instance <redis-instance> \
+     --vpn-pool <vpn-instance-group>
    ```
 
-   Exit 0 and `capacity drift: none` are required. Exit 1 is real drift. Exit 2
+   Pass `--vpn-pool` with the `openvpn_pool.instance_group` Terraform output when
+   participant OpenVPN is enabled; the check then compares the pool's machine
+   type, minimum and maximum servers, and CPU target. Without it the pool fields
+   are skipped. Exit 0 and `capacity drift: none` are required. Exit 1 is real drift. Exit 2
    means evidence was missing or malformed and is also a stop condition.
 
 ## Run the p30 public-path gate

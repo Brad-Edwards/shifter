@@ -278,7 +278,7 @@ class TestArtifactBindings:
 
 
 class TestRemoteAccess:
-    """The range's OpenVPN capability and gateway slot ride the input (#2030)."""
+    """The range's OpenVPN capability rides the input (#2030, #2480)."""
 
     _NODE = "provision.node.kali"
 
@@ -289,9 +289,9 @@ class TestRemoteAccess:
             ),
         )
 
-    def _remote(self, target: str | None = None, slot: int = 2) -> RaesRemoteAccess:
+    def _remote(self, target: str | None = None) -> RaesRemoteAccess:
         capability = build_openvpn_capability(target or f"{self._NODE}#0", datetime.now(UTC) + timedelta(days=1))
-        return RaesRemoteAccess(capability=capability, gateway_pool_slot=slot)
+        return RaesRemoteAccess(capability=capability)
 
     def test_absent_without_a_capability_and_round_trips_with_one(self):
         assert "remote_access" not in _built()
@@ -306,24 +306,16 @@ class TestRemoteAccess:
         with pytest.raises(RaesOperationInputError, match="declared participant-access target"):
             _built(access_bindings=self._access(), remote_access=self._remote(target="provision.node.other#0"))
 
-    @pytest.mark.parametrize(
-        ("field", "value"),
-        [
-            ("gateway_pool_slot", -1),
-            ("gateway_pool_slot", True),
-            ("gateway_pool_slot", "2"),
-            ("capability", {"version": "openvpn-capability-v1"}),
-        ],
-    )
-    def test_a_tampered_projection_is_rejected(self, field, value):
+    def test_a_tampered_projection_is_rejected(self):
         payload = _built(access_bindings=self._access(), remote_access=self._remote())
-        payload["remote_access"][field] = value
+        payload["remote_access"]["capability"] = {"version": "openvpn-capability-v1"}
         with pytest.raises(RaesOperationInputError, match="remote access"):
             parse_raes_operation_input(payload)
 
-    def test_an_extra_remote_access_key_is_rejected(self):
+    @pytest.mark.parametrize("key", ["owner_user_id", "gateway_pool_slot"])
+    def test_an_extra_remote_access_key_is_rejected(self, key):
         payload = _built(access_bindings=self._access(), remote_access=self._remote())
-        payload["remote_access"]["owner_user_id"] = 7
+        payload["remote_access"][key] = 7
         with pytest.raises(RaesOperationInputError, match="remote access"):
             parse_raes_operation_input(payload)
 

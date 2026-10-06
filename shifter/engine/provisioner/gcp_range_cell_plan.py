@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import cast
 
 from shared.range_cells import RangeCellContractError, validate_gcp_vm_range_cell_request
@@ -29,14 +29,12 @@ from gcp_range_cell_types import (
     GceEgressPolicy,
     InstancePlan,
     NetworkPlan,
-    OpenVpnGatewayPlan,
     RangeCellPlan,
     ResourceDict,
     RouterNatPlan,
     ScenarioInstance,
     SubnetPlan,
 )
-from gcp_vpn_identity import gcp_vpn_gateway_pool_service_account_email
 
 _MANAGED_BY_LABEL = "shifter-provisioner"
 
@@ -46,7 +44,6 @@ __all__ = [
     "FirewallPlan",
     "InstancePlan",
     "NetworkPlan",
-    "OpenVpnGatewayPlan",
     "RangeCellPlan",
     "ResourceDict",
     "ScenarioInstance",
@@ -158,119 +155,16 @@ def _build_subnet_plans(
     return plans
 
 
-def _require_openvpn_capable_config(config: GCERangeCellConfig) -> None:
-    """Reject configurations that cannot realize the authorized capability."""
-    if (
-        config.network_mode != "shared-vpc"
-        or not config.private_google_access
-        or not config.linux.source_image
-        or not config.portal_network_cidrs
-        or "https://www.googleapis.com/auth/cloud-platform" not in config.service_account_scopes
-    ):
-        raise RuntimeError("The authorized OpenVPN capability cannot be realized by this GCE adapter")
-
-
-def _free_guest_address(subnet: SubnetPlan) -> str:
-    """Return the first usable guest address not already assigned in the subnet."""
-    network = ipaddress.ip_network(subnet["cidr"])
-    used = set(subnet["ip_assignments"].values())
-    available = [str(address) for address in list(network.hosts())[2:-2] if str(address) not in used]
-    if not available:
-        raise RuntimeError("The Kali subnet has no address available for its OpenVPN gateway")
-    return available[0]
-
-
-@dataclass(frozen=True)
-class OpenVpnGatewayRequest:
-    """The authorized OpenVPN gateway one range plans (ADR-039-R10).
-
-    ``pool_slot`` is the range's reserved index into the pre-provisioned gateway
-    SA pool (ADR-008-R7); the gateway VM runs as that pooled identity.
-    ``target_ports`` restricts forwarding to the target's declared participant
-    channels and ``server_secret_ref`` is the exact identity secret the gateway
-    reads; both are omitted from the plan when empty.
-    """
-
-    target_ref: str
-    pool_slot: int | None
-    target_ports: tuple[str, ...] = ()
-    server_secret_ref: str = ""
-
-
-def _require_gateway_provision_values(
-    range_id: int, request: OpenVpnGatewayRequest, config: GCERangeCellConfig
-) -> None:
-    """Reject a realizing plan that lacks its pool slot or a capable adapter config."""
-    if request.pool_slot is None:
-        raise RuntimeError(
-            f"Range {range_id} requests OpenVPN but has no reserved gateway pool slot; "
-            "it was not created with an OpenVPN capability"
-        )
-    _require_openvpn_capable_config(config)
-
-
-def _gateway_target(instance_plans: list[InstancePlan], target_ref: str) -> InstancePlan:
-    """Return the single range member the gateway forwards to."""
-    targets = [instance for instance in instance_plans if instance["uuid"] == target_ref]
-    if len(targets) != 1:
-        raise RuntimeError("OpenVPN capability must identify exactly one GCE range member")
-    return targets[0]
-
-
-def _openvpn_gateway_plan(
-    range_id: int,
-    instance_plans: list[InstancePlan],
-    subnet_plans: list[SubnetPlan],
-    config: GCERangeCellConfig,
-    request: OpenVpnGatewayRequest | None,
-    *,
-    require_provision_values: bool,
-) -> OpenVpnGatewayPlan | None:
-    """Plan the request-owned OpenVPN gateway adjacent to the authorized member."""
-    if request is None:
-        return None
-    if require_provision_values:
-        _require_gateway_provision_values(range_id, request, config)
-    target = _gateway_target(instance_plans, request.target_ref)
-    subnet = next(item for item in subnet_plans if item["name"] == target["subnet_name"])
-    gateway: OpenVpnGatewayPlan = {
-        "resource_name": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
-        "address_name": _short_resource_name("shifter-r", range_id, "vpn-gateway-ip"),
-        "private_ip": _free_guest_address(subnet) if subnet["cidr"] else "",
-        "subnet_resource_name": subnet["resource_name"],
-        "subnetwork_link": subnet["self_link"],
-        "target_ref": target["uuid"],
-        "target_ip": target["private_ip"],
-        "tag": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
-        "profile": config.get_profile(role="victim", os_type="ubuntu"),
-        "service_account_email": (
-            gcp_vpn_gateway_pool_service_account_email(config.project_id, request.pool_slot)
-            if request.pool_slot is not None
-            else ""
-        ),
-    }
-    if request.target_ports:
-        gateway["target_ports"] = list(request.target_ports)
-    if request.server_secret_ref:
-        gateway["server_secret_ref"] = request.server_secret_ref
-    return gateway
-
-
 def render_range_cell_plan(
     request_uuid: str,
     variables: ResourceDict,
     config: GCERangeCellConfig | None = None,
     *,
     require_images: bool = True,
-    vpn_gateway_pool_slot: int | None = None,
     range_host_pool_slot: int | None = None,
     egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY,
 ) -> RangeCellPlan:
     """Render the deterministic GCE resources for one range cell.
-
-    ``vpn_gateway_pool_slot`` is the range's reserved gateway SA pool slot
-    (ADR-008-R7), threaded to the OpenVPN gateway plan; ``None`` for ranges
-    without an OpenVPN capability.
 
     ``egress_policy.model_broker`` is explicitly admitted, never inferred from
     installation enablement. Its VIP is bound to ``config.model_broker_vip``.
@@ -319,19 +213,6 @@ def render_range_cell_plan(
             range_host_pool_slot=range_host_pool_slot,
         ),
     )
-    remote_access = validated_request["remote_access"]
-    vpn_gateway = _openvpn_gateway_plan(
-        range_id,
-        instance_plans,
-        subnet_plans,
-        resolved_config,
-        (
-            OpenVpnGatewayRequest(str(remote_access["target_ref"]), vpn_gateway_pool_slot)
-            if remote_access is not None
-            else None
-        ),
-        require_provision_values=require_images,
-    )
     plan: RangeCellPlan = {
         "project_id": resolved_config.project_id,
         "region": resolved_config.region,
@@ -351,14 +232,11 @@ def render_range_cell_plan(
             range_id,
             subnet_plans,
             resolved_config,
-            vpn_gateway,
             instance_plans=instance_plans,
             include_optional_cleanup=not require_images,
             egress_policy=egress_policy,
         ),
     }
-    if vpn_gateway is not None:
-        plan["vpn_gateway"] = vpn_gateway
     # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
     # a `none` (zero-egress) range omits it so its subnets carry no NAT path
     # (PLAT-238, ADR-026-R6), mirroring the RAES plan builder.

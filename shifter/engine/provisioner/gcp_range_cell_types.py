@@ -105,26 +105,6 @@ class InstancePlan(TypedDict):
     service_account_email: NotRequired[str]
 
 
-class OpenVpnGatewayPlan(TypedDict):
-    """Request-owned OpenVPN gateway adjacent to one Kali member."""
-
-    resource_name: str
-    address_name: str
-    private_ip: str
-    subnet_resource_name: str
-    subnetwork_link: str
-    target_ref: str
-    target_ip: str
-    tag: str
-    profile: GCERangeImageProfile
-    service_account_email: str
-    # TCP ports the gateway forwards to the target: the target's declared
-    # participant channels (#2030). Absent forwards every port (legacy plan).
-    target_ports: NotRequired[list[str]]
-    # Exact provider reference of the gateway's server identity secret.
-    server_secret_ref: NotRequired[str]
-
-
 class RangeCellPlan(TypedDict):
     """Complete resource plan for a single GCE range cell."""
 
@@ -143,7 +123,6 @@ class RangeCellPlan(TypedDict):
     subnets: list[SubnetPlan]
     instances: list[InstancePlan]
     firewalls: list[FirewallPlan]
-    vpn_gateway: NotRequired[OpenVpnGatewayPlan]
     # Range-owned Cloud Router + Cloud NAT (PLAT-238, ADR-026-R6). Present only for
     # a non-`none` range: it gives that range's participant subnets an explicit,
     # range-scoped NAT egress path instead of the deprecated shared all-subnet NAT.
@@ -168,7 +147,6 @@ __all__ = [
     "FirewallPlan",
     "InstancePlan",
     "NetworkPlan",
-    "OpenVpnGatewayPlan",
     "RangeCellPlan",
     "ResourceDict",
     "RouterNatPlan",

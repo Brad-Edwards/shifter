@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-#: Realization backends whose RAES adapter implements the OpenVPN gateway. The
-#: EC2 range-cell gateway is tracked by #2443.
+#: Realization backends whose RAES adapter admits the shared OpenVPN pool (#2480).
+#: EC2 is tracked by #2481.
 _OPENVPN_BACKENDS = frozenset({"gce"})
 
 

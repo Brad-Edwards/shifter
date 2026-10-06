@@ -449,7 +449,7 @@ def _parse_raes_ready(payload: dict[str, Any], spec: StepSpec) -> dict[str, Any]
         except ValueError:
             raise OperationResultError("invalid RAES completion evidence") from None
     if "vpn_access" in payload:
-        # The owner-free OpenVPN gateway realization (#2030); the Engine binds
+        # The owner-free OpenVPN access realization (#2030, #2480); the Engine binds
         # the owner from its locked range row before persisting it.
         from shared.remote_access import OpenVpnBindingError, parse_openvpn_realization
 

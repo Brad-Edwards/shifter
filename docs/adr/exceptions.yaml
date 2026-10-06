@@ -374,15 +374,6 @@
     ]
   },
   {
-    "rule_id": "ADR-004-R11",
-    "owner": "@Brad-Edwards",
-    "reason": "The GCE OpenVPN gateway uses one deterministic sh-vpn-* service account per range generation, and Compute requires iam.serviceAccounts.actAs before attaching that identity. IAM service-account resources do not provide resource.name for an inherited project-level conditional serviceAccountUser grant, so the provisioner holds a custom role with service-account create/delete/getIamPolicy/setIamPolicy and the provisioner code writes serviceAccountUser only onto the generated sh-vpn-* account it owns for the current generation. The gateway account still receives no project roles, no keys, and only secretAccessor on its own server secret. Regression tests pin the generated identity, per-account actAs binding, and absence of a project-scoped serviceAccountUser literal (#1695).",
-    "expires_on": "2027-07-17",
-    "paths": [
-      "platform/terraform/gcp/modules/portal/iam/main.tf"
-    ]
-  },
-  {
     "rule_id": "ADR-004-R24",
     "owner": "@Brad-Edwards",
     "reason": "Production-path quality-ownership SECURITY gaps (#1530). These quality units have lint and/or test coverage but no category-specific BLOCKING security (SAST) job: the script categories (assert_portal_inspection, check_rds_pending_modifications, handle_sd_replacement, cyberscript, stack_smoke) and the adr_guard/quality_ownership guard tooling have no dedicated blocking SAST lane; the MCP packages (mcp_ngfw, mcp_ops, mcp_planner, mcp_shared) have no JavaScript SAST lane; k8s security is provided only by the advisory continue-on-error Checkov job. Recorded as visible, dated gaps rather than mislabelling an advisory/absent job as a blocking owner (the #1530 preflight forbids not_applicable/advisory dispositions). Gap-closure tracked by #1698.",
