@@ -128,15 +128,28 @@ class TestProvisionParticipantRange:
 
     @pytest.mark.django_db
     def test_provision_success_persists_assignment(self, ctf_participant):
-        """Successful provisioning persists range_instance_id and status under the lock."""
+        """The launch runs after the claim commits; success persists the assignment.
+
+        A feature-artifact launch waits for the launcher, which cannot see an
+        attempt claimed inside an open transaction (ADR-034-R12). pytest-django
+        wraps each test in an outer atomic block, so a savepoint depth of zero is
+        the signal that the launch is not inside the claim's own block.
+        """
         mock_result = RangeProvisionResult(request_id=uuid4())
+        observed = {}
+
+        def launch(**_kwargs):
+            observed["savepoints"] = len(transaction.get_connection().savepoint_ids)
+            observed["status"] = CTFParticipant.objects.get(pk=ctf_participant.pk).range_status
+            return mock_result
 
         with (
-            patch("ctf.bridges.cms_create_range", return_value=mock_result) as mock_create,
+            patch("ctf.bridges.cms_create_range", side_effect=launch) as mock_create,
             patch("ctf.bridges.cms_find_range_instance_id", return_value=99),
         ):
             result = range_service.provision_participant_range(ctf_participant.pk)
 
+        assert observed == {"savepoints": 0, "status": "provisioning"}
         assert result["status"] == "provisioning"
         mock_create.assert_called_once()
         assert mock_create.call_args.kwargs["user"] == ctf_participant.user
@@ -186,33 +199,6 @@ class TestProvisionParticipantRange:
         ctf_participant.refresh_from_db()
         assert ctf_participant.range_status == ""
         assert ctf_participant.range_instance_id is None
-
-    @pytest.mark.django_db
-    def test_cms_launch_runs_after_the_claim_commits(self, ctf_participant):
-        """The launch runs outside the claim transaction, after the claim is visible.
-
-        A feature-artifact launch waits for the launcher, which cannot see an
-        attempt claimed inside an open transaction (ADR-034-R12). pytest-django
-        wraps each test in an outer atomic block, so a savepoint depth of zero is
-        the signal that the launch is not inside the claim's own block.
-        """
-        observed = {}
-
-        def launch(**_kwargs):
-            observed["savepoints"] = len(transaction.get_connection().savepoint_ids)
-            observed["status"] = CTFParticipant.objects.get(pk=ctf_participant.pk).range_status
-            return RangeProvisionResult(request_id=uuid4())
-
-        with (
-            patch("ctf.bridges.cms_create_range", side_effect=launch),
-            patch("ctf.bridges.cms_find_range_instance_id", return_value=None),
-        ):
-            result = range_service.provision_participant_range(ctf_participant.pk)
-
-        assert observed == {"savepoints": 0, "status": "provisioning"}
-        assert result["range_instance_id"] is None
-        ctf_participant.refresh_from_db()
-        assert ctf_participant.range_status == "provisioning"
 
     @pytest.mark.django_db
     def test_policy_denial_propagates_permanent_code(self, ctf_participant, settings, monkeypatch):

@@ -13,7 +13,7 @@ import contextlib
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.db import transaction
@@ -23,6 +23,9 @@ from ctf.exceptions import CTFNotFoundError, CTFRangeError
 from ctf.models import CTFParticipant
 from shared.log_sanitize import safe_log_value
 from shared.range_instantiation_policy import POLICY_DENIAL_CODE
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +118,7 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
     """
     logger.info("Provisioning range for participant %s", safe_log_value(participant_id))
 
-    participant, previous_status = _claim_for_provisioning(participant_id)
+    participant, user, previous_status = _claim_for_provisioning(participant_id)
     event = participant.event
     agents_by_os = event.range_config.get("agents_by_os", {}) if event.range_config else {}
     ngfw_enabled = event.range_config.get("ngfw_enabled", False) if event.range_config else False
@@ -128,7 +131,7 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
         from ctf.services.range.model_allocation import project_event_model_scope
 
         result = cms_create_range(
-            user=participant.user,
+            user=user,
             scenario=event.scenario_id,
             agents_by_os=agents_by_os,
             ngfw_enabled=ngfw_enabled,
@@ -175,8 +178,10 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
     }
 
 
-def _claim_for_provisioning(participant_id: UUID) -> tuple[CTFParticipant, str]:
-    """Durably claim the participant's range assignment, returning its prior status.
+def _claim_for_provisioning(participant_id: UUID) -> tuple[CTFParticipant, User, str]:
+    """Durably claim the participant's range assignment.
+
+    Returns the participant, its registered user and its prior range status.
 
     The participant row lock (#942 CTF-7) covers only the already-assigned check,
     the capacity draw and the claim write, so concurrent manual and scheduled
@@ -195,7 +200,8 @@ def _claim_for_provisioning(participant_id: UUID) -> tuple[CTFParticipant, str]:
                 details={"participant_id": str(participant_id)},
             ) from None
 
-        if participant.user is None:
+        user = participant.user
+        if user is None:
             raise CTFRangeError(
                 "Participant must be registered before provisioning a range",
                 details={"participant_id": str(participant_id)},
@@ -238,7 +244,7 @@ def _claim_for_provisioning(participant_id: UUID) -> tuple[CTFParticipant, str]:
         previous_status = participant.range_status
         participant.range_status = "provisioning"
         participant.save(update_fields=["range_status", "updated_at"])
-    return participant, previous_status
+    return participant, user, previous_status
 
 
 def provision_participant_range_with_retry(
