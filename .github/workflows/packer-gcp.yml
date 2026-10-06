@@ -62,7 +62,10 @@ jobs:
     environment: gcp-build-${{ inputs.environment == 'gcp-dev' && 'dev' || inputs.environment }}
     outputs:
       gce_image_id: ${{ steps.build_gce_image.outputs.image_id }}
-      gce_base_disk_uri: ${{ steps.export_gce_base_disk.outputs.uri }}
+      # Object name only: the bucket name embeds the project ID, a secret, and
+      # Actions drops any job output that may contain a secret. The publish job
+      # rebuilds the URI from the same environment's bucket variable.
+      gce_base_disk_object: ${{ steps.export_gce_base_disk.outputs.object }}
       gce_base_disk_role: ${{ steps.export_gce_base_disk.outputs.role }}
       gce_base_disk_published: ${{ steps.export_gce_base_disk.outputs.published }}
     permissions:
@@ -340,7 +343,8 @@ jobs:
           # would expand empty here, overwriting one <role>.tar.gz per build.
           # GCE-native tarball (disk.raw in a .tar.gz), not qcow2 - re-imported
           # directly by `gcloud compute images create --source-uri`, no conversion.
-          DEST="gs://${GCP_GCE_BASE_IMAGE_BUCKET}/${ROLE}-${BUILT_IMAGE_ID}.tar.gz"
+          OBJECT="${ROLE}-${BUILT_IMAGE_ID}.tar.gz"
+          DEST="gs://${GCP_GCE_BASE_IMAGE_BUCKET}/${OBJECT}"
           # The export runs as a Cloud Build job that spins up a daisy worker VM.
           # Pin BOTH identities to the build SA: --cloudbuild-service-account so
           # the build itself runs as our least-priv SA (this project's builds
@@ -363,7 +367,7 @@ jobs:
             --compute-service-account="${BUILD_SA}" \
             --log-location="gs://${GCP_GCE_BASE_IMAGE_BUCKET}/export-logs"
           {
-            echo "uri=${DEST}"
+            echo "object=${OBJECT}"
             echo "role=${ROLE}"
             echo "published=true"
           } >> "$GITHUB_OUTPUT"
@@ -418,7 +422,7 @@ jobs:
 
       - name: Publish GCE base image to GHCR
         env:
-          GCE_BASE_DISK_URI: ${{ needs.build.outputs.gce_base_disk_uri }}
+          GCE_BASE_DISK_URI: gs://${{ vars.GCP_GCE_BASE_IMAGE_BUCKET }}/${{ needs.build.outputs.gce_base_disk_object }}
           GCE_IMAGE_ID: ${{ needs.build.outputs.gce_image_id }}
           IMAGE_TYPE: ${{ needs.build.outputs.gce_base_disk_role }}
           GH_TOKEN: ${{ github.token }}
@@ -432,7 +436,7 @@ jobs:
               ;;
           esac
           case "${IMAGE_TYPE}" in kali|ubuntu|dc) ;; *) exit 1 ;; esac
-          case "${GCE_BASE_DISK_URI}" in gs://*.tar.gz) ;; *)
+          case "${GCE_BASE_DISK_URI}" in gs://?*/?*.tar.gz) ;; *)
             echo "::error::Expected a GCS GCE-native disk tarball export, got an invalid disk URI."
             exit 1
             ;;
