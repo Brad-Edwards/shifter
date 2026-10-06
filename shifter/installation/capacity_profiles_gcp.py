@@ -19,6 +19,9 @@ CapacityProfileId = Literal[
     "gcp-shared-v1-p30",
     "gcp-shared-v1-p50",
     "gcp-shared-v1-p100",
+    "gcp-shared-v1-p200",
+    "gcp-shared-v1-p300",
+    "gcp-shared-v1-p500",
 ]
 
 _K8S_QUANTITY = r"^(?:[1-9][0-9]*(?:m|Ki|Mi|Gi|Ti)?|0\.[0-9]+)$"
@@ -197,7 +200,7 @@ class GcpSharedServiceCapacityProfile(_ClosedModel):
     """Immutable cross-layer capacity contract for one GCP event tier."""
 
     profile_id: CapacityProfileId
-    participant_count: Literal[10, 30, 50, 100]
+    participant_count: Literal[10, 30, 50, 100, 200, 300, 500]
     portal: PortalCapacity
     guacd: GuacdCapacity
     guacamole_client: GuacamoleClientCapacity
@@ -357,15 +360,39 @@ def _vpn_pool(count: int) -> VpnPoolCapacity:
     )
 
 
-def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityProfile:
+# Tiers above 100 continue the p50 -> p100 marginal rates: about 0.12 portal and
+# 0.08 guacd replicas per participant; access nodes (e2-standard-8) cover the
+# minimum replicas' CPU limits with ~10% headroom and the autoscaling maximum's
+# limits with ~10% headroom; Cloud SQL keeps 3.75 GiB per vCPU; Redis grows
+# ~0.16 GiB per participant. Each connection budget stays near 80% of Cloud SQL's
+# default max_connections for the tier's memory (1,000 at 120 GB and above), and
+# the larger tiers' portal contexts (8 per replica) plus reserves fit inside it.
+_TIER_SIZES: dict[int, tuple[int, int, int, int, str, Literal["ZONAL", "REGIONAL"], int, int]] = {
+    10: (2, 1, 2, 4, "db-custom-2-7680", "ZONAL", 2, 100),
+    30: (5, 2, 3, 8, "db-custom-4-15360", "REGIONAL", 8, 200),
+    50: (8, 4, 4, 12, "db-custom-8-30720", "REGIONAL", 12, 350),
+    100: (14, 8, 6, 20, "db-custom-16-61440", "REGIONAL", 20, 650),
+    200: (26, 16, 12, 24, "db-custom-32-122880", "REGIONAL", 32, 800),
+    300: (38, 24, 18, 36, "db-custom-48-184320", "REGIONAL", 48, 800),
+    500: (62, 40, 28, 57, "db-custom-64-245760", "REGIONAL", 80, 800),
+}
+
+# guacamole-client stays at exactly one replica (#928 token affinity), and every
+# participant's display stream passes through it, so the larger tiers give that
+# single pod more CPU and memory instead of more replicas.
+_GUACAMOLE_CLIENT_RESOURCES: dict[int, tuple[str, str, str, str]] = {
+    200: ("1", "2Gi", "4", "4Gi"),
+    300: ("2", "3Gi", "6", "6Gi"),
+    500: ("2", "4Gi", "8", "8Gi"),
+}
+_GUACAMOLE_CLIENT_DEFAULT_RESOURCES = ("500m", "1Gi", "2", "2Gi")
+
+
+def _build_profile(count: Literal[10, 30, 50, 100, 200, 300, 500]) -> GcpSharedServiceCapacityProfile:
     """Build one immutable catalog entry from its supported participant tier."""
-    sizes: dict[int, tuple[int, int, int, int, str, Literal["ZONAL", "REGIONAL"], int, int]] = {
-        10: (2, 1, 2, 4, "db-custom-2-7680", "ZONAL", 2, 100),
-        30: (5, 2, 3, 8, "db-custom-4-15360", "REGIONAL", 8, 200),
-        50: (8, 4, 4, 12, "db-custom-8-30720", "REGIONAL", 12, 350),
-        100: (14, 8, 6, 20, "db-custom-16-61440", "REGIONAL", 20, 650),
-    }
-    portal_replicas, guacd_replicas, access_nodes, access_max, sql_tier, sql_ha, redis_gb, sql_budget = sizes[count]
+    portal_replicas, guacd_replicas, access_nodes, access_max, sql_tier, sql_ha, redis_gb, sql_budget = _TIER_SIZES[
+        count
+    ]
     return GcpSharedServiceCapacityProfile(
         profile_id=cast(CapacityProfileId, f"gcp-shared-v1-p{count}"),
         participant_count=count,
@@ -392,7 +419,7 @@ def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityP
             ),
         ),
         guacamole_client=GuacamoleClientCapacity(
-            resources=_resources("500m", "1Gi", "2", "2Gi"),
+            resources=_resources(*_GUACAMOLE_CLIENT_RESOURCES.get(count, _GUACAMOLE_CLIENT_DEFAULT_RESOURCES)),
             absolute_tunnel_connections=count,
         ),
         cloud_sql=CloudSqlCapacity(
@@ -442,7 +469,15 @@ def _build_profile(count: Literal[10, 30, 50, 100]) -> GcpSharedServiceCapacityP
 
 CAPACITY_PROFILES: dict[CapacityProfileId, GcpSharedServiceCapacityProfile] = {
     profile.profile_id: profile
-    for profile in (_build_profile(10), _build_profile(30), _build_profile(50), _build_profile(100))
+    for profile in (
+        _build_profile(10),
+        _build_profile(30),
+        _build_profile(50),
+        _build_profile(100),
+        _build_profile(200),
+        _build_profile(300),
+        _build_profile(500),
+    )
 }
 
 
