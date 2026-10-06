@@ -106,6 +106,8 @@ locals {
     RANGE_VPN_PROVIDER_ENDPOINT_SECURITY_GROUP_ID = lookup(local.range, "provider_api_endpoint_security_group_id", "")
     RANGE_INSTANCE_PROFILE_NAME                   = lookup(local.range, "range_instance_profile_name", "")
     RANGE_INSTANCE_ROLE_ARN                       = lookup(local.range, "range_instance_role_arn", "")
+    # Keyless Bedrock invocation for native range hosts (ADR-064 AWS, #2529).
+    RANGE_HOST_INSTANCE_PROFILE_ARN = module.provisioner_iam.range_host_instance_profile_arn
 
     KALI_AMI_ID    = nonsensitive(data.aws_ssm_parameter.kali_ami.value)
     VICTIM_AMI_ID  = nonsensitive(data.aws_ssm_parameter.victim_ami.value)

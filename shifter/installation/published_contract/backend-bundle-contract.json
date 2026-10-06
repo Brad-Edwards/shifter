@@ -1391,6 +1391,20 @@
           "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
+          "description": "Public AWS runtime configuration value (RANGE_HOST_INSTANCE_PROFILE_ARN) emitted into the platform runtime environment.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "RANGE_HOST_INSTANCE_PROFILE_ARN",
+          "owner": "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public AWS runtime configuration value (RANGE_INSTANCE_PROFILE_NAME) emitted into the platform runtime environment.",
           "destination": "runtime-env",
           "kind": "runtime-env",

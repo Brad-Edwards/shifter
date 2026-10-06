@@ -26,6 +26,9 @@ class Ec2GuestError(ValueError):
     """The observed EC2 guest cannot prove the intended ownership or containment."""
 
 
+_INSTANCE_PROFILE_ARN = re.compile(r"arn:aws:iam::[0-9]{12}:instance-profile/[\w+=,.@/-]{1,128}")
+
+
 @dataclass(frozen=True)
 class Ec2GuestPlan:
     """Validated placement supplied by the trusted network realizer."""
@@ -41,6 +44,9 @@ class Ec2GuestPlan:
     private_ip: str
     security_group_id: str
     image: VerifiedEc2Image
+    # Keyless model-invocation profile (ADR-064 AWS); empty when the range's
+    # model path is the broker or no profile is deployed.
+    instance_profile_arn: str = ""
 
     def __post_init__(self) -> None:
         validate_management_ssh_username(self.image.management_ssh_username)
@@ -52,6 +58,7 @@ class Ec2GuestPlan:
             or not isinstance(self.generation, UUID)
             or not 1 <= len(self.instance_key) <= 1024
             or not 1 <= len(self.name) <= 255
+            or (self.instance_profile_arn and not _INSTANCE_PROFILE_ARN.fullmatch(self.instance_profile_arn))
         ):
             raise Ec2GuestError("EC2 guest placement is invalid")
         self._validate_placement()
@@ -158,11 +165,16 @@ chmod 440 /etc/sudoers.d/90-shifter-management
 
 
 def guest_request(plan: Ec2GuestPlan, *, host_private_key: str, management_public_key: str) -> dict[str, Any]:
-    """Render a no-role, encrypted, private-only EC2 request with a retry token."""
+    """Render an encrypted, private-only EC2 request with a retry token.
+
+    The only role a guest may carry is the planned model-invocation profile.
+    """
     user_data = _bootstrap(plan, host_private_key, management_public_key)
     if len(user_data.encode()) > 16384:
         raise Ec2GuestError("EC2 management bootstrap exceeds the user-data limit")
+    profile = {"IamInstanceProfile": {"Arn": plan.instance_profile_arn}} if plan.instance_profile_arn else {}
     return {
+        **profile,
         "ImageId": plan.image.image_id,
         "InstanceType": plan.image.instance_type,
         "MinCount": 1,
@@ -212,7 +224,7 @@ def observe_ec2_guest(plan: Ec2GuestPlan, ec2: BaseClient, instance_id: str) -> 
     row = rows[0]
     _verify_interface(plan, row)
     _verify_identity(plan, row, instance_id)
-    _verify_metadata_containment(row)
+    _verify_metadata_containment(plan, row)
     disks = row.get("BlockDeviceMappings", [])
     if (
         row.get("RootDeviceName") != plan.image.root_device
@@ -265,12 +277,12 @@ def _verify_identity(plan: Ec2GuestPlan, row: dict[str, Any], instance_id: str) 
         raise Ec2GuestError("EC2 guest identity or containment differs from the admitted plan")
 
 
-def _verify_metadata_containment(row: dict[str, Any]) -> None:
-    """Require hop-limited authenticated metadata and no public interface association."""
+def _verify_metadata_containment(plan: Ec2GuestPlan, row: dict[str, Any]) -> None:
+    """Require hop-limited metadata, exactly the planned role, and no public association."""
     metadata = row.get("MetadataOptions", {})
     if (
         row.get("PublicIpAddress")
-        or row.get("IamInstanceProfile")
+        or row.get("IamInstanceProfile", {}).get("Arn", "") != plan.instance_profile_arn
         or metadata.get("HttpTokens") != "required"
         or metadata.get("HttpPutResponseHopLimit") != 1
         or any(interface.get("Association", {}).get("PublicIp") for interface in row.get("NetworkInterfaces", []))

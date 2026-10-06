@@ -46,8 +46,12 @@ The broker publishes its actual private NLB listener addresses as
 addresses. Only the broker TLS listener is admitted as guest model egress.
 Disabling model access does not remove the platform's range-management peering.
 
-Native guests have an encrypted, disposable root disk, one private IPv4 NIC,
-IMDSv2 with hop limit one, and no instance profile. The provisioner issues and
+Native guests have an encrypted, disposable root disk, one private IPv4 NIC, and
+IMDSv2 with hop limit one. When a range has no broker enrollment, guests carry
+the deployment's range-host instance profile, whose role can only invoke Bedrock
+models (ADR-064, #2529); otherwise they carry no instance profile. Readback
+rejects any other role. The hop limit keeps containers on a guest from reading
+the profile directly. The provisioner issues and
 pins SSH host keys and keeps management private keys in deployment-encrypted
 Secrets Manager entries. Existing guests cannot regenerate missing management
 identities. Authored local accounts cannot overwrite a custom image management

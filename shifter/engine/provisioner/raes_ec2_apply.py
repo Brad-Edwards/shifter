@@ -61,6 +61,8 @@ class RaesEc2ApplyOptions:
     runtime_plugin: Callable[..., None] | None = None
     model_enrollment: Callable[..., None] | None = None
     host_readiness_verifier: Callable[..., None] = verify_preconfigured_hosts
+    # Keyless model-invocation profile attached to guests (ADR-064 AWS).
+    guest_instance_profile_arn: str = ""
 
 
 def _scope(request_id: str, range_id: int, options: RaesEc2ApplyOptions) -> Ec2CleanupScope:
@@ -147,6 +149,7 @@ def _guests(
             private_ip=placement.private_ip,
             security_group_id=resources.groups[node.address],
             image=images[node.address],
+            instance_profile_arn=options.guest_instance_profile_arn,
         )
         output = ensure_ec2_guest(guest, options.ec2, options.secrets)
         _bootstrap(node, plan, output, options)

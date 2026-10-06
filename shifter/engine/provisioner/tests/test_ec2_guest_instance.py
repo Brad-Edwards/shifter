@@ -220,3 +220,27 @@ def test_preconfigured_host_outputs_carry_the_neutral_readiness_contract():
     assert result["participant_sftp_enabled"] is False
     standard = ensure_ec2_guest(plan(), *reuse_mocks(plan()))
     assert "bootstrap_capability" not in standard
+
+
+PROFILE = "arn:aws:iam::123456789012:instance-profile/shifter-dev-range-host-model"
+
+
+def test_planned_model_profile_is_the_only_role_a_guest_may_carry():
+    """#2529: guests carry exactly the keyless model profile, or no role at all."""
+    private, _ = generate_ssh_host_keypair()
+    _, public = generate_ssh_keypair()
+    p = replace(plan(), instance_profile_arn=PROFILE)
+    request = guest_request(p, host_private_key=private, management_public_key=public)
+    assert request["IamInstanceProfile"] == {"Arn": PROFILE}
+    assert request["MetadataOptions"]["HttpPutResponseHopLimit"] == 1
+
+    ec2, secrets = reuse_mocks(p)
+    row = ec2.describe_instances.return_value["Reservations"][0]["Instances"][0]
+    row["IamInstanceProfile"] = {"Arn": PROFILE, "Id": "AIPAEXAMPLE"}
+    assert ensure_ec2_guest(p, ec2, secrets)["instance_id"] == "i-0123456789abcdef0"
+    for observed_profile in ({"Arn": PROFILE.replace("range-host-model", "other")}, {}):
+        row["IamInstanceProfile"] = observed_profile
+        with pytest.raises(Ec2GuestError):
+            observe_ec2_guest(p, ec2, "i-0123456789abcdef0")
+    with pytest.raises(Ec2GuestError):
+        replace(plan(), instance_profile_arn="arn:aws:iam::123456789012:role/not-a-profile")

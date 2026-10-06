@@ -152,6 +152,10 @@ def provision_ec2_run(
                     egress_mode=run.input.egress_mode,
                     runtime_plugin=plugin_plans.execute if plugin_plans else None,
                     model_enrollment=enrollment.execute if enrollment else None,
+                    # Direct keyless access and the broker are exclusive per range (ADR-064).
+                    guest_instance_profile_arn=(
+                        "" if enrollment else os.environ.get("RANGE_HOST_INSTANCE_PROFILE_ARN", "")
+                    ),
                 ),
                 delivery_bindings=run.input.binding_transport(),
                 access_bindings=run.input.access_binding_transport(),

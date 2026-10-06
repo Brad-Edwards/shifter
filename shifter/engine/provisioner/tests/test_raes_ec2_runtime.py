@@ -147,3 +147,15 @@ def test_failed_launch_cleanup_error_preserves_failure_and_reservation(configure
         runtime.provision_ec2_run(run)
     assert caught.value is failure
     release.assert_not_called()
+
+
+def test_ranges_without_a_broker_path_attach_the_keyless_model_profile(configured, monkeypatch):
+    """#2529: direct keyless model access is attached only when no broker enrollment exists."""
+    run, _, _, apply, _ = configured
+    runtime.provision_ec2_run(run)
+    assert apply.call_args.args[4].guest_instance_profile_arn == ""
+
+    profile = "arn:aws:iam::123456789012:instance-profile/shifter-test-range-host-model"
+    monkeypatch.setenv("RANGE_HOST_INSTANCE_PROFILE_ARN", profile)
+    runtime.provision_ec2_run(run)
+    assert apply.call_args.args[4].guest_instance_profile_arn == profile

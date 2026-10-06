@@ -48,3 +48,33 @@ run "storage_bucket_reads_decrypt_only_its_key_through_s3" {
     error_message = "The provisioner may use only the storage bucket's SSE-KMS key, and only through S3."
   }
 }
+
+override_resource {
+  target          = aws_iam_role.range_host_model
+  override_during = plan
+  values = {
+    arn = "arn:aws:iam::123456789012:role/test-range-host-model"
+  }
+}
+
+run "range_hosts_get_only_keyless_bedrock_invocation" {
+  command = plan
+  assert {
+    condition = (
+      length(jsondecode(aws_iam_role_policy.range_host_model_invoke.policy).Statement) == 1 &&
+      jsondecode(aws_iam_role_policy.range_host_model_invoke.policy).Statement[0].Action == ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"] &&
+      alltrue([for resource in jsondecode(aws_iam_role_policy.range_host_model_invoke.policy).Statement[0].Resource :
+        startswith(resource, "arn:aws:bedrock:")
+      ]) &&
+      jsondecode(aws_iam_role.range_host_model.assume_role_policy).Statement[0].Principal.Service == "ec2.amazonaws.com"
+    )
+    error_message = "The range-host role may only invoke Bedrock models (ADR-064 AWS)."
+  }
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.range_host_model_pass.policy).Statement[0].Action == "iam:PassRole" &&
+      jsondecode(aws_iam_role_policy.range_host_model_pass.policy).Statement[0].Condition.StringEquals["iam:PassedToService"] == "ec2.amazonaws.com"
+    )
+    error_message = "The provisioner may pass the range-host role only to EC2."
+  }
+}
