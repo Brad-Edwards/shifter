@@ -4460,7 +4460,10 @@
               "gcp-shared-v1-p10",
               "gcp-shared-v1-p30",
               "gcp-shared-v1-p50",
-              "gcp-shared-v1-p100"
+              "gcp-shared-v1-p100",
+              "gcp-shared-v1-p200",
+              "gcp-shared-v1-p300",
+              "gcp-shared-v1-p500"
             ],
             "title": "Shared Service Capacity Profile",
             "type": "string"
