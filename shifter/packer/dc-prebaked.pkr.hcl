@@ -30,10 +30,14 @@ source "amazon-ebs" "dc-prebaked" {
     owners      = ["amazon"]
   }
 
-  // WinRM communicator; packer retrieves the auto-generated Administrator
-  // password and reuses it across the promotion reboot.
+  // WinRM communicator; the per-build bootstrap password carries across the
+  // promotion reboot.
   communicator   = "winrm"
   winrm_username = "Administrator"
+  // The per-build bootstrap password, set by user_data below. Supplying it
+  // keeps Packer from calling ec2:GetPasswordData; a missing value fails
+  // validation rather than falling back to that call.
+  winrm_password = var.winrm_bootstrap_password != "" ? var.winrm_bootstrap_password : file("winrm_bootstrap_password is required for Windows builds")
   // HTTPS with a self-signed listener (created by user_data); Basic auth never
   // crosses the network in clear.
   winrm_use_ssl  = true
@@ -43,6 +47,8 @@ source "amazon-ebs" "dc-prebaked" {
   user_data = <<-EOF
     <powershell>
     Set-ExecutionPolicy Unrestricted -Force
+    # Set the per-build Administrator password before WinRM accepts connections.
+    Set-LocalUser -Name Administrator -Password (ConvertTo-SecureString '${var.winrm_bootstrap_password}' -AsPlainText -Force)
     winrm quickconfig -quiet
     $cert = New-SelfSignedCertificate -DnsName "packer-builder" -CertStoreLocation Cert:\LocalMachine\My
     New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $cert.Thumbprint -Force
@@ -90,7 +96,7 @@ build {
   // OpenSSH (harmless; useful for operator access to the DC).
   provisioner "powershell" {
     elevated_user     = "Administrator"
-    elevated_password = build.Password
+    elevated_password = var.winrm_bootstrap_password
     environment_vars  = ["PACKER_ROLE=dc"]
     script            = "scripts/windows/services.ps1"
   }
@@ -99,7 +105,7 @@ build {
   // profile's domain with the reboot deferred to the windows-restart below.
   provisioner "powershell" {
     elevated_user     = "Administrator"
-    elevated_password = build.Password
+    elevated_password = var.winrm_bootstrap_password
     environment_vars = [
       "DC_DOMAIN_NAME=${var.dc_domain_name}",
       "DC_NETBIOS_NAME=${var.dc_netbios_name}",
@@ -121,7 +127,7 @@ build {
   // artifacts.
   provisioner "powershell" {
     elevated_user     = "Administrator"
-    elevated_password = build.Password
+    elevated_password = var.winrm_bootstrap_password
     script            = "scripts/dc-prebaked/finalize.ps1"
   }
 
