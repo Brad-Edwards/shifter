@@ -25,7 +25,9 @@ source "amazon-ebs" "windows" {
   // WinRM communicator for Windows provisioning
   communicator   = "winrm"
   winrm_username = "Administrator"
-  winrm_use_ssl  = false
+  // HTTPS with a self-signed listener (created by user_data); Basic auth never
+  // crosses the network in clear.
+  winrm_use_ssl  = true
   winrm_insecure = true
   winrm_timeout  = "30m"
 
@@ -37,12 +39,16 @@ source "amazon-ebs" "windows" {
 
     # Configure WinRM
     winrm quickconfig -quiet
-    winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+    $cert = New-SelfSignedCertificate -DnsName "packer-builder" -CertStoreLocation Cert:\LocalMachine\My
+    New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $cert.Thumbprint -Force
+    # Encrypted transport only: drop the plaintext listener quickconfig created.
+    Remove-WSManInstance -ResourceURI winrm/config/Listener -SelectorSet @{Address="*";Transport="HTTP"} -ErrorAction SilentlyContinue
+    winrm set winrm/config/service '@{AllowUnencrypted="false"}'
     winrm set winrm/config/service/auth '@{Basic="true"}'
     winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="1024"}'
 
     # Open firewall for WinRM
-    netsh advfirewall firewall add rule name="WinRM HTTP" dir=in action=allow protocol=TCP localport=5985
+    netsh advfirewall firewall add rule name="WinRM HTTPS" dir=in action=allow protocol=TCP localport=5986
 
     # Restart WinRM
     Restart-Service WinRM
@@ -53,6 +59,8 @@ source "amazon-ebs" "windows" {
   subnet_id = var.subnet_id != "" ? var.subnet_id : null
 
   associate_public_ip_address = true
+  // Packer's temporary security group admits WinRM only from the builder's IP.
+  temporary_security_group_source_public_ip = true
 
   // Windows needs more time to boot
   pause_before_connecting = "1m"

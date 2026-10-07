@@ -173,6 +173,15 @@ class TestPackerTemplates:
         """Variables file should exist."""
         assert (PACKER_DIR / "variables.pkr.hcl").exists()
 
+    @pytest.mark.parametrize("name", ["windows.pkr.hcl", "dc.pkr.hcl", "dc-prebaked.pkr.hcl"])
+    def test_windows_bakes_use_encrypted_winrm_from_the_builder_only(self, name):
+        """The Administrator password never crosses the network in clear or from anywhere."""
+        template = (PACKER_DIR / name).read_text()
+        assert re.search(r"winrm_use_ssl\s+= true", template)
+        assert re.search(r"temporary_security_group_source_public_ip\s+= true", template)
+        assert "-Transport HTTPS" in template and 'Transport="HTTP"}' in template
+        assert 'AllowUnencrypted="true"' not in template and "localport=5985" not in template
+
     @pytest.mark.skipif(
         shutil.which("packer") is None,
         reason="Packer not installed",
