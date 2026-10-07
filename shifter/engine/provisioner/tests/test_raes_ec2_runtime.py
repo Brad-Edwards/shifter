@@ -159,3 +159,14 @@ def test_ranges_without_a_broker_path_attach_the_keyless_model_profile(configure
     monkeypatch.setenv("RANGE_HOST_INSTANCE_PROFILE_ARN", profile)
     runtime.provision_ec2_run(run)
     assert apply.call_args.args[4].guest_instance_profile_arn == profile
+    assert apply.call_args.args[4].config.model_endpoint_group_id == ""
+
+    # The profile's Bedrock endpoint lane follows the profile, never the broker path.
+    group = "sg-" + "1" * 17
+    monkeypatch.setenv("RANGE_MODEL_ENDPOINT_SECURITY_GROUP_ID", group)
+    runtime.provision_ec2_run(run)
+    assert apply.call_args.args[4].config.model_endpoint_group_id == group
+    assert apply.call_args.args[4].config.broker_cidrs == ()
+    monkeypatch.delenv("RANGE_HOST_INSTANCE_PROFILE_ARN")
+    runtime.provision_ec2_run(run)
+    assert apply.call_args.args[4].config.model_endpoint_group_id == ""

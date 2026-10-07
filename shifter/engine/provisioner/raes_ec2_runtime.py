@@ -85,6 +85,13 @@ def _network(scope: Ec2CleanupScope, enrollment: EnrollmentDelivery | None) -> E
         management_cidrs=_cidrs("PORTAL_NETWORK_CIDRS"),
         access_cidrs=_cidrs("ACCESS_NETWORK_CIDRS"),
         broker_cidrs=_cidrs("MODEL_BROKER_GUEST_CIDRS") if enrollment is not None else (),
+        # Guests carry the range-host model profile only without a broker
+        # enrollment, so only then do they need the Bedrock endpoint lane.
+        model_endpoint_group_id=(
+            os.environ.get("RANGE_MODEL_ENDPOINT_SECURITY_GROUP_ID", "")
+            if enrollment is None and os.environ.get("RANGE_HOST_INSTANCE_PROFILE_ARN")
+            else ""
+        ),
     )
 
 

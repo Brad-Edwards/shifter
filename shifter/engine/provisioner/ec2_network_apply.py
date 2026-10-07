@@ -157,14 +157,18 @@ def _verify_subnet(plan: Ec2NetworkPlan, wanted: Ec2SubnetIntent, row: dict[str,
 
 
 def _permissions(values: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> frozenset[str]:
-    """Compare semantic grants across AWS's protocol/port aggregation."""
+    """Compare semantic grants across AWS's protocol/port aggregation.
+
+    Security-group references compare by group ID alone, so a grant to any group
+    other than an intended one (such as the model endpoint) is a mismatch.
+    """
     normalized = []
     for rule in values:
-        if rule.get("UserIdGroupPairs") or rule.get("PrefixListIds"):
+        if rule.get("PrefixListIds"):
             raise Ec2NetworkError("EC2 guest security group has an unmodelled source identity")
         protocol = rule["IpProtocol"]
         ports = [] if protocol == "-1" else [rule.get("FromPort"), rule.get("ToPort")]
-        for key, address_key in (("IpRanges", "CidrIp"), ("Ipv6Ranges", "CidrIpv6")):
+        for key, address_key in (("IpRanges", "CidrIp"), ("Ipv6Ranges", "CidrIpv6"), ("UserIdGroupPairs", "GroupId")):
             for network in rule.get(key, []):
                 normalized.append(json.dumps([protocol, ports, key, network[address_key]]))
     return frozenset(normalized)

@@ -44,6 +44,9 @@ class Ec2NetworkConfig:
     management_cidrs: tuple[str, ...]
     access_cidrs: tuple[str, ...] = ()
     broker_cidrs: tuple[str, ...] = ()
+    # The range VPC's Bedrock runtime endpoint group (ADR-064 AWS). Guests that
+    # carry the range-host model profile reach that endpoint, and only it, on 443.
+    model_endpoint_group_id: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -55,6 +58,8 @@ class Ec2NetworkConfig:
             or not 1 <= len(self.management_cidrs) <= 16
             or len(self.access_cidrs) > 16
             or len(self.broker_cidrs) > 16
+            or not re.fullmatch(r"(?:sg-[0-9a-f]{8}(?:[0-9a-f]{9})?)?", self.model_endpoint_group_id)
+            or (self.model_endpoint_group_id and self.broker_cidrs)
         ):
             raise Ec2NetworkError("EC2 deployment network coordinates are invalid")
         self._validate_endpoints()
@@ -175,6 +180,7 @@ def plan_ec2_network(
                 tuple(str(net) for net in cidrs.values()),
                 participant_channels.get(node.address, ()),
                 range_id,
+                internal=any(net.internal and net.address == placed[0].subnet_address for net in networks),
             )
         )
     return Ec2NetworkPlan(config, request_id, generation, range_id, tuple(subnets), tuple(groups), tuple(guests))
@@ -282,6 +288,8 @@ def _group_for_node(
     range_cidrs: tuple[str, ...],
     channels: tuple[str, ...],
     range_id: int,
+    *,
+    internal: bool = False,
 ) -> Ec2GroupIntent:
     """Render service/participant access independently of management authority."""
     ingress = [
@@ -296,13 +304,22 @@ def _group_for_node(
     egress = [_permission("-1", range_cidrs)]
     if config.broker_cidrs:
         egress.append(_permission("tcp", config.broker_cidrs, 443))
+    if config.model_endpoint_group_id and not internal:
+        egress.append(
+            {
+                "IpProtocol": "tcp",
+                "FromPort": 443,
+                "ToPort": 443,
+                "UserIdGroupPairs": [{"GroupId": config.model_endpoint_group_id}],
+            }
+        )
     # Collapse exact-duplicate grants (e.g. two participants sharing one channel both
     # yield tcp/22 from the access CIDRs): AWS rejects a permission that appears more
     # than once in a single authorize call ("The same permission must not appear
     # multiple times"). The readback comparison is set-based, so this stays consistent.
     ingress = _dedupe_permissions(ingress)
     egress = _dedupe_permissions(egress)
-    if sum(len(rule["IpRanges"]) for rule in ingress) > 60:
+    if sum(len(rule.get("IpRanges", [])) for rule in ingress) > 60:
         raise Ec2NetworkError("EC2 security group ingress exceeds the rule budget")
     return Ec2GroupIntent(node.address, _name(range_id, node.address), tuple(ingress), tuple(egress))
 

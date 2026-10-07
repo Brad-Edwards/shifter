@@ -269,3 +269,38 @@ def test_subnet_with_foreign_explicit_route_table_is_not_reassociated():
     with pytest.raises(Ec2NetworkError, match="another route table"):
         ensure_ec2_network(plan, ec2)
     ec2.associate_route_table.assert_not_called()
+
+
+def test_model_endpoint_lane_converges_and_any_other_group_reference_differs():
+    from dataclasses import replace
+
+    from ec2_network_apply import _permissions
+    from tests.test_ec2_range_network import MODEL_GROUP, config
+
+    plan = build(cfg=replace(config(), broker_cidrs=(), model_endpoint_group_id=MODEL_GROUP))
+    ec2, _subnets, groups, _tables = api_for(plan)
+    # AWS reads a group reference back with the owning account added.
+    authorize = ec2.authorize_security_group_egress.side_effect
+
+    def authorize_with_owner(**kw):
+        authorize(**kw)
+        for rule in groups[0]["IpPermissionsEgress"]:
+            for pair in rule.get("UserIdGroupPairs", []):
+                pair["UserId"] = "123456789012"
+
+    ec2.authorize_security_group_egress.side_effect = authorize_with_owner
+    ensure_ec2_network(plan, ec2)
+    assert {"GroupId": MODEL_GROUP, "UserId": "123456789012"} in groups[0]["IpPermissionsEgress"][-1][
+        "UserIdGroupPairs"
+    ]
+
+    wanted = plan.groups[0].egress
+    foreign = [
+        *wanted,
+        {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "UserIdGroupPairs": [{"GroupId": "sg-" + "2" * 17}]},
+    ]
+    assert _permissions(foreign) != _permissions(wanted)
+    with pytest.raises(Ec2NetworkError, match="unmodelled"):
+        _permissions(
+            [{"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "PrefixListIds": [{"PrefixListId": "pl-1"}]}]
+        )

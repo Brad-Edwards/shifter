@@ -167,6 +167,7 @@ AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "RANGE_INSTANCE_ROLE_ARN",
         # Keyless Bedrock invocation profile for native range hosts (ADR-064 AWS).
         "RANGE_HOST_INSTANCE_PROFILE_ARN",
+        "RANGE_MODEL_ENDPOINT_SECURITY_GROUP_ID",
         "RANGE_EGRESS_MODE",
         "KALI_AMI_ID",
         "VICTIM_AMI_ID",

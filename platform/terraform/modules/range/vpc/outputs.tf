@@ -169,3 +169,8 @@ output "ssm_endpoints_subnet_cidr" {
   description = "CIDR block of the SSM/Bedrock endpoints subnet (for NGFW routing)"
   value       = aws_subnet.ssm_endpoints.cidr_block
 }
+
+output "model_endpoint_security_group_id" {
+  description = "Security group of the Bedrock runtime endpoint; native range guests reach it by group reference"
+  value       = aws_security_group.model_endpoint.id
+}

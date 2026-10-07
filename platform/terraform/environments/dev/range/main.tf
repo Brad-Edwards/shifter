@@ -105,9 +105,10 @@ module "ssm_export" {
       s3_endpoint_id                          = module.vpc.s3_endpoint_id
       # Network Firewall is always enabled for the range (module default true),
       # so the endpoint id is always present.
-      firewall_endpoint_id      = module.vpc.firewall_endpoint_id
-      range_egress_mode         = var.range_egress_mode
-      ssm_endpoints_subnet_cidr = module.vpc.ssm_endpoints_subnet_cidr
+      firewall_endpoint_id             = module.vpc.firewall_endpoint_id
+      range_egress_mode                = var.range_egress_mode
+      ssm_endpoints_subnet_cidr        = module.vpc.ssm_endpoints_subnet_cidr
+      model_endpoint_security_group_id = module.vpc.model_endpoint_security_group_id
 
       # Range instance identity (provisioner iam:PassRole + task env)
       range_instance_role_arn     = module.vpc.range_instance_role_arn

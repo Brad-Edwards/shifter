@@ -118,3 +118,28 @@ def test_none_posture_refuses_broker_exception():
 def test_guest_cannot_share_a_subnet_with_management_or_broker():
     with pytest.raises(Ec2NetworkError):
         build(cfg=replace(config(), management_cidrs=("10.50.1.0/28",)))
+
+
+MODEL_GROUP = "sg-" + "1" * 17
+
+
+def test_model_endpoint_lane_reaches_only_the_endpoint_group_and_skips_internal_networks():
+    model_cfg = replace(config(), broker_cidrs=(), model_endpoint_group_id=MODEL_GROUP)
+    lane = {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "UserIdGroupPairs": [{"GroupId": MODEL_GROUP}]}
+    for mode in ("status-quo", "deny-all", "none"):
+        egress = build(cfg=model_cfg, mode=mode).groups[0].egress
+        assert lane in egress
+        assert {item["CidrIp"] for rule in egress for item in rule.get("IpRanges", [])} == {"10.50.1.0/28"}
+
+    internal = topology()
+    internal = replace(internal, networks=(replace(internal.networks[0], internal=True),))
+    assert lane not in build(internal, cfg=model_cfg).groups[0].egress
+    assert all("UserIdGroupPairs" not in rule for rule in build().groups[0].egress)
+
+
+@pytest.mark.parametrize("group", ["sg-123", "subnet-" + "1" * 17, "sg-" + "G" * 17])
+def test_model_endpoint_group_must_be_a_security_group_and_excludes_the_broker(group):
+    with pytest.raises(Ec2NetworkError):
+        replace(config(), broker_cidrs=(), model_endpoint_group_id=group)
+    with pytest.raises(Ec2NetworkError):
+        replace(config(), model_endpoint_group_id=MODEL_GROUP)

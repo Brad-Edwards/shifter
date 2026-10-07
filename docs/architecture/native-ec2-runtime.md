@@ -34,8 +34,12 @@ Each range owns private subnets, security groups, and a route table. The current
 tenant allocator supplies open `/28` network intent. Authored CIDRs, multiple
 NICs per guest, and ordered ACLs are rejected when the backend cannot preserve
 them; it never silently rewrites those semantics. Range-local traffic, declared
-service and participant ports, management SSH, and an optional exact broker TLS
-destination are the permitted lanes. No default internet route is copied into
+service and participant ports, management SSH, and one model lane are the
+permitted lanes. The model lane is either an exact broker TLS destination or,
+for guests that carry the range-host profile, HTTPS to the range VPC's Bedrock
+runtime endpoint by security-group reference. That endpoint has its own group,
+so the lane does not open the shared SSM, Secrets Manager or STS endpoints, and
+guests on an internal network never receive it. No default internet route is copied into
 the range table. Actual routes and associations must match before guest creation.
 The current EC2 backend does not realize `allowlist` egress. CMS and Engine
 reject that workspace policy before launch dispatch; the provisioner repeats the

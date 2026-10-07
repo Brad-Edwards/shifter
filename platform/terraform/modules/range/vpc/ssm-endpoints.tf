@@ -125,13 +125,41 @@ resource "aws_vpc_endpoint" "secretsmanager" {
 # Bedrock VPC Endpoints (for Claude Code)
 # ------------------------------------------------------------------------------
 
+# The Bedrock runtime endpoint has its own group so native range guests can be
+# granted egress to it, and only it, by group reference (ADR-064 AWS, #2529).
+# The endpoint ENIs sit in the shared endpoints subnet; a CIDR grant would also
+# open the SSM, Secrets Manager and STS endpoints.
+resource "aws_security_group" "model_endpoint" {
+  name        = "${var.name_prefix}-model-endpoint"
+  description = "Bedrock runtime VPC endpoint for range hosts"
+  vpc_id      = aws_vpc.this.id
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-model-endpoint-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_security_group_rule" "model_endpoint_https_from_vpc" {
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = aws_security_group.model_endpoint.id
+  description       = "HTTPS from range VPC"
+}
+
 # Bedrock Runtime endpoint (for InvokeModel)
 resource "aws_vpc_endpoint" "bedrock_runtime" {
   vpc_id              = aws_vpc.this.id
   service_name        = "com.amazonaws.${data.aws_region.current.name}.bedrock-runtime"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.ssm_endpoints.id]
-  security_group_ids  = [aws_security_group.ssm_endpoints.id]
+  security_group_ids  = [aws_security_group.model_endpoint.id]
   private_dns_enabled = true
 
   tags = merge(local.common_tags, {
