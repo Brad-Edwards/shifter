@@ -25,6 +25,10 @@ source "amazon-ebs" "dc" {
   // WinRM communicator for Windows provisioning
   communicator   = "winrm"
   winrm_username = "Administrator"
+  // The per-build bootstrap password, set by user_data below. Supplying it
+  // keeps Packer from calling ec2:GetPasswordData; a missing value fails
+  // validation rather than falling back to that call.
+  winrm_password = var.winrm_bootstrap_password != "" ? var.winrm_bootstrap_password : file("winrm_bootstrap_password is required for Windows builds")
   // HTTPS with a self-signed listener (created by user_data); Basic auth never
   // crosses the network in clear.
   winrm_use_ssl  = true
@@ -36,6 +40,8 @@ source "amazon-ebs" "dc" {
     <powershell>
     # Enable WinRM for Packer provisioning
     Set-ExecutionPolicy Unrestricted -Force
+    # Set the per-build Administrator password before WinRM accepts connections.
+    Set-LocalUser -Name Administrator -Password (ConvertTo-SecureString '${var.winrm_bootstrap_password}' -AsPlainText -Force)
 
     # Configure WinRM
     winrm quickconfig -quiet
@@ -90,7 +96,7 @@ build {
   // Note: elevated_user required for Add-WindowsCapability to work via WinRM
   provisioner "powershell" {
     elevated_user     = "Administrator"
-    elevated_password = build.Password
+    elevated_password = var.winrm_bootstrap_password
     environment_vars  = ["PACKER_ROLE=dc"]
     script            = "scripts/windows/services.ps1"
   }
