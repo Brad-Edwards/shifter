@@ -58,8 +58,6 @@ class Ec2NetworkConfig:
             or not 1 <= len(self.management_cidrs) <= 16
             or len(self.access_cidrs) > 16
             or len(self.broker_cidrs) > 16
-            or not re.fullmatch(r"(?:sg-[0-9a-f]{8}(?:[0-9a-f]{9})?)?", self.model_endpoint_group_id)
-            or (self.model_endpoint_group_id and self.broker_cidrs)
         ):
             raise Ec2NetworkError("EC2 deployment network coordinates are invalid")
         self._validate_endpoints()
@@ -73,6 +71,18 @@ class Ec2NetworkConfig:
                 raise Ec2NetworkError("EC2 platform endpoints must be outside the guest network")
         if any(_network(cidr).prefixlen != 32 for cidr in self.broker_cidrs):
             raise Ec2NetworkError("EC2 broker destinations must be exact private addresses")
+        if self.model_endpoint_group_id and (
+            not re.fullmatch(r"sg-[0-9a-f]{8}(?:[0-9a-f]{9})?", self.model_endpoint_group_id) or self.broker_cidrs
+        ):
+            raise Ec2NetworkError("EC2 model endpoint must be one security group, exclusive of the broker")
+
+
+@dataclass(frozen=True)
+class _GuestSubnet:
+    """The subnet a guest lands on and whether its authored network is internal."""
+
+    cidr: ipaddress.IPv4Network
+    internal: bool
 
 
 @dataclass(frozen=True)
@@ -171,16 +181,16 @@ def plan_ec2_network(
         guests.extend(placed)
         if len(guests) > 256:
             raise Ec2NetworkError("EC2 guest count exceeds the realization bound")
+        internal = any(net.internal and net.address == placed[0].subnet_address for net in networks)
         groups.append(
             _group_for_node(
                 node,
-                guest_network,
+                _GuestSubnet(guest_network, internal),
                 config,
                 images[node.address],
                 tuple(str(net) for net in cidrs.values()),
                 participant_channels.get(node.address, ()),
                 range_id,
-                internal=any(net.internal and net.address == placed[0].subnet_address for net in networks),
             )
         )
     return Ec2NetworkPlan(config, request_id, generation, range_id, tuple(subnets), tuple(groups), tuple(guests))
@@ -282,18 +292,16 @@ def _plan_subnets(
 
 def _group_for_node(
     node: RaesPlanNode,
-    network: ipaddress.IPv4Network,
+    subnet: _GuestSubnet,
     config: Ec2NetworkConfig,
     image: VerifiedEc2Image,
     range_cidrs: tuple[str, ...],
     channels: tuple[str, ...],
     range_id: int,
-    *,
-    internal: bool = False,
 ) -> Ec2GroupIntent:
     """Render service/participant access independently of management authority."""
     ingress = [
-        _permission("-1", (str(network),)),
+        _permission("-1", (str(subnet.cidr),)),
         _permission("tcp", config.management_cidrs, image.management_ssh_port),
     ]
     for channel in channels:
@@ -301,18 +309,7 @@ def _group_for_node(
             raise Ec2NetworkError("EC2 participant access requires an admitted channel and source network")
         ingress.append(_permission("tcp", config.access_cidrs, 22 if channel == "ssh" else 3389))
     ingress.extend(_service_grants(node, range_cidrs))
-    egress = [_permission("-1", range_cidrs)]
-    if config.broker_cidrs:
-        egress.append(_permission("tcp", config.broker_cidrs, 443))
-    if config.model_endpoint_group_id and not internal:
-        egress.append(
-            {
-                "IpProtocol": "tcp",
-                "FromPort": 443,
-                "ToPort": 443,
-                "UserIdGroupPairs": [{"GroupId": config.model_endpoint_group_id}],
-            }
-        )
+    egress = _egress(config, subnet, range_cidrs)
     # Collapse exact-duplicate grants (e.g. two participants sharing one channel both
     # yield tcp/22 from the access CIDRs): AWS rejects a permission that appears more
     # than once in a single authorize call ("The same permission must not appear
@@ -322,6 +319,23 @@ def _group_for_node(
     if sum(len(rule.get("IpRanges", [])) for rule in ingress) > 60:
         raise Ec2NetworkError("EC2 security group ingress exceeds the rule budget")
     return Ec2GroupIntent(node.address, _name(range_id, node.address), tuple(ingress), tuple(egress))
+
+
+def _egress(config: Ec2NetworkConfig, subnet: _GuestSubnet, range_cidrs: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Range-local traffic plus at most one model lane: the broker or the Bedrock endpoint."""
+    egress = [_permission("-1", range_cidrs)]
+    if config.broker_cidrs:
+        egress.append(_permission("tcp", config.broker_cidrs, 443))
+    if config.model_endpoint_group_id and not subnet.internal:
+        egress.append(
+            {
+                "IpProtocol": "tcp",
+                "FromPort": 443,
+                "ToPort": 443,
+                "UserIdGroupPairs": [{"GroupId": config.model_endpoint_group_id}],
+            }
+        )
+    return egress
 
 
 def _dedupe_permissions(permissions: list[dict[str, Any]]) -> list[dict[str, Any]]:
