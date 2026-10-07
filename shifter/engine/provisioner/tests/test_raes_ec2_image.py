@@ -240,10 +240,17 @@ def test_prepromoted_image_must_match_the_authored_windows_domain():
     )
     controller = node(os_family="windows", domain_dns_name="corp.example", domain_netbios_name="CORP")
     assert_image_contract_matches_node(controller, image)
+    assert_image_contract_matches_node(
+        node(os_family="windows", domain_dns_name="Corp.Example.", domain_netbios_name="corp"), image
+    )
+    # A node that authors no domain leaves the directory to the image, as on GCE.
+    assert_image_contract_matches_node(node(os_family="windows"), image)
     for mismatched in (
         node(os_family="windows", domain_dns_name="other.example", domain_netbios_name="CORP"),
         node(os_family="windows", domain_dns_name="corp.example", domain_netbios_name="OTHER"),
+        node(os_family="windows", domain_dns_name="corp.example"),
         node(domain_dns_name="corp.example", domain_netbios_name="CORP"),
+        node(),
     ):
         with pytest.raises(Ec2ImageError):
             assert_image_contract_matches_node(mismatched, image)

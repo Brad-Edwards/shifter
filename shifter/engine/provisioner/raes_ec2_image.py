@@ -254,18 +254,28 @@ def verify_ec2_image(node: RaesPlanNode, profile: Ec2ImageProfile, ec2: BaseClie
 def assert_image_contract_matches_node(node: RaesPlanNode, image: VerifiedEc2Image) -> None:
     """Refuse, before any mutation, an image whose baked identity contradicts the node.
 
-    A prepromoted directory image must back a Windows node whose authored domain
-    is exactly the domain baked into it; anything else would fail only after
-    cloud resources exist.
+    A prepromoted directory image must back a Windows node. When the node authors
+    a domain, it must be exactly the domain baked into the image (compared as GCE
+    does: case-insensitive, without a trailing dot); anything else would fail only
+    after cloud resources exist. A node that authors no domain leaves the
+    directory to the image and its adapter, as on GCE.
     """
     contract = image.contract
     if contract.bootstrap_capability != BOOTSTRAP_PREPROMOTED_DC:
         return
-    if node.os_family != "windows" or (node.domain_dns_name, node.domain_netbios_name) != (
-        contract.domain_dns_name,
-        contract.domain_netbios_name,
-    ):
+    if node.os_family != "windows":
+        raise Ec2ImageError("EC2 prepromoted directory image requires a Windows node")
+    if not (node.domain_dns_name or node.domain_netbios_name):
+        return
+    authored = (_dns_name(node.domain_dns_name), (node.domain_netbios_name or "").strip().casefold())
+    baked = (_dns_name(contract.domain_dns_name), contract.domain_netbios_name.strip().casefold())
+    if not all(authored) or authored != baked:
         raise Ec2ImageError("EC2 prepromoted directory image does not match the authored domain")
+
+
+def _dns_name(value: str | None) -> str:
+    """Comparison form of a DNS domain name."""
+    return (value or "").strip().rstrip(".").casefold()
 
 
 def _verify_instance_type(
