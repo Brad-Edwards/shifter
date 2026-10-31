@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: SHOULD
 wave: 2
 created_at: 2026-03-18T05:28:23.290765Z
-updated_at: 2026-10-28T00:00:00Z
+updated_at: 2026-10-31T00:00:00Z
 ---
 
 # CTF-801: Email Notifications
@@ -35,5 +35,14 @@ Email delivery is a platform capability. CTF defines when and what to send but d
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/templates/ctf/email/notice/range_failure.txt` (Provisioning failure notice email template (text) (#580))
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/templates/ctf/email/notice/results.html` (Final results notice email template (HTML) (#580))
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/templates/ctf/email/notice/results.txt` (Final results notice email template (text) (#580))
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/templates/ctf/email/notice/registration.html` (Registration confirmation email template (HTML) (#664))
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/templates/ctf/email/notice/registration.txt` (Registration confirmation email template (text) (#664))
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/participant/accounts.py` (Seat seam declares the registration confirmation (#664))
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/range/status.py` (Range-ready declaration and realtime publish (#664))
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums_communication.py` (NoticeKind registration (#664))
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/ctf-participant-notices-design-664.md` (Participant notices design (#664))
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_services/test_notification.py` (Notification Service Tests)
-- DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/bigrae#664` (CTF-801: Email Notifications)
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_participant_notices.py` (Participant lifecycle notice declaration tests (#664))
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_email_adapter.py` (Notice kind template rendering tests (#664))
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_participant_notices_postgres.py` (Range-ready lock order PostgreSQL test (#664))
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/bigrae#664` (CTF-801: add the missing participant notices and their email delivery)

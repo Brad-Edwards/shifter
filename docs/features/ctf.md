@@ -14,6 +14,11 @@ name and email creates a request for organizer review; it does not create an acc
 reserve a place, or provision a range. A generic confirmation is shown whether a
 matching request already exists.
 
+When an organizer approves or adds you with a delivery email, you get a
+registration confirmation by email. It gives the event name, start, end and
+timezone. It never contains a password. The platform sends it only when the
+deployment has a mail provider.
+
 After the organizer approves you:
 
 1. Open the dedicated CTF login page from the URL your organizer provides.

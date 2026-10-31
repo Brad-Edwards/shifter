@@ -3349,6 +3349,7 @@
       "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
       "docs/architecture/ctf-communication-delivery-engine-preflight-2049.md",
       "docs/architecture/ctf-email-durable-delivery-preflight-1525.md",
+      "docs/architecture/ctf-participant-email-preflight-664.md",
       "docs/architecture/email-delivery-design-1525.md",
       "docs/architecture/ctf-communication-api-cutover-preflight-2100.md",
       "docs/design/ctf-communications-console-boundaries-2052.md",
@@ -4258,6 +4259,11 @@
         "id": "ADR-065-R4",
         "description": "Organizer alerts use an explicit organizer recipient kind in the existing ledger: principal identity, recipient-kind constraints, the event owner and live co-organizers as candidates only, and current native policy at release, delivery and inbox read. Channels are the organizer in-app inbox and email when available. Organizer rows never reach the participant inbox, the communications console or campaign reports. Only the system origin can select organizer recipients.",
         "checks": []
+      },
+      {
+        "id": "ADR-065-R5",
+        "description": "Participant registration, range-ready and range-failure notices are durable ledger declarations in the transaction that causes them: one system campaign for one participant occurrence, with a stable identity, and a scheduled intent with its release task. Every seat-creation path declares a registration confirmation for a seat with a delivery email. These declarations skip the shared system authoring rate budget; release-time admission backpressure still applies. A communication refusal never fails the causing change.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -4270,6 +4276,7 @@
       "docs/adr/065-retire-legacy-ctf-notification-writes.md",
       "docs/architecture/ctf-organizer-alerts-preflight-528.md",
       "docs/architecture/ctf-organizer-alerts-design-528.md",
+      "docs/architecture/ctf-participant-notices-design-664.md",
       "docs/architecture/ctf-communication-migration-decision-2100.md",
       "shifter/shifter_platform/tests/ctf/test_communication_cutover.py",
       "shifter/shifter_platform/tests/shared/test_api_operation_retirement.py"

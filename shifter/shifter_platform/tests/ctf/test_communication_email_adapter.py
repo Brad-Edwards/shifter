@@ -306,11 +306,23 @@ def test_each_event_notice_kind_renders_its_own_default_pair(ctf_event, mailoutb
         assert f"{local_start:%Y-%m-%d %H:%M} (Asia/Tokyo)" in message.body
 
 
+def _release_declared(declared):
+    from ctf.enums import ScheduledTaskType
+    from ctf.models import CTFScheduledTask
+    from ctf.services.communication.scheduling import run_release_communication_task
+
+    task = CTFScheduledTask.objects.get(
+        task_type=ScheduledTaskType.RELEASE_COMMUNICATION.value, metadata__intent_id=declared["intent_id"]
+    )
+    assert run_release_communication_task(task)["outcome"] == "released"
+
+
 @pytest.mark.parametrize(
     "sender,kind,marker",
     [
         ("send_range_ready", "range_ready", "range is ready"),
         ("notify_participant_provision_failure", "range_failure", "could not prepare"),
+        ("send_registration_confirmation", "registration", "registered for"),
     ],
 )
 def test_each_participant_notice_kind_renders_its_own_default_pair(ctf_event, mailoutbox, sender, kind, marker):
@@ -320,6 +332,8 @@ def test_each_participant_notice_kind_renders_its_own_default_pair(ctf_event, ma
     participant = _participant(ctf_event, "ada@test.com")
 
     staged = getattr(notification, sender)(participant.pk)
+    assert staged["outcome"] == "declared"
+    _release_declared(staged)
     delivery_svc.run_once()
 
     assert CommunicationCampaign.objects.get(pk=staged["campaign_id"]).notice_kind == kind

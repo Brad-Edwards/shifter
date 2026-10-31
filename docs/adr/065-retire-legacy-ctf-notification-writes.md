@@ -49,6 +49,16 @@ system origin can select organizer recipients. The
 [preflight](../architecture/ctf-organizer-alerts-preflight-528.md) give the
 details. ADR-071 provides the email transport.
 
+Revision R5, 2026-10-31, issue #664. The maintainer chose these rules for
+participant lifecycle notices. Registration, range-ready and range-failure
+notices are durable declarations in the transaction that causes them. Each
+declaration is one system campaign for one participant occurrence, with a
+stable identity. Every seat-creation path declares a registration confirmation
+for a seat with a delivery email. These declarations skip the shared system
+authoring rate budget, as organizer alerts do. Seat creation and range status
+bound their number. Release-time admission backpressure still applies. The
+[design](../architecture/ctf-participant-notices-design-664.md) gives the details.
+
 The API compatibility checker supports exact absent write-method retirements so
 retaining GET on the same URL does not exempt it from compatibility checking.
 Reintroducing any retired method fails the checker. All unrelated differences

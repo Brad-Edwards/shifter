@@ -564,6 +564,9 @@ def test_legacy_resend_is_retired_without_mutating_password(ctf_event, organizer
     profile = get_user_profile(participant.user)
     profile.must_change_password = False
     profile.save(update_fields=["must_change_password"])
+    # Seat creation declares the registration confirmation (ADR-065-R5).
+    intents_before = set(CommunicationIntent.objects.values_list("pk", flat=True))
+    revisions_before = set(MessageRevision.objects.values_list("pk", flat=True))
 
     with pytest.raises(CTFCommunicationError) as exc:
         reset_participant_credentials(participant.id)
@@ -573,8 +576,8 @@ def test_legacy_resend_is_retired_without_mutating_password(ctf_event, organizer
     profile.refresh_from_db()
     assert participant.user.check_password("PrivateChangedPassword-42")
     assert profile.must_change_password is False
-    assert not CommunicationIntent.objects.exists()
-    assert not MessageRevision.objects.exists()
+    assert set(CommunicationIntent.objects.values_list("pk", flat=True)) == intents_before
+    assert set(MessageRevision.objects.values_list("pk", flat=True)) == revisions_before
 
 
 def test_disqualification_keeps_account_live_for_view_access(ctf_event, organizer_credential, monkeypatch):

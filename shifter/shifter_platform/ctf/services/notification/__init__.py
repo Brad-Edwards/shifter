@@ -48,6 +48,7 @@ from .delivery_milestones import (
     notify_participant_provision_failure,
     send_event_results,
     send_range_ready,
+    send_registration_confirmation,
 )
 from .realtime import (
     publish_event_notification,
@@ -83,5 +84,6 @@ __all__ = (
     "send_event_results",
     "send_login_info",
     "send_range_ready",
+    "send_registration_confirmation",
     "send_reminder",
 )
