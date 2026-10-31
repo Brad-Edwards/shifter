@@ -177,6 +177,9 @@ def provision_participant_seat(
     duplicate handle is a hard error (never silently reassigned). When it is
     omitted the account gets a generated, email-disjoint handle (anonymous /
     organizer-batch mode) and ``name`` is used for display.
+
+    A seat with a delivery ``email`` also declares its registration confirmation
+    in the caller's transaction, so a rolled-back seat sends nothing.
     """
     from django.db import IntegrityError
 
@@ -196,7 +199,7 @@ def provision_participant_seat(
     group, _ = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)
     user.groups.set([group])
     configure_temporary_ctf_account(user, event.pk)
-    return CTFParticipant.objects.create(
+    participant = CTFParticipant.objects.create(
         event=event,
         user=user,
         email=email,
@@ -205,6 +208,12 @@ def provision_participant_seat(
         status=ParticipantStatus.REGISTERED.value,
         registered_at=timezone.now(),
     )
+    if email:
+        # CTF-801: the confirmation commits with the seat (ADR-065-R5).
+        from ctf.services.notification import send_registration_confirmation
+
+        send_registration_confirmation(participant.pk)
+    return participant
 
 
 @sensitive_variables("password")

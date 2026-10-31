@@ -11,6 +11,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from django.db import transaction
+
 from ctf.exceptions import CTFNotFoundError, CTFRangeError
 from ctf.models import CTFParticipant
 
@@ -123,19 +125,31 @@ def _get_participant_with_range(participant_id: UUID) -> CTFParticipant:
     return participant
 
 
-def _notify_range_ready(participant: CTFParticipant) -> None:
-    """Range-ready milestone (CTF-801/CTF-802): email + realtime, best-effort."""
-    try:
-        from ctf.services.notification import publish_event_notification, send_range_ready
+def notify_range_ready(participant: CTFParticipant, *, publish: bool = True) -> None:
+    """Range-ready milestone (CTF-801/CTF-802): email declaration, then realtime.
 
-        send_range_ready(participant.pk)
-        if participant.user_id:
-            publish_event_notification(
+    The email notice is declared in the caller's transaction and its identity
+    collapses repeats. The realtime event is published after commit.
+    """
+    from ctf.services.notification import publish_event_notification, send_range_ready
+
+    send_range_ready(participant.pk)
+    user_id = participant.user_id
+    if publish and user_id:
+        transaction.on_commit(
+            lambda: publish_event_notification(
                 participant.event,
                 "range_ready",
                 {"participant_id": str(participant.pk)},
-                recipient_ids=[participant.user_id],
+                recipient_ids=[user_id],
             )
+        )
+
+
+def _notify_range_ready(participant: CTFParticipant) -> None:
+    """Best-effort range-ready from a status read; the CMS status outbox declares it too."""
+    try:
+        notify_range_ready(participant)
     # pragma: no cover — defensive; notification must never break status reads
     except Exception:
         logger.exception("Range-ready notification failed for %s", participant.pk)

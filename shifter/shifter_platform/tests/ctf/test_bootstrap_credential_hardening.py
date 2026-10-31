@@ -153,6 +153,11 @@ def test_resend_invite_does_not_mutate_password(
     )[0]
     participant.user.set_password("PrivateChangedPassword-42")
     participant.user.save(update_fields=["password"])
+    from ctf.models import CommunicationIntent, MessageRevision
+
+    # Seat creation declares the registration confirmation (ADR-065-R5).
+    intents_before = set(CommunicationIntent.objects.values_list("pk", flat=True))
+    revisions_before = set(MessageRevision.objects.values_list("pk", flat=True))
 
     response = authenticated_organizer_client.post(
         reverse("v1:ctf:api_participant_resend_invite", kwargs={"participant_id": participant.id})
@@ -161,11 +166,9 @@ def test_resend_invite_does_not_mutate_password(
     participant.user.refresh_from_db()
     assert response.status_code == 410
     assert participant.user.check_password("PrivateChangedPassword-42")
-    from ctf.models import CommunicationIntent, MessageRevision
-
     assert sent == []
-    assert not CommunicationIntent.objects.exists()
-    assert not MessageRevision.objects.exists()
+    assert set(CommunicationIntent.objects.values_list("pk", flat=True)) == intents_before
+    assert set(MessageRevision.objects.values_list("pk", flat=True)) == revisions_before
 
 
 def test_first_password_change_rejects_current_issued_password(

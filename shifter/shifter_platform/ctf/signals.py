@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from functools import partial
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from django.db import connection, transaction
 from django.db.models import Model
@@ -17,6 +17,9 @@ from django.dispatch import receiver
 from cms.services import range_status_changed
 from shared.enums import ResourceStatus
 from shared.model_access import OwnedReference
+
+if TYPE_CHECKING:
+    from ctf.models import CTFParticipant
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +289,16 @@ def invalidate_deleted_spare_model_access(
     )
 
 
+def _declare_range_ready(participant: CTFParticipant, *, publish: bool) -> None:
+    """Declare range-ready inside the CMS status delivery (CTF-801, ADR-065-R5).
+
+    A database failure propagates, so the outbox retries the whole delivery.
+    """
+    from ctf.services.range.status import notify_range_ready
+
+    notify_range_ready(participant, publish=publish)
+
+
 @receiver(range_status_changed)
 def sync_ctf_participant_range_status(
     sender: object,
@@ -295,11 +308,17 @@ def sync_ctf_participant_range_status(
     **kwargs: object,
 ) -> None:
     """Update CTFParticipant.range_status when CMS reports a status change."""
-    from ctf.models import CTFParticipant
+    from ctf.models import CTFEvent, CTFParticipant
 
     participants = CTFParticipant.objects.filter(
         range_instance_id=range_instance_id,
     )
+    if new_status == ResourceStatus.READY.value:
+        # The range-ready declaration locks the event. Take the event locks first,
+        # in primary-key order, as provisioning and recovery do (event before
+        # participant); the loop below then reads the assignment under them.
+        event_ids = participants.values("event_id")
+        list(CTFEvent.objects.select_for_update().filter(pk__in=event_ids).order_by("pk").values_list("pk", flat=True))
 
     # Scoped provider inventory/readback evidence that every owned resource is
     # gone (#2086, ADR-063-R4/R5). A logical DESTROYED status alone is not proof
@@ -323,9 +342,16 @@ def sync_ctf_participant_range_status(
             # Any non-verified status -- including DESTROYED without inventory
             # evidence -- retains the participant/range/reservation linkage and
             # capacity until inventory confirms absence (#1919, ADR-063-R5).
+            changed_to_ready = new_status == ResourceStatus.READY.value
             participant.range_status = new_status
             participant.save(update_fields=["range_status", "updated_at"])
             updated += 1
+            if changed_to_ready:
+                _declare_range_ready(participant, publish=True)
+        elif new_status == ResourceStatus.READY.value:
+            # A status read can cache ``ready`` first; this delivery still
+            # declares the notice, and its identity collapses the repeat.
+            _declare_range_ready(participant, publish=False)
 
     if updated:
         logger.info(

@@ -157,7 +157,13 @@ Requests from the optional public page appear separately at the top of this scre
 through the same participant-admission path as a manual add: current capacity and
 duplicate-email policy are rechecked, then the isolated account, participant seat,
 and normal provisioning wake-up are created. A public submission itself never sends
-mail, creates credentials, reserves capacity, or provisions a range. Requests can be
+mail, creates credentials, reserves capacity, or provisions a range.
+
+Every new participant with a delivery email gets a registration confirmation by
+email. This includes approved requests, single adds, CSV imports and generated
+accounts. The confirmation gives the event name, start, end and timezone. It
+never contains a password. The platform sends it only when the deployment has a
+mail provider. Requests can be
 reviewed only once and their PII is removed by the scheduler after the event-relative
 participant-account retention window.
 
