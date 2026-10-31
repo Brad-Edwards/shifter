@@ -328,6 +328,12 @@ class CTFParticipant(CTFBaseModel):
         default="",
         help_text="Optional organization or region shown on the event profile (CTF-610)",
     )
+    time_zone = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Optional IANA time zone for times in email; blank uses the event time zone (#582)",
+    )
     range_request_id = models.UUIDField(null=True, blank=True, editable=False)
     range_instance_id = models.PositiveIntegerField(
         null=True,

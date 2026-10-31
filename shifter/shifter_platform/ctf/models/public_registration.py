@@ -23,6 +23,7 @@ class CTFPublicRegistrationRequest(CTFBaseModel):
     )
     name = models.CharField(max_length=200)
     email = models.EmailField(max_length=254)
+    time_zone = models.CharField(max_length=64, blank=True, default="")
     disposition = models.CharField(
         max_length=16,
         choices=PublicRegistrationDisposition.choices(),

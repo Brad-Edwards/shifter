@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -13,6 +14,7 @@ from django.utils import timezone
 from ctf.enums import EventStatus, PublicRegistrationDisposition
 from ctf.models import CTFEvent, CTFPublicRegistrationRequest
 from ctf.services.audit import audit_public_registration_disposition
+from shared.time_zones import is_valid_time_zone
 
 MAX_PUBLIC_DESCRIPTION_CHARS = 5_000
 MAX_PENDING_REGISTRATION_REQUESTS = 2_000
@@ -111,9 +113,15 @@ def submit_public_registration_request(
     *,
     name: str,
     email: str,
+    time_zone: str = "",
     at: datetime | None = None,
 ) -> PublicRegistrationSubmission:
-    """Store one idempotent pending request under the event publication lock."""
+    """Store one idempotent pending request under the event publication lock.
+
+    ``time_zone`` is blank or an installed IANA name (#582).
+    """
+    if time_zone and not is_valid_time_zone(time_zone):
+        raise ValidationError({"time_zone": "Unknown time zone"})
     normalized_name = name.strip()
     normalized_email = email.strip().lower()
     with transaction.atomic():
@@ -138,6 +146,7 @@ def submit_public_registration_request(
             event=event,
             name=normalized_name,
             email=normalized_email,
+            time_zone=time_zone,
         )
         request_row.save()
         return PublicRegistrationSubmission(request_id=request_row.pk, created=True)
@@ -194,6 +203,9 @@ def approve_public_registration_request(request_id: UUID, *, actor_id: object) -
             username=request_row.name,
             actor=actor_id,
         )
+        if request_row.time_zone:
+            participant.time_zone = request_row.time_zone
+            participant.save(update_fields=["time_zone", "updated_at"])
         request_row.disposition = PublicRegistrationDisposition.APPROVED.value
         request_row.dispositioned_at = timezone.now()
         request_row.save(update_fields=["disposition", "dispositioned_at", "updated_at"])

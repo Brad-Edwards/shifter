@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from io import StringIO
 from unittest.mock import patch
@@ -182,7 +183,9 @@ def test_public_registration_page_escapes_content_and_is_hardened(ctf_event):
     assert response.status_code == 200
     body = response.content.decode()
     assert "&lt;script" in body
-    assert "<script" not in body
+    # The only script is the trusted static time-zone helper (#582).
+    assert body.count("<script") == 1
+    assert re.search(r'<script src="[^"]*/js/ctf-time-zone-select(\.[0-9a-f]+)?\.js" defer></script>', body)
     assert 'src="https://attacker.example' not in body
     assert "images/favicon.svg" in body
     assert reverse("privacy_notice") in body
@@ -191,6 +194,46 @@ def test_public_registration_page_escapes_content_and_is_hardened(ctf_event):
     assert response["Referrer-Policy"] == "no-referrer"
     assert response["X-Robots-Tag"] == "noindex, nofollow"
     assert response["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
+
+
+def test_public_registration_page_renders_every_form_field(ctf_event):
+    """The browser form posts the fields the form validates (#2628, #582)."""
+    _publish(ctf_event)
+    ctf_event.event_timezone = "Asia/Tokyo"
+    ctf_event.save(update_fields=["event_timezone", "updated_at"])
+
+    body = Client().get(reverse("ctf:public_event_registration", args=[ctf_event.pk])).content.decode()
+
+    assert 'name="username"' in body
+    assert 'name="email"' in body
+    assert 'name="time_zone"' in body
+    assert '<option value="Europe/Paris">Europe/Paris</option>' in body
+    assert "Event time zone (Asia/Tokyo)" in body
+
+
+def test_public_registration_shows_username_errors(ctf_event):
+    _publish(ctf_event)
+    url = reverse("ctf:public_event_registration", args=[ctf_event.pk])
+
+    response = Client().post(url, {"username": "", "email": "ada@example.com"})
+
+    assert response.status_code == 400
+    assert 'class="error"' in response.content.decode()
+
+
+def test_public_registration_stores_the_selected_time_zone(ctf_event):
+    _publish(ctf_event)
+    url = reverse("ctf:public_event_registration", args=[ctf_event.pk])
+
+    accepted = Client().post(url, {"username": "ada", "email": "ada@example.com", "time_zone": "Asia/Kolkata"})
+    refused = Client().post(url, {"username": "grace", "email": "grace@example.com", "time_zone": "../etc/passwd"})
+    unset = Client().post(url, {"username": "alan", "email": "alan@example.com"})
+
+    assert accepted.status_code == 200
+    assert refused.status_code == 400
+    assert unset.status_code == 200
+    stored = dict(CTFPublicRegistrationRequest.objects.filter(event=ctf_event).values_list("email", "time_zone"))
+    assert stored == {"ada@example.com": "Asia/Kolkata", "alan@example.com": ""}
 
 
 def test_public_registration_post_requires_csrf_and_returns_generic_success(ctf_event):
