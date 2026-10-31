@@ -45,6 +45,12 @@ msgstr ""
 msgid "%(event_name)s has a new announcement."
 msgstr ""
 
+#: templates/ctf/email/notice/cancellation.html:6
+#: templates/ctf/email/notice/cancellation.txt:5
+#, python-format
+msgid "The organizer cancelled %(event_name)s."
+msgstr ""
+
 #: templates/ctf/email/notice/cleanup.html:6
 #: templates/ctf/email/notice/cleanup.txt:5
 #, python-format

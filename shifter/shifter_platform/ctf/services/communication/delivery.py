@@ -45,6 +45,7 @@ from ctf.services.communication.adapters import (
     get_adapter,
     registered_channels,
 )
+from ctf.services.communication.campaigns import is_event_cancellation_notice
 from ctf.services.communication.recipient_fence import (
     organizer_policy_stop,
     organizer_still_candidate,
@@ -182,14 +183,15 @@ def _fence_reason(row: DeliveryAttempt) -> str:
 
     A committed claim is the recall boundary, but the worker voluntarily suppresses
     before its irreversible send when a cancellation/lifecycle change is visible.
-    Event cancellation is event-qualified: only that event's commands are fenced.
+    Event cancellation is event-qualified: only that event's commands are fenced,
+    except its own cancellation notice (ADR-065-R5).
     """
     intent = row.intent
     if intent.status in (IntentStatus.CANCELLED.value, IntentStatus.FENCED.value):
         reason = f"intent_{intent.status}"
     elif intent.campaign.status == CampaignStatus.CANCELLED.value:
         reason = "campaign_cancelled"
-    elif row.snapshot.event.status == EventStatus.CANCELLED.value:
+    elif row.snapshot.event.status == EventStatus.CANCELLED.value and not is_event_cancellation_notice(intent.campaign):
         reason = "event_cancelled"
     elif row.snapshot.recipient_kind == RecipientKind.ORGANIZER.value:
         reason = "" if organizer_still_candidate(row.snapshot) else "organizer_ineligible"

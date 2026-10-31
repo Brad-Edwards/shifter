@@ -286,6 +286,12 @@ def cancel_event(event: CTFEvent, *, actor: object) -> bool:
             from ctf.services.communication import on_event_cancelled
 
             on_event_cancelled(locked_event)
+            # CTF-706: the participant cancellation notice commits with the
+            # cancellation. It follows the task cancellation and the fence above,
+            # so neither removes it; a refused declaration never blocks teardown.
+            from ctf.services.notification import declare_cancellation_notice
+
+            declare_cancellation_notice(locked_event)
             event.status = locked_event.status
     except CTFStateError:
         logger.warning(
@@ -294,21 +300,6 @@ def cancel_event(event: CTFEvent, *, actor: object) -> bool:
             event.status,
         )
         return False
-
-    # CTF-706: registered participants learn the event is off before their
-    # ranges disappear; best-effort so a mail outage never blocks teardown.
-    try:
-        from ctf.services.notification import send_announcement
-
-        send_announcement(
-            event.pk,
-            f"{event.name} has been cancelled",
-            f"{event.name} has been cancelled by the organizer. "
-            "All event ranges are being shut down and no further submissions are possible.",
-            created_by=event.created_by,
-        )
-    except Exception:
-        logger.exception("Failed to send cancellation notice for event %s", event.id)
 
     # Always destroy ranges on cancel — orphaned VMs waste money
     from ctf.services.range import cleanup_event_ranges

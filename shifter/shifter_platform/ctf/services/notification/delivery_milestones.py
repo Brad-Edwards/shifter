@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from ctf.services.notification.ledger import participant_notice, stage_notice
+from ctf.services.notification.ledger import declare_notice, participant_notice, stage_notice
+
+if TYPE_CHECKING:
+    from ctf.models import CTFEvent
 
 
 def send_cleanup_warning(event_id: UUID) -> dict[str, str]:
@@ -31,6 +35,18 @@ def send_event_results(event_id: UUID) -> dict[str, str]:
         subject="Event results available",
         body="Open the event scoreboard to view the final results.",
         occurrence="completed",
+    )
+
+
+def declare_cancellation_notice(event: CTFEvent) -> dict[str, str]:
+    """Declare the participant cancellation notice inside the cancel transaction (CTF-706)."""
+
+    return declare_notice(
+        event,
+        kind="cancellation",
+        subject="Event cancelled",
+        body="Submissions are closed. The event ranges are being removed.",
+        occurrence="cancelled",
     )
 
 
