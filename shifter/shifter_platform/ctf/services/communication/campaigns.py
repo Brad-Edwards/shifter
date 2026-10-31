@@ -26,7 +26,8 @@ from ctf.communication_contracts import (
     validate_message_content,
     validate_trigger_spec,
 )
-from ctf.enums_communication import CampaignStatus, NoticeKind
+from ctf.enums import EventStatus
+from ctf.enums_communication import CampaignStatus, CommunicationOrigin, NoticeKind
 from ctf.exceptions import CTFCommunicationError
 from ctf.models import CommunicationCampaign, CommunicationTargetEvent, CTFEvent, MessageRevision
 from ctf.services.actors import EventActor, event_actor_credential, event_actor_user, event_actor_user_id
@@ -230,10 +231,15 @@ def create_system_event_campaign(
 ) -> CommunicationCampaign:
     """Create one trusted lifecycle notice bound to an already-locked event.
 
-    ``authoring_rate_limited=False`` is reserved for organizer alerts: they are
-    server-authored, bounded by the event schedule, and declared inside the state
-    change that causes them, so a shared authoring budget must not drop them after
-    that change commits. Release-time admission backpressure still applies.
+    ``authoring_rate_limited=False`` is reserved for organizer alerts and the
+    cancellation notice: they are server-authored, bounded by the event schedule
+    or its one cancellation, and declared inside the state change that causes
+    them, so a shared authoring budget must not drop them after that change
+    commits. Release-time admission backpressure still applies.
+
+    A cancellation notice is the only communication that passes the
+    cancelled-event fence (ADR-065-R5), so it is created only for an event that
+    is already cancelled.
     """
     if list(dict.fromkeys(validate_campaign_targets(draft.target_event_ids))) != [event.pk]:
         raise _TARGET_DENIED
@@ -241,6 +247,8 @@ def create_system_event_campaign(
         notice_kind = NoticeKind(draft.notice_kind).value
     except ValueError:
         raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_NOTICE_KIND_DENIED") from None
+    if notice_kind == NoticeKind.CANCELLATION.value and event.status != EventStatus.CANCELLED.value:
+        raise CTFCommunicationError("Unavailable", code="CTF_COMMUNICATION_EVENT_NOT_CANCELLED")
     try:
         scope = workspace_services.resource_scope_from_ids(
             kind=event.scope_kind,
@@ -293,6 +301,20 @@ def create_system_event_campaign(
         content_digest=content["digest"],
     )
     return campaign
+
+
+def is_event_cancellation_notice(campaign: CommunicationCampaign) -> bool:
+    """Return True only for the trusted participant cancellation notice (ADR-065-R5).
+
+    Public authoring accepts only the announcement kind, ``notice_kind`` is
+    immutable, and :func:`create_system_event_campaign` sets the cancellation kind
+    only for a cancelled event. This one check is the cancelled-event fence
+    exception at declaration, release and delivery.
+    """
+    return (
+        campaign.origin == CommunicationOrigin.SYSTEM_MILESTONE.value
+        and campaign.notice_kind == NoticeKind.CANCELLATION.value
+    )
 
 
 def revise_message(

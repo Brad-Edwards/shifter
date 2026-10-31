@@ -52,6 +52,7 @@ from ctf.services.communication.admission import (
 from ctf.services.communication.attribution import actor_attribution
 from ctf.services.communication.audience import prepare_organizer_recipients
 from ctf.services.communication.backpressure import AdmissionRequest, enforce_admission
+from ctf.services.communication.campaigns import is_event_cancellation_notice
 from ctf.services.communication.disposition import refresh_delivery_state
 from ctf.services.communication.materialize import materialize_recipients, resolve_audience
 
@@ -124,7 +125,8 @@ def _assert_release_allowed(campaign: CommunicationCampaign, target_events: list
     so a concurrent event cancellation cannot slip between this status check and
     the materialization below. Checking status on the locked rows — rather than a
     fresh query filtered to ``CANCELLED`` — is what makes the lock cover every live
-    target, not only the already-cancelled ones.
+    target, not only the already-cancelled ones. The single-event cancellation
+    notice is the one exception to the cancelled-event refusal (ADR-065-R5).
     """
     from ctf.models import CommunicationCutover, LegacyCommunication
     from ctf.services.communication.adapters import registered_channels
@@ -136,7 +138,8 @@ def _assert_release_allowed(campaign: CommunicationCampaign, target_events: list
             raise CTFCommunicationError("Channel unavailable", code="CTF_COMMUNICATION_CHANNEL_UNAVAILABLE")
     if campaign.status == CampaignStatus.CANCELLED.value:
         raise CTFCommunicationError("A cancelled campaign cannot be released", code="CTF_COMMUNICATION_CANCELLED")
-    if any(event.status == EventStatus.CANCELLED.value for event in target_events):
+    cancellation_notice = is_event_cancellation_notice(campaign) and len(target_events) == 1
+    if not cancellation_notice and any(event.status == EventStatus.CANCELLED.value for event in target_events):
         raise CTFCommunicationError(
             "A target event is cancelled; the campaign must be replaced",
             code="CTF_COMMUNICATION_EVENT_CANCELLED",

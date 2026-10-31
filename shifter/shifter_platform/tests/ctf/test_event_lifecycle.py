@@ -279,8 +279,8 @@ class TestEventStatusTransitions:
 
     @pytest.mark.django_db
     def test_cancel_scheduled_event(self, organizer_user, organizer_credential):
-        """Cancelling a scheduled event cancels its pending automation tasks."""
-        from ctf.enums import ScheduledTaskStatus
+        """Cancelling a scheduled event cancels its automation; only the notice release stays pending."""
+        from ctf.enums import ScheduledTaskStatus, ScheduledTaskType
         from ctf.models import CTFScheduledTask
         from ctf.services import cancel_event, schedule_event
 
@@ -294,7 +294,8 @@ class TestEventStatusTransitions:
         assert result is True
         event.refresh_from_db()
         assert event.status == EventStatus.CANCELLED.value
-        assert not CTFScheduledTask.objects.filter(event=event, status=ScheduledTaskStatus.PENDING.value).exists()
+        pending = CTFScheduledTask.objects.filter(event=event, status=ScheduledTaskStatus.PENDING.value)
+        assert list(pending.values_list("task_type", flat=True)) == [ScheduledTaskType.RELEASE_COMMUNICATION.value]
 
     @pytest.mark.django_db
     def test_cannot_activate_draft_event(self, organizer_user):
