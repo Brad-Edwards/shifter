@@ -92,3 +92,20 @@ button {
 a {
   color: #a5b4fc;
 }
+
+select {
+  box-sizing: border-box;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #52525b;
+  border-radius: 0.375rem;
+  background: #09090b;
+  color: #fafafa;
+  font: inherit;
+}
+
+.help {
+  margin: 0;
+  color: #a1a1aa;
+  font-size: 0.875rem;
+}

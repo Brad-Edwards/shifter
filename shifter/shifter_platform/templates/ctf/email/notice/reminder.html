@@ -4,6 +4,6 @@
 {% load i18n %}
 {% block intro %}
     {% blocktrans trimmed %}
-        {{ event_name }} starts on {{ event_start }} ({{ event_timezone }}).
+        {{ event_name }} starts on {{ recipient_start }} {{ recipient_offset }} ({{ recipient_timezone }}).
     {% endblocktrans %}
 {% endblock %}

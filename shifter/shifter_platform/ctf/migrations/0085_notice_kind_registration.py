@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('ctf', '0083_organizer_recipients'),
+        ('ctf', '0084_recipient_time_zone_reminder_default'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

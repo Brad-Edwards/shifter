@@ -61,7 +61,11 @@ def _render_public(
         render(
             request,
             "ctf/public/registration.html",
-            {"event": projection, "form": form or PublicRegistrationForm(), "submitted": submitted},
+            {
+                "event": projection,
+                "form": form or PublicRegistrationForm(event_timezone=projection.event_timezone),
+                "submitted": submitted,
+            },
             status=status,
         )
     )
@@ -149,6 +153,7 @@ def _submit_valid_registration(
             event_id,
             name=form.cleaned_data["username"],
             email=form.cleaned_data["email"],
+            time_zone=form.cleaned_data["time_zone"],
         )
     except PublicRegistrationClosed:
         response = _closed_registration_response(request, event_id, form)
@@ -173,7 +178,7 @@ def _handle_public_registration_post(
     """Validate and submit a public registration POST."""
     response = _admission_rejection(request, event_id)
     if response is None:
-        form = PublicRegistrationForm(request.POST)
+        form = PublicRegistrationForm(request.POST, event_timezone=projection.event_timezone)
         if form.is_valid():
             response = _submit_valid_registration(request, event_id, projection, form)
         else:

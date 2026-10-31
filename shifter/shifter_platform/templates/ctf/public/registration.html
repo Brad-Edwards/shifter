@@ -9,6 +9,7 @@
           type="image/svg+xml"
           href="{% static 'images/favicon.svg' %}">
     <link rel="stylesheet" href="{% static 'ctf/public_registration.css' %}">
+    <script src="{% static 'js/ctf-time-zone-select.js' %}" defer></script>
   </head>
   <body>
     <main>
@@ -50,14 +51,21 @@
           <form method="post">
             {% csrf_token %}
             <div>
-              <label for="{{ form.name.id_for_label }}">{% trans "Name" %}</label>
-              {{ form.name }}
-              {% for error in form.name.errors %}<p class="error">{{ error }}</p>{% endfor %}
+              <label for="{{ form.username.id_for_label }}">{% trans "Username" %}</label>
+              {{ form.username }}
+              <p class="help">{{ form.username.help_text }}</p>
+              {% for error in form.username.errors %}<p class="error">{{ error }}</p>{% endfor %}
             </div>
             <div>
               <label for="{{ form.email.id_for_label }}">{% trans "Email" %}</label>
               {{ form.email }}
               {% for error in form.email.errors %}<p class="error">{{ error }}</p>{% endfor %}
+            </div>
+            <div>
+              <label for="{{ form.time_zone.id_for_label }}">{% trans "Time zone" %}</label>
+              {{ form.time_zone }}
+              <p class="help">{% trans "Event emails show times in this time zone." %}</p>
+              {% for error in form.time_zone.errors %}<p class="error">{{ error }}</p>{% endfor %}
             </div>
             <button type="submit">{% trans "Request registration" %}</button>
           </form>

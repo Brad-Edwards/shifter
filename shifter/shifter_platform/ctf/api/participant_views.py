@@ -268,7 +268,7 @@ class ParticipantProfileView(APIView):
 
     @extend_schema(request=ProfileUpdateRequestSerializer, responses=ParticipantProfileSerializer)
     def patch(self, request: Request) -> Response:
-        """Update display name and/or affiliation; omitted fields stay put."""
+        """Update display name, affiliation, and/or time zone; omitted fields stay put."""
         from ctf.exceptions import CTFValidationError
         from ctf.services.participant import update_own_profile
 
@@ -284,6 +284,7 @@ class ParticipantProfileView(APIView):
                 actor=actor,
                 name=serializer.validated_data.get("name"),
                 affiliation=serializer.validated_data.get("affiliation"),
+                time_zone=serializer.validated_data.get("time_zone"),
             )
         except CTFValidationError as exc:
             return api_error_response(

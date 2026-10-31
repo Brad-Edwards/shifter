@@ -76,6 +76,36 @@ class TestProfile:
         blank = call_json(client, "patch", "api_me_profile", body={"name": "   "})
         assert blank.status_code == 400
 
+    def test_time_zone_can_be_set_cleared_and_refuses_unknown_names(self, me):
+        participant, client = me
+        assert call_json(client, "get", "api_me_profile").json()["time_zone"] == ""
+
+        saved = call_json(client, "patch", "api_me_profile", body={"time_zone": "Europe/Paris"})
+        assert saved.status_code == 200
+        assert saved.json()["time_zone"] == "Europe/Paris"
+        assert saved.json()["affiliation"] == "EMEA"
+
+        for bad in ("Mars/Olympus", "../etc/passwd"):
+            refused = call_json(client, "patch", "api_me_profile", body={"time_zone": bad})
+            assert refused.status_code == 400
+            participant.refresh_from_db()
+            assert participant.time_zone == "Europe/Paris"
+
+        cleared = call_json(client, "patch", "api_me_profile", body={"time_zone": ""})
+        assert cleared.status_code == 200
+        participant.refresh_from_db()
+        assert participant.time_zone == ""
+
+    def test_service_refuses_another_actors_time_zone_write(self, me, organizer_user):
+        from ctf.exceptions import CTFValidationError
+        from ctf.services.participant import update_own_profile
+
+        participant, _client = me
+        with pytest.raises(CTFValidationError):
+            update_own_profile(participant.pk, actor=organizer_user, time_zone="Europe/Paris")
+        participant.refresh_from_db()
+        assert participant.time_zone == ""
+
 
 class TestSelfUsername:
     def test_change_own_username(self, isolated_me):

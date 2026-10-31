@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ImproperlyConfigured
 from django.urls import reverse
@@ -29,6 +29,7 @@ from ctf.enums_communication import CommunicationChannel, NoticeKind
 from ctf.models import CommunicationIntent, RecipientSnapshot
 from shared.email import EmailOutcome, attempt_email, delivery_available, render_template
 from shared.site_url import SiteUrlUnavailable, validated_site_url
+from shared.time_zones import is_valid_time_zone
 
 from .contract import DeliveryCommand, DeliveryOutcome, OutcomeClass
 
@@ -93,29 +94,53 @@ def _recipient_facts(command: DeliveryCommand) -> dict[str, str]:
     """Return the scalar facts of the snapshot's own event and live participant.
 
     A multi-event campaign renders each recipient with the event that qualifies
-    that recipient. A removed participant renders without a name.
+    that recipient. A removed participant renders without a name. The
+    ``recipient_*`` values show the event start in the participant's own time
+    zone, else the event time zone, else UTC (#582).
     """
     facts = (
         RecipientSnapshot.objects.filter(pk=command.snapshot_id, intent_id=command.intent_id)
-        .values("event__name", "event__event_start", "event__event_end", "event__event_timezone", "participant__name")
+        .values(
+            "event__name",
+            "event__event_start",
+            "event__event_end",
+            "event__event_timezone",
+            "participant__name",
+            "participant__time_zone",
+        )
         .get()
     )
-    try:
-        zone = ZoneInfo(facts["event__event_timezone"] or "UTC")
-    except (ZoneInfoNotFoundError, ValueError):
-        zone = ZoneInfo("UTC")
+    event_zone = _zone(facts["event__event_timezone"]) or ZoneInfo("UTC")
+    recipient_zone = _zone(facts["participant__time_zone"]) or event_zone
+    start = facts["event__event_start"]
     return {
         "participant_name": facts["participant__name"] or "",
         "event_name": facts["event__name"],
-        "event_start": _local_time(facts["event__event_start"], zone),
-        "event_end": _local_time(facts["event__event_end"], zone),
-        "event_timezone": zone.key,
+        "event_start": _local_time(start, event_zone),
+        "event_end": _local_time(facts["event__event_end"], event_zone),
+        "event_timezone": event_zone.key,
+        "recipient_start": _local_time(start, recipient_zone),
+        "recipient_offset": _utc_offset(start, recipient_zone),
+        "recipient_timezone": recipient_zone.key,
     }
 
 
+def _zone(name: str | None) -> ZoneInfo | None:
+    """Return the installed IANA zone ``name``, or ``None``."""
+    return ZoneInfo(name) if name and is_valid_time_zone(name) else None
+
+
 def _local_time(value: datetime | None, zone: ZoneInfo) -> str:
-    """Format an instant in the event timezone, or return an empty string."""
+    """Format an instant in ``zone``, or return an empty string."""
     return timezone.localtime(value, zone).strftime("%Y-%m-%d %H:%M") if value else ""
+
+
+def _utc_offset(value: datetime | None, zone: ZoneInfo) -> str:
+    """Format the UTC offset of ``zone`` at an instant as ``UTC+09:00``, or return an empty string."""
+    if not value:
+        return ""
+    offset = timezone.localtime(value, zone).strftime("%z")
+    return f"UTC{offset[:3]}:{offset[3:]}"
 
 
 def _read_coordinate(command: DeliveryCommand) -> tuple[str, DeliveryOutcome | None]:

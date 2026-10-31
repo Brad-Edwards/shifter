@@ -32,12 +32,8 @@ def _schedule_event_tasks(event: CTFEvent, actor: object) -> None:
     """
     from datetime import timedelta
 
-    from django.utils import timezone
-
     from ctf.enums import ScheduledTaskType
     from ctf.models import CTFScheduledTask
-
-    now = timezone.now()
     from ctf.services.actors import event_actor_credential
     from shared.operation_authority import credential_reference_fields
 
@@ -84,8 +80,20 @@ def _schedule_event_tasks(event: CTFEvent, actor: object) -> None:
             scheduled_for=max(event.event_end, cleanup_time - timedelta(minutes=_CLEANUP_WARNING_LEAD_MINUTES)),
         )
 
-    # Schedule reminders at configurable intervals before event start
-    reminder_intervals = [h for h in (event.reminder_hours or [24, 1]) if isinstance(h, int) and h > 0]
+    _schedule_reminder_tasks(event)
+
+    logger.info("Scheduled tasks for event %s", event.id)
+
+
+def _schedule_reminder_tasks(event: CTFEvent) -> None:
+    """Schedule one reminder per configured interval that is still in the future.
+
+    An empty list disables reminders; duplicates and booleans add no task (#582).
+    """
+    now = timezone.now()
+    reminder_intervals = sorted(
+        {h for h in event.reminder_hours or [] if isinstance(h, int) and not isinstance(h, bool) and h > 0}
+    )
     for hours in reminder_intervals:
         reminder_time = event.event_start - timedelta(hours=hours)
         if reminder_time > now:
@@ -96,7 +104,11 @@ def _schedule_event_tasks(event: CTFEvent, actor: object) -> None:
                 metadata={"hours_before": hours},
             )
 
-    logger.info("Scheduled tasks for event %s", event.id)
+
+def _reschedule_reminder_tasks(event: CTFEvent) -> None:
+    """Replace pending reminders after ``reminder_hours`` changes (#582)."""
+    _cancel_event_tasks(event, task_types=(ScheduledTaskType.SEND_REMINDER.value,))
+    _schedule_reminder_tasks(event)
 
 
 def _reschedule_live_event_schedule(event: CTFEvent) -> None:

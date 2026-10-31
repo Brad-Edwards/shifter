@@ -258,6 +258,7 @@ def participant_profile(participant: CTFParticipant) -> dict[str, Any]:
         "id": str(participant.id),
         "name": participant.name,
         "affiliation": participant.affiliation,
+        "time_zone": participant.time_zone,
         "email": participant.email,
         "username": _participant_username(participant),
         "role": participant.role,
