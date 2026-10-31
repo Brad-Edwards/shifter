@@ -18,7 +18,7 @@ from ._crud import (
     _reschedule_event_if_schedule_changed,
     _validate_event_time_range,
 )
-from ._validation import validate_content_scenario_access, validate_scoring_mode
+from ._validation import validate_content_scenario_access, validate_event_timezone, validate_scoring_mode
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ def _validate_event_update(event: CTFEvent, event_data: dict[str, Any]) -> None:
         event_data.get("event_end", event.event_end),
     )
     validate_scoring_mode(event_data)
+    validate_event_timezone(event_data)
 
 
 def _safe_event_update_data(event: CTFEvent, event_data: dict[str, Any]) -> dict[str, Any]:
@@ -166,6 +167,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: object
         old_event_end = event.event_end
         cleanup_may_change = bool({"event_end", "cleanup_delay_hours"} & safe_data.keys())
         old_cleanup_time = event.get_cleanup_time() if cleanup_may_change else None
+        old_reminder_hours = list(event.reminder_hours)
         public_registration_was_enabled = event.public_registration_enabled
 
         if prepared_sources is not None:
@@ -187,6 +189,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: object
             old_event_start=old_event_start,
             old_event_end=old_event_end,
             old_cleanup_time=old_cleanup_time,
+            old_reminder_hours=old_reminder_hours,
             actor=actor_id,
         )
 

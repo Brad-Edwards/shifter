@@ -3010,7 +3010,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Update display name and/or affiliation; omitted fields stay put. */
+        /** @description Update display name, affiliation, and/or time zone; omitted fields stay put. */
         patch: operations["ctf_me_profile_partial_update"];
         trace?: never;
     };
@@ -7282,6 +7282,7 @@ export interface components {
             readonly id: string;
             readonly name: string;
             readonly affiliation: string;
+            readonly time_zone: string;
             readonly email: string;
             readonly username: string | null;
             readonly role: string;
@@ -7374,6 +7375,7 @@ export interface components {
         PatchedProfileUpdateRequest: {
             name?: string;
             affiliation?: string;
+            time_zone?: string;
         };
         /** @description Metadata (availability/audience) update; both fields optional for PATCH. */
         PatchedScenarioMetadataUpdate: {

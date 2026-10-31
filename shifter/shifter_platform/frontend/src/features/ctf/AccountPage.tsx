@@ -12,23 +12,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { browserTimeZone } from "./admin/communications/time";
+
 function MutationError({ error }: Readonly<{ error: unknown }>) {
   const message = describeMutationError(error, "That did not work. Try again.");
   if (!message) return null;
   return <p className="mt-2 text-xs text-destructive">{message}</p>;
 }
 
-/** Display name + affiliation form (CTF-610). */
+/** IANA names the browser knows, for input suggestions; empty when unsupported. */
+function supportedTimeZones(): string[] {
+  return typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+}
+
+/** Display name + affiliation + time zone form (CTF-610, #582). */
 function ProfileForm({ profile }: Readonly<{ profile: CtfParticipantProfile }>) {
   const update = useUpdateCtfProfile();
   const [name, setName] = useState(profile.name);
   const [affiliation, setAffiliation] = useState(profile.affiliation);
+  const [timeZone, setTimeZone] = useState(profile.time_zone);
+  const [zones] = useState(supportedTimeZones);
+  const browserZone = browserTimeZone();
   useEffect(() => {
     setName(profile.name);
     setAffiliation(profile.affiliation);
-  }, [profile.name, profile.affiliation]);
+    setTimeZone(profile.time_zone);
+  }, [profile.name, profile.affiliation, profile.time_zone]);
 
-  const dirty = name.trim() !== profile.name || affiliation.trim() !== profile.affiliation;
+  const dirty =
+    name.trim() !== profile.name ||
+    affiliation.trim() !== profile.affiliation ||
+    timeZone.trim() !== profile.time_zone;
   return (
     <Card>
       <CardContent>
@@ -40,7 +54,9 @@ function ProfileForm({ profile }: Readonly<{ profile: CtfParticipantProfile }>) 
           className="mt-3 flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (name.trim() && dirty) update.mutate({ name: name.trim(), affiliation: affiliation.trim() });
+            if (name.trim() && dirty) {
+              update.mutate({ name: name.trim(), affiliation: affiliation.trim(), time_zone: timeZone.trim() });
+            }
           }}
         >
           <div className="flex flex-col gap-1">
@@ -54,6 +70,32 @@ function ProfileForm({ profile }: Readonly<{ profile: CtfParticipantProfile }>) 
               value={affiliation}
               onChange={(event) => setAffiliation(event.target.value)}
             />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="account-time-zone">Time zone</Label>
+            <div className="flex gap-2">
+              <Input
+                id="account-time-zone"
+                list="account-time-zones"
+                value={timeZone}
+                placeholder="Event time zone"
+                aria-describedby="account-time-zone-help"
+                onChange={(event) => setTimeZone(event.target.value)}
+              />
+              {browserZone && browserZone !== timeZone ? (
+                <Button type="button" variant="outline" onClick={() => setTimeZone(browserZone)}>
+                  Use {browserZone}
+                </Button>
+              ) : null}
+            </div>
+            <datalist id="account-time-zones">
+              {zones.map((zone) => (
+                <option key={zone} value={zone} />
+              ))}
+            </datalist>
+            <p id="account-time-zone-help" className="text-xs text-muted-foreground">
+              Reminder emails show the event start in this IANA time zone; blank uses the event time zone.
+            </p>
           </div>
           <div>
             <Button type="submit" disabled={!name.trim() || !dirty || update.isPending}>

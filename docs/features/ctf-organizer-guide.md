@@ -229,9 +229,13 @@ as an initial-launch warm range, and vice versa.
 
 ## 6. Notifications
 
-Use **Notifications** to send announcements during the event and **Email Templates**
-to configure reminder messages. Events can also send registration reminders at the
-hour offsets you configure.
+Use **Notifications** to send announcements during the event.
+
+The event sends reminder emails before the start, at the hour offsets in
+**Reminder hours before start**. New events use 24 and 1. Clear the field to turn
+reminders off. A change replaces the reminders that are not sent yet. Each email shows the start time in the participant's time zone.
+When a participant has not set a time zone, the email uses the event time zone.
+Reminder emails need a configured mail provider.
 
 ## 7. During and After the Event
 

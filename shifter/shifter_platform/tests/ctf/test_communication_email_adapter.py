@@ -303,7 +303,59 @@ def test_each_event_notice_kind_renders_its_own_default_pair(ctf_event, mailoutb
     assert marker in message.alternatives[0][0].lower()
     if sender == "send_reminder":
         local_start = timezone.localtime(ctf_event.event_start, ZoneInfo("Asia/Tokyo"))
-        assert f"{local_start:%Y-%m-%d %H:%M} (Asia/Tokyo)" in message.body
+        assert f"{local_start:%Y-%m-%d %H:%M} UTC+09:00 (Asia/Tokyo)" in message.body
+
+
+def test_reminder_shows_the_start_in_each_recipients_own_time_zone(ctf_event, mailoutbox):
+    """One instant renders per recipient: own zone, then event zone, then UTC (#582)."""
+    from datetime import UTC, datetime
+
+    from ctf.services.notification import send_reminder
+
+    # 2027-03-14 14:30 UTC is just after the US daylight-saving change.
+    start = datetime(2027, 3, 14, 14, 30, tzinfo=UTC)
+    CTFEvent.objects.filter(pk=ctf_event.pk).update(
+        event_start=start, event_end=start + timezone.timedelta(hours=8), event_timezone="Asia/Tokyo"
+    )
+    _participant(ctf_event, "east@test.com").__class__.objects.filter(email="east@test.com").update(
+        time_zone="America/New_York"
+    )
+    _participant(ctf_event, "unset@test.com")
+    _participant(ctf_event, "stale@test.com").__class__.objects.filter(email="stale@test.com").update(
+        time_zone="Mars/Olympus"
+    )
+
+    send_reminder(ctf_event.pk)
+    delivery_svc.run_once()
+
+    bodies = {message.to[0]: (message.body, message.alternatives[0][0]) for message in mailoutbox}
+    expected = {
+        "east@test.com": "2027-03-14 10:30 UTC-04:00 (America/New_York)",
+        "unset@test.com": "2027-03-14 23:30 UTC+09:00 (Asia/Tokyo)",
+        "stale@test.com": "2027-03-14 23:30 UTC+09:00 (Asia/Tokyo)",
+    }
+    for address, line in expected.items():
+        text, html = bodies[address]
+        assert line in text
+        assert line in " ".join(html.split())
+
+
+def test_reminder_falls_back_to_utc_when_the_event_zone_is_not_valid(ctf_event, mailoutbox):
+    from datetime import UTC, datetime
+
+    from ctf.services.notification import send_reminder
+
+    start = datetime(2027, 1, 5, 8, 0, tzinfo=UTC)
+    CTFEvent.objects.filter(pk=ctf_event.pk).update(
+        event_start=start, event_end=start + timezone.timedelta(hours=8), event_timezone="../etc/passwd"
+    )
+    _participant(ctf_event, "ada@test.com")
+
+    send_reminder(ctf_event.pk)
+    delivery_svc.run_once()
+
+    (message,) = mailoutbox
+    assert "2027-01-05 08:00 UTC+00:00 (UTC)" in message.body
 
 
 @pytest.mark.parametrize(

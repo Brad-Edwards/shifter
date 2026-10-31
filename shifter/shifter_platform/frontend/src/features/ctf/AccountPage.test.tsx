@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { axe } from "vitest-axe";
 
 import { renderRoute } from "@/test/utils";
@@ -20,6 +20,7 @@ const PROFILE = {
   id: "p1",
   name: "Self Player",
   affiliation: "EMEA",
+  time_zone: "",
   email: "self@test.com",
   username: null,
   role: "player",
@@ -38,6 +39,32 @@ describe("AccountPage", () => {
     expect(screen.getByText(/Spring CTF/)).toBeInTheDocument();
     // Linked platform account: no self-service username section.
     expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
+  });
+
+  it("shows the time zone and saves the browser time zone (#582)", async () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      () => ({ resolvedOptions: () => ({ timeZone: "Europe/Paris" }) }) as Intl.DateTimeFormat,
+    );
+    mockApi.mockResolvedValue(PROFILE);
+    renderRoute(<AccountPage />);
+    const zone = await screen.findByLabelText("Time zone");
+    expect(zone).toHaveValue("");
+    expect(screen.getByText(/blank uses the event time zone/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use Europe/Paris" }));
+    expect(zone).toHaveValue("Europe/Paris");
+    fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() =>
+      expect(mockApi).toHaveBeenCalledWith(
+        expect.stringContaining("/me/profile/"),
+        expect.objectContaining({
+          method: "PATCH",
+          body: { name: "Self Player", affiliation: "EMEA", time_zone: "Europe/Paris" },
+        }),
+      ),
+    );
+    vi.restoreAllMocks();
   });
 
   it("shows the username form for isolated accounts", async () => {

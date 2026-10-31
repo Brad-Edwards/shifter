@@ -3356,6 +3356,8 @@
       "docs/architecture/notifications-websocket-fanout-preflight-941.md",
       "docs/design/ctf-email-template-rendering-preflight-1095.md",
       "docs/design/ctf-ledger-email-template-boundaries-580.md",
+      "docs/design/ctf-reminder-content-preflight-582.md",
+      "docs/design/ctf-recipient-time-zone-582.md",
       "docs/architecture/audit-system-architecture.md",
       "docs/architecture/raes-migration-adr.md",
       "docs/architecture/organization-workspace-preflight-1325.md",

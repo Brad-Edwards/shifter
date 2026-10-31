@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-30 03:16+0000\n"
+"POT-Creation-Date: 2026-10-31 15:26+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -72,7 +72,9 @@ msgstr ""
 #: templates/ctf/email/notice/reminder.html:6
 #: templates/ctf/email/notice/reminder.txt:5
 #, python-format
-msgid "%(event_name)s starts on %(event_start)s (%(event_timezone)s)."
+msgid ""
+"%(event_name)s starts on %(recipient_start)s %(recipient_offset)s "
+"(%(recipient_timezone)s)."
 msgstr ""
 
 #: templates/ctf/email/notice/results.html:6
@@ -99,7 +101,7 @@ msgid "CTF participant login"
 msgstr ""
 
 #: templates/ctf/participant/login.html:19
-#: templates/ctf/public/registration.html:16
+#: templates/ctf/public/registration.html:17
 msgid "BigRAE CTF"
 msgstr ""
 
@@ -147,6 +149,7 @@ msgid "Credentials are case-sensitive."
 msgstr ""
 
 #: templates/ctf/participant/login.html:51
+#: templates/ctf/public/registration.html:54
 msgid "Username"
 msgstr ""
 
@@ -168,49 +171,53 @@ msgstr ""
 msgid "%(event_name)s registration"
 msgstr ""
 
-#: templates/ctf/public/registration.html:22
+#: templates/ctf/public/registration.html:23
 #, python-format
 msgid "%(start)s – %(end)s (%(zone)s)"
 msgstr ""
 
-#: templates/ctf/public/registration.html:35
+#: templates/ctf/public/registration.html:36
 msgid "Request received"
 msgstr ""
 
-#: templates/ctf/public/registration.html:36
+#: templates/ctf/public/registration.html:37
 msgid ""
 "Your registration request has been received. The event organizer will review "
 "it."
 msgstr ""
 
-#: templates/ctf/public/registration.html:40
-#: templates/ctf/public/registration.html:62
+#: templates/ctf/public/registration.html:41
+#: templates/ctf/public/registration.html:70
 msgid "Request registration"
 msgstr ""
 
-#: templates/ctf/public/registration.html:44
+#: templates/ctf/public/registration.html:45
 #, python-format
 msgid "Registration closes %(deadline)s (%(zone)s)."
 msgstr ""
 
-#: templates/ctf/public/registration.html:53
-msgid "Name"
-msgstr ""
-
-#: templates/ctf/public/registration.html:58 templates/dev_login.html:26
+#: templates/ctf/public/registration.html:60 templates/dev_login.html:26
 #: templates/dev_login.html:32 templates/identity_platform_login.html:30
 msgid "Email"
 msgstr ""
 
+#: templates/ctf/public/registration.html:65
+msgid "Time zone"
+msgstr ""
+
 #: templates/ctf/public/registration.html:67
+msgid "Event emails show times in this time zone."
+msgstr ""
+
+#: templates/ctf/public/registration.html:75
 msgid "Registration closed"
 msgstr ""
 
-#: templates/ctf/public/registration.html:68
+#: templates/ctf/public/registration.html:76
 msgid "This event is no longer accepting registration requests."
 msgstr ""
 
-#: templates/ctf/public/registration.html:72
+#: templates/ctf/public/registration.html:80
 #: templates/partials/cookie_notice.html:18
 msgid "Privacy notice"
 msgstr ""

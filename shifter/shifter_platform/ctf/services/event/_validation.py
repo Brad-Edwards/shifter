@@ -45,6 +45,18 @@ def validate_scoring_mode(event_data: dict[str, Any]) -> None:
         ) from None
 
 
+def validate_event_timezone(event_data: dict[str, Any]) -> None:
+    """Reject an ``event_timezone`` that is not an installed IANA name (#582).
+
+    Blank stays permitted; email then uses UTC.
+    """
+    from shared.time_zones import is_valid_time_zone
+
+    zone = event_data.get("event_timezone")
+    if zone and not is_valid_time_zone(zone):
+        raise CTFValidationError("Unknown event time zone", code="CTF_INVALID_TIMEZONE")
+
+
 def validate_content_scenario_access(
     user: User | CredentialContext, scenario_id: str, *, scope: ResourceScope | None = None
 ) -> None:

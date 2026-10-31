@@ -21,8 +21,8 @@ class _FailingAuditWriter:
         raise RuntimeError("audit unavailable")
 
 
-def _request(event, *, name="ada-lovelace", email="ada@example.com"):
-    return CTFPublicRegistrationRequest.objects.create(event=event, name=name, email=email)
+def _request(event, *, name="ada-lovelace", email="ada@example.com", time_zone=""):
+    return CTFPublicRegistrationRequest.objects.create(event=event, name=name, email=email, time_zone=time_zone)
 
 
 def _list_url(event) -> str:
@@ -109,7 +109,7 @@ def test_approval_uses_canonical_participant_admission_then_closes_request(
     authenticated_organizer_client,
     ctf_event,
 ):
-    request_row = _request(ctf_event)
+    request_row = _request(ctf_event, time_zone="Asia/Kolkata")
 
     response = authenticated_organizer_client.post(
         _disposition_url(request_row),
@@ -118,6 +118,7 @@ def test_approval_uses_canonical_participant_admission_then_closes_request(
 
     assert response.status_code == 200
     participant = CTFParticipant.objects.get(event=ctf_event, email="ada@example.com")
+    assert participant.time_zone == "Asia/Kolkata"
     request_row.refresh_from_db()
     assert request_row.disposition == PublicRegistrationDisposition.APPROVED.value
     assert request_row.dispositioned_at is not None
