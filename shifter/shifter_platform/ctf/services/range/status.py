@@ -134,13 +134,14 @@ def notify_range_ready(participant: CTFParticipant, *, publish: bool = True) -> 
     from ctf.services.notification import publish_event_notification, send_range_ready
 
     send_range_ready(participant.pk)
-    if publish and participant.user_id:
+    user_id = participant.user_id
+    if publish and user_id:
         transaction.on_commit(
             lambda: publish_event_notification(
                 participant.event,
                 "range_ready",
                 {"participant_id": str(participant.pk)},
-                recipient_ids=[participant.user_id],
+                recipient_ids=[user_id],
             )
         )
 

@@ -818,7 +818,9 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         verifier = (REPO_ROOT / "scripts/gcp/verify_running_image_ids.py").read_text(encoding="utf-8")
         self.assertIn("record_running_images(", stages)
         self.assertIn('"verify_running_image_ids"', rollout)
-        self.assertEqual(rollout.count('"--expected-image"'), 3)
+        # portal, guacd and guacamole-client, plus the OpenFGA policy servers when enabled (#2698).
+        self.assertEqual(rollout.count('"--expected-image"'), 4)
+        self.assertIn('f"openfga={pins.policy}"', rollout)
         self.assertIn('"--list-deployments"', rollout)
         self.assertIn('"running-pods.json"', rollout)
         self.assertIn("_RELEASE_CONTAINERS", verifier)

@@ -1258,6 +1258,12 @@ immutable IDs and on `purpose_contexts` (ADR-069-R3, ADR-070).
 
     The overlay invariant now counts CI adapter runs. Each run receives
     `SHIFTER_CONFIG_OVERLAY_JSON` and applies it.
+- **GCP running-image pins (`scripts/adr_guard/tests/test_deploy_workflow.py`)**:
+  #2698 adds a fourth `--expected-image` argument to `gcp_rollout.py`. It pins
+  the OpenFGA policy servers when the release enables them. The exact count
+  changes from 3 to 4, and the test also requires the OpenFGA pin. The
+  invariant does not change: the deploy records the running image of every
+  workload.
 
 # Private scenario boundary
 
