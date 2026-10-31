@@ -139,6 +139,10 @@ base range images and carries the OpenFGA authorization model. The first deploy
 generates the OpenFGA credentials, publishes the model, and creates the first
 administrator from the configured operator account. A tenant platform creates no
 image-build infrastructure; only maintainer build environments opt in.
+After each rollout, the deploy checks the image of every running platform
+container (#2698). Release containers must run the release images. The OpenFGA
+servers and the Cloud SQL proxy sidecars must run the images that the release
+chart pins.
 
 | Boundary | GCP | AWS |
 | --- | --- | --- |
@@ -182,6 +186,12 @@ required path, for example the portal to the in-cluster Guacamole token API.
 These controls do not provide authenticated
 pod-to-pod mTLS; a service mesh remains unadopted. No documentation or unit-test
 result proves complete escape detection or live containment qualification.
+
+On GCP, the external Application Load Balancer reaches the portal and Guacamole
+through container-native network endpoint groups. Each BackendConfig sets an
+explicit health check: `/health/` on port 8000 for the portal and `/guacamole/`
+on port 8080 for Guacamole. The check does not depend on the pods that exist
+when GKE creates the backend.
 
 Control-plane workloads run as the non-root runtime identity UID 10001, with a
 read-only root filesystem, dropped capabilities, and the `RuntimeDefault` seccomp
