@@ -1,6 +1,7 @@
 """Bounded form for the public event-registration browser surface."""
 
 from collections.abc import Mapping
+from typing import cast
 
 from django import forms
 
@@ -29,7 +30,8 @@ class PublicRegistrationForm(forms.Form):
 
     def __init__(self, data: Mapping[str, object] | None = None, *, event_timezone: str = "UTC") -> None:
         super().__init__(data)
-        self.fields["time_zone"].choices = [("", f"Event time zone ({event_timezone})"), *time_zone_choices()]
+        time_zone = cast(forms.ChoiceField, self.fields["time_zone"])
+        time_zone.choices = [("", f"Event time zone ({event_timezone})"), *time_zone_choices()]
 
     def clean_username(self) -> str:
         """Validate the chosen handle with the canonical participant policy."""

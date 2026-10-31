@@ -27,6 +27,34 @@ _NAME_MAX = 100
 _AFFILIATION_MAX = 120
 
 
+def _cleaned_name(name: str) -> str:
+    """Return the stripped display name, or refuse an empty or oversized one."""
+    cleaned = name.strip()
+    if not cleaned:
+        raise CTFValidationError("Display name cannot be empty", code="CTF_INVALID_NAME")
+    if len(cleaned) > _NAME_MAX:
+        raise CTFValidationError("Display name is too long", code="CTF_INVALID_NAME", details={"max_length": _NAME_MAX})
+    return cleaned
+
+
+def _cleaned_affiliation(affiliation: str) -> str:
+    """Return the stripped affiliation, or refuse an oversized one."""
+    cleaned = affiliation.strip()
+    if len(cleaned) > _AFFILIATION_MAX:
+        raise CTFValidationError(
+            "Affiliation is too long", code="CTF_INVALID_AFFILIATION", details={"max_length": _AFFILIATION_MAX}
+        )
+    return cleaned
+
+
+def _cleaned_time_zone(time_zone: str) -> str:
+    """Return the stripped time zone, or refuse a name that is not installed (#582)."""
+    cleaned = time_zone.strip()
+    if cleaned and not is_valid_time_zone(cleaned):
+        raise CTFValidationError("Unknown time zone", code="CTF_INVALID_TIMEZONE")
+    return cleaned
+
+
 def update_own_profile(
     participant_id: UUID,
     *,
@@ -52,35 +80,12 @@ def update_own_profile(
         if participant.user_id != actor.pk:
             raise CTFValidationError("You may only edit your own profile", code="CTF_PERMISSION_DENIED")
 
-        update_fields: list[str] = []
-        if name is not None:
-            cleaned_name = name.strip()
-            if not cleaned_name:
-                raise CTFValidationError("Display name cannot be empty", code="CTF_INVALID_NAME")
-            if len(cleaned_name) > _NAME_MAX:
-                raise CTFValidationError(
-                    "Display name is too long",
-                    code="CTF_INVALID_NAME",
-                    details={"max_length": _NAME_MAX},
-                )
-            participant.name = cleaned_name
-            update_fields.append("name")
-        if affiliation is not None:
-            cleaned_affiliation = affiliation.strip()
-            if len(cleaned_affiliation) > _AFFILIATION_MAX:
-                raise CTFValidationError(
-                    "Affiliation is too long",
-                    code="CTF_INVALID_AFFILIATION",
-                    details={"max_length": _AFFILIATION_MAX},
-                )
-            participant.affiliation = cleaned_affiliation
-            update_fields.append("affiliation")
-        if time_zone is not None:
-            cleaned_time_zone = time_zone.strip()
-            if cleaned_time_zone and not is_valid_time_zone(cleaned_time_zone):
-                raise CTFValidationError("Unknown time zone", code="CTF_INVALID_TIMEZONE")
-            participant.time_zone = cleaned_time_zone
-            update_fields.append("time_zone")
+        requested = {"name": name, "affiliation": affiliation, "time_zone": time_zone}
+        cleaners = {"name": _cleaned_name, "affiliation": _cleaned_affiliation, "time_zone": _cleaned_time_zone}
+        changes = {field: cleaners[field](value) for field, value in requested.items() if value is not None}
+        for field, value in changes.items():
+            setattr(participant, field, value)
+        update_fields = list(changes)
         if update_fields:
             participant.save(update_fields=[*update_fields, "updated_at"])
     logger.info("Participant %s updated own profile (%s)", participant_id, ", ".join(update_fields) or "no-op")

@@ -3,7 +3,7 @@
 from django.db import migrations, models
 from django.utils import timezone
 
-import ctf.models.event
+import ctf.models._event_defaults
 
 
 def keep_default_reminders(apps, schema_editor):
@@ -46,7 +46,7 @@ class Migration(migrations.Migration):
             name="reminder_hours",
             field=models.JSONField(
                 blank=True,
-                default=ctf.models.event._default_reminder_hours,
+                default=ctf.models._event_defaults.default_reminder_hours,
                 help_text="Hours before event start to send reminders (e.g. [24, 1]). Empty list disables reminders.",
             ),
         ),

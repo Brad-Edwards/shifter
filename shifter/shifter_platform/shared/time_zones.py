@@ -12,6 +12,7 @@ from zoneinfo import available_timezones
 
 @cache
 def _names() -> frozenset[str]:
+    """Return the installed IANA names, read once for the process."""
     return frozenset(available_timezones())
 
 

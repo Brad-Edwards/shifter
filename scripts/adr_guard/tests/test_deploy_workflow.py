@@ -812,13 +812,15 @@ class TestGcpReleaseSecurityClosure(unittest.TestCase):
         self.assertNotIn("release-evidence", identity[condition_start:condition_end])
 
     def test_gcp_deploy_records_running_workload_image_ids(self):
-        """#2084, #2571: the deploy command records the running image of every workload."""
+        """#2084, #2571, #2698: the deploy command records the running image of every workload."""
         rollout = (REPO_ROOT / "scripts/bootstrap/gcp_rollout.py").read_text(encoding="utf-8")
         stages = (REPO_ROOT / "scripts/bootstrap/gcp_deploy_stages.py").read_text(encoding="utf-8")
         verifier = (REPO_ROOT / "scripts/gcp/verify_running_image_ids.py").read_text(encoding="utf-8")
         self.assertIn("record_running_images(", stages)
         self.assertIn('"verify_running_image_ids"', rollout)
-        self.assertEqual(rollout.count('"--expected-image"'), 3)
+        # portal, guacd and guacamole-client always; the OpenFGA policy servers when pinned (#2698).
+        self.assertEqual(rollout.count('"--expected-image"'), 4)
+        self.assertIn('*(["--expected-image", f"openfga={pins.policy}"] if pins.policy else [])', rollout)
         self.assertIn('"--list-deployments"', rollout)
         self.assertIn('"running-pods.json"', rollout)
         self.assertIn("_RELEASE_CONTAINERS", verifier)

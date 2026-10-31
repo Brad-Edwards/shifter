@@ -167,7 +167,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: object
         old_event_end = event.event_end
         cleanup_may_change = bool({"event_end", "cleanup_delay_hours"} & safe_data.keys())
         old_cleanup_time = event.get_cleanup_time() if cleanup_may_change else None
-        old_reminder_hours = list(event.reminder_hours or [])
+        old_reminder_hours = list(event.reminder_hours)
         public_registration_was_enabled = event.public_registration_enabled
 
         if prepared_sources is not None:

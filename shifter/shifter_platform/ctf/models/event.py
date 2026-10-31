@@ -22,6 +22,7 @@ from ctf.enums import (
 from shared.field_encryption import EncryptedStringField
 
 from ._base import CTFBaseModel, ImmutableFieldsMixin
+from ._event_defaults import default_reminder_hours
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -32,11 +33,6 @@ logger = logging.getLogger(__name__)
 def _default_visible_os_types() -> list[str]:
     """Participants see attacker boxes only unless the organizer widens it (#483)."""
     return ["kali"]
-
-
-def _default_reminder_hours() -> list[int]:
-    """Remind 24 hours and 1 hour before start; an empty list disables reminders (#582)."""
-    return [24, 1]
 
 
 def _scoring_mode_choices() -> list[tuple[str, str]]:
@@ -286,7 +282,7 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         help_text="Freeze scoreboard at this time. Solves after this time are hidden from participants.",
     )
     reminder_hours = models.JSONField(
-        default=_default_reminder_hours,
+        default=default_reminder_hours,
         blank=True,
         help_text="Hours before event start to send reminders (e.g. [24, 1]). Empty list disables reminders.",
     )

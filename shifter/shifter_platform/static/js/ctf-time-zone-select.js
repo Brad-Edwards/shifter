@@ -19,8 +19,7 @@ function preselect(select, zone) {
     if (select.value !== '') {
         return;
     }
-    const option = Array.from(select.options).find((candidate) => candidate.value === zone);
-    if (option) {
+    if (Array.from(select.options).some((candidate) => candidate.value === zone)) {
         select.value = zone;
     }
 }
