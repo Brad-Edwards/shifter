@@ -24,9 +24,9 @@ from ctf.models import CTFEvent
 from shared.log_sanitize import safe_log_value
 
 from ._deletion import delete_event, force_delete_event
-from ._validation import validate_content_scenario_access, validate_scoring_mode
+from ._validation import validate_content_scenario_access, validate_event_timezone, validate_scoring_mode
 from ._workspace import resolve_event_placement
-from .scheduling import _reschedule_event_tasks, _reschedule_live_event_schedule
+from .scheduling import _reschedule_event_tasks, _reschedule_live_event_schedule, _reschedule_reminder_tasks
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -104,6 +104,7 @@ def create_event_for_credential(
     _validate_creation_fields(event_data)
 
     validate_scoring_mode(event_data)
+    validate_event_timezone(event_data)
 
     # Filter to allowed fields only — prevent mass assignment of status,
     # created_by, id, timestamps, etc.
@@ -184,15 +185,19 @@ def _reschedule_event_if_schedule_changed(
     old_event_start: datetime,
     old_event_end: datetime,
     old_cleanup_time: datetime | None,
+    old_reminder_hours: list[int],
     actor: object | None,
 ) -> None:
-    """Reschedule pending tasks when event times change."""
+    """Reschedule pending tasks when event times or reminder intervals change."""
     event_end_changed = safe_data.get("event_end", old_event_end) != old_event_end
     schedule_changed = safe_data.get("event_start", old_event_start) != old_event_start or event_end_changed
+    reminders_changed = safe_data.get("reminder_hours", old_reminder_hours) != old_reminder_hours
     if schedule_changed and event.status == EventStatus.REGISTRATION.value:
         if actor is None:
             raise CTFValidationError("Lifecycle authority unavailable")
         _reschedule_event_tasks(event, actor)
+    elif reminders_changed and event.status == EventStatus.REGISTRATION.value:
+        _reschedule_reminder_tasks(event)
     elif event_end_changed and event.status in (
         EventStatus.ACTIVE.value,
         EventStatus.PAUSED.value,

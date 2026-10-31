@@ -15985,7 +15985,7 @@
       },
       "patch": {
         "operationId": "ctf_me_profile_partial_update",
-        "description": "Update display name and/or affiliation; omitted fields stay put.",
+        "description": "Update display name, affiliation, and/or time zone; omitted fields stay put.",
         "tags": [
           "ctf"
         ],
@@ -31166,6 +31166,10 @@
             "type": "string",
             "readOnly": true
           },
+          "time_zone": {
+            "type": "string",
+            "readOnly": true
+          },
           "email": {
             "type": "string",
             "readOnly": true
@@ -31210,6 +31214,7 @@
           "score",
           "solve_count",
           "status",
+          "time_zone",
           "username"
         ]
       },
@@ -31511,6 +31516,10 @@
           "affiliation": {
             "type": "string",
             "maxLength": 120
+          },
+          "time_zone": {
+            "type": "string",
+            "maxLength": 64
           }
         }
       },

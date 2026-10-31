@@ -44,6 +44,7 @@ The adapter context contains only scalar strings:
 | `participant_name` | Live participant of the snapshot. Empty after removal. |
 | `event_name` | Event of the snapshot. |
 | `event_start`, `event_end`, `event_timezone` | Event of the snapshot, in the event timezone. |
+| `recipient_start`, `recipient_offset`, `recipient_timezone` | Event start in the participant time zone, else the event time zone, else UTC ([#582](ctf-recipient-time-zone-582.md)). |
 | `event_url` | `validated_site_url()` and the `ctf:participant_event` route. |
 
 The adapter uses the snapshot event, not the first campaign event. Each

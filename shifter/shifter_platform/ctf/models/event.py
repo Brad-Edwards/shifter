@@ -34,6 +34,11 @@ def _default_visible_os_types() -> list[str]:
     return ["kali"]
 
 
+def _default_reminder_hours() -> list[int]:
+    """Remind 24 hours and 1 hour before start; an empty list disables reminders (#582)."""
+    return [24, 1]
+
+
 def _scoring_mode_choices() -> list[tuple[str, str]]:
     """Built-in scoring modes plus extension-registered ones (CTF-1401)."""
     from ctf.extensions import registered_scoring_modes
@@ -281,7 +286,7 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         help_text="Freeze scoreboard at this time. Solves after this time are hidden from participants.",
     )
     reminder_hours = models.JSONField(
-        default=list,
+        default=_default_reminder_hours,
         blank=True,
         help_text="Hours before event start to send reminders (e.g. [24, 1]). Empty list disables reminders.",
     )

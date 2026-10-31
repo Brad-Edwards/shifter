@@ -10,9 +10,9 @@ recover. Correct submissions earn points and move you up the scoreboard.
 
 An organizer may first share an event-specific public registration page. It shows
 only the event name, description, dates, and registration deadline. Submitting your
-name and email creates a request for organizer review; it does not create an account,
-reserve a place, or provision a range. A generic confirmation is shown whether a
-matching request already exists.
+username, email, and optional time zone creates a request for organizer review; it
+does not create an account, reserve a place, or provision a range. A generic
+confirmation is shown whether a matching request already exists.
 
 After the organizer approves you:
 
@@ -21,6 +21,10 @@ After the organizer approves you:
    a new password before opening any other CTF page.
 3. When the event opens, your dashboard shows the event status, your score, and the
    time remaining.
+
+To set the time zone of reminder emails, open **Account** and enter an IANA time
+zone, for example `Europe/Paris`. Select **Use** to enter your browser's time zone.
+Leave the field blank to use the event time zone.
 
 Temporary CTF credentials work only on participant CTF pages, never on the normal
 platform login or staff/operator surfaces. Platform credentials cannot use the CTF

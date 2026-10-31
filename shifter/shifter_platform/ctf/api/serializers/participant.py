@@ -289,6 +289,7 @@ class ParticipantProfileSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     affiliation = serializers.CharField(read_only=True, allow_blank=True)
+    time_zone = serializers.CharField(read_only=True, allow_blank=True)
     email = serializers.CharField(read_only=True, allow_blank=True)
     username = serializers.CharField(read_only=True, allow_null=True)
     role = serializers.CharField(read_only=True)
@@ -303,6 +304,7 @@ class ProfileUpdateRequestSerializer(serializers.Serializer):
 
     name = serializers.CharField(required=False, max_length=100)
     affiliation = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    time_zone = serializers.CharField(required=False, allow_blank=True, max_length=64)
 
 
 class UsernameChangeRequestSerializer(serializers.Serializer):

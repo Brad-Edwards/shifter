@@ -1,7 +1,7 @@
 """Self-service participant profile updates (CTF-610).
 
-The CTF layer keeps no separate profile store: display name and affiliation
-live on the event-scoped ``CTFParticipant`` row, and the username belongs to
+The CTF layer keeps no separate profile store: display name, affiliation, and
+time zone (#582) live on the event-scoped ``CTFParticipant`` row, and the username belongs to
 the platform account (see ``accounts.rename_own_participant_username``).
 """
 
@@ -14,6 +14,7 @@ from django.db import transaction
 
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
 from ctf.models import CTFParticipant
+from shared.time_zones import is_valid_time_zone
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -32,10 +33,12 @@ def update_own_profile(
     actor: User | AnonymousUser,
     name: str | None = None,
     affiliation: str | None = None,
+    time_zone: str | None = None,
 ) -> CTFParticipant:
-    """Update the actor's own display name and/or affiliation.
+    """Update the actor's own display name, affiliation, and/or time zone.
 
-    ``None`` leaves a field unchanged; an empty affiliation clears it. The
+    ``None`` leaves a field unchanged; an empty affiliation or time zone clears
+    it. A time zone must be an installed IANA name (#582). The
     display name can never be cleared — it identifies the participant on
     every organizer surface.
     """
@@ -72,6 +75,12 @@ def update_own_profile(
                 )
             participant.affiliation = cleaned_affiliation
             update_fields.append("affiliation")
+        if time_zone is not None:
+            cleaned_time_zone = time_zone.strip()
+            if cleaned_time_zone and not is_valid_time_zone(cleaned_time_zone):
+                raise CTFValidationError("Unknown time zone", code="CTF_INVALID_TIMEZONE")
+            participant.time_zone = cleaned_time_zone
+            update_fields.append("time_zone")
         if update_fields:
             participant.save(update_fields=[*update_fields, "updated_at"])
     logger.info("Participant %s updated own profile (%s)", participant_id, ", ".join(update_fields) or "no-op")

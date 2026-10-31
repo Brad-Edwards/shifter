@@ -87,7 +87,10 @@ notices set another kind.
 
 The pair renders the pinned subject and Markdown source with escaped scalar
 values. These values are the participant name and the event name, dates, and
-portal URL of the snapshot event. The URL comes from `SITE_URL`; an unsafe
+portal URL of the snapshot event. The reminder pair shows the event start in the
+participant time zone (`CTFParticipant.time_zone`). When that value is blank or
+not valid, it uses the event time zone, then UTC. The email shows the zone name
+and the UTC offset (#582). The URL comes from `SITE_URL`; an unsafe
 value is retriable as `site_url_unavailable`. Organizers cannot override the
 templates (#580). The adapter calls `shared.email.attempt_email()` with
 the worker transport timeout and the row `idempotency_key`. The key becomes a
