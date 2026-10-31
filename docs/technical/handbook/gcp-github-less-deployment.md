@@ -112,10 +112,13 @@ Each entry is a HIGH finding in a vendor binary that no vendor build fixes yet.
 Each entry expires on 2026-11-30. After that date, the gate blocks each release
 until a maintainer updates the tools.
 
-`packer-gcp.yml` publishes the base guest images to the public GHCR packages
-`ghcr.io/<owner>/shifter-gce-<role>`. Each release pins the newest validated
-digest of each role, and the release manifest carries the authorization model
-that each deploy publishes. A release stops when a base image is missing.
+A developer builds the guest images in a build project and publishes them to
+`ghcr.io/<owner>/<repository>/gce-<role>` with signed provenance. Each release
+names the newest publication of each role whose provenance verifies, and the
+release manifest carries the authorization model that each deploy publishes. A
+release stops when a guest image is missing or does not verify. The
+[guest image design](../../architecture/gcp-guest-images.md) describes the build
+project and the pipeline.
 
 ## Get and verify the deployer image
 
@@ -402,8 +405,9 @@ Other inputs that refer to secrets:
    }
    ```
 
-   Use `platform/terraform/gcp/environments/gcp-dev/terraform.tfvars` as the
-   reference for sizing values. You can also put HCL values in
+   The sizing values have defaults in
+   `platform/terraform/gcp/environments/platform/variables.tf`. Set one only to
+   change its default. You can also put HCL values in
    `terraform.tfvars`. When both files exist, the JSON file loads later and its
    values win.
 4. Do not set the values that the command owns. The command sets `project_id`,
@@ -427,20 +431,24 @@ Other inputs that refer to secrets:
    ./scripts/bootstrap/deploy.py gcp-config show --store gs://<bucket>
    ```
 
-8. The deploy imports the base range images that the release pins when the
-   bundle has no `range-images.json` roles. To import from another source
-   instead, record the references first:
+8. The deploy imports the guest images that the release names when the bundle
+   has no `range-images.json` roles. To import them before the deploy, or to
+   replace the recorded images with the images of a newer release, run the
+   command from the deployer image of the release, or pass
+   `--release-manifest <file>`:
 
    ```bash
    ./scripts/bootstrap/deploy.py gcp-images --project-id <project> \
-     --source ghcr.io/<owner> --store gs://<bucket> --region <region>
+     --store gs://<bucket> --region <region>
    ```
 
-   The command imports the `kali`, `ubuntu`, and `dc` packages as native GCE
-   images and writes the `linux`, `kali`, and `dc` roles to
-   `range-images.json`. Add `--dry-run` to check without a change. A GCE
-   deploy requires the `linux` and `dc` roles, unless you pass
-   `--allow-missing-range-images`.
+   The command verifies every guest against `settings.release_trust` before it
+   changes anything. It imports the `kali`, `ubuntu`, and `dc` artifacts as
+   native GCE images and writes the `linux`, `kali`, and `dc` roles to
+   `range-images.json`. A guest that did not change since the last import is
+   reused. Add `--release-source <mirror prefix>` to read from a mirror, and
+   `--dry-run` to check without a change. A GCE deploy requires the `linux` and
+   `dc` roles, unless you pass `--allow-missing-range-images`.
 9. To record one image by hand, use `set-range-image`. The roles are `linux`,
    `kali`, `windows`, and `dc`:
 
@@ -529,7 +537,7 @@ The command runs these stages in order:
 | Images | Deploy | Copy each release image and its attestations into the deployment registry by digest. |
 | Scan | Release scan | Scan each exact digest with Trivy for HIGH and CRITICAL findings. |
 | Verify | Deploy | Verify the provenance of each image. There is no bypass. |
-| Rollout | Deploy | Create the OpenFGA credentials on first use, probe and drain when required, migrate storage, publish the release's authorization model, verify native activation, restore the Helm release, wait for readiness, roll out the OpenVPN pool, record the running images, and wait for the ingress and certificate. |
+| Rollout | Deploy | Create the OpenFGA credentials on first use, reconcile the SQL duties, probe and drain when required, migrate storage, publish the release's authorization model, verify native activation, restore the Helm release, wait for readiness, roll out the OpenVPN pool, record the running images, and wait for the ingress and certificate. |
 | Catalog | Bootstrap administrator, or a supplied native credential | Register the in-box catalog after readiness through ordinary registration, conformance and publication. A failure leaves catalog work pending with a warning; the application stays active. |
 | Smoke | Deploy | Run the advisory range smoke. |
 
