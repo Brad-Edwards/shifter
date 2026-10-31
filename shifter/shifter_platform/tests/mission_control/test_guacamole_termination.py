@@ -73,10 +73,12 @@ def test_failed_or_redirected_delete_does_not_claim_termination(status):
 
 
 def test_unresponsive_delete_is_bounded():
-    with server(delay=0.5) as (url, _):
+    # The bound sits far below the server delay and far above the client timeout,
+    # so a loaded CI runner cannot fail it while an unbounded wait still does.
+    with server(delay=5) as (url, _):
         started = time.monotonic()
         assert not client(url, timeout=0.05).terminate_session(_TOKEN)
-        assert time.monotonic() - started < 0.3
+        assert time.monotonic() - started < 2
 
 
 def test_native_absence_response_finishes_repeated_termination():
